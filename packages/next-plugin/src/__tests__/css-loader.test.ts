@@ -6,6 +6,7 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -45,6 +46,9 @@ beforeAll(() => {
   importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+})
+
+beforeEach(() => {
   setWasmForTesting(wasm)
 })
 

@@ -461,8 +461,6 @@ fn record_reads_when_relocated_or_overwritten(
 #[rstest]
 #[case::plain("{ color: 'red' }")]
 #[case::unconditional("{ ...{ color: 'red' }, color: 'orange' }")]
-#[case::distinct("{ ...(on ? { color: 'red' } : {}), p: 1 }")]
-#[case::computed_unaffected("{ ...(on ? { ['color']: 'red' } : {}), p: 1 }")]
 #[case::unknown_spread("{ color: 'orange', ...(on ? { color: 'red' } : {}), ...unknown }")]
 #[case::unknown_branch("{ color: 'orange', ...(on ? unknown : { color: 'red' }) }")]
 #[case::computed_key("{ color: 'orange', ...(on ? { [key]: 'red' } : {}) }")]
@@ -485,6 +483,42 @@ fn original_record_when_unaffected_or_unreadable(#[case] rules: &str) {
     let original = readable_code(&statement.expression);
     assert!(prepare(&builder, &statement.expression, &statement.expression).is_none());
     assert_eq!(readable_code(&statement.expression), original);
+}
+
+#[rstest]
+#[case::distinct("{ ...(on ? { color: 'red' } : {}), p: 1 }")]
+#[case::computed_unaffected("{ ...(on ? { ['color']: 'red' } : {}), p: 1 }")]
+fn retained_guard_when_record_has_distinct_keys(
+    #[case] rules: &str,
+    #[values(false, true)] enabled: bool,
+) {
+    // Given: the unchanged distinct-key inputs with a getter-backed guard.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let source = format!("({rules});");
+    let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+        panic!("record fixture must be an expression");
+    };
+    let original = readable_code(&statement.expression);
+    let prepared = prepare(&builder, &statement.expression, &statement.expression)
+        .unwrap_or_else(|| panic!("distinct keys must retain guard captures"));
+    assert_eq!(prepared.bindings.len(), 1);
+    assert_eq!(readable_code(&statement.expression), original);
+    let setup = format!(
+        "Object.defineProperty(globalThis, 'on', {{ get() {{ trace.push('guard'); return {enabled}; }} }})"
+    );
+    // When: evaluate the prepared record with either guard outcome.
+    let result = evaluate_record(rules, &setup);
+    // Then: the guard is read once and retained union-key order/value is stable.
+    assert_eq!(
+        result,
+        if enabled {
+            r#"[["color","p"],{"color":"red","p":1},["guard"]]"#
+        } else {
+            r#"[["color","p"],{"p":1},["guard"]]"#
+        }
+    );
 }
 
 /// Evaluate the emitted render scope, lowering its empty native or bound JSX element.
@@ -644,6 +678,56 @@ fn captures_and_filter_survive_when_prepared_base_retargets_then_extends(
     assert_eq!(
         result,
         r#"["article","nav","card",7,"child",true,true,"olive",false,false,["base"]]"#
+    );
+}
+
+#[rstest]
+#[serial_test::serial]
+fn transient_inputs_survive_when_prepared_typescript_renderer_forwards_rest(
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: inherited captures, attrs producing unknown transient keys and a transient style input.
+    reset_class_map();
+    reset_file_map();
+    let source = "import {styled} from '@devup-ui/react';const trace=[];const Base=styled.div.attrs(p=>({...p.extra,'data-tone':p.$tone})).withConfig({shouldForwardProp:p=>p!=='blocked'})({color:'red',...((trace.push('base'),true)?{color:'blue'}:{})});const Mid=Base.withComponent('section');const Card=styled(Mid)`background: ${p=>p.$tone};`;";
+    let output = crate::extract(
+        "test.ts",
+        source,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("transient TS extraction failed: {error}"));
+    let winning: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::Static(value)
+                if value.property() == "color" && value.value() == "blue" =>
+            {
+                match style.extract(if single_css { None } else { Some("test.ts") }) {
+                    Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) => {
+                        Some(name)
+                    }
+                    _ => panic!("selected color must have a class"),
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert_ne!(winning.len(), 0);
+    let winning = serde_json::to_string(&winning)
+        .unwrap_or_else(|error| panic!("class fixture serialization failed: {error}"));
+    // When: the emitted non-JSX renderer receives keys absent from the source and renders once.
+    let observation = format!(
+        "const __devupJsx0=(type,props)=>({{type,props}});const input={{$runtimeOnly:'secret',$tone:'orchid',extra:{{$fromAttrs:'secret',title:'attrs-title'}},blocked:9,id:'card',ref:7,children:'child',className:'caller',style:{{opacity:.25}},as:'article',forwardedAs:'nav'}};const before=JSON.stringify(input);const rendered=Card.render(input,input.ref);JSON.stringify([Object.keys(rendered.props).filter(k=>k.startsWith('$')),Object.values(rendered.props.style).includes('orchid'),rendered.type,rendered.props.as,rendered.props.id,rendered.props.ref,rendered.props.children,rendered.props.className.includes('caller'),{winning}.some(c=>rendered.props.className.split(' ').includes(c)),rendered.props['data-tone'],rendered.props.title,rendered.props.style.opacity,'blocked' in rendered.props,before===JSON.stringify(input),trace]);"
+    );
+    let result = evaluate_native_render(&output.code, &observation);
+    // Then: forwarding alone is filtered; original reads, classes, captures and caller props survive.
+    assert_eq!(
+        result,
+        r#"[[],true,"article","nav","card",7,"child",true,true,"orchid","attrs-title",0.25,false,true,["base"]]"#
     );
 }
 

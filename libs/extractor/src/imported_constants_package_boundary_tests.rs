@@ -22,7 +22,7 @@ fn package_boundary_css_styles_only_reads_api_exports(
     let program = Parser::new(&allocator, &code, SourceType::tsx())
         .parse()
         .program;
-    let mut scope = ModuleScope::new("/helper.ts", &program, None);
+    let mut scope = ModuleScope::new("/helper.ts", &program, Some(&code));
     let Statement::ImportDeclaration(import) = &program.body[0] else {
         panic!("import fixture");
     };

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "A styled component another module defines now composes at build time exactly as one the file defines itself: styled(ImportedBase)(...), styled(ImportedBase).attrs(...), ImportedBase.withComponent(...) and the Emotion css prop on ImportedBase render the base's tag with the base's styles under their own (the later declaration wins per property, selector, breakpoint and layer), merge attrs in order and filter props by what the styles read and shouldForwardProp. The build reads the other module through the same module resolution imported constants use (relative paths, tsconfig paths, package exports, include libraries) and reports it as a dependency, so a change to it rebuilds the importing file. A definition the build cannot read exactly (a base only the runtime gives, an attrs or style expression reading a binding of the defining module, a module with a build error, an unresolvable module, an import cycle) stays a runtime component that wraps, as before. Every exported styled component now carries a marker class computed from its file and its export name alone, so ${ImportedChild} { ... } in CSS text and [ImportedChild] as a rule key select it from another file; the marker replaces the registry-ordered one, which two files could not compute alike. No new build errors: the css prop on an imported styled component now reports the same override error a local one does when its styles overlap the component's",
+  "date": "2026-10-01T00:00:00.000Z"
+}

@@ -5,6 +5,8 @@ export default defineConfig({
   snapshotPathTemplate:
     '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}-{platform}{ext}',
   fullyParallel: true,
+  // CI compares against the checked-in baselines and never writes one
+  updateSnapshots: process.env.CI ? 'none' : 'missing',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 2 : 4,

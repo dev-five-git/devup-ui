@@ -13,7 +13,6 @@ import {
   buildStaticImportGraph,
   collectNumberedFiles,
   computeCompiledFiles,
-  computeFileRoutes,
   createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
@@ -21,7 +20,6 @@ import {
   extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
-  planAtomHoist,
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
@@ -44,7 +42,11 @@ import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
-  /** Share atoms reached by at least this many routes. */
+  /**
+   * Atom-level route-aware hoisting threshold for webpack (default 2; 0 disables).
+   * Turbopack keeps per-file names until shared class-slot reservation lands in
+   * #752; explicit finite positive requests warn once. Ignored in singleCss mode.
+   */
   atomHoist?: number
 }
 
@@ -153,6 +155,11 @@ export function DevupUI(
       importAliases: userImportAliases,
     } = options
 
+    const requestedAtomHoist =
+      !singleCss &&
+      atomHoist !== undefined &&
+      Number.isFinite(atomHoist) &&
+      atomHoist > 0
     const importAliases = mergeImportAliases(
       userImportAliases,
       readJsxImportSource(),
@@ -172,7 +179,7 @@ export function DevupUI(
     // the coordinator. Calls from the same module instance never reuse it,
     // which avoids turning this into a general cross-build cache.
     const productionSetupKey = JSON.stringify({
-      atomHoist,
+      atomHoist: requestedAtomHoist ? atomHoist : 0,
       cwd: process.cwd(),
       cssDir,
       devupFile,
@@ -208,6 +215,11 @@ export function DevupUI(
       })
       return config
     }
+    if (requestedAtomHoist) {
+      console.warn(
+        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names, while existing shared slots remain arrival-ordered.',
+      )
+    }
     if (!existsSync(distDir))
       mkdirSync(distDir, {
         recursive: true,
@@ -231,11 +243,9 @@ export function DevupUI(
       importCanonicalMap,
       importClassMap,
       importFileMap,
-      importFileRoutes,
       importSheet,
       registerShorthands,
       registerTheme,
-      setAtomHoist,
       setPrefix,
     } = wasm
 
@@ -276,19 +286,8 @@ export function DevupUI(
 
     const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
-    // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
-    // importer merge into that importer's bucket, so their identical atoms share
-    // one class). Atom-level hoisting COMPOSES on top: an atom reached by
-    // >= atomHoist distinct routes is emitted once into the shared devup-ui.css.
-    //
-    // The two compose because both are keyed by the canonical bucket: the engine
-    // keys property buckets by canonical(filename), and the route-reach map below
-    // is folded onto the SAME canonical bucket — so route_count_for_files() looks
-    // atoms up by bucket and the lookup hits. `atomHoist` must be configured
-    // BEFORE any extraction so atoms receive global (shared) class names; the
-    // coordinator shares this WASM instance, so it applies to every /extract.
-    const atomMode =
-      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+    // Collapse and legacy whole-file hoisting remain independent of the deferred
+    // Turbopack atom reservation. Never install atom reach/threshold without it.
     const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
@@ -306,13 +305,9 @@ export function DevupUI(
       // One scan+parse of the source tree, shared by all three consumers below.
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
       staticGraph = graph
-      // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
-      // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
-      const hoistV = atomMode
-        ? undefined
-        : process.env.DEVUP_HOIST_V
-          ? Number(process.env.DEVUP_HOIST_V)
-          : undefined
+      const hoistV = process.env.DEVUP_HOIST_V
+        ? Number(process.env.DEVUP_HOIST_V)
+        : undefined
       canonicalMap = buildCanonicalMap({
         srcDir,
         tsconfigPath,
@@ -335,25 +330,6 @@ export function DevupUI(
         graph,
       })
 
-      if (atomMode) {
-        const fileRoutes = computeFileRoutes({
-          srcDir,
-          tsconfigPath,
-          cwd,
-          graph,
-        })
-        // Fold per-file route reach onto the canonical bucket so the keys match
-        // the engine's property bucket keys (canonical(filename)).
-        const plan = planAtomHoist(canonicalMap, fileRoutes, atomHoist)
-        if (plan) {
-          importFileRoutes(plan.reachByBucket)
-          setAtomHoist(plan.threshold)
-        } else {
-          console.info(
-            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op.',
-          )
-        }
-      }
       reportProfile('next.graph', {
         durationMs: elapsedMs(graphStartedAt),
         files: staticGraph.files.length,
@@ -380,6 +356,7 @@ export function DevupUI(
           include,
           cwd,
           needles: extractedNeedles(libPackage, importAliases),
+          importAliases,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
@@ -647,16 +624,38 @@ export function DevupUI(
   }
 
   const { webpack } = config
+  let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
-      `devup-ui_${_options.buildId}`,
+      _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
+    if (!_options.dev && productionPrewarmFiles === undefined) {
+      const cwd = process.cwd()
+      const srcDir = resolve(cwd, 'src')
+      const tsconfigPath = resolve(cwd, 'tsconfig.json')
+      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      productionPrewarmFiles = collectProductionPrewarmFiles({
+        cwd,
+        graph,
+        expectedBaseFiles: computeCompiledFiles({
+          cwd,
+          srcDir,
+          tsconfigPath,
+          graph,
+        }),
+        libPackage: options.package ?? '@devup-ui/react',
+        include: options.include ?? [],
+      })
+    }
     config.plugins.push(
       new DevupUIWebpackPlugin({
         ...options,
         watch: _options.dev,
+        productionPrewarmFiles: _options.dev
+          ? undefined
+          : productionPrewarmFiles,
       }),
     )
     if (typeof webpack === 'function') return webpack(config, _options)

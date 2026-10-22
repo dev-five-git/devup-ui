@@ -75,12 +75,43 @@ fn deep_object_shallow_contexts_match_ordinary_compilation(
     let body = format!(
         "import{{css,keyframes}}from'@devup-ui/react';const base=css({{p:[1,2]}});const fade=keyframes({{from:{{opacity:0}},to:{{opacity:1}}}});export const card={expression};"
     );
+    assert!(!crate::utils::is_vanilla_extract_file("/deep-object.tsx"));
     reset_class_map();
     reset_file_map();
-    let expected = extract_without_source_map("/deep-object.tsx", &body, ExtractOption::default())
-        .map_err(|error| error.to_string())?;
+    let mut expected =
+        extract_without_source_map("/deep-object.tsx", &body, ExtractOption::default())
+            .map_err(|error| error.to_string())?;
+    assert_eq!(
+        expected
+            .styles
+            .iter()
+            .any(|style| matches!(style, ExtractStyleValue::LayerOrder(_))),
+        expression.contains("'@layer'"),
+    );
+    expected.styles = expected
+        .styles
+        .into_iter()
+        .map(|mut style| {
+            if let ExtractStyleValue::LayerOrder(order) = &mut style {
+                assert_eq!(order.file, "/deep-object.tsx");
+                order.file = "/deep-object.css.ts".to_string();
+            }
+            style
+        })
+        .collect();
     // When
-    let output = compile(&format!("{body}(()=>1)();"))?;
+    let computed = format!("{body}(()=>1)();");
+    assert_eq!(
+        crate::stylesheet_policy::plan(
+            &computed,
+            "/deep-object.css.ts",
+            &ExtractOption::default(),
+            None,
+            &|_| false,
+        ),
+        crate::stylesheet_policy::Plan::Run,
+    );
+    let output = compile(&computed)?;
     // Then
     let bindings = |code: &str| {
         code.lines()

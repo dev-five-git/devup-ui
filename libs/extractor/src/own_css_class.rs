@@ -56,7 +56,7 @@ impl<'a> DevupVisitor<'a> {
                     }
                 }
             }
-            let (result, known) = self.composed_class(offset, parts);
+            let (result, known) = self.composed_class::<false>(offset, parts);
             if let Some(known) = known {
                 self.css_styles = Some((offset, known));
             }

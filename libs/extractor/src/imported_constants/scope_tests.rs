@@ -24,6 +24,7 @@ fn inline(code: &str, css_prop: CssProp) -> (String, Inlined) {
         &ExtractOption::default(),
         None,
         css_prop,
+        &crate::import_alias_visit::PxMarks::default(),
     );
     (Codegen::new().build(&program).code, inlined)
 }
@@ -212,6 +213,7 @@ export function shadowed(unknown, table) { return css({ w: unknown, h: table.a }
         &ExtractOption::default(),
         None,
         CssProp::Off,
+        &crate::import_alias_visit::PxMarks::default(),
     );
     let Some(scoping) = inlined.scoping.clone() else {
         panic!("no scoping kept");

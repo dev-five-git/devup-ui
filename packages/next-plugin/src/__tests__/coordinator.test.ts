@@ -1,9 +1,11 @@
 import * as fs from 'node:fs'
 import { request } from 'node:http'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import {
+  afterAll,
   afterEach,
   beforeEach,
   describe,
@@ -29,7 +31,9 @@ let exportFileMapSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
 let writeFileSyncSpy: ReturnType<typeof spyOn>
 
-const tmpDir = join(process.cwd(), '.tmp-coordinator-test')
+const tmpDir = fs.mkdtempSync(join(tmpdir(), 'devup-ui-coordinator-'))
+
+afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }))
 
 function makeOptions(
   overrides: Partial<CoordinatorOptions> = {},
@@ -97,7 +101,8 @@ beforeEach(() => {
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await flushCoordinatorWrites()
   resetCoordinator()
   codeExtractSpy.mockRestore()
   codeExtractWithoutSourceMapSpy.mockRestore()

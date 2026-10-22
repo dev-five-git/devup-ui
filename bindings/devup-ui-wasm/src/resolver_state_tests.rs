@@ -3,6 +3,35 @@ use crate::{SourceMapMode, code_extract_internal_impl, export_sheet_internal};
 use std::{cell::RefCell, rc::Rc};
 
 #[test]
+fn reservation_roots_keep_their_original_diagnostic_sites() -> Result<(), String> {
+    // Given
+    let mut state = ResolverState::default();
+    assert_eq!(state.sources.len(), 0);
+    state.add_source("first.ts", "import './shared';");
+    state.add_source("second.ts", "\nimport './shared';");
+
+    // When
+    for filename in ["second.ts", "first.ts"] {
+        let request = state
+            .request("./shared", filename)
+            .ok_or("missing reservation root reference")?;
+        state.record(&request, "reservation resolver failure");
+    }
+
+    // Then
+    assert_eq!(state.sources.len(), 2);
+    let error = state.check().err().ok_or("missing resolver diagnostics")?;
+    let sites = error
+        .lines()
+        .filter(|line| line.contains("module resolver failed"))
+        .collect::<Vec<_>>();
+    assert_eq!(sites.len(), 2);
+    assert!(sites[0].starts_with("first.ts:1:8:"), "{error}");
+    assert!(sites[1].starts_with("second.ts:2:8:"), "{error}");
+    Ok(())
+}
+
+#[test]
 fn diagnostic_when_resolver_fails_in_cached_imported_typescript() -> Result<(), String> {
     // Given
     let mut state = ResolverState::new("entry.tsx", "import './barrel';");

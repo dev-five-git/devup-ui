@@ -120,7 +120,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\n/** @jsxImportSource react */\nexport const App = () => <div className=\"a\" />;\n",
+            code: "/** @jsxImportSource react */\nimport \"@devup-ui/react/devup-ui.css\";\nexport const App = () => <div className=\"a\" />;\n",
         },
     ),
     (
@@ -210,7 +210,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\n/** @jsx jsx */\nimport { jsx } from \"@devup-ui/react/compat\";\nexport const App = () => <div className=\"a\" />;\n",
+            code: "/** @jsx jsx */\nimport \"@devup-ui/react/devup-ui.css\";\nimport { jsx } from \"@devup-ui/react/compat\";\nexport const App = () => <div className=\"a\" />;\n",
         },
     ),
     (

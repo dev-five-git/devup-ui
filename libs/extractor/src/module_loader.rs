@@ -43,6 +43,22 @@ thread_local! {
     static EVALUATING: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+/// Moves the outer evaluation stack aside until scratch extraction ends.
+#[derive(Debug)]
+pub(crate) struct EvaluationGuard(Vec<String>);
+
+impl Default for EvaluationGuard {
+    fn default() -> Self {
+        Self(EVALUATING.with_borrow_mut(std::mem::take))
+    }
+}
+
+impl Drop for EvaluationGuard {
+    fn drop(&mut self) {
+        EVALUATING.with_borrow_mut(|stack| *stack = std::mem::take(&mut self.0));
+    }
+}
+
 /// Marks `filename` as being evaluated until dropped
 pub(crate) struct Evaluating;
 
@@ -62,6 +78,11 @@ impl Drop for Evaluating {
 /// Whether the stylesheet evaluated now is one another evaluation imports
 pub(crate) fn evaluating_import() -> bool {
     EVALUATING.with_borrow(|stack| stack.len() > 1)
+}
+
+#[cfg(test)]
+pub(crate) fn loading_for_stylesheet() -> bool {
+    EVALUATING.with_borrow(|stack| !stack.is_empty())
 }
 
 fn is_evaluating(filename: &str) -> bool {

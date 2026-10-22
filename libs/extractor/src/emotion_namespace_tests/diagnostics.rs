@@ -3,12 +3,41 @@ use rstest::rstest;
 
 #[test]
 #[serial]
-fn emotion_restoration_reports_malformed_source_when_normalization_rejects_a_read() {
-    // Given: normalization can reject a namespace read before the main parser runs.
+fn syntax_errors_are_reported_before_namespace_normalization() {
+    // Given: malformed source also contains an unsupported namespace read.
     let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
 
     // When
     let error = compile(source).unwrap_err();
+
+    // Then
+    assert_eq!(error, "namespace.tsx:2:27: Cannot parse source: Missing initializer in const declaration. Fix: correct the syntax at this location");
+}
+
+#[test]
+fn restoration_preserves_the_diagnostic_when_its_source_is_malformed() {
+    // Given: an internal generated-name diagnostic and source the parser rejects.
+    let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
+    let message = utils::build_time_error("css", "__emotion_css_0()", "pass a static style object");
+
+    // When: diagnostic restoration cannot safely inspect the original AST.
+    let error = emotion_namespace::original_error_code(source, source.find("E.__emotion_user").unwrap(), message.clone(), SourceType::tsx());
+
+    // Then: the original diagnostic survives together with the parser failure.
+    assert_eq!(error.lines().next(), Some(message.as_str()));
+    assert!(error.contains("Emotion diagnostic restoration failed:"));
+    assert!(error.contains("Missing initializer in const declaration"));
+}
+
+#[test]
+#[serial]
+fn emotion_restoration_reports_malformed_source_when_normalization_rejects_a_read() {
+    // Given: restoration receives a located namespace diagnostic and malformed source.
+    let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
+    let message = format!("namespace.tsx:2:1: {}", utils::build_time_error("@emotion/css", "E.__emotion_user", "use a supported styling API or a runtime-only Emotion export"));
+
+    // When
+    let error = emotion_namespace::original_error_code(source, source.find("E.__emotion_user").unwrap(), message, SourceType::tsx());
 
     // Then
     assert!(error.starts_with("namespace.tsx:2:1:"), "{error}");

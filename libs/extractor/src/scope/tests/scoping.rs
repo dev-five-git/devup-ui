@@ -54,5 +54,5 @@ fn analysis_given_to_the_visitor_is_reused() {
     let printed = Codegen::new().build(&program).code;
     assert!(printed.contains("css({ color: \"red\" })"), "{printed}");
     assert!(printed.contains("export const a = \"a\";"), "{printed}");
-    assert_eq!(visitor.styles.len(), 1);
+    assert_eq!(visitor.styles.into_styles("test.tsx").len(), 1);
 }

@@ -46,6 +46,7 @@ struct ResolverFailure {
 }
 
 /// Resolver diagnostics and original module sources owned by one extraction.
+#[derive(Default)]
 pub(crate) struct ResolverState {
     sources: HashMap<String, ModuleSource>,
     failures: BTreeSet<ResolverFailure>,
@@ -71,6 +72,16 @@ impl ResolverState {
             ModuleSource {
                 code: module.code.clone(),
                 ingress: Some(request.origins.clone()),
+            },
+        );
+    }
+
+    pub(crate) fn add_source(&mut self, filename: &str, code: &str) {
+        self.sources.insert(
+            filename.to_string(),
+            ModuleSource {
+                code: code.to_string(),
+                ingress: None,
             },
         );
     }
