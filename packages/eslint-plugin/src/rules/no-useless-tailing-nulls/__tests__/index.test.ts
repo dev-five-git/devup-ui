@@ -16,6 +16,11 @@ describe('no-useless-tailing-nulls rule', () => {
   })
   ruleTester.run('no-useless-tailing-nulls rule', noUselessTailingNulls, {
     valid: [
+      // Real parser holes are absent elements, not Literal null nodes.
+      ...['[]', '[,]', '[,null]', '[null,,]', '[1, null, 2]'].map((value) => ({
+        code: `import { css } from "@devup-ui/react";\ncss({w: ${value}})`,
+        filename: 'src/app/page.tsx',
+      })),
       {
         code: 'import { Box } from "@devup-ui/react";\n<Box w={[1, 2, null, 3]} />',
         filename: 'src/app/page.tsx',
@@ -44,6 +49,17 @@ describe('no-useless-tailing-nulls rule', () => {
       })),
     ],
     invalid: [
+      ...[
+        ['[null]', '[]'],
+        ['[null,null]', '[]'],
+        ['[1,null]', '[1]'],
+        ['[1,,null]', '[]'],
+      ].map(([value, fixed]) => ({
+        code: `import { css } from "@devup-ui/react";\ncss({w: ${value}})`,
+        output: `import { css } from "@devup-ui/react";\ncss({w: ${fixed}})`,
+        filename: 'src/app/page.tsx',
+        errors: [{ messageId: 'uselessTailingNulls' as const }],
+      })),
       {
         code: 'import { Box } from "@devup-ui/react";\n<Box icon={<Box w={[1, null]} />} m={[2, null]} />',
         output:

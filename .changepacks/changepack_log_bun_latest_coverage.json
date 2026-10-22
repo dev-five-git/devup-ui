@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "Preserve trailing-null lint fixes while removing an unreachable AST guard; restore complete behavior coverage on the latest Bun without exclusions or new build errors.",
+  "date": "2026-10-22T00:00:00.000Z"
+}

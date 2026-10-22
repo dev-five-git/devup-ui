@@ -17,8 +17,14 @@ function checkUselessTailingNulls<T extends RuleContext<string, []>>(
   node: TSESTree.ArrayExpression,
   context: T,
 ) {
-  let nullCount = 0
-  for (let i = node.elements.length - 1; i >= 0; i--) {
+  const lastElement = node.elements[node.elements.length - 1]
+  if (
+    lastElement?.type !== AST_NODE_TYPES.Literal ||
+    lastElement.value !== null
+  )
+    return
+  let nullCount = 1
+  for (let i = node.elements.length - 2; i >= 0; i--) {
     const element = node.elements[i]
     if (element?.type === AST_NODE_TYPES.Literal && element.value === null) {
       nullCount++
@@ -26,12 +32,8 @@ function checkUselessTailingNulls<T extends RuleContext<string, []>>(
       break
     }
   }
-  if (nullCount === 0) return
   const previousElement = node.elements[node.elements.length - nullCount - 1]
   const firstElement = node.elements[0]
-  const lastElement = node.elements[node.elements.length - 1]
-  if (!lastElement || (node.elements.length === nullCount && !firstElement))
-    return
   const removeStart =
     node.elements.length > nullCount && previousElement
       ? previousElement.range[1]
