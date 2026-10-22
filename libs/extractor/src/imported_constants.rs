@@ -36,6 +36,10 @@ use crate::{ExtractOption, ExtractStyleValue, ModuleResolution, ModuleResolver};
 mod exports;
 use exports::Exports;
 
+#[cfg(test)]
+#[path = "imported_constants_px_tests.rs"]
+mod px_tests;
+
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),
@@ -408,6 +412,9 @@ pub(crate) fn inline_constants<'a>(
                 style_roots.insert(local);
                 match specifier {
                     ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                        if !stylex && specifier.imported.name() == "css" {
+                            apis.css.insert(local);
+                        }
                         if takes_style_objects(stylex, &specifier.imported.name()) {
                             apis.functions.insert(local);
                         }
@@ -604,6 +611,7 @@ pub(crate) fn inline_constants<'a>(
             css_props: &css_props,
             apis: &apis,
             css_failures: &mut inlined.css_failures,
+            unknown: &mut inlined.unknown,
             objects: false,
             styles: false,
             px: false,
@@ -700,6 +708,7 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
 #[derive(Default)]
 struct StyleApis<'s> {
     functions: FxHashSet<&'s str>,
+    css: FxHashSet<&'s str>,
     /// Namespace and default imports, `true` for `StyleX`
     namespaces: FxHashMap<&'s str, bool>,
 }
@@ -2047,6 +2056,7 @@ struct Inline<'s, 'a> {
     css_props: &'s CssTakers<'s>,
     apis: &'s StyleApis<'s>,
     css_failures: &'s mut Vec<String>,
+    unknown: &'s mut Unknown,
     /// Inside what the build reads as style objects
     objects: bool,
     /// Inside the arguments of a style API or a style prop
@@ -2406,8 +2416,71 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             &tagged.tag,
             self.css_props.has_class_names().then_some(self.scoping),
         );
+        let css = is_style_root(self.style_roots, &tagged.tag, Some(self.scoping))
+            && match &tagged.tag {
+                Expression::Identifier(name) => self.apis.css.contains(name.name.as_str()),
+                Expression::StaticMemberExpression(member) => {
+                    member.property.name == "css"
+                        && matches!(&member.object, Expression::Identifier(name)
+                            if self.apis.namespaces.get(name.name.as_str()) == Some(&false))
+                }
+                _ => false,
+            };
+        if !css {
+            self.reading_styles(styles, |inline| {
+                inline.visit_template_literal(&mut tagged.quasi);
+            });
+            return;
+        }
         self.reading_styles(styles, |inline| {
-            inline.visit_template_literal(&mut tagged.quasi);
+            let mut before = None::<String>;
+            for index in 0..tagged.quasi.expressions.len() {
+                let (prior, rest) = tagged.quasi.expressions.split_at_mut(index);
+                let expression = &mut rest[0];
+                let value = inline.constant(expression);
+                let candidate =
+                    matches!(
+                        crate::utils::unwrap_syntax_only(expression),
+                        Expression::ObjectExpression(_)
+                    ) || matches!(value, Some(Constant::Object(_) | Constant::Record(_)));
+                if candidate && before.is_none() {
+                    let mut text = String::new();
+                    for (quasi, expression) in tagged.quasi.quasis.iter().zip(prior) {
+                        text.push_str(&quasi.value.raw);
+                        if let Some(value) =
+                            crate::utils::get_string_by_literal_expression(expression)
+                        {
+                            text.push_str(&value);
+                        }
+                    }
+                    before = Some(text);
+                }
+                if let Some(before) = &mut before {
+                    before.push_str(&tagged.quasi.quasis[index].value.raw);
+                }
+                let objects = candidate
+                    && before.as_ref().is_some_and(|before| {
+                        matches!(
+                            crate::css_utils::interpolation_place(
+                                before,
+                                &tagged.quasi.quasis[index + 1..]
+                            ),
+                            crate::css_utils::Place::Statement
+                        )
+                    });
+                inline.reading_objects(objects, |inline| inline.visit_expression(expression));
+                if objects
+                    && value.is_some()
+                    && let Some(name) = crate::utils::binding_root(expression)
+                {
+                    inline.unknown.names.insert(name.to_string());
+                }
+                if let Some(before) = &mut before
+                    && let Some(text) = crate::utils::get_string_by_literal_expression(expression)
+                {
+                    before.push_str(&text);
+                }
+            }
         });
     }
 
