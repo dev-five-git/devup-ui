@@ -1,10 +1,13 @@
 import { join, resolve } from 'node:path'
 
+import { collectReservationInputs } from '@devup-ui/plugin-utils'
 import { expect, it } from 'bun:test'
 
+import {
+  fixture,
+  STYLE,
+} from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { htmlReservationEntries } from '../html-reservation'
-import { collectReservationInputs } from '../reservation-discovery'
-import { fixture, STYLE } from './reservation-fixture'
 
 it.each([
   ['/&copy;A.js', '/©A.js'],

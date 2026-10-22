@@ -1,7 +1,6 @@
 import { rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import * as utils from '@devup-ui/plugin-utils'
 import { resetBuildState } from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 
@@ -10,6 +9,7 @@ import {
   STYLE,
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { createCompiledDependencies } from '../compiled-dependencies'
+import * as htmlReservation from '../html-reservation'
 import { createViteReservation } from '../reservation'
 import { createServerWatch } from '../server-watch'
 
@@ -115,15 +115,16 @@ it('discards first HTML candidate when it changes during the real parser await',
   reservation.configure({ root: project.root })
   const entered = Promise.withResolvers<void>()
   const released = Promise.withResolvers<void>()
-  const parse = utils.htmlReservationEntries
-  using parser = spyOn(utils, 'htmlReservationEntries').mockImplementationOnce(
-    async (...args) => {
-      const result = await parse(...args)
-      entered.resolve()
-      await released.promise
-      return result
-    },
-  )
+  const parse = htmlReservation.htmlReservationEntries
+  using parser = spyOn(
+    htmlReservation,
+    'htmlReservationEntries',
+  ).mockImplementationOnce(async (...args) => {
+    const result = await parse(...args)
+    entered.resolve()
+    await released.promise
+    return result
+  })
   const pending = reservation.reserve()
   await entered.promise
   // When

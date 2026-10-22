@@ -1,7 +1,7 @@
-import * as utils from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 
+import * as htmlReservation from '../html-reservation'
 import {
   cacheFixture,
   extractionObserver,
@@ -90,20 +90,21 @@ it('observes obsolete extraction input after a current query overtakes real prep
   await state.plugin.watchChange(state.id)
   const entered = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
-  const { htmlReservationEntries } = utils
-  const parse = htmlReservationEntries.bind(utils)
+  const { htmlReservationEntries } = htmlReservation
+  const parse = htmlReservationEntries.bind(htmlReservation)
   let armed = true
-  using _parser = spyOn(utils, 'htmlReservationEntries').mockImplementation(
-    async (...args) => {
-      const result = await parse(...args)
-      if (armed) {
-        armed = false
-        entered.resolve()
-        await release.promise
-      }
-      return result
-    },
-  )
+  using _parser = spyOn(
+    htmlReservation,
+    'htmlReservationEntries',
+  ).mockImplementation(async (...args) => {
+    const result = await parse(...args)
+    if (armed) {
+      armed = false
+      entered.resolve()
+      await release.promise
+    }
+    return result
+  })
   using extracts = extractionObserver()
   const a =
     'import {globalCss} from "@devup-ui/react"; globalCss({body:{color:"red"}});'

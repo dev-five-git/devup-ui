@@ -1,9 +1,8 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
+import { parseImports } from '@devup-ui/plugin-utils'
 import type { DefaultTreeAdapterTypes } from 'parse5'
-
-import { importedSpecifiers } from './import-graph'
 
 export type HtmlReservationEntry = {
   readonly request: string
@@ -94,11 +93,11 @@ export async function htmlReservationEntries(
           const text = node.childNodes
             .flatMap((child) => ('value' in child ? [child.value] : []))
             .join('')
-          for (const request of importedSpecifiers(
+          for (const { specifier } of parseImports(
             `${options.filename}.js`,
             text,
           ))
-            add(request, false)
+            add(specifier, false)
         }
       }
     }

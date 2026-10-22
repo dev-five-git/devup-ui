@@ -9,6 +9,7 @@ import {
   fixture,
   STYLE,
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
+import * as htmlReservation from '../html-reservation'
 import { createViteReservation } from '../reservation'
 
 function reservation(root: string) {
@@ -127,13 +128,14 @@ it('discards a stale async HTML candidate and shares the refreshed preparation w
   const slots = reservation(project.root)
   slots.configure({ root: project.root })
   const gate = Promise.withResolvers<void>()
-  const parse = utils.htmlReservationEntries
-  using parser = spyOn(utils, 'htmlReservationEntries').mockImplementationOnce(
-    async (html, options) => {
-      await gate.promise
-      return parse(html, options)
-    },
-  )
+  const parse = htmlReservation.htmlReservationEntries
+  using parser = spyOn(
+    htmlReservation,
+    'htmlReservationEntries',
+  ).mockImplementationOnce(async (html, options) => {
+    await gate.promise
+    return parse(html, options)
+  })
   // When
   const pending = slots.reserve()
   project.write('index.html', '<script type=module src=/outside/B.js></script>')

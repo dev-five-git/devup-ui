@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import type { BuildOptions } from 'vite'
+
 import {
   htmlReservationEntries,
   type HtmlReservationEntry,
-} from '@devup-ui/plugin-utils'
-import type { BuildOptions } from 'vite'
+} from './html-reservation'
 
 export type ReservationEnvironment = {
   readonly input?: string | string[] | Record<string, string>

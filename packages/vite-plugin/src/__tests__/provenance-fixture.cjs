@@ -3,6 +3,7 @@ const { join, resolve } = require('node:path')
 const fs = require('node:fs/promises')
 const { put } = require('./reservation-native-fixture.cjs')
 const { observe } = require('./reservation-native-observer.cjs')
+const { rebindParser } = require('./html-parser-bundle.cjs')
 const wasm = require('@devup-ui/wasm')
 
 /** @typedef {import('./serve-coherence-async-fixture.cjs').Hooks & {load(id:string):string|undefined, configureServer(server:import('vite').ViteDevServer):void, hotUpdate(this:unknown,ctx:unknown):Promise<unknown>, handleHotUpdate(ctx:unknown):Promise<unknown>}} ProvenanceHooks */
@@ -61,35 +62,26 @@ function provenanceFixture(root, options = {}) {
 
 /** Suspend the real HTML parser result, not a fabricated reservation/revision. */
 function provenanceParserGate() {
-  const utils = require('@devup-ui/plugin-utils')
-  const entry = require.cache[require.resolve('@devup-ui/plugin-utils')]
-  assert(entry)
-  const original = entry.exports
   /** @type {PromiseWithResolvers<void>} */
   const entered = Promise.withResolvers()
   /** @type {PromiseWithResolvers<void>} */
   const released = Promise.withResolvers()
   let armed = true
-  entry.exports = {
-    ...utils,
-    async htmlReservationEntries(
-      /** @type {Parameters<typeof utils.htmlReservationEntries>} */ ...args
-    ) {
-      const result = await utils.htmlReservationEntries(...args)
-      if (armed) {
-        armed = false
-        entered.resolve()
-        await released.promise
-      }
-      return result
-    },
-  }
+  const restoreParser = rebindParser((parse) => async (...args) => {
+    const result = await parse(...args)
+    if (armed) {
+      armed = false
+      entered.resolve()
+      await released.promise
+    }
+    return result
+  })
   return {
     entered: entered.promise,
     release: released.resolve,
     restore() {
       released.resolve()
-      entry.exports = original
+      restoreParser()
     },
   }
 }

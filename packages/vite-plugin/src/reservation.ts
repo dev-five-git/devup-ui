@@ -7,7 +7,6 @@ import {
   computeReachableFiles,
   createModuleResolver,
   createSharedSlotReservation,
-  type HtmlReservationEntry,
   planAtomHoist,
   reservationGraph,
   type WasmImportAliases,
@@ -20,6 +19,7 @@ import {
   setModuleResolver,
 } from '@devup-ui/wasm'
 
+import type { HtmlReservationEntry } from './html-reservation'
 import { packageBoundary } from './package-boundary'
 import {
   environmentInputs,

@@ -9,6 +9,7 @@ import {
   fixture,
   STYLE,
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
+import * as htmlReservation from '../html-reservation'
 import { createViteReservation } from '../reservation'
 import type { ReservationEnvironment } from '../reservation-inputs'
 
@@ -93,14 +94,15 @@ it('discards stale async candidates before planning and retries engine failure w
   project.write('outside/A.js', STYLE)
   project.write('outside/B.js', STYLE)
   project.write('index.html', '<script type=module src=/outside/A.js></script>')
-  const parse = utils.htmlReservationEntries
+  const parse = htmlReservation.htmlReservationEntries
   const gate = Promise.withResolvers<void>()
-  using _parser = spyOn(utils, 'htmlReservationEntries').mockImplementationOnce(
-    async (html, options) => {
-      await gate.promise
-      return parse(html, options)
-    },
-  )
+  using _parser = spyOn(
+    htmlReservation,
+    'htmlReservationEntries',
+  ).mockImplementationOnce(async (html, options) => {
+    await gate.promise
+    return parse(html, options)
+  })
   using graph = spyOn(utils, 'reservationGraph')
   using _canonical = spyOn(wasm, 'importCanonicalMap').mockImplementation(
     () => {},

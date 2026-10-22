@@ -4,26 +4,23 @@ const wasm = require('@devup-ui/wasm')
 /** @type {typeof import('../../../plugin-utils/src/index')} */
 const utils = require('@devup-ui/plugin-utils')
 const { project, gate } = require('./serve-coherence-async-fixture.cjs')
+const { rebindParser } = require('./html-parser-bundle.cjs')
 const stage = process.argv[2]
 assert(['before-refresh', 'load', 'buildStart', 'transform'].includes(stage))
 
 async function main() {
   // Given: A is active; B has real engine-mutating work suspended at an await.
-  const parsing = utils.htmlReservationEntries
   /** @type {PromiseWithResolvers<void>} */
   const entered = Promise.withResolvers()
   /** @type {PromiseWithResolvers<void>} */
   const release = Promise.withResolvers()
-  const module = require.cache[require.resolve('@devup-ui/plugin-utils')]
-  assert(module)
+  let restoreParser = () => {}
   if (stage === 'buildStart' || stage === 'transform') {
-    /** @type {typeof parsing} */
-    const parse = async (...args) => {
+    restoreParser = rebindParser((parsing) => async (...args) => {
       entered.resolve()
       await release.promise
       return parsing(...args)
-    }
-    module.exports = { ...utils, htmlReservationEntries: parse }
+    })
   }
   const a = project()
   await a.plugin.configResolved(a.config)
@@ -79,7 +76,7 @@ async function main() {
     release.resolve()
     await work
     await closing
-    module.exports = utils
+    restoreParser()
     await b.close()
     await a.close()
   }

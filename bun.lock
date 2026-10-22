@@ -592,9 +592,6 @@
     "packages/plugin-utils": {
       "name": "@devup-ui/plugin-utils",
       "version": "1.0.17",
-      "dependencies": {
-        "parse5": "^8.0.1",
-      },
       "devDependencies": {
         "typescript": "^7.0.2",
       },
@@ -655,6 +652,7 @@
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
+        "parse5": "^8.0.1",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
