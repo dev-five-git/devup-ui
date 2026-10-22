@@ -23,22 +23,24 @@ function checkUselessTailingNulls<T extends RuleContext<string, []>>(
     lastElement.value !== null
   )
     return
-  let nullCount = 1
+  let trailingCount = 1
   for (let i = node.elements.length - 2; i >= 0; i--) {
     const element = node.elements[i]
-    if (element?.type === AST_NODE_TYPES.Literal && element.value === null) {
-      nullCount++
+    if (
+      !element ||
+      (element.type === AST_NODE_TYPES.Literal && element.value === null)
+    ) {
+      trailingCount++
     } else {
       break
     }
   }
-  const previousElement = node.elements[node.elements.length - nullCount - 1]
+  const previousElement =
+    node.elements[node.elements.length - trailingCount - 1]
   const firstElement = node.elements[0]
-  const removeStart =
-    node.elements.length > nullCount && previousElement
-      ? previousElement.range[1]
-      : firstElement?.range[0]
-  if (removeStart === undefined) return
+  const removeStart = previousElement
+    ? previousElement.range[1]
+    : (firstElement?.range[0] ?? node.range[0] + 1)
 
   context.report({
     node,

@@ -17,7 +17,16 @@ describe('no-useless-tailing-nulls rule', () => {
   ruleTester.run('no-useless-tailing-nulls rule', noUselessTailingNulls, {
     valid: [
       // Real parser holes are absent elements, not Literal null nodes.
-      ...['[]', '[,]', '[,null]', '[null,,]', '[1, null, 2]'].map((value) => ({
+      ...[
+        '[]',
+        '[,]',
+        '[1,null,,]',
+        '[null,,]',
+        '[,,]',
+        '[1,,]',
+        '[1,,2]',
+        '[1, null, 2]',
+      ].map((value) => ({
         code: `import { css } from "@devup-ui/react";\ncss({w: ${value}})`,
         filename: 'src/app/page.tsx',
       })),
@@ -53,7 +62,17 @@ describe('no-useless-tailing-nulls rule', () => {
         ['[null]', '[]'],
         ['[null,null]', '[]'],
         ['[1,null]', '[1]'],
-        ['[1,,null]', '[]'],
+        ['[1,,null]', '[1]'],
+        ['[,1,null]', '[,1]'],
+        ['[1,,2,null]', '[1,,2]'],
+        ['[1,,null,null]', '[1]'],
+        ['[,null]', '[]'],
+        ['[,,null,null]', '[]'],
+        ['[/* keep */ null,null]', '[/* keep */ ]'],
+        ['[1,null,,null]', '[1]'],
+        ['[null,1,,null]', '[null,1]'],
+        ['[value,,null]', '[value]'],
+        ['[...values,,null]', '[...values]'],
       ].map(([value, fixed]) => ({
         code: `import { css } from "@devup-ui/react";\ncss({w: ${value}})`,
         output: `import { css } from "@devup-ui/react";\ncss({w: ${fixed}})`,
