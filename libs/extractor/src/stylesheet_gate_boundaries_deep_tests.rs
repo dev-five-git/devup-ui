@@ -16,7 +16,7 @@ fn gate_boundaries_heap_deep_composition_uses_default_native_stack() -> Result<(
     .map_err(|error| error.to_string())?;
     reset_class_map();
     reset_file_map();
-    let source = "import{css}from'@devup-ui/react';let rules={p:2,color:'red'};for(let i=0;i<100000;i++){rules=[rules]}export const card=css(rules);";
+    let source = "import{css}from'@devup-ui/react';let rules={p:2,color:'red'};for(let i=0;i<25000;i++){rules=[[[[rules]]]]}export const card=css(rules);";
     // When
     let output = extract_without_source_map("/heap.css.ts", source, ExtractOption::default())
         .map_err(|error| error.to_string())?;
@@ -27,11 +27,15 @@ fn gate_boundaries_heap_deep_composition_uses_default_native_stack() -> Result<(
 }
 
 #[rstest::rstest]
-#[case("let value=()=>1;for(let i=0;i<100000;i++){value=[value]}export const card=css({p:value});")]
 #[case(
-    "const first=[];let rules=first;for(let i=0;i<100000;i++){rules=[rules]}first.push(rules);export const card=css(rules);"
+    "let value=()=>1;for(let i=0;i<25000;i++){value=[[[[value]]]]}export const card=css({p:value});"
 )]
-#[case("let value=1;for(let i=0;i<100000;i++){value=[value]}export const card=css({p:value});")]
+#[case(
+    "const first=[];let rules=first;for(let i=0;i<25000;i++){rules=[[[[rules]]]]}first.push(rules);export const card=css(rules);"
+)]
+#[case(
+    "let value=1;for(let i=0;i<25000;i++){value=[[[[value]]]]}export const card=css({p:value});"
+)]
 #[serial]
 fn gate_boundaries_heap_deep_invalid_data_returns_located_error(
     #[case] body: &str,
@@ -66,7 +70,7 @@ fn gate_boundaries_heap_deep_tag_composition_matches_flat_rules() -> Result<(), 
     .map_err(|error| error.to_string())?;
     reset_class_map();
     reset_file_map();
-    let source = "import{css}from'@devup-ui/react';let rules={p:2,color:'red'};for(let i=0;i<100000;i++){rules=[rules]}export const card=css`${rules}`;";
+    let source = "import{css}from'@devup-ui/react';let rules={p:2,color:'red'};for(let i=0;i<25000;i++){rules=[[[[rules]]]]}export const card=css`${rules}`;";
     // When
     let output = extract_without_source_map("/heap-tag.css.ts", source, ExtractOption::default())
         .map_err(|error| error.to_string())?;
@@ -93,7 +97,7 @@ fn gate_boundaries_heap_deep_object_matches_flat_selector_at_default_stack() -> 
     reset_file_map();
     let source = concat!(
         "import{",
-        "css}from'@devup-ui/react';let rules={p:2};for(let i=0;i<100000;i++){rules={_hover:rules}}export const card=css(rules);"
+        "css}from'@devup-ui/react';let rules={p:2};for(let i=0;i<25000;i++){rules={_hover:{_hover:{_hover:{_hover:rules}}}}}export const card=css(rules);"
     );
     // When
     let output =

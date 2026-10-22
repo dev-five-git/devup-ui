@@ -48,7 +48,10 @@ fn deep_object_ignored_data_is_captured_without_nested_generated_syntax() -> Res
         "import{",
         "css}from'@devup-ui/react';export const card=css({p:2});"
     ))?;
-    let source = "import{css}from'@devup-ui/react';let data=1;for(let i=0;i<100000;i++){data={payload:data}}export const card=css({props:data,p:2});";
+    let source = concat!(
+        "import{css}from'@devup-ui/react';let data=1;for(let i=0;i<25000;i++){data={payload:{payload:{payload:{",
+        "payload:data}}}}}export const card=css({props:data,p:2});"
+    );
     // When
     let output = compile(source)?;
     // Then
@@ -127,9 +130,10 @@ fn deep_object_shallow_contexts_match_ordinary_compilation(
 #[rstest::rstest]
 #[case(concat!("let value={", "};value.self=value;css({props:value});"))]
 #[case("let value={};const a=[value];value.a=a;css(value);")]
-#[case(
-    "let value=()=>1;for(let i=0;i<100000;i++){value={payload:value}}try{css({props:value})}catch(e){}"
-)]
+#[case(concat!(
+    "let value=()=>1;for(let i=0;i<25000;i++){value={payload:{payload:{payload:{",
+    "payload:value}}}}}try{css({props:value})}catch(e){}"
+))]
 #[serial]
 fn deep_object_invalid_graphs_remain_terminal(#[case] body: &str) -> Result<(), String> {
     // Given
