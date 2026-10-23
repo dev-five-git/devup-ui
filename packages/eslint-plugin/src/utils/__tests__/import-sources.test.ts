@@ -41,6 +41,30 @@ function inspect(
 }
 
 describe('import sources', () => {
+  for (const use of ['css({w: 1})', 'styled(Base, {w: 1})'])
+    inspect(
+      `import { css, styled } from "@devup-ui/react";\n${use}`,
+      'page.tsx',
+      (storage, context) => {
+        const statement = context.sourceCode.ast.body[1]
+        if (
+          statement.type !== 'ExpressionStatement' ||
+          statement.expression.type !== 'CallExpression'
+        )
+          throw new Error('Expected a parsed style call')
+        const call = statement.expression
+        expect(styleValueSite(call.callee, storage)).toBeNull()
+        const rules = call.arguments.at(-1)
+        if (!rules) throw new Error('Expected a rules argument')
+        expect(styleValueSite(rules, storage)).toEqual({
+          root: call,
+          start: call,
+        })
+        if (call.arguments.length === 2)
+          expect(styleValueSite(call.arguments[0], storage)).toBeNull()
+      },
+    )
+
   inspect(
     [
       'import { css as a, Box as B, unknown as u } from "@devup-ui/react";',
