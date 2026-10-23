@@ -17,6 +17,14 @@ describe('no-useless-responsive rule', () => {
   ruleTester.run('no-useless-responsive rule', noUselessResponsive, {
     valid: [
       {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={([1] as const)} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { css } from "@devup-ui/react";\ncss({ w: active && [1] })',
+        filename: 'src/app/page.tsx',
+      },
+      {
         code: 'import { Box } from "@devup-ui/react";\n<Box w={1} />',
         filename: 'src/app/page.tsx',
       },
@@ -102,6 +110,13 @@ describe('no-useless-responsive rule', () => {
       })),
     ],
     invalid: [
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[1 as const]} />',
+        output:
+          'import { Box } from "@devup-ui/react";\n<Box w={1 as const} />',
+        filename: 'src/app/page.tsx',
+        errors: [{ messageId: 'uselessResponsive' }],
+      },
       {
         code: 'import { Box } from "@devup-ui/react";\n<Box icon={<Box w={[1]} />} m={[2]} />',
         output:
