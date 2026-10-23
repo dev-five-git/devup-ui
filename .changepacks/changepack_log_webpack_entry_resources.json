@@ -2,6 +2,6 @@
   "changes": {
     "packages/webpack-plugin/package.json": "Patch"
   },
-  "note": "Normalize Webpack entry loader requests before physical class-slot reservation, retaining bare packages and invalid-resource errors. No new build errors.",
+  "note": "Normalize Webpack entry loader requests before physical class-slot reservation, retaining bare packages and invalid-resource errors. Verify relocated public require/import entries use the installed source/source/CSS loaders and share the consumer WASM identity. No new build errors.",
   "date": "2026-10-21T00:00:00.000Z"
 }
