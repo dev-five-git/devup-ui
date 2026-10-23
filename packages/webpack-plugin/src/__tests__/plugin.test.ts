@@ -222,19 +222,25 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
   })
-  it('W66 default regressions: should apply default options', () => {
-    expect(new DevupUIWebpackPlugin({}).options).toEqual({
-      include: [],
-      package: '@devup-ui/react',
-      cssDir: resolve('df', 'devup-ui'),
-      devupFile: 'devup.json',
-      distDir: 'df',
-      watch: false,
-      debug: false,
-      singleCss: false,
-      atomHoist: 2,
-    })
-  })
+  it.each([true, false])(
+    'W66 default regressions: should apply default options (omitted: %s)',
+    (omitted) => {
+      const plugin = omitted
+        ? new DevupUIWebpackPlugin()
+        : new DevupUIWebpackPlugin({})
+      expect(plugin.options).toEqual({
+        include: [],
+        package: '@devup-ui/react',
+        cssDir: resolve('df', 'devup-ui'),
+        devupFile: 'devup.json',
+        distDir: 'df',
+        watch: false,
+        debug: false,
+        singleCss: false,
+        atomHoist: 2,
+      })
+    },
+  )
 
   it('also reserves at native watchRun when watch persistence is disabled', async () => {
     const manager = {
