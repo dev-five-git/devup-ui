@@ -38,7 +38,7 @@ where
 }
 
 #[inline]
-fn with_file_map_mut<F, R>(f: F) -> R
+pub(crate) fn with_file_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut BiHashMap<String, usize>) -> R,
 {
@@ -88,6 +88,7 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
         } else {
             let file_num = map.len();
             map.insert(filename.to_string(), file_num);
+            crate::slot_reservation::record_file(filename);
             crate::slot_reservation::record_insert();
             file_num
         }

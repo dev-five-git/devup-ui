@@ -1,15 +1,80 @@
 use crate::dead_properties_test_utils::{failure, position};
-use crate::{ExtractOption, ImportAlias, ResolvedModule, extract_with_modules};
+use crate::{ExtractOption, ImportAlias, ModuleResolution, ResolvedModule, extract_with_modules};
 use css::{class_map::reset_class_map, file_map::reset_file_map};
 use rstest::rstest;
 use serial_test::serial;
 
-fn resolver(specifier: &str, _: &str) -> Option<ResolvedModule> {
+#[test]
+#[serial]
+fn follows_barrel_when_root_and_child_have_explicit_compiled_languages()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: JSX precedes the re-export in a custom-extension compiled child.
+    let _state = crate::test_state::TestStateGuard::new();
+    let resolver = |_: &str, _: &str| {
+        Some(ModuleResolution::Resolved(ResolvedModule {
+            path: "/src/ui.mdown".to_string(),
+            code: "export const before = <div/>; export { Box } from '@devup-ui/react';"
+                .to_string(),
+            source_type: Some(crate::ExtractSourceType::CompiledMdx),
+        }))
+    };
+    // When: the root also keeps its real custom filename.
+    let output = crate::extract_with_source_type(
+        "/src/app.mdown",
+        "import * as UI from './ui'; export const before = <div/>; export const a = <UI.Box bg='red'/>;",
+        ExtractOption::default(),
+        true,
+        Some(&resolver),
+        Some(crate::ExtractSourceType::CompiledMdx),
+    )?;
+    // Then: the barrel use compiles and the map/dependency retain real identities.
+    assert!(!output.code.contains("<UI.Box"), "{}", output.code);
+    assert!(output.styles.iter().any(|style| matches!(style,
+        crate::ExtractStyleValue::Static(style) if style.property() == "background" && style.value() == "red"
+    )));
+    assert_eq!(output.dependencies, ["/src/ui.mdown"]);
+    assert!(output.map.is_some_and(|map| map.contains("/src/app.mdown")));
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn ignores_empty_reexport_when_barrel_also_reaches_package()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: an explicitly ignored re-export alongside a genuine Devup export.
+    let _state = crate::test_state::TestStateGuard::new();
+    let resolver = |specifier: &str, _: &str| match specifier {
+        "./ui" => Some(ModuleResolution::Resolved(ResolvedModule {
+            path: "/src/ui.ts".to_string(),
+            code: "export { Box } from '@devup-ui/react'; export { missing } from './ignored';"
+                .to_string(),
+            source_type: None,
+        })),
+        "./ignored" => Some(ModuleResolution::Ignored),
+        _ => None,
+    };
+    // When: both names are imported but only Box is a styling API.
+    let output = extract_with_modules(
+        "/src/app.tsx",
+        "import { Box, missing } from './ui'; export const a = <Box bg='red'/>; export const b = missing;",
+        ExtractOption::default(),
+        false,
+        &resolver,
+    )?;
+    // Then: ignore is not an unreadable-module fault or a watched file.
+    assert!(!output.code.contains("<Box"), "{}", output.code);
+    assert!(output.code.contains("missing"));
+    assert_eq!(output.dependencies, ["/src/ui.ts"]);
+    Ok(())
+}
+
+fn resolver(specifier: &str, _: &str) -> Option<ModuleResolution> {
     match specifier {
-        "./ui" => Some(ResolvedModule {
+        "./ui" => Some(ModuleResolution::Resolved(ResolvedModule {
             path: "/src/ui.ts".to_string(),
             code: "export { css, Box } from '@devup-ui/react';".to_string(),
-        }),
+            source_type: None,
+        })),
         _ => None,
     }
 }

@@ -19,14 +19,17 @@ export async function openAdapter({ adapter, worktree, root, files }) {
       const { DevupUI } = await import(entry('vite-plugin'))
       const [plugin, restore] = DevupUI(options)
       try {
+        const build = {
+          outDir: 'dist',
+          rollupOptions: {
+            input: files.slice(2).map((file) => join(root, file)),
+          },
+        }
         await plugin.configResolved({
           root,
           command: 'build',
-          build: {
-            rollupOptions: {
-              input: files.slice(2).map((file) => join(root, file)),
-            },
-          },
+          build,
+          environments: { client: { resolve: { conditions: [] }, build } },
         })
       } catch (error) {
         plugin.closeBundle()
@@ -34,7 +37,7 @@ export async function openAdapter({ adapter, worktree, root, files }) {
       }
       return {
         transform: async (file, code) => {
-          const result = await plugin.transform.call(
+          const result = await plugin.transform.handler.call(
             { addWatchFile() {} },
             code,
             join(root, file).replaceAll('\\', '/'),

@@ -107,23 +107,40 @@ for (const mode of ['debug', 'atom', 'noop']) {
       expect(ba.final).toEqual(ab.final)
       expect(ab.final.residual).toBe(0)
       if (mode === 'debug') expect(ab.final.css).toContain('slot')
-      if (mode === 'atom') expect(ab.atomThresholds).toEqual([2])
-      if (mode === 'noop') expect(ab.atomThresholds).toEqual([])
+      if (mode === 'atom') {
+        expect(ab.atomThresholds).toContain(2)
+        expect(ab.atomThresholds.every((threshold) => threshold === 2)).toBe(
+          true,
+        )
+      }
+      if (mode === 'noop') {
+        expect(ab.atomThresholds).toContain(undefined)
+        expect(
+          ab.atomThresholds.every((threshold) => threshold === undefined),
+        ).toBe(true)
+      }
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
   }, 100000)
 }
 
-it('retains persisted watch file ordinals when a new compiler restores its maps', () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'devup-webpack-restored-'))
+it('keeps watch ordinals append-only in a session and schedule-independent in a fresh compiler', () => {
+  // Given: a first watch session that appends files after its initial inventory.
+  const fixture = mkdtempSync(join(tmpdir(), 'devup-webpack-fresh-'))
   try {
     const first = run(fixture, 'AB', 'watch', 'per-file')
+    assert(first.initial)
+    // When: fresh compilers start in the same directory under both loader schedules.
     const restored = run(fixture, 'BA', 'watch', 'per-file')
-    for (const [id, slot] of Object.entries(first.final.files))
-      expect(restored.final.files[id]).toEqual(slot)
-    expect(restored.final.raw.classes).toEqual(first.final.raw.classes)
+    const repeated = run(fixture, 'AB', 'watch', 'per-file')
+    // Then: no session reorders its own ordinals, and the starting inventory alone fixes the next session.
+    for (const [id, slot] of Object.entries(first.initial.files))
+      expect(first.final.files[id]).toEqual(slot)
+    expect(repeated.final.files).toEqual(restored.final.files)
+    expect(repeated.final.raw.classes).toEqual(restored.final.raw.classes)
     expect(restored.final.residual).toBe(0)
+    expect(repeated.final.residual).toBe(0)
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }

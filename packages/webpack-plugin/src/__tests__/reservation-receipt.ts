@@ -47,7 +47,7 @@ export function parseReservationReceipt(text: string) {
     compilations: number(fields.compilations),
     entryCalls: number(fields.entryCalls),
     atomThresholds: fields.atomThresholds.map((value: unknown) =>
-      number(value),
+      value === null ? undefined : number(value),
     ),
     events: fields.events.map((value: unknown) => {
       assert(typeof value === 'string')

@@ -137,6 +137,7 @@ fn build(modules: &[Module], hoist: bool) -> Result<Snapshot, ExtractionError> {
             filename: module.path.clone(),
             code: module.source(),
             css_dir: "df".into(),
+            source_type: None,
         })
         .collect();
     inventory.sort_by(|a, b| a.filename.cmp(&b.filename));
@@ -153,6 +154,7 @@ fn build(modules: &[Module], hoist: bool) -> Result<Snapshot, ExtractionError> {
                 false,
                 true,
                 HashMap::new(),
+                None,
             )
             .map(|output| output.code())
             .map_err(|message| ExtractionError {

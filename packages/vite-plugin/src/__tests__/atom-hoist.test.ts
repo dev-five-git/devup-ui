@@ -10,12 +10,11 @@ it('emits real per-file fallback JSX atoms and private CSS in either transform o
   const setup = `
 const { DevupUI } = await import(${builtPluginEntry('vite-plugin')});
 const [plugin, restorePlugin] = DevupUI({ atomHoist: 2, cssDir, distDir: join(root, 'df') });
-await plugin.configResolved({ root, command: 'build', build: {
-  rollupOptions: { input: [join(root, files[1]), join(root, files[2])] },
-} });
+const build = { outDir: 'dist', rollupOptions: { input: [join(root, files[1]), join(root, files[2])] } };
+await plugin.configResolved({ root, command: 'build', build, environments: { client: { resolve: { conditions: [] }, build } } });
 const context = { addWatchFile() {} };
 const transform = async (file, code) => {
-  const result = await plugin.transform.call(context, code, join(root, file).replaceAll('\\\\', '/'));
+  const result = await plugin.transform.handler.call(context, code, join(root, file).replaceAll('\\\\', '/'));
   return result.code;
 };
 const loadCss = name => plugin.load(join(cssDir, name));

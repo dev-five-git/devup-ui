@@ -7,11 +7,14 @@ import type {
 import { collectReservationInputs } from './reservation-discovery'
 import type { WasmImportAliases } from './types'
 
-export type ReservationRow = readonly [
-  filename: string,
-  code: string,
-  cssDir: string,
-]
+export type ReservationRow =
+  | readonly [filename: string, code: string, cssDir: string]
+  | readonly [
+      filename: string,
+      code: string,
+      cssDir: string,
+      sourceType: import('./prepared-source').SourceType,
+    ]
 
 export interface ReservationEngine {
   reserveClassSlots(
@@ -65,8 +68,10 @@ function sameRows(
 ): boolean {
   return (
     current.length === previous.length &&
-    current.every((row, index) =>
-      row.every((value, field) => previous[index]?.[field] === value),
+    current.every(
+      (row, index) =>
+        row.length === previous[index]?.length &&
+        row.every((value, field) => previous[index]?.[field] === value),
     )
   )
 }
@@ -112,7 +117,15 @@ export function createSharedSlotReservation(
     reserve(discovery, options) {
       const inventory = collectReservationInputs(discovery)
       const rows: readonly ReservationRow[] = inventory.inputs.map(
-        (input) => [input.filename, input.code, options.cssDir(input)] as const,
+        (input): ReservationRow =>
+          input.sourceType === undefined
+            ? [input.filename, input.code, options.cssDir(input)]
+            : [
+                input.filename,
+                input.code,
+                options.cssDir(input),
+                input.sourceType,
+              ],
       )
       if (
         !dirty &&

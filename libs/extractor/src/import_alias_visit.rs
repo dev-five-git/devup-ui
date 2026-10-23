@@ -26,9 +26,7 @@ use oxc_ast_visit::{
     walk::{walk_call_expression, walk_jsx_element, walk_jsx_opening_element},
 };
 use oxc_parser::Parser;
-use oxc_span::GetSpan;
-#[cfg(test)]
-use oxc_span::SourceType;
+use oxc_span::{GetSpan, SourceType};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -448,7 +446,14 @@ pub fn transform_import_aliases<'a>(
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
 ) -> Cow<'a, str> {
-    transform_import_aliases_with_edits(code, filename, package, import_aliases).code
+    transform_import_aliases_with_edits(
+        code,
+        filename,
+        package,
+        import_aliases,
+        crate::parser_source_type(filename).unwrap_or_default(),
+    )
+    .code
 }
 
 /// What rewriting aliased imports gives
@@ -478,7 +483,7 @@ const VANILLA_EXTRACT_COMPANIONS: [&str; 2] =
 /// The value imports of vanilla-extract's companion packages, as errors at
 /// their offsets: while `@vanilla-extract/css` compiles to Devup UI, the
 /// rules they generate would never reach the stylesheet
-pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
+pub fn companion_errors(code: &str, source_type: SourceType) -> Vec<(u32, String)> {
     if !VANILLA_EXTRACT_COMPANIONS
         .iter()
         .any(|package| code.contains(package))
@@ -486,7 +491,6 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         return Vec::new();
     }
     let allocator = Allocator::default();
-    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
     program
         .body
@@ -529,6 +533,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
+    source_type: oxc_span::SourceType,
 ) -> Aliased<'a> {
     let unchanged = |css_prop, px| Aliased {
         code: Cow::Borrowed(code),
@@ -548,7 +553,6 @@ pub fn transform_import_aliases_with_edits<'a>(
     }
 
     let allocator = Allocator::default();
-    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
 
     // Parse the code
     let parser_ret = Parser::new(&allocator, code, source_type).parse();
@@ -722,11 +726,10 @@ pub fn transform_import_aliases_with_edits<'a>(
 /// Reapply Emotion units to literals produced after the initial alias pass.
 pub(super) fn pixelify_emotion_values<'a>(
     code: &'a str,
-    filename: &str,
+    source_type: SourceType,
     original: &str,
 ) -> (Cow<'a, str>, Vec<Edit>) {
     let allocator = Allocator::default();
-    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let original_program = Parser::new(&allocator, original, source_type)
         .parse()
         .program;
@@ -1024,7 +1027,7 @@ mod tests {
     use super::*;
     use insta::assert_snapshot;
     use oxc_ast::builder::AstBuilder;
-    use oxc_span::SPAN;
+    use oxc_span::{SPAN, SourceType};
 
     fn emotion_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
@@ -1251,7 +1254,7 @@ css({ background: ['red', 'linear-gradient(red, blue)'], WebkitBoxShadow: ['none
 import { recipe } from '@vanilla-extract/recipes'
 import { style } from '@vanilla-extract/css'
 import { createSprinkles } from '@vanilla-extract/sprinkles'",
-            "a.css.ts",
+            SourceType::ts(),
         );
         assert_eq!(errors.len(), 2, "{errors:?}");
         assert!(
@@ -1265,8 +1268,27 @@ import { createSprinkles } from '@vanilla-extract/sprinkles'",
                 .starts_with("`@vanilla-extract/sprinkles` generates CSS")
         );
         assert_eq!(
-            companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
+            companion_errors(
+                "import { style } from '@vanilla-extract/css'",
+                SourceType::ts()
+            ),
             vec![]
+        );
+    }
+
+    #[test]
+    fn companions_after_jsx_are_reported_when_the_effective_grammar_is_compiled_output() {
+        // Given: compiler output whose JSX precedes a companion import.
+        let source = "export const view=<div/>;\nimport {recipe} from '@vanilla-extract/recipes';";
+        // When: companion detection receives the selected JSX grammar.
+        let errors = companion_errors(source, SourceType::jsx());
+        // Then: the diagnostic points to the authored import rather than skipping it.
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            usize::try_from(errors[0].0).unwrap_or_else(|error| panic!("{error}")),
+            source
+                .find("import ")
+                .unwrap_or_else(|| panic!("missing companion import")),
         );
     }
 
@@ -1628,7 +1650,13 @@ const x = 1;",
         .iter()
         .map(|code| {
             let aliased =
-                transform_import_aliases_with_edits(code, "test.tsx", "@devup-ui/react", &aliases);
+                transform_import_aliases_with_edits(
+            code,
+            "test.tsx",
+            "@devup-ui/react",
+            &aliases,
+            oxc_span::SourceType::tsx(),
+        );
             (aliased.code.into_owned(), aliased.css_prop)
         })
         .collect();
@@ -1639,6 +1667,7 @@ const x = 1;",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias(),
+            oxc_span::SourceType::tsx(),
         );
         assert_eq!(without_css_prop.css_prop, CssProp::Off);
         assert!(matches!(without_css_prop.code, Cow::Borrowed(_)));
@@ -1672,7 +1701,13 @@ const x = 1;",
         .iter()
         .map(|(filename, code)| {
             let aliased =
-                transform_import_aliases_with_edits(code, filename, "@devup-ui/react", &aliases);
+                transform_import_aliases_with_edits(
+            code,
+            filename,
+            "@devup-ui/react",
+            &aliases,
+            crate::parser_source_type(filename).unwrap_or_default(),
+        );
             (aliased.code.into_owned(), aliased.css_prop, aliased.edits)
         })
         .collect();
@@ -1686,6 +1721,7 @@ const x = 1;",
                 crate::css_prop::EMOTION_JSX_RUNTIME.to_string(),
                 ImportAlias::NamedToNamed,
             )]),
+            oxc_span::SourceType::tsx(),
         );
         assert_eq!(runtime_alone.css_prop, CssProp::Off);
         assert!(matches!(runtime_alone.code, Cow::Borrowed(_)));

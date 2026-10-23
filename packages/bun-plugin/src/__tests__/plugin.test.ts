@@ -1,237 +1,368 @@
-import * as fs from 'node:fs'
-import { tmpdir } from 'node:os'
-import * as nodePath from 'node:path'
+import { readFileSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  spyOn,
-} from 'bun:test'
+import { getCss, setDebug, setModuleResolver } from '@devup-ui/wasm'
+import { expect, it, mock, spyOn } from 'bun:test'
 
-import { bunRegistration } from '../../../../bun.setup'
-import { DevupUI, register } from '../plugin'
-import { captureBunHooks } from './captured-hooks.test-support'
+import { cssNamespace } from '../css-id'
+import { fixture, sourceContents } from './callback-fixture.test'
 
-const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-bun-hooks-'))
-const scopedRoot = join(root, '@devup-ui/fixture')
-fs.mkdirSync(scopedRoot, { recursive: true })
-const realPlugin = Bun.plugin
-const realExists = fs.existsSync
-const realResolve = nodePath.resolve
-let hooks: ReturnType<typeof captureBunHooks>
-let loads: typeof hooks.loads
-let resolves: typeof hooks.resolves
-let exists: typeof hooks.exists
-let readConfig: typeof hooks.readConfig
-let write: typeof hooks.write
-let writeSync: typeof hooks.writeSync
-let mkdir: typeof hooks.mkdir
-
-beforeEach(() => {
-  hooks = captureBunHooks()
-  ;({ loads, resolves, exists, readConfig, write, writeSync, mkdir } = hooks)
-})
-
-afterEach(async () => {
-  await hooks.cleanup()
-})
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
-
-async function load(path: string, namespace = 'file') {
-  const hook = loads.find(
-    ({ options }) =>
-      (options.namespace ?? 'file') === namespace && options.filter.test(path),
-  )
-  if (!hook) throw new Error(`No load hook for ${path}`)
-  return hook.callback({
-    path,
-    namespace,
-    loader: 'file',
-    defer: async () => {},
-  })
-}
-
-describe('registered Bun hooks', () => {
-  it('seeds readable names from physical inputs before runtime source loads', async () => {
-    const file = join(root, 'numbered.tsx')
-    await Bun.write(
-      file,
-      "import {Box} from '@devup-ui/react'; export const view=<Box color='purple'/>",
+it.each([undefined, 'code', 'dependencies', 'acquire'])(
+  'releases Bun Output after needed getters when fault %s occurs',
+  async (fault) => {
+    const f = fixture()
+    const path = f.write(
+      'src/style.ts',
+      "import {css} from '@devup-ui/react'; export const cls=css({bg:'red'})",
     )
-    exists.mockImplementation(realExists)
-    const resolve = spyOn(nodePath, 'resolve').mockImplementation((...paths) =>
-      paths.length === 1 && paths[0] === 'src' ? root : realResolve(...paths),
-    )
+    const dependency = f.write('src/token.ts', 'export const token=1')
+    const events: string[] = []
+    const error = new Error('ownership fault')
+    let live = true
+    const free = mock(() => {
+      expect(live).toBe(true)
+      live = false
+      events.push('free')
+    })
+    const output = {
+      get code() {
+        expect(live).toBe(true)
+        events.push('code')
+        if (fault === 'code') throw error
+        return 'export const cls="copied"'
+      },
+      get dependencies() {
+        expect(live).toBe(true)
+        events.push('dependencies')
+        if (fault === 'dependencies') throw error
+        return [dependency]
+      },
+      get css(): never {
+        throw new Error('unneeded css getter')
+      },
+      get map(): never {
+        throw new Error('unneeded map getter')
+      },
+      get cssFile(): never {
+        throw new Error('unneeded cssFile getter')
+      },
+      get updatedBaseStyle(): never {
+        throw new Error('unneeded updatedBaseStyle getter')
+      },
+      free,
+      [Symbol.dispose]: free,
+    }
+    await f.setup()
+    const extract = spyOn(wasm, 'codeExtract').mockImplementation(() => {
+      if (fault === 'acquire') throw error
+      return output
+    })
     try {
-      await register()
-      expect(Object.keys(JSON.parse(wasm.exportFileMap()))).toContain(file)
-      expect(wasm.isDebug()).toBe(true)
+      const run = f.load(path)
+      if (fault) await expect(run).rejects.toMatchObject({ cause: error })
+      else {
+        const code = sourceContents(await run)
+        expect(code).toContain('copied')
+        expect(code).toContain('token.ts')
+      }
+      const fields = ['code', 'dependencies']
+      expect(events).toEqual(
+        fault === 'acquire'
+          ? []
+          : [
+              ...fields.slice(
+                0,
+                fault ? fields.indexOf(fault) + 1 : fields.length,
+              ),
+              'free',
+            ],
+      )
+      expect(free).toHaveBeenCalledTimes(fault === 'acquire' ? 0 : 1)
     } finally {
-      resolve.mockRestore()
+      extract.mockRestore()
+      await f.cleanup()
     }
-  })
+  },
+)
 
-  it('retains native registration and clearAll identity', () => {
-    expect(Bun.plugin).toBe(realPlugin)
-    expect(bunRegistration.clearAll).toBe(realPlugin.clearAll)
-  })
-
-  it('reserves short runtime names during awaited setup', async () => {
-    await register({ debug: false })
-    expect(wasm.isDebug()).toBe(false)
-    expect(loads.length).toBe(2)
-  })
-
-  it('leaves invalid JavaScript to the native loader after scanning fails', async () => {
-    const path = join(root, 'malformed.ts')
-    const source = 'import {'
-    await Bun.write(path, source)
-    await register()
-    expect(await load(path)).toEqual({ contents: source, loader: 'ts' })
-    expect(writeSync).not.toHaveBeenCalled()
-  })
-
-  it('awaits real build setup and deferred CSS through two native build lifecycles', async () => {
-    const entry = join(root, 'bundle.tsx')
-    await Bun.write(
-      entry,
-      "import {Box} from '@devup-ui/react'; export const view=<Box color='tomato'/>;",
+it('writes theme declarations and CSS when setup creates project directories', async () => {
+  const f = fixture()
+  f.write(
+    'devup.json',
+    '{"theme":{"colors":{"default":{"primary":"#abcdef"}}}}',
+  )
+  try {
+    await f.setup({ shorthands: { insetX: ['left', 'right'] } })
+    expect(readFileSync(join(f.root, 'df/theme.d.ts'), 'utf8')).toContain(
+      'primary',
     )
-    const outputs: string[][] = []
-    for (let round = 0; round < 2; round += 1) {
-      const result = await Bun.build({
-        entrypoints: [entry],
-        target: 'bun',
-        external: ['react/jsx-dev-runtime', 'react/jsx-runtime'],
-        outdir: join(root, 'out'),
-        plugins: [DevupUI()],
-      })
-      expect(result.success).toBe(true)
-      expect(result.logs).toEqual([])
-      const css = await Promise.all(
-        result.outputs
-          .filter((output) => output.path.endsWith('.css'))
-          .map((output) => output.text()),
-      )
-      expect(css.join('')).toMatch(/color:\s*tomato/)
-      outputs.push(css)
-    }
-    expect(outputs[1]).toEqual(outputs[0])
-    expect(writeSync).not.toHaveBeenCalled()
-  })
-
-  it('creates cold directories before writing configuration and CSS', async () => {
-    await register()
-    expect(mkdir).toHaveBeenCalledWith('df', { recursive: true })
-    expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('devup-ui'), {
-      recursive: true,
-    })
-    expect(write).toHaveBeenCalledWith(
-      join('df', 'theme.d.ts'),
-      expect.any(String),
-      'utf-8',
+    expect(readFileSync(join(f.root, 'df/theme.d.ts'), 'utf8')).toContain(
+      'insetX',
     )
-    expect(wasm.isDebug()).toBe(true)
-  })
-
-  it('loads the configured theme through the public registration API', async () => {
-    exists.mockReturnValue(true)
-    readConfig.mockResolvedValue(
-      '{"theme":{"colors":{"default":{"primary":"#123456"}}}}',
+    expect(readFileSync(join(f.root, 'df/compat.d.ts'), 'utf8')).toContain(
+      '@devup-ui/react/compat/emotion',
     )
-    await register()
-    expect(wasm.getCss(null, false)).toContain('#123456')
-    expect(mkdir).not.toHaveBeenCalled()
-  })
-
-  it('registers an empty theme when reading configuration fails', async () => {
-    exists.mockReturnValue(true)
-    readConfig.mockRejectedValue(new Error('unreadable fixture config'))
-    await register()
-    expect(wasm.getDefaultTheme()).toBeUndefined()
-  })
-
-  it('resolves generated stylesheets and loads their runtime placeholder', async () => {
-    await register()
-    const resolve = resolves[0]
-    if (!resolve) throw new Error('No CSS resolver registered')
-    const result = await resolve({
-      path: './df/devup-ui/devup-ui.css',
-      importer: join(process.cwd(), 'entry.tsx'),
-      namespace: 'file',
-      kind: 'import-statement',
-      resolveDir: process.cwd(),
-    })
-    if (!result?.namespace || !result.path)
-      throw new Error('Expected virtual CSS resolution')
-    expect(await load(result.path, result.namespace)).toEqual({
-      contents: '',
-      loader: 'js',
-    })
-  })
-
-  for (const [extension, loader] of [
-    ['tsx', 'tsx'],
-    ['ts', 'ts'],
-    ['jsx', 'jsx'],
-    ['mjs', 'js'],
-    ['js', 'js'],
-  ] as const) {
-    it(`compiles a ${extension} source through the captured onLoad callback`, async () => {
-      const source =
-        extension === 'tsx' || extension === 'jsx'
-          ? "import { Box } from '@devup-ui/react'; export const view = <Box bg='red' />"
-          : "import { css } from '@devup-ui/react'; export const className = css({ color: 'red' })"
-      const path = join(
-        extension === 'js' ? scopedRoot : root,
-        `source.${extension}`,
-      )
-      await Bun.write(path, source)
-      await register()
-      const result = await load(path)
-      if (!result || !('contents' in result))
-        throw new Error('Expected transformed source contents')
-      expect(result?.loader).toBe(loader)
-      expect(result.contents).not.toContain(
-        extension === 'tsx' || extension === 'jsx' ? '<Box' : 'css(',
-      )
-      expect(writeSync).toHaveBeenCalledWith(
-        expect.stringContaining('devup-ui.css'),
-        expect.stringContaining('red'),
-        'utf-8',
-      )
-    })
+    expect(readFileSync(join(f.root, 'df/.gitignore'), 'utf8')).toBe('*')
+    expect(
+      readFileSync(
+        join(f.root, 'df/devup-ui/devup-ui.css'),
+        'utf8',
+      ).toLowerCase(),
+    ).toContain('#abcdef')
+  } finally {
+    await f.cleanup()
   }
+})
 
-  it('returns source without style imports unchanged', async () => {
-    const path = join(root, 'plain.ts')
-    await Bun.write(path, 'export const value = 42')
-    await register()
-    expect(await load(path)).toEqual({
-      contents: 'export const value = 42',
+it('overwrites stale declarations when configuration has no theme and directories exist', async () => {
+  const f = fixture()
+  f.write('devup.json', '{}')
+  f.write('df/theme.d.ts', 'stale-theme')
+  f.write('df/devup-ui/devup-ui.css', 'stale-css')
+  try {
+    await f.setup()
+    expect(readFileSync(join(f.root, 'df/theme.d.ts'), 'utf8')).not.toContain(
+      'stale-theme',
+    )
+    expect(
+      readFileSync(join(f.root, 'df/devup-ui/devup-ui.css'), 'utf8'),
+    ).not.toContain('stale-css')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it.each([false, true])(
+  'registers root-relative Tailwind under the actual Bun owner when bundling is %s',
+  async (bundling) => {
+    const f = fixture()
+    f.write(
+      'config/devup.json',
+      JSON.stringify({
+        theme: { colors: { default: { primary: '#abcdef' } } },
+        tailwind: { css: 'styles/tailwind.css' },
+      }),
+    )
+    f.write('styles/tailwind.css', '@import "./tokens.css";')
+    f.write('styles/tokens.css', '@theme { --color-brand: #0af; }')
+    const register = spyOn(wasm, 'registerTheme')
+    try {
+      await f.setup(
+        { devupFile: 'config/devup.json' },
+        bundling ? { root: f.root, entrypoints: [], plugins: [] } : undefined,
+      )
+      expect(register).toHaveBeenCalledWith({
+        colors: { default: { primary: '#abcdef' } },
+        tailwindCss: '@theme { --color-brand: #0af; }',
+      })
+    } finally {
+      register.mockRestore()
+      await f.cleanup()
+    }
+  },
+)
+
+it.each([
+  ['@vanilla-extract/recipes', 'recipe', false],
+  ['@vanilla-extract/recipes', 'recipe', true],
+  ['@vanilla-extract/sprinkles', 'createSprinkles', false],
+  ['@vanilla-extract/sprinkles', 'createSprinkles', true],
+] as const)(
+  'routes %s-only %s source to extractor diagnostics when bundling is %s',
+  async (name, binding, bundling) => {
+    const f = fixture()
+    const code = `import { ${binding} } from '${name}'; export const value = ${binding}({})`
+    const path = f.write('src/companion.ts', code)
+    const diagnostic = new Error(`${path}:1:1: unsupported companion ${name}`)
+    try {
+      await f.setup(
+        {},
+        bundling
+          ? { root: f.root, entrypoints: [path], plugins: [] }
+          : undefined,
+      )
+      const extract = spyOn(wasm, 'codeExtract').mockImplementation(() => {
+        throw diagnostic
+      })
+      try {
+        await expect(f.load(path)).rejects.toMatchObject({
+          message: diagnostic.message,
+          cause: diagnostic,
+        })
+        expect(extract).toHaveBeenCalledTimes(1)
+      } finally {
+        extract.mockRestore()
+      }
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
+
+it.each(['@vanilla-extract/recipes', '@vanilla-extract/sprinkles'])(
+  'passes type-only %s through without invoking native diagnostics',
+  async (name) => {
+    const f = fixture()
+    const code = `import type { Options } from '${name}'; export type Value = Options`
+    const path = f.write('src/companion-types.ts', code)
+    try {
+      await f.setup({}, { root: f.root, entrypoints: [path], plugins: [] })
+      const extract = spyOn(wasm, 'codeExtract')
+      try {
+        expect(sourceContents(await f.load(path))).toBe(code)
+        expect(extract).not.toHaveBeenCalled()
+      } finally {
+        extract.mockRestore()
+      }
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
+
+it('publishes changed CSS synchronously but leaves identical revisions untouched', async () => {
+  const f = fixture()
+  const path = f.write(
+    'src/style.ts',
+    "import { css } from '@devup-ui/react'; export const cls = css({ width: '719px' })",
+  )
+  const tokens = f.write('src/tokens.ts', "export const width = '727px'")
+  const plain = f.write('src/plain.ts', 'export const value = 1')
+  try {
+    await f.setup()
+    const result = await f.load(path)
+    expect(sourceContents(result)).not.toContain('@devup-ui/react')
+    const cssPath = join(f.root, 'df/devup-ui/devup-ui.css')
+    expect(readFileSync(cssPath, 'utf8')).toContain('width:719px')
+    utimesSync(cssPath, 1, 1)
+    const before = statSync(cssPath).mtimeMs
+    await f.load(path)
+    expect(statSync(cssPath).mtimeMs).toBe(before)
+    expect(
+      f.loads
+        .find((h) => !h.constraints.namespace)
+        ?.constraints.filter.test(tokens),
+    ).toBe(false)
+    expect(
+      f.loads
+        .find((h) => !h.constraints.namespace)
+        ?.constraints.filter.test(plain),
+    ).toBe(false)
+    expect(
+      await f.load('devup-ui.css', cssNamespace, () => {
+        throw new Error('Runtime must not defer')
+      }),
+    ).toEqual({ contents: '', loader: 'js' })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it('preserves compile-time dependency imports and restores debug/resolver before extraction', async () => {
+  const f = fixture()
+  f.write('src/tokens.ts', "export const width = '733px'")
+  const path = f.write(
+    'src/style.ts',
+    "import { style } from '@vanilla-extract/css'; import { width } from './tokens'; export const cls = style({ width })",
+  )
+  try {
+    await f.setup({ debug: true })
+    setDebug(false)
+    setModuleResolver(() => ({
+      path: join(f.root, 'wrong.ts'),
+      code: "export const width = '999px'",
+    }))
+    const code = sourceContents(await f.load(path))
+    expect(code).toContain('733px')
+    expect(code).toContain('tokens.ts')
+    expect(getCss(null, false)).toContain('width:733px')
+    expect(getCss(null, false)).not.toContain('999px')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it('defers bundled CSS until source callbacks complete and does not publish it to disk', async () => {
+  const f = fixture()
+  const path = f.write(
+    'style.ts',
+    "import { css } from '@devup-ui/react'; export const cls = css({ width: '739px' })",
+  )
+  try {
+    await f.setup({}, { entrypoints: [path], root: f.root, plugins: [] })
+    const initial = readFileSync(
+      join(f.root, 'df/devup-ui/devup-ui.css'),
+      'utf8',
+    )
+    const defer = spyOn(
+      {
+        async run() {
+          await f.load(path)
+        },
+      },
+      'run',
+    )
+    const css = await f.load('devup-ui.css', cssNamespace, defer)
+    expect(defer).toHaveBeenCalledTimes(1)
+    expect(sourceContents(css)).toContain('739px')
+    expect(readFileSync(join(f.root, 'df/devup-ui/devup-ui.css'), 'utf8')).toBe(
+      initial,
+    )
+    const resolve = f.resolves[0]
+    if (!resolve) throw new Error('Expected CSS resolver')
+    expect(
+      await resolve.callback({
+        path: './df/devup-ui/devup-ui.css',
+        importer: path,
+        namespace: 'file',
+        resolveDir: f.root,
+        kind: 'import-statement',
+      }),
+    ).toEqual({ path: 'devup-ui.css', namespace: cssNamespace })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+it('passes ordinary modules through the bundler source callback', async () => {
+  const f = fixture()
+  const path = f.write('plain.mts', 'export const value = 1')
+  try {
+    await f.setup({}, { entrypoints: [path], plugins: [] })
+    expect(await f.load(path)).toEqual({
+      contents: 'export const value = 1',
       loader: 'ts',
     })
-    expect(writeSync).not.toHaveBeenCalled()
-  })
+  } finally {
+    await f.cleanup()
+  }
+})
 
-  it('propagates source read errors instead of returning partial output', async () => {
-    await register()
-    await expect(load(join(root, 'missing.ts'))).rejects.toThrow()
-  })
+it.each(['{', '{"extends":["./devup.json"]}'])(
+  'rejects malformed configuration %s instead of silently registering an empty theme',
+  async (config) => {
+    const f = fixture()
+    f.write('devup.json', config)
+    try {
+      await expect(f.setup()).rejects.toThrow(join(f.root, 'devup.json'))
+    } finally {
+      await f.cleanup()
+    }
+  },
+)
 
-  it('propagates build errors through the actual callback', async () => {
-    const path = join(root, 'invalid.ts')
-    await Bun.write(
-      path,
-      "import { css } from '@devup-ui/react'; export const styles = css({ color: window.name })",
-    )
-    await register()
-    await expect(load(path)).rejects.toThrow(/invalid\.ts:\d+:\d+:/)
-  })
+it('propagates source read and extraction errors', async () => {
+  const f = fixture()
+  const path = f.write(
+    'bad.ts',
+    "import { css } from '@devup-ui/react'; export const cls = css({ width: unknownWidth })",
+  )
+  try {
+    await f.setup({}, { entrypoints: [path], plugins: [] })
+    await expect(f.load(join(f.root, 'missing.ts'))).rejects.toThrow('ENOENT')
+    await expect(f.load(path)).rejects.toThrow('bad.ts:')
+  } finally {
+    await f.cleanup()
+  }
 })

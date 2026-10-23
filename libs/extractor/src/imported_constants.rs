@@ -15,7 +15,10 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{GetSpan, SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN};
+#[cfg(test)]
+#[path = "imported_source_type_tests.rs"]
+mod source_type_tests;
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -28,7 +31,10 @@ use crate::extractor::extract_style_from_expression::{
     LiteralHandling, extract_style_from_expression,
 };
 use crate::stylex::StylexFunction;
-use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
+use crate::{ExtractOption, ExtractStyleValue, ModuleResolution, ModuleResolver};
+
+mod exports;
+use exports::Exports;
 
 #[cfg(test)]
 #[path = "imported_constants_px_tests.rs"]
@@ -48,6 +54,8 @@ enum Constant {
     Object(Rc<FxHashMap<String, Constant>>),
     /// An object literal every property of which is known, in source order
     Record(Rc<Vec<(String, Constant)>>),
+    /// An ignored module's empty `CommonJS` object, with ordinary prototype reads
+    IgnoredObject,
     Array(Rc<Vec<Constant>>),
     /// `StyleX` custom properties by key, which read as their `var()`
     Vars(Rc<FxHashMap<String, String>>),
@@ -103,6 +111,7 @@ impl Constant {
             | Self::Null
             | Self::Bool(_)
             | Self::Undefined
+            | Self::IgnoredObject
             | Self::Function
             | Self::Vars(_)
             | Self::Theme(_)
@@ -112,7 +121,10 @@ impl Constant {
     }
     /// Whether code can change what it holds
     const fn is_mutable(&self) -> bool {
-        matches!(self, Self::Object(_) | Self::Record(_) | Self::Array(_))
+        matches!(
+            self,
+            Self::Object(_) | Self::Record(_) | Self::IgnoredObject | Self::Array(_)
+        )
     }
 
     /// Whether this value or one it holds is a function
@@ -133,7 +145,8 @@ impl Constant {
             Self::Number(number) => Some(crate::utils::js_number_string(*number)),
             Self::Null => Some("null".to_string()),
             Self::Bool(value) => Some(value.to_string()),
-            Self::Undefined => Some("undefined".to_string()),
+            Self::Undefined => Some("(void 0)".to_string()),
+            Self::IgnoredObject => Some("({})".to_string()),
             Self::Record(entries) => {
                 let mut properties = Vec::with_capacity(entries.len());
                 for (key, value) in entries.iter() {
@@ -584,7 +597,11 @@ pub(crate) fn inline_constants<'a>(
         }
         (scoping, reads_math)
     };
-    inlined.dependencies = modules.exports.into_keys().collect();
+    inlined.dependencies = modules
+        .exports
+        .into_keys()
+        .map(|(path, _, _)| path)
+        .collect();
     if !symbols.is_empty() || reads_math {
         Inline {
             ast_builder,
@@ -669,7 +686,12 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
 
     /// The modules read for the values of imports
     pub(crate) fn dependencies(&self) -> BTreeSet<String> {
-        self.modules.borrow().exports.keys().cloned().collect()
+        self.modules
+            .borrow()
+            .exports
+            .keys()
+            .map(|(path, _, _)| path.clone())
+            .collect()
     }
 
     pub(crate) fn is_changed(&self, name: &str) -> bool {
@@ -880,46 +902,50 @@ pub(crate) fn jsx_root<'n>(name: &'n JSXElementName<'_>) -> Option<&'n str> {
 
 /// The constant exports of the modules read, by path
 struct Modules<'r> {
-    resolver: Option<&'r ModuleResolver>,
+    resolver: Option<&'r ModuleResolver<'r>>,
     option: &'r ExtractOption,
-    exports: FxHashMap<String, Rc<FxHashMap<String, Constant>>>,
+    exports: FxHashMap<crate::source_type::ModuleCacheKey, Rc<FxHashMap<String, Constant>>>,
     loading: Vec<String>,
 }
 
 impl Modules<'_> {
-    fn exports(
-        &mut self,
-        specifier: &str,
-        importer: &str,
-    ) -> Option<Rc<FxHashMap<String, Constant>>> {
+    fn exports(&mut self, specifier: &str, importer: &str) -> Option<Exports> {
         self.resolve_exports(specifier, importer).ok()
     }
 
-    fn resolve_exports(
-        &mut self,
-        specifier: &str,
-        importer: &str,
-    ) -> Result<Rc<FxHashMap<String, Constant>>, ChainReason> {
+    fn resolve_exports(&mut self, specifier: &str, importer: &str) -> Result<Exports, ChainReason> {
         let module = self
             .resolver
             .and_then(|resolver| resolver(specifier, importer))
             .ok_or_else(|| ChainReason::Module(specifier.to_string()))?;
-        if let Some(exports) = self.exports.get(&module.path) {
-            return Ok(exports.clone());
+        let module = match module {
+            ModuleResolution::Ignored => return Ok(Exports::Ignored),
+            ModuleResolution::Resolved(module) => module,
+        };
+        let key = (module.path.clone(), module.code.clone(), module.source_type);
+        if let Some(exports) = self.exports.get(&key) {
+            return Ok(Exports::Partial(exports.clone()));
         }
         if self.loading.contains(&module.path) {
             return Err(ChainReason::Cycle);
         }
         self.loading.push(module.path.clone());
-        let exports = Rc::new(self.read(&module.path, &module.code));
+        let exports = Rc::new(self.read(&module.path, &module.code, module.source_type));
         self.loading.pop();
-        self.exports.insert(module.path, exports.clone());
-        Ok(exports)
+        self.exports.insert(key, exports.clone());
+        Ok(Exports::Partial(exports))
     }
 
-    fn read(&mut self, path: &str, code: &str) -> FxHashMap<String, Constant> {
+    fn read(
+        &mut self,
+        path: &str,
+        code: &str,
+        mode: Option<crate::ExtractSourceType>,
+    ) -> FxHashMap<String, Constant> {
         let allocator = Allocator::default();
-        let source_type = crate::parsing::source_type(path).unwrap_or_else(|_| SourceType::ts());
+        let Ok(source_type) = crate::source_type::parser_type(path, mode) else {
+            return FxHashMap::default();
+        };
         let program = Parser::new(&allocator, code, source_type).parse().program;
         let mut scope = ModuleScope::new(path, &program, Some(code));
         let mut exports = FxHashMap::default();
@@ -963,7 +989,7 @@ impl Modules<'_> {
                     for specifier in &export.specifiers {
                         let name = specifier.local.name();
                         let constant = match &from {
-                            Ok(from) => from.get(name.as_str()).cloned().unwrap_or_else(|| {
+                            Ok(from) => from.named(name.as_str()).unwrap_or_else(|| {
                                 Constant::Unavailable(ChainReason::Export(name.to_string()))
                             }),
                             Err(reason) => Constant::Unavailable(reason.clone()),
@@ -975,10 +1001,10 @@ impl Modules<'_> {
                     if let Some(from) = self.exports(&export.source.value, path) {
                         match &export.exported {
                             Some(exported) => {
-                                exports.insert(exported.name().to_string(), Constant::Object(from));
+                                exports.insert(exported.name().to_string(), from.namespace());
                             }
                             None => {
-                                for (name, constant) in from.iter() {
+                                for (name, constant) in from.entries() {
                                     if name != "default" {
                                         exports
                                             .entry(name.clone())
@@ -1348,8 +1374,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             self.uses = Some(uses.clone());
             uses
         };
-        let namespace = matches!(self.imports.get(name), Some((_, Imported::Namespace)));
         let value = self.lookup_raw(modules, name);
+        let namespace = matches!(self.imports.get(name), Some((_, Imported::Namespace)))
+            && !matches!(value, Some(Constant::IgnoredObject));
         let mut change = None;
         for found in uses.get(name).into_iter().flatten() {
             change = match found {
@@ -1537,11 +1564,11 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             Err(reason) => return self.resolving_css.then_some(Constant::Unavailable(reason)),
         };
         match imported {
-            Imported::Named(export) => exports.get(export).cloned().or_else(|| {
+            Imported::Named(export) => exports.named(export).or_else(|| {
                 self.resolving_css
                     .then(|| Constant::Unavailable(ChainReason::Export(export.clone())))
             }),
-            Imported::Namespace => Some(Constant::Object(exports)),
+            Imported::Namespace => Some(exports.namespace()),
         }
     }
 
@@ -1745,6 +1772,18 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 member.property.name.as_str(),
             ),
             Expression::CallExpression(call) => match &call.callee {
+                Expression::Identifier(callee)
+                    if callee.name == "require" && !self.binds("require") =>
+                {
+                    let [Argument::StringLiteral(source)] = call.arguments.as_slice() else {
+                        return None;
+                    };
+                    Some(
+                        modules
+                            .exports(source.value.as_str(), self.path)?
+                            .namespace(),
+                    )
+                }
                 Expression::StaticMemberExpression(callee)
                     if self.is_global_math(&callee.object) =>
                 {
@@ -1801,12 +1840,15 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     (key, value)
                 }
                 ObjectPropertyKind::SpreadProperty(spread) => {
-                    if let Some(Constant::Record(spread)) = self.evaluate(modules, &spread.argument)
-                    {
-                        for (key, value) in spread.iter() {
-                            set_entry(&mut entries, key.clone(), value.clone());
+                    match self.evaluate(modules, &spread.argument) {
+                        Some(Constant::IgnoredObject) => continue,
+                        Some(Constant::Record(spread)) => {
+                            for (key, value) in spread.iter() {
+                                set_entry(&mut entries, key.clone(), value.clone());
+                            }
+                            continue;
                         }
-                        continue;
+                        _ => {}
                     }
                     (None, None)
                 }
@@ -1862,6 +1904,25 @@ fn member_of(object: &Constant, key: &str) -> Option<Constant> {
             .iter()
             .find(|(name, _)| name == key)
             .map(|(_, value)| value.clone()),
+        Constant::IgnoredObject
+            if !matches!(
+                key,
+                "constructor"
+                    | "toString"
+                    | "toLocaleString"
+                    | "valueOf"
+                    | "hasOwnProperty"
+                    | "isPrototypeOf"
+                    | "propertyIsEnumerable"
+                    | "__proto__"
+                    | "__defineGetter__"
+                    | "__defineSetter__"
+                    | "__lookupGetter__"
+                    | "__lookupSetter__"
+            ) =>
+        {
+            Some(Constant::Undefined)
+        }
         Constant::Array(values) => key
             .parse::<usize>()
             .ok()
@@ -2258,6 +2319,17 @@ fn constant_literal<'a>(
         )),
         Constant::Null => Some(Expression::new_null_literal(SPAN, builder)),
         Constant::Bool(value) => Some(Expression::new_boolean_literal(SPAN, *value, builder)),
+        Constant::Undefined => Some(Expression::new_unary_expression(
+            SPAN,
+            oxc_syntax::operator::UnaryOperator::Void,
+            Expression::new_numeric_literal(SPAN, 0.0, None, NumberBase::Decimal, builder),
+            builder,
+        )),
+        Constant::IgnoredObject if objects => Some(Expression::new_object_expression(
+            SPAN,
+            oxc_allocator::Vec::new_in(builder),
+            builder,
+        )),
         Constant::Record(entries) if objects => {
             let mut properties = oxc_allocator::Vec::with_capacity_in(entries.len(), builder);
             for (key, value) in entries.iter() {
@@ -2427,7 +2499,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     }
 
     fn visit_call_expression(&mut self, call: &mut oxc_ast::ast::CallExpression<'a>) {
-        self.visit_expression(&mut call.callee);
+        if !matches!(self.constant(&call.callee), Some(Constant::Undefined)) {
+            self.visit_expression(&mut call.callee);
+        }
         if calls_one_of(Some(self.scoping), &self.class_names, &call.callee) {
             self.reading_css(true, |inline| {
                 for argument in &mut call.arguments {

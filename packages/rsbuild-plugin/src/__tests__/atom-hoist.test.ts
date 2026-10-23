@@ -45,6 +45,10 @@ await beforeBuild({ environments: { web: environment } });
 compiler.hooks.run.call();
 const compilation = {
   hooks: { finishModules: hook(), processAssets: hook(), needAdditionalPass: hook() },
+  fileDependencies: new Set(),
+  missingDependencies: new Set(),
+  errors: [],
+  moduleGraph: { getModule() {} },
   assets: {},
   deleteAsset(name) { delete this.assets[name]; },
 };
@@ -57,7 +61,7 @@ const transform = async (file, code) => {
 };
 const loadCss = name => cssTransform({ resourcePath: join(cssDir, name), environment: { name: 'web' } });
 const finish = async () => {
-  compilation.hooks.finishModules.call();
+  compilation.hooks.finishModules.call([]);
   compilation.hooks.processAssets.call();
   assert.equal(compilation.hooks.needAdditionalPass.call(), false,
     'prewarmed compilation must already serve current CSS');

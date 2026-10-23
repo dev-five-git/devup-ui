@@ -18,6 +18,8 @@ it.each([
   [String.raw`"\u00"`, undefined],
   [String.raw`"\u{41"`, undefined],
   ['"trailing\\"', undefined],
+  ['"a\nb"', undefined],
+  ['"a\rb"', undefined],
 ])(
   'decodes literal contents of %s without evaluating source',
   (literal, expected) => {

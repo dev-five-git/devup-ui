@@ -126,6 +126,7 @@ mod tests {
             "project.tsx",
             "@devup-ui/react",
             &aliases,
+            oxc_span::SourceType::tsx(),
         );
 
         // Then: only an actual header instruction suppresses the React default.
@@ -156,8 +157,13 @@ mod tests {
         ]);
 
         // When: the project default is redirected to React.
-        let rewritten =
-            transform_import_aliases_with_edits(source, "project.jsx", "@devup-ui/react", &aliases);
+        let rewritten = transform_import_aliases_with_edits(
+            source,
+            "project.jsx",
+            "@devup-ui/react",
+            &aliases,
+            oxc_span::SourceType::jsx(),
+        );
 
         // Then: the hashbang stays first and every authored byte keeps its origin.
         assert_eq!(
@@ -189,8 +195,13 @@ mod tests {
         ]);
 
         // When: alias preprocessing redirects the project default.
-        let rewritten =
-            transform_import_aliases_with_edits(source, "project.jsx", "@devup-ui/react", &aliases);
+        let rewritten = transform_import_aliases_with_edits(
+            source,
+            "project.jsx",
+            "@devup-ui/react",
+            &aliases,
+            oxc_span::SourceType::jsx(),
+        );
 
         // Then: the pragma starts on its own line, outside the hashbang.
         assert_eq!(
@@ -281,6 +292,7 @@ mod tests {
             "pragma.tsx",
             "@devup-ui/react",
             &HashMap::from([("@emotion/react".into(), ImportAlias::NamedToNamed)]),
+            oxc_span::SourceType::tsx(),
         );
 
         assert_eq!(

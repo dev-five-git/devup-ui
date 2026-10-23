@@ -14,6 +14,7 @@ export function decodeStringLiteral(literal: string): string | undefined {
   for (let index = 0; index < source.length; index++) {
     const char = source.charAt(index)
     if (char !== '\\') {
+      if (char === '\r' || char === '\n') return undefined
       result += char
       continue
     }

@@ -2,7 +2,7 @@ use super::{Phase, State};
 
 thread_local! {
     static STATE: std::cell::RefCell<State> = const {
-        std::cell::RefCell::new(State { phase: Phase::Legacy, misses: 0 })
+        std::cell::RefCell::new(State { phase: Phase::Legacy, misses: 0, suppressed: 0 })
     };
 }
 

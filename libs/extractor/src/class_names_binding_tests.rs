@@ -30,9 +30,12 @@ fn compile(code: &str) -> ExtractOutput {
         },
         false,
         &|specifier, _| {
-            (specifier == "./data").then(|| ResolvedModule {
-                path: "data.ts".to_string(),
-                code: "export const data = { padding: 7 }; export const space = 3;".to_string(),
+            (specifier == "./data").then(|| {
+                crate::ModuleResolution::Resolved(ResolvedModule {
+                    path: "data.ts".to_string(),
+                    code: "export const data = { padding: 7 }; export const space = 3;".to_string(),
+                    source_type: None,
+                })
             })
         },
     )

@@ -9,7 +9,7 @@ use oxc_ast::{
 };
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_parser::Parser;
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
 
 struct Units<'a> {
     ast: AstBuilder<'a>,
@@ -87,7 +87,7 @@ impl<'a> VisitMut<'a> for Units<'a> {
 /// Preserve Emotion units for values reduced by the constant inliner.
 pub(crate) fn pixelify<'a>(allocator: &'a Allocator, program: &mut Program<'a>, original: &str) {
     let source_allocator = Allocator::default();
-    let source = Parser::new(&source_allocator, original, SourceType::tsx())
+    let source = Parser::new(&source_allocator, original, program.source_type)
         .parse()
         .program;
     let mut calls = Vec::new();
@@ -118,6 +118,7 @@ pub(crate) fn pixelify<'a>(allocator: &'a Allocator, program: &mut Program<'a>, 
 mod tests {
     use super::*;
     use oxc_codegen::Codegen;
+    use oxc_span::SourceType;
     use rstest::rstest;
 
     #[rstest]

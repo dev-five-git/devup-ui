@@ -232,11 +232,14 @@ fn unknown_scratch_supplier_file_slots_do_not_persist() -> TestResult {
     // Given
     let (_reset, option) = setup(false);
     let resolver = |_: &str, _: &str| {
-        Some(extractor::ResolvedModule {
-            path: "supplier.css.ts".into(),
-            code: "import {createVar} from '@devup-ui/react'; export const token=createVar();"
-                .into(),
-        })
+        Some(extractor::ModuleResolution::Resolved(
+            extractor::ResolvedModule {
+                path: "supplier.css.ts".into(),
+                code: "import {createVar} from '@devup-ui/react'; export const token=createVar();"
+                    .into(),
+                source_type: None,
+            },
+        ))
     };
     let root = input(
         "root.css.ts",
@@ -271,7 +274,7 @@ fn unwind_rolls_back_inventory_raw_slots_and_previous_residual_count() -> TestRe
         get_unreserved_class_slot_count(),
     );
     let resolver =
-        |_: &str, _: &str| -> Option<extractor::ResolvedModule> { panic!("supplier failure") };
+        |_: &str, _: &str| -> Option<extractor::ModuleResolution> { panic!("supplier failure") };
     // When
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         reserve_class_slots_internal(

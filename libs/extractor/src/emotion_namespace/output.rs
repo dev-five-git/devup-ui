@@ -1,6 +1,7 @@
 use super::{Allocator, Edit, Parser};
 use crate::{ExtractOutput, source_map};
 use oxc_codegen::{Codegen, CodegenOptions};
+use oxc_span::SourceType;
 use rustc_hash::FxHashSet;
 use std::path::PathBuf;
 
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 /// back to `source`.
 pub(crate) struct Rewritten<'a> {
     pub filename: &'a str,
+    pub source_type: SourceType,
     pub code: &'a str,
     pub source: &'a str,
     pub edits: &'a [&'a [Edit]],
@@ -18,13 +20,9 @@ impl Rewritten<'_> {
     /// Generated from the rewritten module, so the map points at `source`.
     pub(crate) fn output(&self) -> ExtractOutput {
         let allocator = Allocator::default();
-        let mut program = Parser::new(
-            &allocator,
-            self.code,
-            crate::parsing::source_type(self.filename).unwrap_or_default(),
-        )
-        .parse()
-        .program;
+        let mut program = Parser::new(&allocator, self.code, self.source_type)
+            .parse()
+            .program;
         crate::jsx_pragmas::HeaderPragmas::capture(&program).reanchor(&mut program);
         let result = Codegen::new()
             .with_options(CodegenOptions {

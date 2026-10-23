@@ -235,25 +235,40 @@ fn execute_vanilla_extract(
 
 /// Execute vanilla-extract style file and collect styles, loading what it
 /// imports through `resolver`
+#[cfg(test)]
 pub fn execute_stylesheet(
     code: &str,
     filename: &str,
     option: &crate::ExtractOption,
     resolver: Option<&crate::ModuleResolver>,
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
+    execute_stylesheet_with_type(code, filename, option, resolver, None)
+}
+
+pub(crate) fn execute_stylesheet_with_type(
+    code: &str,
+    filename: &str,
+    option: &crate::ExtractOption,
+    resolver: Option<&crate::ModuleResolver>,
+    mode: Option<crate::ExtractSourceType>,
+) -> Result<(CollectedStyles, StylesheetImports), String> {
+    let source_type = crate::source_type::parser_type(filename, mode)?;
+    let cache_key = (filename.to_string(), mode);
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
-    let instrumented = crate::dead_properties::instrument(code, filename, &option.package)
-        .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+    let instrumented =
+        crate::dead_properties::instrument(code, filename, &option.package, source_type)
+            .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
     let instrumented = crate::import_alias_visit::transform_import_aliases_with_edits(
         &instrumented.code,
         filename,
         &option.package,
         &option.import_aliases,
+        source_type,
     )
     .code;
     let script = module_script(
-        &strip_typescript(&instrumented, filename),
+        &strip_typescript_with_type(&instrumented, filename, mode)?,
         filename,
         &mut loader,
         true,
@@ -267,7 +282,7 @@ pub fn execute_stylesheet(
     let imported = crate::module_loader::evaluating_import();
     if imported
         && let Some(collected) = IMPORTED_RUNS.with_borrow(|runs| {
-            runs.get(filename)
+            runs.get(&cache_key)
                 .filter(|(num, source, text, _)| *num == file_num && source == code && *text == run)
                 .map(|(.., collected)| collected.clone())
         })
@@ -306,14 +321,14 @@ pub fn execute_stylesheet(
     let mut collected = std::mem::take(&mut collector.borrow_mut().styles);
     name_entries(
         &mut collected,
-        &top_level_bindings(code),
+        &top_level_bindings_with_type(code, source_type),
         &mut context,
         file_num,
     );
     if imported {
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
-                filename.to_string(),
+                cache_key,
                 (file_num, code.to_string(), run, collected.clone()),
             );
         });
@@ -321,12 +336,18 @@ pub fn execute_stylesheet(
     Ok((collected, imports))
 }
 
-type ImportedRuns = FxHashMap<String, (usize, String, String, CollectedStyles)>;
+type ImportedRuns =
+    FxHashMap<crate::source_type::PreparedFileKey, (usize, String, String, CollectedStyles)>;
+type StrippedSources = FxHashMap<crate::source_type::PreparedFileKey, (String, String)>;
+
+pub(crate) fn discard_reserved_references() {
+    IMPORTED_RUNS.with_borrow_mut(FxHashMap::clear);
+}
 
 #[derive(Debug)]
 pub(crate) struct CacheGuard {
     imported: ImportedRuns,
-    stripped: FxHashMap<String, (String, String)>,
+    stripped: StrippedSources,
     same_thread: std::marker::PhantomData<Rc<()>>,
 }
 
@@ -354,7 +375,7 @@ thread_local! {
     static IMPORTED_RUNS: RefCell<ImportedRuns> =
         RefCell::default();
     /// The TypeScript each file last had stripped, with its source
-    static STRIPPED: RefCell<FxHashMap<String, (String, String)>> = RefCell::default();
+    static STRIPPED: RefCell<StrippedSources> = RefCell::default();
 }
 
 pub(crate) mod test_state;
@@ -367,11 +388,9 @@ struct Binding {
     init: Option<String>,
 }
 
-fn top_level_bindings(code: &str) -> Vec<Binding> {
+fn top_level_bindings_with_type(code: &str, source_type: SourceType) -> Vec<Binding> {
     let allocator = Allocator::default();
-    let program = Parser::new(&allocator, code, SourceType::ts())
-        .parse()
-        .program;
+    let program = Parser::new(&allocator, code, source_type).parse().program;
     let mut bindings = Vec::new();
     for statement in &program.body {
         let (declaration, exported) = match statement {
@@ -607,25 +626,35 @@ fn replace_placeholders(
 /// Convert TypeScript to JavaScript using Oxc Transformer
 /// `code` without its TypeScript, stripped once for as long as the file holds
 /// it: the modules evaluations import are stripped once, not per evaluation
+#[cfg(test)]
 pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
+    strip_typescript_with_type(code, filename, None).unwrap_or_default()
+}
+
+pub(crate) fn strip_typescript_with_type(
+    code: &str,
+    filename: &str,
+    mode: Option<crate::ExtractSourceType>,
+) -> Result<String, String> {
+    let source_type = crate::source_type::parser_type(filename, mode)?;
+    let key = (filename.to_string(), mode);
     if let Some(stripped) = STRIPPED.with_borrow(|stripped| {
         stripped
-            .get(filename)
+            .get(&key)
             .filter(|(source, _)| source == code)
             .map(|(_, stripped)| stripped.clone())
     }) {
-        return stripped;
+        return Ok(stripped);
     }
-    let stripped = strip(code, filename);
+    let stripped = strip(code, source_type);
     STRIPPED.with_borrow_mut(|entries| {
-        entries.insert(filename.to_string(), (code.to_string(), stripped.clone()));
+        entries.insert(key, (code.to_string(), stripped.clone()));
     });
-    stripped
+    Ok(stripped)
 }
 
-fn strip(code: &str, filename: &str) -> String {
+fn strip(code: &str, source_type: SourceType) -> String {
     let allocator = Allocator::default();
-    let source_type = crate::parsing::source_type(filename).unwrap_or_else(|_| SourceType::ts());
     let mut program = Parser::new(&allocator, code, source_type).parse().program;
     let scoping = SemanticBuilder::new()
         .with_enum_eval(true)
@@ -1585,9 +1614,12 @@ mod tests {
                     path.trim_end_matches(".ts")
                         == specifier.trim_start_matches('.').trim_end_matches(".ts")
                 })
-                .map(|(path, code)| crate::ResolvedModule {
-                    path: (*path).to_string(),
-                    code: (*code).to_string(),
+                .map(|(path, code)| {
+                    crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                        source_type: None,
+                        path: (*path).to_string(),
+                        code: (*code).to_string(),
+                    })
                 })
         };
         execute_stylesheet(
@@ -1630,11 +1662,11 @@ mod tests {
             cycle_error(
                 "import { b } from './b'\nexport const x = b",
                 &[
-                    ("/b", "import { c } from './c'\nexport const b = c"),
-                    ("/c", "import { b } from './b'\nexport const c = b"),
+                    ("/b.ts", "import { c } from './c'\nexport const b = c"),
+                    ("/c.ts", "import { b } from './b'\nexport const c = b"),
                 ]
             )
-            .contains("Cannot access 'b' of '/b'")
+            .contains("Cannot access 'b' of '/b.ts'")
         );
         assert!(
             cycle_error(
@@ -1655,11 +1687,11 @@ mod tests {
                 "import { style } from '@devup-ui/react'\nimport { both, reexported } from './b'\nimport { d, withA } from './d.css'\nexport const x = style([d, { color: both, background: reexported }])\nexport const y = typeof withA",
                 &[
                     (
-                        "/b",
+                        "/b.ts",
                         "import { c, lazy } from './c'\nexport const b = 'blue'\nexport const both = c()\nexport { lazy as reexported }"
                     ),
                     (
-                        "/c",
+                        "/c.ts",
                         "import bDefault, { b } from './b'\nimport * as all from './b'\nexport const c = () => b + all.b.length\nexport const lazyDefault = () => bDefault\nexport const lazy = 'red'\nexport { b as again }"
                     ),
                     ("/a.css.ts", ""),

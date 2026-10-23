@@ -1,16 +1,18 @@
 mod reservation;
 pub use reservation::{
-    ReservationInput, get_unreserved_class_slot_count, reserve_class_slots_internal,
+    ReservationInput, get_suppressed_reservation_row_count, get_unreserved_class_slot_count,
+    reserve_class_slots_internal,
 };
 
 use css::class_map::{set_class_map, with_class_map};
 use css::file_map::{
     canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
 };
+#[cfg(test)]
+use extractor::extract;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{
-    ExtractOption, ImportAlias, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    extract_without_source_map, has_devup_ui_with,
+    ExtractOption, ImportAlias, ModuleResolution, ModuleResolver, ResolvedModule, has_devup_ui_with,
 };
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
@@ -19,6 +21,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+#[cfg(test)]
+mod source_type_tests;
 
 mod state;
 #[cfg(test)]
@@ -63,6 +67,52 @@ where
 #[cfg(not(tarpaulin_include))]
 fn js_error(message: impl Display) -> JsValue {
     js_sys::Error::new(&message.to_string()).into()
+}
+
+#[cfg(all(target_arch = "wasm32", not(tarpaulin_include)))]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = error, catch)]
+    fn report_panic(message: &str) -> Result<(), JsValue>;
+}
+
+#[cfg(not(tarpaulin_include))]
+fn resolver_cause(value: &JsValue) -> String {
+    if let Some(message) = value.as_string() {
+        return message;
+    }
+    if let Ok(message) = js_sys::Reflect::get(value, &"message".into())
+        && let Some(message) = message.as_string()
+    {
+        return message;
+    }
+    match js_sys::JSON::stringify(value) {
+        Ok(text) => text.as_string().unwrap_or_else(|| "undefined".to_string()),
+        Err(_) => "<unprintable JavaScript exception>".to_string(),
+    }
+}
+
+/// Report the panic payload and Rust file:line:column before an aborting WASM trap.
+#[cfg(all(target_arch = "wasm32", not(tarpaulin_include)))]
+#[wasm_bindgen(start)]
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        // A broken host console must not replace the original panic with a JS exception.
+        match report_panic(&info.to_string()) {
+            Ok(()) | Err(_) => {}
+        }
+    }));
+}
+
+/// Prefer a resolver failure over extraction's unresolved-module fallback.
+fn checked_extraction<T, E: Display>(
+    extracted: Result<T, E>,
+    fault: Option<&RefCell<Option<String>>>,
+) -> Result<T, String> {
+    if let Some(message) = fault.and_then(|fault| fault.borrow_mut().take()) {
+        return Err(message);
+    }
+    extracted.map_err(|error| error.to_string())
 }
 
 #[wasm_bindgen]
@@ -404,6 +454,7 @@ pub fn code_extract_internal(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
+    source_type: Option<extractor::ExtractSourceType>,
 ) -> Result<Output, String> {
     code_extract_internal_impl(
         filename,
@@ -416,6 +467,8 @@ pub fn code_extract_internal(
         import_aliases,
         SourceMapMode::Generate,
         None,
+        None,
+        source_type,
     )
 }
 
@@ -429,6 +482,7 @@ pub fn code_extract_without_source_map_internal(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
+    source_type: Option<extractor::ExtractSourceType>,
 ) -> Result<Output, String> {
     code_extract_internal_impl(
         filename,
@@ -441,6 +495,8 @@ pub fn code_extract_without_source_map_internal(
         import_aliases,
         SourceMapMode::Skip,
         None,
+        None,
+        source_type,
     )
 }
 
@@ -456,6 +512,7 @@ pub fn code_extract_with_modules_internal(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
+    source_type: Option<extractor::ExtractSourceType>,
     resolver: &ModuleResolver,
 ) -> Result<Output, String> {
     code_extract_internal_impl(
@@ -469,6 +526,8 @@ pub fn code_extract_with_modules_internal(
         import_aliases,
         SourceMapMode::Generate,
         Some(resolver),
+        None,
+        source_type,
     )
 }
 
@@ -484,6 +543,8 @@ fn code_extract_internal_impl(
     import_aliases: HashMap<String, ImportAlias>,
     source_map: SourceMapMode,
     resolver: Option<&ModuleResolver>,
+    resolver_fault: Option<&RefCell<Option<String>>>,
+    source_type: Option<extractor::ExtractSourceType>,
 ) -> Result<Output, String> {
     let option = ExtractOption {
         package: package.to_string(),
@@ -492,19 +553,16 @@ fn code_extract_internal_impl(
         import_main_css: import_main_css_in_code,
         import_aliases,
     };
-    let extracted = match (resolver, source_map) {
-        (Some(resolver), mode) => extract_with_modules(
-            filename,
-            code,
-            option,
-            matches!(mode, SourceMapMode::Generate),
-            resolver,
-        ),
-        (None, SourceMapMode::Generate) => extract(filename, code, option),
-        (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
-    };
+    let extracted = extractor::extract_with_source_type(
+        filename,
+        code,
+        option,
+        matches!(source_map, SourceMapMode::Generate),
+        resolver,
+        source_type,
+    );
 
-    match extracted {
+    match checked_extraction(extracted, resolver_fault) {
         Ok(output) => Ok(Output::new(
             output.code,
             output.styles,
@@ -515,7 +573,7 @@ fn code_extract_internal_impl(
             import_main_css_in_css,
             output.dependencies,
         )),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(error),
     }
 }
 
@@ -534,27 +592,73 @@ fn call_module_resolver(
     resolver: &js_sys::Function,
     specifier: &str,
     importer: &str,
-) -> Option<ResolvedModule> {
+) -> Result<Option<ModuleResolution>, String> {
     let module = resolver
         .call2(&JsValue::NULL, &specifier.into(), &importer.into())
-        .ok()?;
+        .map_err(|error| resolver_cause(&error))?;
+    if module.is_null() || module.is_undefined() {
+        return Ok(None);
+    }
+    if !module.is_object() {
+        return Err("resolver result must be an object".to_string());
+    }
+    let ignored = js_sys::Reflect::get(&module, &"ignored".into()).map_err(|error| {
+        format!(
+            "reading resolver field `ignored`: {}",
+            resolver_cause(&error)
+        )
+    })?;
+    if !ignored.is_undefined() {
+        return match ignored.as_bool() {
+            Some(true) => Ok(Some(ModuleResolution::Ignored)),
+            Some(false) | None => {
+                Err("resolver field `ignored` must be true or undefined".to_string())
+            }
+        };
+    }
     let field = |name: &str| {
         js_sys::Reflect::get(&module, &name.into())
-            .ok()?
+            .map_err(|error| {
+                format!(
+                    "reading resolver field `{name}`: {}",
+                    resolver_cause(&error)
+                )
+            })?
             .as_string()
+            .ok_or_else(|| format!("resolver field `{name}` must be a string"))
     };
-    Some(ResolvedModule {
+    Ok(Some(ModuleResolution::Resolved(ResolvedModule {
         path: field("path")?,
         code: field("code")?,
-    })
+        source_type: source_type_from_js(
+            js_sys::Reflect::get(&module, &"sourceType".into()).map_err(|error| {
+                format!(
+                    "reading resolver field `sourceType`: {}",
+                    resolver_cause(&error)
+                )
+            })?,
+        )?,
+    })))
 }
 
 /// The resolver set by `setModuleResolver`, if any
 #[cfg(not(tarpaulin_include))]
-fn resolver_from_js() -> Option<Box<ModuleResolver>> {
+fn resolver_from_js(fault: &RefCell<Option<String>>) -> Option<Box<ModuleResolver<'_>>> {
     let resolver = MODULE_RESOLVER.with_borrow(Clone::clone)?;
     Some(Box::new(move |specifier: &str, importer: &str| {
-        call_module_resolver(&resolver, specifier, importer)
+        if fault.borrow().is_some() {
+            return None;
+        }
+        match call_module_resolver(&resolver, specifier, importer) {
+            Ok(module) => module,
+            Err(cause) => {
+                // ModuleResolver carries no source span, including for transitive imports.
+                *fault.borrow_mut() = Some(format!(
+                    "{importer}:1:1: module resolver cannot use `{specifier}` at build time: {cause}"
+                ));
+                None
+            }
+        }
     }))
 }
 
@@ -571,11 +675,13 @@ fn code_extract_js(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
     source_map: SourceMapMode,
+    source_type: JsValue,
 ) -> Result<Output, JsValue> {
+    let source_type = source_type_from_js(source_type)
+        .map_err(|error| js_error(format!("{filename}:1:1: {error}")))?;
     let import_aliases = import_aliases_from_js(import_aliases)?;
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
-    });
+    let fault = RefCell::new(None);
+    let resolver = resolver_from_js(&fault);
     code_extract_internal_impl(
         filename,
         code,
@@ -586,11 +692,22 @@ fn code_extract_js(
         import_main_css_in_css,
         import_aliases,
         source_map,
-        resolver
-            .as_ref()
-            .map(|resolver| resolver as &ModuleResolver),
+        resolver.as_deref(),
+        Some(&fault),
+        source_type,
     )
     .map_err(js_error)
+}
+
+#[cfg(not(tarpaulin_include))]
+fn source_type_from_js(value: JsValue) -> Result<Option<extractor::ExtractSourceType>, String> {
+    if value.is_undefined() || value.is_null() {
+        return extractor::parse_source_type(None);
+    }
+    let value = value.as_string().ok_or_else(|| {
+        "source type cannot use a non-string at build time: expected `compiled-mdx`".to_string()
+    })?;
+    extractor::parse_source_type(Some(&value))
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -612,7 +729,7 @@ fn import_aliases_from_js(
 }
 
 #[cfg(not(tarpaulin_include))]
-#[wasm_bindgen(js_name = "codeExtract")]
+#[wasm_bindgen(js_name = "codeExtract", skip_typescript)]
 #[allow(clippy::too_many_arguments)]
 pub fn code_extract(
     filename: &str,
@@ -623,6 +740,7 @@ pub fn code_extract(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: JsValue,
+    source_type: JsValue,
 ) -> Result<Output, JsValue> {
     code_extract_js(
         filename,
@@ -634,11 +752,12 @@ pub fn code_extract(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Generate,
+        source_type,
     )
 }
 
 #[cfg(not(tarpaulin_include))]
-#[wasm_bindgen(js_name = "codeExtractWithoutSourceMap")]
+#[wasm_bindgen(js_name = "codeExtractWithoutSourceMap", skip_typescript)]
 #[allow(clippy::too_many_arguments)]
 pub fn code_extract_without_source_map(
     filename: &str,
@@ -649,6 +768,7 @@ pub fn code_extract_without_source_map(
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
     import_aliases: JsValue,
+    source_type: JsValue,
 ) -> Result<Output, JsValue> {
     code_extract_js(
         filename,
@@ -660,8 +780,15 @@ pub fn code_extract_without_source_map(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Skip,
+        source_type,
     )
 }
+
+#[wasm_bindgen(typescript_custom_section)]
+const EXTRACTION_TYPES: &str = r#"
+export function codeExtract(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx'): Output;
+export function codeExtractWithoutSourceMap(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx'): Output;
+"#;
 
 /// Internal function to register theme (testable without `JsValue`)
 pub fn register_theme_internal(theme: sheet::theme::Theme) {
@@ -745,13 +872,15 @@ pub fn has_devup_ui_wasm(
     import_aliases: JsValue,
 ) -> bool {
     let aliases = import_aliases_from_js(import_aliases).unwrap_or_default();
-    has_devup_ui_with(
+    let fault = RefCell::new(None);
+    let relevant = has_devup_ui_with(
         filename,
         code,
         package,
         &aliases,
-        resolver_from_js().as_deref(),
-    )
+        resolver_from_js(&fault).as_deref(),
+    );
+    relevant || fault.into_inner().is_some()
 }
 
 #[cfg(test)]
@@ -780,6 +909,53 @@ mod tests {
         let mut ct = ColorTheme::default();
         ct.add_color(name, value);
         ct
+    }
+
+    #[rstest]
+    #[case(Ok(42), false, None, Ok(42))]
+    #[case(Err("extract failed"), false, None, Err("extract failed"))]
+    #[case(Ok(42), true, None, Ok(42))]
+    #[case(Ok(42), true, Some("resolver failed"), Err("resolver failed"))]
+    #[case(
+        Err("extract failed"),
+        true,
+        Some("resolver failed"),
+        Err("resolver failed")
+    )]
+    fn boundary_fault_takes_precedence_when_resolver_failed(
+        #[case] extracted: Result<u8, &str>,
+        #[case] has_resolver: bool,
+        #[case] message: Option<&str>,
+        #[case] expected: Result<u8, &str>,
+    ) {
+        let fault = has_resolver.then(|| RefCell::new(message.map(str::to_string)));
+        let result = checked_extraction(extracted, fault.as_ref());
+        assert_eq!(result, expected.map_err(str::to_string));
+    }
+
+    #[test]
+    #[serial]
+    fn boundary_sheet_stays_unchanged_when_resolver_failed() {
+        reset_build_state_internal();
+        let before = export_sheet_internal().unwrap();
+        let fault = RefCell::new(Some("resolver failed".to_string()));
+        let result = code_extract_internal_impl(
+            "boundary.tsx",
+            "import { Box } from '@devup-ui/react'; export const view = <Box bg='red' />;",
+            "@devup-ui/react",
+            "df".to_string(),
+            true,
+            false,
+            false,
+            HashMap::new(),
+            SourceMapMode::Skip,
+            None,
+            Some(&fault),
+            None,
+        );
+        assert_eq!(result.err(), Some("resolver failed".to_string()));
+        assert_eq!(export_sheet_internal().unwrap(), before);
+        reset_build_state_internal();
     }
 
     #[test]
@@ -820,6 +996,7 @@ mod tests {
                 false,
                 false,
                 HashMap::new(),
+                None,
             )
             .unwrap();
         }
@@ -834,6 +1011,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap();
         code_extract_internal(
@@ -845,6 +1023,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap();
 
@@ -988,9 +1167,12 @@ mod tests {
             *sheet = StyleSheet::default();
         }
         let resolver = |specifier: &str, _: &str| {
-            (specifier == "./tokens").then(|| ResolvedModule {
-                path: "/src/tokens.ts".to_string(),
-                code: "export const PRIMARY = 'red'".to_string(),
+            (specifier == "./tokens").then(|| {
+                ModuleResolution::Resolved(ResolvedModule {
+                    source_type: None,
+                    path: "/src/tokens.ts".to_string(),
+                    code: "export const PRIMARY = 'red'".to_string(),
+                })
             })
         };
         {
@@ -1003,6 +1185,7 @@ mod tests {
                 false,
                 false,
                 HashMap::new(),
+                None,
                 &resolver,
             )
             .unwrap();
@@ -1398,9 +1581,12 @@ mod tests {
     #[test]
     fn has_devup_ui_covers_what_extraction_changes() {
         let resolver = |specifier: &str, _: &str| {
-            (specifier == "./ui").then(|| ResolvedModule {
-                path: "/src/ui.ts".to_string(),
-                code: "export { Box } from '@devup-ui/react'".to_string(),
+            (specifier == "./ui").then(|| {
+                ModuleResolution::Resolved(ResolvedModule {
+                    path: "/src/ui.ts".to_string(),
+                    code: "export { Box } from '@devup-ui/react'".to_string(),
+                    source_type: None,
+                })
             })
         };
         let aliases = HashMap::from([("@emotion/styled".to_string(), ImportAlias::NamedToNamed)]);
@@ -1525,6 +1711,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap();
     }
@@ -1827,6 +2014,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -1852,6 +2040,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -1878,6 +2067,7 @@ mod tests {
             false,
             false,
             HashMap::new(),
+            None,
         );
 
         assert!(result.is_err());

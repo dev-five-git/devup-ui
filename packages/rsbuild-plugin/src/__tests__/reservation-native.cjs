@@ -48,8 +48,13 @@ wasm.codeExtract = (...args) => {
 const { DevupUI } = require('../../dist/index.cjs')
 let compilations = 0,
   entries = 0,
-  beforeBuild = 0,
-  revised = false
+  beforeBuild = 0
+const staticEntry = () => {
+  if (mode === 'error') return { main: { import: ['./src/invalid.js'] } }
+  return mode === 'dev' || mode === 'watch'
+    ? { main: { import: ['./src/entry.js'] } }
+    : { main: { import: ['./app/A.js', './app/B.js'] } }
+}
 const observer = {
   name: 'reservation-observer',
   setup(api) {
@@ -64,13 +69,13 @@ const observer = {
       },
     )
     api.modifyRspackConfig((config) => {
-      config.entry = () => {
-        entries++
-        if (mode === 'error') return { main: { import: ['./src/invalid.js'] } }
-        return mode === 'dev' || (mode === 'watch' && !revised)
-          ? { main: { import: ['./src/entry.js'] } }
-          : { main: { import: ['./app/A.js', './app/B.js'] } }
-      }
+      config.entry =
+        mode === 'dynamic'
+          ? () => {
+              entries++
+              return staticEntry()
+            }
+          : staticEntry()
       config.plugins.push({
         apply(compiler) {
           compiler.options.watchOptions = { poll: 1000 }
@@ -151,7 +156,11 @@ async function main() {
           order,
           events,
           revise() {
-            revised = true
+            put(
+              root,
+              'src/entry.js',
+              'import {css} from "@devup-ui/react"; console.log(css({padding:"19px"})); import "../app/A.js"; import "../app/B.js"',
+            )
           },
         })
     }

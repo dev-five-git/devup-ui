@@ -4,6 +4,8 @@ import { join, relative } from 'node:path'
 import { expect, it } from 'bun:test'
 
 import { createModuleResolver } from '../import-graph'
+import { ConfigLoadError } from '../load-config'
+import { PackageManifestShapeError } from '../package-manifest'
 import { collectReservationInputs } from '../reservation-discovery'
 import {
   isReservationReadFailure,
@@ -131,7 +133,7 @@ it('leaves the normal resolver as publisher of a reachable broken manifest error
   const realResolver = createModuleResolver({ cwd: fs.root })
   expect(() =>
     realResolver('@devup-ui/broken', join(fs.root, 'src/A.tsx')),
-  ).toThrow(SyntaxError)
+  ).toThrow(ConfigLoadError)
 })
 
 it('isolates a reproducible missing-file read without caching its later repair', () => {
@@ -169,4 +171,46 @@ it('rethrows logic errors and only isolates SyntaxError at the manifest boundary
   ).toBeUndefined()
   expect(isReservationReadFailure(null)).toBe(false)
   expect(isReservationReadFailure(logic)).toBe(false)
+})
+
+it('isolates only typed package-manifest causes without weakening mandatory errors', () => {
+  const syntax = new ConfigLoadError(
+    'package.json',
+    new SyntaxError('bad JSON'),
+  )
+  const shape = new ConfigLoadError(
+    'package.json',
+    new PackageManifestShapeError('package.json'),
+  )
+  const read = new ConfigLoadError(
+    'package.json',
+    Object.assign(new Error('missing'), { code: 'ENOENT' }),
+  )
+  for (const error of [syntax, shape, read]) {
+    expect(
+      reservationSource(() => {
+        throw error
+      }, true),
+    ).toBeUndefined()
+    expect(() =>
+      reservationSource(() => {
+        throw error
+      }),
+    ).toThrow(error)
+  }
+  const config = new ConfigLoadError(
+    'tsconfig.json',
+    new SyntaxError('bad JSON'),
+  )
+  const logic = new ConfigLoadError(
+    'package.json',
+    new TypeError('resolver logic'),
+  )
+  for (const error of [config, logic]) {
+    expect(() =>
+      reservationSource(() => {
+        throw error
+      }, true),
+    ).toThrow(error)
+  }
 })

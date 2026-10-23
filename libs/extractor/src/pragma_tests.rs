@@ -9,6 +9,62 @@ use std::collections::HashMap;
 
 #[rstest]
 #[serial]
+fn compiled_headers_and_maps_survive_when_only_aliases_are_rewritten(
+    #[values("page.mdown", "page.ts")] filename: &str,
+    #[values(false, true)] namespace: bool,
+) {
+    // Given: JSX compiler output under a real non-JSX filename.
+    reset_class_map();
+    reset_file_map();
+    let import = if namespace {
+        "import * as E from '@emotion/css';\n"
+    } else {
+        ""
+    };
+    let source = format!(
+        "/** @jsxImportSource @emotion/react */\n'use client';\n{import}export const view=<div/>;\nexport const anchor=1;"
+    );
+    let option = ExtractOption {
+        import_aliases: HashMap::from([
+            ("@emotion/react".into(), ImportAlias::NamedToNamed),
+            ("@emotion/css".into(), ImportAlias::NamedToNamed),
+        ]),
+        ..ExtractOption::default()
+    };
+    // When: pragma-only or namespace-only output uses the explicit grammar.
+    let output = crate::extract_with_source_type(
+        filename,
+        &source,
+        option,
+        true,
+        None,
+        Some(crate::ExtractSourceType::CompiledMdx),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // Then: no CSS is allocated, headers stay before directives, and maps retain identity.
+    assert_eq!(output.styles.len(), 0);
+    assert_eq!(output.css_file, None);
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, &output.code, SourceType::jsx()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0, "{}", output.code);
+    assert_eq!(parsed.program.directives.len(), 1);
+    let directive = usize::try_from(parsed.program.directives[0].span.start)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(output.code[..directive].contains("/** @jsxImportSource react */"));
+    assert!(output.code.contains("<div />"));
+    let map: serde_json::Value = serde_json::from_str(
+        output
+            .map
+            .as_deref()
+            .unwrap_or_else(|| panic!("missing compiled source map")),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(map["sources"][0].as_str(), Some(filename));
+    crate::pragma_path_tests::assert_anchor_map(&source, &output);
+}
+
+#[rstest]
+#[serial]
 fn leading_pragmas_survive_when_javascript_contains_jsx(
     #[values("js", "mjs", "cjs")] extension: &str,
     #[values(true, false)] source_map: bool,

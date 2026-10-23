@@ -1,0 +1,10 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch"
+  },
+  "note": "Keep raw MDX out of static import graphs unless the caller compiles MDX before extraction, preserving Next production prewarm behavior while MDX-aware plugins opt in. Normalize Webpack inline-loader entry resources before filesystem lookup and skip virtual or pitch-only entries without swallowing real I/O failures. Isolate watched-config regression diagnostics while preserving the prior theme on invalid configuration. No new build-error category is introduced.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

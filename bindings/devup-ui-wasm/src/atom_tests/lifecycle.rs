@@ -102,9 +102,12 @@ fn canonical_bucket_reach_is_frozen_before_imported_styles_are_processed() {
         ("peer.tsx".into(), HashSet::from([1])),
     ]));
     let resolver = |specifier: &str, _importer: &str| {
-        (specifier == "./tokens").then(|| ResolvedModule {
-            path: "tokens.ts".to_string(),
-            code: "export const styles={color:'red',_hover:{color:'blue'}};".to_string(),
+        (specifier == "./tokens").then(|| {
+            extractor::ModuleResolution::Resolved(ResolvedModule {
+                path: "tokens.ts".to_string(),
+                code: "export const styles={color:'red',_hover:{color:'blue'}};".to_string(),
+                source_type: None,
+            })
         })
     };
     // When
@@ -117,6 +120,7 @@ fn canonical_bucket_reach_is_frozen_before_imported_styles_are_processed() {
         false,
         false,
         HashMap::new(),
+        None,
         &resolver,
     )
     .unwrap_or_else(|error| panic!("{error}"));
@@ -186,6 +190,7 @@ fn keyframe_content_and_scope_resolve_when_using_single_css() {
                 filename: "a.tsx".into(),
                 code: source.into(),
                 css_dir: "df".into(),
+                source_type: None,
             }],
             ExtractOption {
                 single_css: true,
@@ -203,6 +208,7 @@ fn keyframe_content_and_scope_resolve_when_using_single_css() {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap_or_else(|error| panic!("{error}"));
         // Then

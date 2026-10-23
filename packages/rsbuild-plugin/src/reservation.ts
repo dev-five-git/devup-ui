@@ -36,14 +36,16 @@ export function createReservation(
     readonly root: string
     readonly atomMode: boolean
     readonly importAliases: WasmImportAliases
+    readonly sourceDirs?: readonly string[]
   },
 ) {
   const slots = createSharedSlotReservation({ reserveClassSlots })
-  const roots = new Set(
-    [process.cwd(), options.root].flatMap((root) =>
+  const roots = new Set([
+    ...(options.sourceDirs ?? []),
+    ...[process.cwd(), options.root].flatMap((root) =>
       ['src', 'app'].map((name) => resolve(root, name)),
     ),
-  )
+  ])
   const compilers = new Map<string, { readonly options: EntryConfig }>()
   return {
     trackCompiler(owner: string, compiler: { readonly options: EntryConfig }) {
@@ -61,8 +63,8 @@ export function createReservation(
             })),
           ),
           include: options.include,
-          cwd: process.cwd(),
-          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          cwd: options.root,
+          tsconfigPath: resolve(options.root, 'tsconfig.json'),
           package: options.package,
           importAliases: options.importAliases,
           toId: (path) =>

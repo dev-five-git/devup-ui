@@ -1,6 +1,7 @@
 use boa_engine::{Context, Source};
 use extractor::{
-    ExtractOption, ModuleResolver, ResolvedModule, extract_with_modules, extract_without_source_map,
+    ExtractOption, ModuleResolution, ModuleResolver, ResolvedModule, extract_with_modules,
+    extract_without_source_map,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{ImportDeclarationSpecifier, Statement};
@@ -63,9 +64,12 @@ fn captures_keep_defining_scope_when_imported_fixed_styles_extend(#[case] readab
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     let resolver = |specifier: &str, importer: &str| {
-        (specifier == "./base" && importer == "/src/app.ts").then(|| ResolvedModule {
-            path: "/src/base.ts".to_string(),
-            code: BASE.to_string(),
+        (specifier == "./base" && importer == "/src/app.ts").then(|| {
+            ModuleResolution::Resolved(ResolvedModule {
+                path: "/src/base.ts".to_string(),
+                code: BASE.to_string(),
+                source_type: None,
+            })
         })
     };
     let base = executable("/src/base.ts", BASE, None);
@@ -121,9 +125,12 @@ fn outer_effects_precede_definer_effects_when_fixed_import_renders_repeatedly(
     );
     let base = executable("/src/base.ts", &source, None);
     let resolver = move |specifier: &str, importer: &str| {
-        (specifier == "./base" && importer == "/src/app.ts").then(|| ResolvedModule {
-            path: "/src/base.ts".to_string(),
-            code: source.clone(),
+        (specifier == "./base" && importer == "/src/app.ts").then(|| {
+            ModuleResolution::Resolved(ResolvedModule {
+                path: "/src/base.ts".to_string(),
+                code: source.clone(),
+                source_type: None,
+            })
         })
     };
     let color = if overlap { ",color:'blue'" } else { "" };
@@ -167,9 +174,12 @@ fn definer_captures_stay_local_when_native_attrs_preclude_a_fixed_slot(#[case] r
     let source = BASE.replace("styled.article(", "styled.article.attrs({title:'base'})(");
     let base = executable("/src/base.ts", &source, None);
     let resolver = move |specifier: &str, importer: &str| {
-        (specifier == "./base" && importer == "/src/app.ts").then(|| ResolvedModule {
-            path: "/src/base.ts".to_string(),
-            code: source.clone(),
+        (specifier == "./base" && importer == "/src/app.ts").then(|| {
+            ModuleResolution::Resolved(ResolvedModule {
+                path: "/src/base.ts".to_string(),
+                code: source.clone(),
+                source_type: None,
+            })
         })
     };
     let app = executable(
@@ -217,9 +227,12 @@ fn custom_retarget_keeps_definer_captures_when_target_reads_component_props(
         "import {styled} from '@devup-ui/react';const trace=[];const Base=styled.article({color:'green'});export {Base};"
     };
     let resolver = move |specifier: &str, importer: &str| {
-        (specifier == "./base" && importer == "/src/app.ts").then(|| ResolvedModule {
-            path: "/src/base.ts".to_string(),
-            code: source.to_string(),
+        (specifier == "./base" && importer == "/src/app.ts").then(|| {
+            ModuleResolution::Resolved(ResolvedModule {
+                path: "/src/base.ts".to_string(),
+                code: source.to_string(),
+                source_type: None,
+            })
         })
     };
     let base = executable("/src/base.ts", source, None);

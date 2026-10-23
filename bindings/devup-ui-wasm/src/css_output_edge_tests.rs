@@ -29,6 +29,7 @@ fn compile_file(filename: &str, source: &str) -> Result<Output, String> {
             "@vanilla-extract/css".to_string(),
             ImportAlias::NamedToNamed,
         )]),
+        None,
     );
     set_debug(false);
     output

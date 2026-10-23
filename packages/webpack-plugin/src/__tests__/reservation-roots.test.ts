@@ -152,7 +152,7 @@ for (const project of ['', 'project']) {
       expect(receipt.final.css).toContain('green')
       expect(receipt.entryCalls).toBe(receipt.compilations)
       expect(receipt.reservations.flatMap((batch) => batch.rows)).toContain(
-        project ? 'project/app/entry.js' : 'app/entry.js',
+        'app/entry.js',
       )
     } finally {
       rmSync(root, { recursive: true, force: true })

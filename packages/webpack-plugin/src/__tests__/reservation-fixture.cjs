@@ -72,6 +72,7 @@ export const entry = [css({ display: 'grid' }), child, dist];`,
     put(
       'src/entry.js',
       `import { css } from '@devup-ui/react'; export const entry = css({ display: 'grid' });
+import './0-Generated.js';
 ${physicalImports}`,
     )
   }

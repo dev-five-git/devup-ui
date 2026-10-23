@@ -11,7 +11,10 @@ type Finish = (modules: Iterable<CssModule>) => Promise<void>
 
 afterEach(() => mock.restore())
 
-function compilation(error: Error | null = null) {
+function compilation(
+  error: Error | null = null,
+  run?: <T>(callback: () => T) => T,
+) {
   let finish: Finish | undefined
   const rebuilt: CssModule[] = []
   const owner = {
@@ -30,7 +33,7 @@ function compilation(error: Error | null = null) {
       callback(error)
     },
   }
-  reconcileWatchCss(owner)
+  reconcileWatchCss(owner, run)
   assert(finish)
   return { owner, finish, rebuilt }
 }
@@ -73,4 +76,24 @@ it('rejects module completion when native CSS rebuilding fails', async () => {
   const completion = finish([{ resource: '/devup-ui.css' }])
   // Then: the original failure propagates instead of publishing stale success.
   await expect(completion).rejects.toBe(error)
+})
+
+it('reads the final sheet inside its compiler owner when reconciling stale CSS', async () => {
+  // Given: another compiler is active unless the supplied owner restores its sheet.
+  let owned = false
+  spyOn(wasm, 'getCss').mockImplementation(() => (owned ? 'current' : 'stale'))
+  const { owner, finish, rebuilt } = compilation(null, (callback) => {
+    owned = true
+    try {
+      return callback()
+    } finally {
+      owned = false
+    }
+  })
+  const module = { resource: '/devup-ui.css' }
+  servedCss(owner).set(module.resource, 'stale')
+  // When: the native completion callback compares the recorded CSS.
+  await finish([module])
+  // Then: it rebuilds against this compiler's final sheet rather than the foreign sheet.
+  expect(rebuilt).toEqual([module])
 })

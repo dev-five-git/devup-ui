@@ -6,7 +6,8 @@ use extractor::extract_style::{
     ExtractStyleProperty, extract_style_value::ExtractStyleValue, style_property::StyleProperty,
 };
 use extractor::{
-    ExtractOption, ImportAlias, ResolvedModule, extract_with_modules, extract_without_source_map,
+    ExtractOption, ImportAlias, ModuleResolution, ResolvedModule, extract_with_modules,
+    extract_without_source_map,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{ImportDeclarationSpecifier, Statement};
@@ -18,6 +19,13 @@ use oxc_transformer::{TransformOptions, Transformer};
 use serde_json::Value;
 
 pub const BASE: &str = "import {styled} from '@devup-ui/react';const trace=[];const selected=true;const Base=styled.article({...((trace.push('controller'),selected)?{color:(trace.push('leaf'),'red')}:{}),color:'green'});export {Base,trace};";
+
+fn path_of(module: ModuleResolution) -> String {
+    match module {
+        ModuleResolution::Resolved(module) => module.path,
+        ModuleResolution::Ignored => panic!("fixture module must resolve"),
+    }
+}
 
 pub fn run(files: &[(&str, &str)], observation: &str) -> Value {
     run_with_reading(files, observation, true)
@@ -39,9 +47,12 @@ pub fn run_with_reading(files: &[(&str, &str)], observation: &str, readable: boo
                     .iter()
                     .any(|extension| format!("{path}{extension}") == *file)
             })
-            .map(|(path, code)| ResolvedModule {
-                path: path.clone(),
-                code: code.clone(),
+            .map(|(path, code)| {
+                ModuleResolution::Resolved(ResolvedModule {
+                    path: path.clone(),
+                    code: code.clone(),
+                    source_type: None,
+                })
             })
     };
     let mut script = String::from(
@@ -161,7 +172,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                     write!(
                                         imports,
                                         "const {local}=modules[{:?}].{imported};",
-                                        module.path
+                                        path_of(module)
                                     )
                                     .unwrap_or_else(|error| panic!("{error}"));
                                 }
@@ -172,7 +183,8 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                 write!(
                                     imports,
                                     "const {}=modules[{:?}];",
-                                    namespace.local.name, module.path
+                                    namespace.local.name,
+                                    path_of(module)
                                 )
                                 .unwrap_or_else(|error| panic!("{error}"));
                             }

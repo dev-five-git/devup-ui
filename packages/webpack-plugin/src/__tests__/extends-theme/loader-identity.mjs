@@ -36,14 +36,37 @@ const expectedLoaders = await Promise.all(
   ),
 )
 const { webpack } = require('next/dist/compiled/webpack/webpack')
+const instance = new plugin.DevupUIWebpackPlugin()
 const compiler = webpack({
   mode: 'production',
   optimization: { minimize: false },
   entry: './src/main.jsx',
-  plugins: [new plugin.DevupUIWebpackPlugin()],
+  plugins: [instance],
 })
 try {
-  const loaders = compiler.options.module.rules
+  const rules = compiler.options.module.rules
+  assert.equal(rules.length, 3, 'JS/TS-pre, MDX-post and CSS-pre rules')
+  assert.deepEqual(
+    rules.map((rule) => rule.enforce),
+    ['pre', 'post', 'pre'],
+  )
+  const [sourceRule, mdxRule, cssRule] = rules
+  assert.ok(sourceRule.test instanceof RegExp)
+  assert.ok(mdxRule.test instanceof RegExp)
+  for (const [resource, matches] of [
+    ['src/page.jsx', [true, false]],
+    ['src/page.tsx', [true, false]],
+    ['src/page.mdx', [false, true]],
+    ['src/page.mdown', [false, false]],
+  ]) {
+    assert.deepEqual(
+      [sourceRule.test.test(resource), mdxRule.test.test(resource)],
+      matches,
+      `default source roles must be disjoint for ${resource}`,
+    )
+  }
+  assert.equal(cssRule.test, instance.options.cssDir)
+  const loaders = rules
     .flatMap((rule) => rule.use || [])
     .map((use) => use.loader)
     .filter(Boolean)
@@ -79,8 +102,8 @@ try {
   assert.equal(evidence.entry, expectedEntry)
   assert.deepEqual(
     selectedLoaders,
-    expectedLoaders,
-    'both loaders must belong to the installed plugin',
+    [expectedLoaders[0], expectedLoaders[0], expectedLoaders[1]],
+    'all three rule occurrences must use the installed source/source/CSS loaders',
   )
   const wasmRoot = await realpath(
     join(import.meta.dirname, 'node_modules/@devup-ui/wasm'),
@@ -93,8 +116,8 @@ try {
   )
   assert.deepEqual(
     wasmPaths,
-    [consumerWasm, consumerWasm, consumerWasm],
-    'entry and both loaders must share the consumer WASM file',
+    [consumerWasm, consumerWasm, consumerWasm, consumerWasm],
+    'entry and every loader occurrence must share the consumer WASM file',
   )
   const entryWasm = await import(pathToFileURL(entryWasmPath).href)
   for (const path of loaders) {

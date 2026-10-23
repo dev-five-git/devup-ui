@@ -97,7 +97,7 @@ process.stdout.write('qualified');
 `)
 }, 40000)
 
-it.each(['default', 'short'] as const)(
+it.each(['default', 'short', 'debug'] as const)(
   'preserves runtime default/eager naming through real module imports: %s',
   (mode) => {
     run(`
@@ -108,15 +108,15 @@ const engine=await import(${JSON.stringify(wasmUrl)});
 writeFileSync('src/A.ts','import {css} from "@devup-ui/react"; export const cls=css({color:"red"});');
 writeFileSync('src/B.ts','import {css} from "@devup-ui/react"; export const cls=css({background:"blue"});');
 writeFileSync('src/Unused.ts','import {css} from "@devup-ui/react"; export const cls=css({color:"magenta"});');
-await register(${mode === 'short' ? '{debug:false}' : '{}'});
-assert.equal(engine.isDebug(),${mode !== 'short'});
+await register(${mode === 'debug' ? '{debug:true}' : mode === 'short' ? '{debug:false}' : '{}'});
+assert.equal(engine.isDebug(),${mode === 'debug'});
 const b=await import(process.cwd()+'/src/B.ts');
 const a=await import(process.cwd()+'/src/A.ts');
 assert.equal(engine.getUnreservedClassSlotCount(),0);
 const css=readFileSync('df/devup-ui/devup-ui.css','utf8');
 assert(css.includes('color:red')&&css.includes('background:blue')&&!css.includes('magenta'));
 assert(typeof a.cls==='string'&&typeof b.cls==='string');
-${mode === 'short' ? "assert(/^[a-z0-9_-]+$/.test(a.cls)); assert.equal(a.cls,'a');assert.equal(b.cls,'b');" : "assert(a.cls.includes('color-0-red'));assert(b.cls.includes('background-0-blue'));"}
+ ${mode !== 'debug' ? "assert(/^[a-z0-9_-]+$/.test(a.cls)); assert.equal(a.cls,'a');assert.equal(b.cls,'b');" : "assert(a.cls.includes('color-0-red'));assert(b.cls.includes('background-0-blue'));"}
 process.stdout.write('qualified');
 `)
   },

@@ -27,7 +27,7 @@ use crate::import_alias_visit::Edit;
 use crate::module_loader::declared_names;
 use crate::util_type::UtilType;
 use crate::utils::is_vanilla_extract_file;
-use crate::{ModuleResolver, ResolvedModule};
+use crate::{ModuleResolution, ModuleResolver, ResolvedModule};
 
 /// How a module gives a name it exports
 #[derive(Clone)]
@@ -90,7 +90,9 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
         return exports;
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(&module.path).unwrap_or_default();
+    let Ok(source_type) = crate::source_type::parser_type(&module.path, module.source_type) else {
+        return exports;
+    };
     let program = Parser::new(&allocator, &module.code, source_type)
         .parse()
         .program;
@@ -245,9 +247,9 @@ fn alias_links<'a>(
 
 /// Follows re-exports through the modules a resolver reads
 struct Walker<'r, 'p> {
-    resolver: &'r ModuleResolver,
+    resolver: &'r ModuleResolver<'r>,
     package: &'p str,
-    modules: FxHashMap<String, Rc<Exports>>,
+    modules: FxHashMap<crate::source_type::ModuleCacheKey, Rc<Exports>>,
     dependencies: BTreeSet<String>,
 }
 
@@ -260,11 +262,26 @@ impl Walker<'_, '_> {
     }
 
     fn module(&mut self, specifier: &str, importer: &str) -> Option<Rc<Exports>> {
-        let resolved = (self.resolver)(specifier, importer)?;
+        let resolved = match (self.resolver)(specifier, importer)? {
+            ModuleResolution::Resolved(module) => module,
+            ModuleResolution::Ignored => {
+                return Some(Rc::new(Exports {
+                    path: String::new(),
+                    named: FxHashMap::default(),
+                    stars: Vec::new(),
+                    mentions_package: false,
+                    trivial: true,
+                }));
+            }
+        };
         self.dependencies.insert(resolved.path.clone());
         Some(
             self.modules
-                .entry(resolved.path.clone())
+                .entry((
+                    resolved.path.clone(),
+                    resolved.code.clone(),
+                    resolved.source_type,
+                ))
                 .or_insert_with(|| Rc::new(analyze(&resolved, self.package)))
                 .clone(),
         )
@@ -911,12 +928,12 @@ pub(crate) fn rewrite(
     filename: &str,
     package: &str,
     resolver: Option<&ModuleResolver>,
+    source_type: SourceType,
 ) -> Barreled {
     if is_vanilla_extract_file(filename) || (resolver.is_none() && !code.contains(package)) {
         return Barreled::Unchanged;
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
     let ParserReturn {
         program,
         fatal_error,
@@ -925,7 +942,7 @@ pub(crate) fn rewrite(
     if fatal_error {
         return Barreled::Unchanged;
     }
-    let no_modules = |_: &str, _: &str| -> Option<ResolvedModule> { None };
+    let no_modules = |_: &str, _: &str| -> Option<ModuleResolution> { None };
     let mut walker = Walker {
         resolver: resolver.unwrap_or(&no_modules),
         package,

@@ -16,6 +16,7 @@ fn build(atom: bool, debug: bool) -> (String, String, String) {
             filename: "a.tsx".into(),
             code: SOURCE_A.into(),
             css_dir: "df".into(),
+            source_type: None,
         }],
         option,
         None,
@@ -29,6 +30,7 @@ fn build(atom: bool, debug: bool) -> (String, String, String) {
         false,
         false,
         HashMap::new(),
+        None,
     )
     .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(get_unreserved_class_slot_count(), 0);
@@ -63,6 +65,7 @@ fn w66_single_css_does_not_freeze_empty_reach_before_per_file_reservation() {
         filename: "a.tsx".into(),
         code: RED.into(),
         css_dir: "df".into(),
+        source_type: None,
     }];
     // When
     reserve_class_slots_internal(
@@ -110,12 +113,14 @@ fn single_css_error_and_resolver_unwind_restore_effective_atom_mode() {
     assert!(error.to_string().contains("bad.tsx:"));
     assert!(css::atom_hoist::is_atom_hoist());
     assert_eq!(css::atom_hoist::atom_plan(), None);
-    let resolver = |_: &str, _: &str| -> Option<ResolvedModule> { panic!("resolver unwind") };
+    let resolver =
+        |_: &str, _: &str| -> Option<extractor::ModuleResolution> { panic!("resolver unwind") };
     let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         reserve_class_slots_internal(&[ReservationInput {
             filename: "root.css.ts".into(),
             code: "import {style} from '@devup-ui/react'; import {base} from './supplier.css'; export const own=style(base);".into(),
             css_dir: "df".into(),
+            source_type: None,
         }], option, Some(&resolver));
     }));
     assert!(unwind.is_err());

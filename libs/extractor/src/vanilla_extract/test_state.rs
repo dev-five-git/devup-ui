@@ -16,7 +16,7 @@ mod tests {
         super::super::strip_typescript("export const n: number = 1", "outer.ts");
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
-                "outer.css.ts".into(),
+                ("outer.css.ts".into(), None),
                 (1, "source".into(), "run".into(), CollectedStyles::default()),
             );
         });
@@ -29,7 +29,10 @@ mod tests {
         });
         assert!(result.is_err());
         assert_eq!(STRIPPED.with_borrow(Clone::clone), baseline);
-        assert_eq!(IMPORTED_RUNS.with_borrow(|runs| runs["outer.css.ts"].0), 1);
+        assert_eq!(
+            IMPORTED_RUNS.with_borrow(|runs| runs[&("outer.css.ts".to_string(), None)].0),
+            1
+        );
         let nested = CacheGuard::default();
         drop(nested);
         assert_eq!(STRIPPED.with_borrow(Clone::clone), baseline);
@@ -41,7 +44,7 @@ mod tests {
         super::super::strip_typescript("export const n: number = 1", "outer.ts");
         IMPORTED_RUNS.with_borrow_mut(|runs| {
             runs.insert(
-                "outer.css.ts".into(),
+                ("outer.css.ts".into(), None),
                 (1, "source".into(), "run".into(), CollectedStyles::default()),
             );
         });
