@@ -1,5 +1,6 @@
 import {
   AST_NODE_TYPES,
+  ASTUtils,
   ESLintUtils,
   type TSESTree,
 } from '@typescript-eslint/utils'
@@ -13,36 +14,52 @@ const createRule = ESLintUtils.RuleCreator(
     `https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/${name}`,
 )
 
+function isNullLiteral(
+  node: TSESTree.Node | null | undefined,
+): node is TSESTree.NullLiteral {
+  return node?.type === AST_NODE_TYPES.Literal && node.raw === 'null'
+}
+
 function checkUselessTailingNulls<T extends RuleContext<string, []>>(
   node: TSESTree.ArrayExpression,
   context: T,
 ) {
-  let nullCount = 0
-  for (let i = node.elements.length - 1; i >= 0; i--) {
+  const lastElement = node.elements[node.elements.length - 1]
+  if (!isNullLiteral(lastElement)) return
+  let trailingCount = 1
+  for (let i = node.elements.length - 2; i >= 0; i--) {
     const element = node.elements[i]
-    if (element?.type === AST_NODE_TYPES.Literal && element.value === null) {
-      nullCount++
+    if (!element || isNullLiteral(element)) {
+      trailingCount++
     } else {
       break
     }
   }
-  if (nullCount === 0) return
-  const previousElement = node.elements[node.elements.length - nullCount - 1]
-  const firstElement = node.elements[0]
-  const lastElement = node.elements[node.elements.length - 1]
-  if (!lastElement || (node.elements.length === nullCount && !firstElement))
-    return
-  const removeStart =
-    node.elements.length > nullCount && previousElement
-      ? previousElement.range[1]
-      : firstElement?.range[0]
-  if (removeStart === undefined) return
-
+  const previousElement =
+    node.elements[node.elements.length - trailingCount - 1]
   context.report({
     node,
     messageId: 'uselessTailingNulls',
     fix(fixer) {
-      return fixer.removeRange([removeStart, lastElement.range[1]])
+      const sourceCode = context.sourceCode
+      let removeStart = node.range[0] + 1
+      if (previousElement) {
+        const [separator] = sourceCode.getFirstTokensBetween(
+          previousElement,
+          lastElement,
+          { count: 1, filter: ASTUtils.isCommaToken },
+        )
+        const [previousToken] = sourceCode.getTokensBefore(separator, 1)
+        removeStart = previousToken.range[1]
+      } else if (node.elements[0]) {
+        const [, firstToken] = sourceCode.getFirstTokens(node, 2)
+        removeStart = firstToken.range[0]
+      }
+      const [beforeLastToken, lastToken] = sourceCode.getLastTokens(node, 3)
+      const removeEnd = ASTUtils.isCommaToken(lastToken)
+        ? beforeLastToken.range[1]
+        : lastToken.range[1]
+      return fixer.removeRange([removeStart, removeEnd])
     },
   })
 }
