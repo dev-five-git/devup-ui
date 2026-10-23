@@ -69,11 +69,7 @@ fn mixed_branches_when_captured_stay_lazy_and_keep_static_spacing() {
         "a(true,()=>{trace.push('inactive');return '9px';},{get id(){trace.push('spread');return 'id';}})",
     );
     assert_eq!(actual.trace, serde_json::json!(["spread"]));
-    assert!(
-        slots(&output(&source))
-            .iter()
-            .any(|slot| slot.fallback == "8px")
-    );
+    assert!(static_styles(&output(&source)).contains(&("padding".into(), "8px".into())));
 }
 
 #[test]
@@ -144,9 +140,5 @@ fn logical_branches_when_captured_keep_short_circuit_evaluation(#[case] active: 
             serde_json::json!(["spread"])
         }
     );
-    assert!(
-        slots(&output(&source))
-            .iter()
-            .any(|slot| slot.fallback == "8px")
-    );
+    assert!(static_styles(&output(&source)).contains(&("padding".into(), "8px".into())));
 }

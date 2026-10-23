@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Global CSS keeps the order it is written in: globalCss rules, @import and @font-face now appear in source order within each file (the later of two equal rules wins as written, repeated imports and font faces count where they are written last), object globalCss declarations on the same selector keep their written order, and custom cascade layers are declared in the order files first use them (nested layers after their parent) instead of alphabetical order",
+  "date": "2026-09-30T00:00:00.000Z"
+}

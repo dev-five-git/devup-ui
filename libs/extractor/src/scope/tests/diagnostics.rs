@@ -67,7 +67,7 @@ fn changed_top_level_binding_is_reported_but_a_local_of_the_same_name_is_not() {
          const base = { p: 4 };\nbase.p = 8;\n\
          export const a = <Box {...base} />;",
     );
-    assert!(element.is_err_and(|error| error.contains("`<Box>` cannot use `base`")));
+    assert!(element.is_ok_and(|code| code.contains("...base") && !code.contains("--padding")));
 
     let shadowed = extracted(
         "import { css, Box } from '@devup-ui/react';\n\

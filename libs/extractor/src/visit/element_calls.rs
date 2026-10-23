@@ -41,7 +41,7 @@ impl<'a> DevupVisitor<'a> {
         let Some(props) = argument.as_expression_mut() else {
             return false;
         };
-        if matches!(props, Expression::ObjectExpression(_)) {
+        if matches!(unwrap_syntax_only(props), Expression::ObjectExpression(_)) {
             return true;
         }
         let written = if holds_nothing(&self.bindings, props) {

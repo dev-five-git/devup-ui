@@ -2,11 +2,11 @@
 
 use super::DevupVisitor;
 use super::capture::Captured;
+use super::element_props::{flatten_known, is_unknown_spread};
 use super::jsx_order::AttributeOrder;
 use super::order::{
     Item, Reach, Role, classify, is_merged, last_captured, reach, suspends, written_properties,
 };
-use super::spread_slots::is_unknown_spread;
 use crate::utils::unwrap_syntax_only_mut;
 use css::disassemble_property;
 use oxc_allocator::TakeIn;
@@ -89,6 +89,7 @@ impl<'a> DevupVisitor<'a> {
         let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(props) else {
             return order;
         };
+        flatten_known(&self.ast, object);
         for property in &mut object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property
                 && property.key.static_name().is_none_or(|key| key != "css")
@@ -117,7 +118,6 @@ impl<'a> DevupVisitor<'a> {
                 {
                     let name = self.names.fresh("__devupSpread");
                     if unsafe_to_extract(&spread.argument) {
-                        self.report_hidden_selector(&spread.argument);
                         captured.push(self.snapshot_as(name, &mut spread.argument));
                     } else {
                         order.spreads.insert(spread.span.start, order.values.len());
@@ -188,7 +188,7 @@ impl<'a> DevupVisitor<'a> {
         props: &mut Expression<'a>,
     ) -> Vec<Captured<'a>> {
         let mut values = order.values;
-        if let Expression::ObjectExpression(object) = props {
+        if let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(props) {
             for property in &mut object.properties {
                 if let ObjectPropertyKind::SpreadProperty(spread) = property
                     && let Some(index) = order.spreads.get(&spread.span.start)
@@ -202,24 +202,6 @@ impl<'a> DevupVisitor<'a> {
             .into_iter()
             .filter_map(|(name, value)| Some((name, value?)))
             .collect()
-    }
-}
-
-impl DevupVisitor<'_> {
-    pub(super) fn report_hidden_selector(&mut self, value: &Expression<'_>) {
-        if let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(value) {
-            for property in &object.properties {
-                if let ObjectPropertyKind::ObjectProperty(property) = property
-                    && let Some(key) = property.key.static_name()
-                    && (key.starts_with('_')
-                        || key.starts_with('@')
-                        || key.contains('&')
-                        || matches!(key.as_ref(), "selectors" | "typography" | "css"))
-                {
-                    self.errors.push((property.span.start,crate::utils::build_time_error("style spread",&key,"an unknown computed key or accessor can replace or hide this whole style object; write the selector as an explicit prop after the spread")));
-                }
-            }
-        }
     }
 }
 

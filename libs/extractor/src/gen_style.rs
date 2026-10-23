@@ -28,22 +28,6 @@ fn extend_reversed_styles<'a>(
     );
 }
 
-/// Keep one `'--name': value` entry for each variable a breakpoint-wise
-/// override shares between classes
-fn drop_repeated_variables(properties: &mut Vec<ObjectPropertyKind<'_>>) {
-    let mut seen = FxHashSet::default();
-    properties.retain(|property| {
-        if let ObjectPropertyKind::ObjectProperty(property) = property
-            && let Some(name) = property.key.name()
-            && name.starts_with("--")
-            && let Expression::Identifier(value) = &property.value
-        {
-            return seen.insert((name.into_owned(), value.name.to_string()));
-        }
-        true
-    });
-}
-
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
@@ -54,7 +38,6 @@ pub fn gen_styles<'a>(
     }
     let mut properties: Vec<_> = Vec::with_capacity(style_props.len());
     extend_reversed_styles(ast_builder, &mut properties, style_props, filename);
-    drop_repeated_variables(&mut properties);
     if properties.is_empty() {
         return None;
     }

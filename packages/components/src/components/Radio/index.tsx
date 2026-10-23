@@ -1,4 +1,5 @@
 import { Box, Input, Text } from '@devup-ui/react'
+import { forwardRef } from 'react'
 
 type RadioProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   checked?: boolean
@@ -38,20 +39,23 @@ type RadioProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
       }
   )
 
-export function Radio({
-  className,
-  disabled,
-  children,
-  variant = 'default',
-  checked,
-  classNames,
-  styles,
-  style,
-  firstButton,
-  lastButton,
-  colors,
-  ...props
-}: RadioProps) {
+export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(
+  {
+    className,
+    disabled,
+    children,
+    variant = 'default',
+    checked,
+    classNames,
+    styles,
+    style,
+    firstButton,
+    lastButton,
+    colors,
+    ...props
+  },
+  ref,
+) {
   const isButton = variant === 'button'
   return (
     <Box
@@ -69,18 +73,28 @@ export function Radio({
     >
       {isButton ? (
         <Input
+          ref={ref}
           checked={checked}
           className={className}
+          clipPath="inset(50%)"
           data-radio-input
           disabled={disabled}
-          display="none"
+          h="1px"
+          m={0}
           opacity={0}
+          overflow="hidden"
+          pos="absolute"
           styleOrder={1}
           type="radio"
+          w="1px"
           {...props}
         />
       ) : (
         <Input
+          ref={ref}
+          _focusVisible={{
+            outline: '1px solid var(--border, var(--primary))',
+          }}
           appearance="none"
           bg="light-dark(#fff, #2E2E2E)"
           border="1px solid"
@@ -92,6 +106,24 @@ export function Radio({
           disabled={disabled}
           height="18px"
           m={0}
+          selectors={{
+            // checked
+            '&:checked:not(:disabled)': {
+              bg: 'var(--checkedBg, var(--primary, light-dark(#fff, #2E2E2E)))',
+              border: '3px solid',
+              borderColor: 'var(--checkedBg, light-dark(#fff, #2E2E2E))',
+              boxShadow: '0 0 0 1px var(--checkedBorder, var(--primary))',
+            },
+            // hover
+            '&:hover:not(:disabled,:checked)': {
+              border: '1px solid var(--hoverBorder, var(--primary))',
+              bg: 'var(--hoverBg, light-dark(color-mix(in srgb, var(--primary) 10%, white 90%), color-mix(in srgb, var(--primary) 10%, black 90%)))',
+            },
+            // disabled
+            '&:is(:disabled, [aria-disabled=true])': {
+              bgColor: 'var(--disabledBg, light-dark(#F0F0F3, #47474A))',
+            },
+          }}
           styleOrder={1}
           styleVars={{
             primary: colors?.primary,
@@ -111,27 +143,6 @@ export function Radio({
           type="radio"
           width="18px"
           {...props}
-          _focus={{
-            outline: '1px sold var(--border, var(--primary))',
-          }}
-          selectors={{
-            // checked
-            '&:checked:not(:disabled)': {
-              bg: 'var(--checkedBg, var(--primary, light-dark(#fff, #2E2E2E)))',
-              border: '3px solid',
-              borderColor: 'var(--checkedBg, light-dark(#fff, #2E2E2E))',
-              boxShadow: '0 0 0 1px var(--checkedBorder, var(--primary))',
-            },
-            // hover
-            '&:hover:not(:disabled,:checked)': {
-              border: '1px solid var(--hoverBorder, var(--primary))',
-              bg: 'var(--hoverBg, light-dark(color-mix(in srgb, var(--primary) 10%, white 90%), color-mix(in srgb, var(--primary) 10%, black 90%)))',
-            },
-            // disabled
-            '&:is(:disabled, [aria-disabled=true])': {
-              bgColor: 'var(--disabledBg, light-dark(#F0F0F3, #47474A))',
-            },
-          }}
         />
       )}
       {variant === 'button' ? (
@@ -160,6 +171,11 @@ export function Radio({
               bg: `var(--checkedBg, light-dark(color-mix(in srgb, var(--primary) 10%, white 80%), color-mix(in srgb, var(--primary) 10%, black 80%)))`,
               borderColor: 'var(--checkedBorder, var(--primary))',
               color: 'var(--checkedColor, var(--primary))',
+            },
+            // keyboard focus on the visually hidden radio
+            '[data-radio-input]:focus-visible + &': {
+              outline: '2px solid var(--checkedBorder, var(--primary))',
+              outlineOffset: '-2px',
             },
             // hover
             '&:hover:not([aria-disabled=true])': {
@@ -225,4 +241,4 @@ export function Radio({
       )}
     </Box>
   )
-}
+})

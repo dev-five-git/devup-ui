@@ -10,6 +10,7 @@ fn authored_captures_survive_when_css_prop_renders_fixed_prepared_styled(
     #[case] css_prop: bool,
     #[values(false, true)] selected: bool,
 ) {
+    let _state = crate::test_state::TestStateGuard::new();
     // Given: retained controller/leaf effects whose style is overwritten by a literal.
     let css = if css_prop { "css:{padding:4}," } else { "" };
     let source = format!(

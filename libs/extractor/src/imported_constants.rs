@@ -16,7 +16,7 @@ use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
-use oxc_span::{SPAN, SourceType};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::BinaryOperator;
 use oxc_syntax::symbol::SymbolId;
@@ -61,11 +61,59 @@ enum Constant {
     /// name, never rules; for a `css()` class, the styles behind it when
     /// they are known
     Style(Option<Rc<Vec<ExtractStyleValue>>>),
+    /// A native chain's defining argument and located refusal.
+    Failed(String),
+    /// A lookup failure retained only while resolving native rule metadata.
+    Unavailable(ChainReason),
     /// An object or array code changes, or a value read from one
     Changed(Rc<Change>),
 }
 
+#[derive(Clone, Debug)]
+enum ChainReason {
+    Cycle,
+    Module(String),
+    Export(String),
+    Constant,
+    Static,
+}
+
+impl ChainReason {
+    fn requirement(&self) -> String {
+        match self {
+            Self::Cycle => "native css chain must not be cyclic".to_string(),
+            Self::Module(source) => format!("native css chain needs module `{source}`"),
+            Self::Export(name) => format!("native css chain needs export `{name}`"),
+            Self::Constant => "native css rules must be constant at build time".to_string(),
+            Self::Static => "native css chain needs complete static rule metadata".to_string(),
+        }
+    }
+}
+
 impl Constant {
+    /// Retain a failed upstream edge, including one inside a rule object.
+    fn failure(&self) -> Option<Self> {
+        match self {
+            Self::Failed(_) | Self::Unavailable(_) => Some(self.clone()),
+            Self::Object(object) => object
+                .iter()
+                .filter_map(|(key, value)| value.failure().map(|failure| (key, failure)))
+                .min_by(|left, right| left.0.cmp(right.0))
+                .map(|(_, failure)| failure),
+            Self::Record(entries) => entries.iter().find_map(|(_, value)| value.failure()),
+            Self::Array(values) => values.iter().find_map(Self::failure),
+            Self::String(_)
+            | Self::Number(_)
+            | Self::Null
+            | Self::Bool(_)
+            | Self::Undefined
+            | Self::Function
+            | Self::Vars(_)
+            | Self::Theme(_)
+            | Self::Style(_)
+            | Self::Changed(_) => None,
+        }
+    }
     /// Whether code can change what it holds
     const fn is_mutable(&self) -> bool {
         matches!(self, Self::Object(_) | Self::Record(_) | Self::Array(_))
@@ -176,6 +224,7 @@ pub(crate) struct Inlined {
     pub stylex_themes: FxHashMap<String, String>,
     /// The styles behind imported `css()` classes
     pub css_styles: FxHashMap<String, Vec<ExtractStyleValue>>,
+    pub css_failures: Vec<String>,
     pub unknown: Unknown,
     pub changed: Changed,
     /// The semantic analysis of the program as parsed, so the visitor reuses
@@ -368,6 +417,7 @@ pub(crate) fn inline_constants<'a>(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     css_prop: CssProp,
+    px: &crate::import_alias_visit::PxMarks,
 ) -> Inlined {
     let imports_style_package = program.body.iter().any(|statement| {
         matches!(statement, Statement::ImportDeclaration(import)
@@ -389,7 +439,7 @@ pub(crate) fn inline_constants<'a>(
         filename,
         option,
         resolver,
-        css_prop,
+        (css_prop, px),
     );
     inlined.scoping = Some(scoping);
     inlined
@@ -406,8 +456,9 @@ fn inline_in<'a>(
     filename: &str,
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
-    css_prop: CssProp,
+    css_input: (CssProp, &crate::import_alias_visit::PxMarks),
 ) -> Inlined {
+    let (css_prop, px) = css_input;
     let compat = format!("{}/compat", option.package);
     let css_props = CssTakers::new(program, scoping, css_prop, &compat);
     let mut style = StyleSymbols::new(scoping);
@@ -417,6 +468,11 @@ fn inline_in<'a>(
         {
             let stylex = import.source.value == crate::STYLEX_PACKAGE;
             for specifier in import.specifiers.iter().flatten() {
+                if matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(specifier)
+                    if specifier.imported.name() == "ClassNames" && import.source.value == compat.as_str())
+                {
+                    continue;
+                }
                 if let Some(local) = specifier.local().symbol_id.get() {
                     style.roots.insert(local);
                     match specifier {
@@ -444,7 +500,11 @@ fn inline_in<'a>(
     };
     read.visit_program(program);
     let initialization = initialization::Initialization::new(program, scoping);
-    let declarations = lexical::declarations(ast_builder, program, scoping);
+    let (declarations, copies) = lexical::declarations(ast_builder, program, scoping);
+    for reference in &copies {
+        read.symbols
+            .extend(scoping.get_reference(*reference).symbol_id());
+    }
     loop {
         let before = read.symbols.len();
         for (symbol, init) in &declarations {
@@ -466,6 +526,7 @@ fn inline_in<'a>(
     if !inlined.errors.is_empty() {
         return inlined;
     }
+    let names = read.names;
     let mut modules = Modules {
         resolver,
         option,
@@ -543,14 +604,11 @@ fn inline_in<'a>(
         }
         // Constants are only worth reading when a style reads a name that may
         // hold one
-        let reads_math = read.names.contains("Math") && !scope.binds("Math");
-        if !reads_math
-            && read.symbols.is_empty()
-            && !read.names.iter().any(|name| scope.binds(name))
-        {
+        let reads_math = names.contains("Math") && !scope.binds("Math");
+        if !reads_math && read.symbols.is_empty() && !names.iter().any(|name| scope.binds(name)) {
             return Inlined::default();
         }
-        for name in &read.names {
+        for name in &names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
             match &constant {
@@ -567,7 +625,7 @@ fn inline_in<'a>(
                 _ => {}
             }
             match &constant {
-                None if bound => {
+                None | Some(Constant::Unavailable(_)) if bound => {
                     inlined.unknown.names.insert(name.clone());
                 }
                 Some(object)
@@ -606,7 +664,12 @@ fn inline_in<'a>(
     inlined.dependencies = modules.exports.into_keys().collect();
     let mut pending = declarations;
     pending.retain(|symbol, _| {
-        read.symbols.contains(symbol) && scoping.symbol_scope_id(*symbol) != scoping.root_scope_id()
+        (read.symbols.contains(symbol)
+            || scoping
+                .get_resolved_reference_ids(*symbol)
+                .iter()
+                .any(|id| copies.contains(id)))
+            && scoping.symbol_scope_id(*symbol) != scoping.root_scope_id()
     });
     loop {
         let inline = Inline {
@@ -616,15 +679,61 @@ fn inline_in<'a>(
             symbols: &symbols,
             style: &style,
             css_props: &css_props,
+            css_failures: &mut inlined.css_failures,
             objects: false,
             styles: false,
             px: false,
+            position: InlinePosition::Rules,
+            marks: px,
             class_names: Vec::new(),
         };
         let resolved: Vec<_> = pending
             .iter()
             .filter_map(|(symbol, init)| {
-                let value = inline.operand(init)?;
+                let value = if scoping
+                    .get_resolved_reference_ids(*symbol)
+                    .iter()
+                    .all(|id| copies.contains(id))
+                {
+                    inline.operand(init).or_else(|| {
+                        let Expression::ObjectExpression(object) =
+                            crate::utils::unwrap_syntax_only(init)
+                        else {
+                            return None;
+                        };
+                        let entries: Option<Vec<_>> = object
+                            .properties
+                            .iter()
+                            .map(|property| {
+                                let ObjectPropertyKind::ObjectProperty(property) = property else {
+                                    return None;
+                                };
+                                if property.kind != oxc_ast::ast::PropertyKind::Init
+                                    || property.method
+                                {
+                                    return None;
+                                }
+                                let key = crate::utils::get_str_by_property_key(&property.key)?
+                                    .into_owned();
+                                if key == "__proto__" && !property.computed {
+                                    return None;
+                                }
+                                let value = inline.operand(&property.value)?;
+                                matches!(
+                                    value,
+                                    Constant::String(_)
+                                        | Constant::Number(_)
+                                        | Constant::Null
+                                        | Constant::Bool(_)
+                                )
+                                .then_some((key, value))
+                            })
+                            .collect();
+                        Some(Constant::Record(Rc::new(entries?)))
+                    })?
+                } else {
+                    inline.operand(init)?
+                };
                 if matches!(&value, Constant::Number(number) if !number.is_finite()) {
                     return None;
                 }
@@ -635,6 +744,7 @@ fn inline_in<'a>(
                         | Constant::Null
                         | Constant::Bool(_)
                         | Constant::Undefined
+                        | Constant::Record(_)
                 )
                 .then_some((*symbol, value))
             })
@@ -655,9 +765,12 @@ fn inline_in<'a>(
             symbols: &symbols,
             style: &style,
             css_props: &css_props,
+            css_failures: &mut inlined.css_failures,
             objects: false,
             styles: false,
             px: false,
+            position: InlinePosition::Rules,
+            marks: px,
             class_names: Vec::new(),
         }
         .visit_program(program);
@@ -966,23 +1079,34 @@ impl Modules<'_> {
         specifier: &str,
         importer: &str,
     ) -> Option<Rc<FxHashMap<String, Constant>>> {
-        let module = (self.resolver?)(specifier, importer)?;
+        self.resolve_exports(specifier, importer).ok()
+    }
+
+    fn resolve_exports(
+        &mut self,
+        specifier: &str,
+        importer: &str,
+    ) -> Result<Rc<FxHashMap<String, Constant>>, ChainReason> {
+        let module = self
+            .resolver
+            .and_then(|resolver| resolver(specifier, importer))
+            .ok_or_else(|| ChainReason::Module(specifier.to_string()))?;
         if let Some(exports) = self.exports.get(&module.path) {
-            return Some(exports.clone());
+            return Ok(exports.clone());
         }
         if self.loading.contains(&module.path) {
-            return None;
+            return Err(ChainReason::Cycle);
         }
         self.loading.push(module.path.clone());
         let exports = Rc::new(self.read(&module.path, &module.code));
         self.loading.pop();
         self.exports.insert(module.path, exports.clone());
-        Some(exports)
+        Ok(exports)
     }
 
     fn read(&mut self, path: &str, code: &str) -> FxHashMap<String, Constant> {
         let allocator = Allocator::default();
-        let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+        let source_type = crate::parsing::source_type(path).unwrap_or_else(|_| SourceType::ts());
         let program = Parser::new(&allocator, code, source_type).parse().program;
         let mut scope = ModuleScope::new(path, &program, Some(code));
         let mut exports = FxHashMap::default();
@@ -1022,15 +1146,16 @@ impl Modules<'_> {
                     }
                 }
                 Statement::ExportFromDeclaration(export) => {
-                    if let Some(from) = self.exports(&export.source.value, path) {
-                        for specifier in &export.specifiers {
-                            if let Some(constant) = from.get(specifier.local.name().as_str()) {
-                                exports.insert(
-                                    specifier.exported.name().to_string(),
-                                    constant.clone(),
-                                );
-                            }
-                        }
+                    let from = self.resolve_exports(&export.source.value, path);
+                    for specifier in &export.specifiers {
+                        let name = specifier.local.name();
+                        let constant = match &from {
+                            Ok(from) => from.get(name.as_str()).cloned().unwrap_or_else(|| {
+                                Constant::Unavailable(ChainReason::Export(name.to_string()))
+                            }),
+                            Err(reason) => Constant::Unavailable(reason.clone()),
+                        };
+                        exports.insert(specifier.exported.name().to_string(), constant);
                     }
                 }
                 Statement::ExportAllDeclaration(export) => {
@@ -1234,6 +1359,8 @@ struct ModuleScope<'p, 'a> {
         &'p oxc_ast::ast::TSEnumDeclaration<'a>,
         FxHashMap<String, Constant>,
     )>,
+    active: FxHashSet<String>,
+    resolving_css: bool,
     imports: FxHashMap<String, (String, Imported)>,
     style_imports: FxHashSet<String>,
     /// Style APIs besides the imports, which never run what they are given
@@ -1261,6 +1388,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             declarations: FxHashMap::default(),
             enums: FxHashMap::default(),
             enum_members: None,
+            active: FxHashSet::default(),
+            resolving_css: false,
             imports: FxHashMap::default(),
             style_imports: FxHashSet::default(),
             style_names: FxHashSet::default(),
@@ -1290,14 +1419,12 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             })
     }
 
-    /// The styles behind `css(rules)`, the package's own `css` given one
-    /// rule object every value of which is known, as the module's class names
-    /// do not tell them
+    /// Native named css definitions merge known parts in argument order.
     fn css_styles(
         &mut self,
         modules: &mut Modules<'_>,
         call: &oxc_ast::ast::CallExpression<'_>,
-    ) -> Option<Rc<Vec<ExtractStyleValue>>> {
+    ) -> Option<Constant> {
         let Expression::Identifier(callee) = &call.callee else {
             return None;
         };
@@ -1307,36 +1434,79 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         if export != "css" || !source.starts_with(modules.option.package.as_str()) {
             return None;
         }
-        let [argument] = call.arguments.as_slice() else {
+        let code = self.source?;
+        if matches!(call.arguments.as_slice(), [Argument::ArrayExpression(_)]) {
             return None;
-        };
-        let rules = self.evaluate(modules, argument.as_expression()?)?;
+        }
         let allocator = Allocator::default();
         let builder = AstBuilder::new(&allocator);
-        let mut rules = match constant_literal(&builder, &rules, true)? {
-            rules @ Expression::ObjectExpression(_) => rules,
-            _ => return None,
-        };
-        let ExtractResult {
-            mut styles,
-            style_order,
-            ..
-        } = extract_style_from_expression(
-            &builder,
-            None,
-            &mut rules,
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-        );
-        if let Some(order) = style_order {
-            for prop in &mut styles {
-                set_prop_order(prop, order);
-            }
-        }
         let mut composition = Composition::default();
-        composition.apply(&builder, styles);
-        composition.unconditional().map(Rc::new)
+        for argument in &call.arguments {
+            let previous = self.resolving_css;
+            self.resolving_css = true;
+            let value = argument
+                .as_expression()
+                .and_then(|expression| self.evaluate(modules, expression));
+            self.resolving_css = previous;
+            let failure = value.as_ref().and_then(Constant::failure);
+            let reason = match failure {
+                Some(Constant::Failed(message)) => return Some(Constant::Failed(message)),
+                Some(Constant::Unavailable(reason)) => reason,
+                _ => match value {
+                    Some(Constant::Null | Constant::Undefined | Constant::Bool(false)) => continue,
+                    Some(Constant::Style(Some(styles))) => {
+                        composition.apply(
+                            &builder,
+                            styles
+                                .iter()
+                                .cloned()
+                                .map(crate::ExtractStyleProp::Static)
+                                .collect(),
+                        );
+                        continue;
+                    }
+                    Some(ref value @ Constant::Record(_)) => {
+                        if let Some(mut rules @ Expression::ObjectExpression(_)) =
+                            constant_literal(&builder, value, true)
+                        {
+                            let ExtractResult {
+                                mut styles,
+                                style_order,
+                                ..
+                            } = extract_style_from_expression(
+                                &builder,
+                                None,
+                                &mut rules,
+                                0,
+                                &None,
+                                LiteralHandling::ExpandResponsiveThemeToken,
+                            );
+                            if let Some(order) = style_order {
+                                for prop in &mut styles {
+                                    set_prop_order(prop, order);
+                                }
+                            }
+                            composition.apply(&builder, styles);
+                            continue;
+                        }
+                        ChainReason::Constant
+                    }
+                    Some(Constant::Object(_)) | None => ChainReason::Constant,
+                    Some(Constant::Array(_)) if call.arguments.len() == 1 => return None,
+                    Some(_) => ChainReason::Static,
+                },
+            };
+            let span = argument.span();
+            let expression = &code[span.start as usize..span.end as usize];
+            return Some(Constant::Failed(format!(
+                "{}: {}",
+                crate::locate(self.path, code, span.start as usize),
+                crate::utils::build_time_error("css", expression, &reason.requirement())
+            )));
+        }
+        composition
+            .unconditional()
+            .map(|styles| Constant::Style(Some(Rc::new(styles))))
     }
 
     fn is_style_import(&self, option: &ExtractOption, name: &str) -> bool {
@@ -1575,17 +1745,30 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             self.locals.insert(name.to_string(), value.clone());
             return Some(value);
         }
-        // Taken out while it is evaluated, so a constant reading itself stops
-        if let Some(init) = self.declarations.remove(name)
-            && let Some(constant) = self.evaluate(modules, init)
-        {
-            self.locals.insert(name.to_string(), constant.clone());
-            return Some(constant);
+        if self.active.contains(name) {
+            return self
+                .resolving_css
+                .then_some(Constant::Unavailable(ChainReason::Cycle));
+        }
+        if let Some(init) = self.declarations.remove(name) {
+            self.active.insert(name.to_string());
+            let constant = self.evaluate(modules, init);
+            self.active.remove(name);
+            if let Some(constant) = constant {
+                self.locals.insert(name.to_string(), constant.clone());
+                return Some(constant);
+            }
         }
         let (source, imported) = self.imports.get(name)?;
-        let exports = modules.exports(source, self.path)?;
+        let exports = match modules.resolve_exports(source, self.path) {
+            Ok(exports) => exports,
+            Err(reason) => return self.resolving_css.then_some(Constant::Unavailable(reason)),
+        };
         match imported {
-            Imported::Named(export) => exports.get(export).cloned(),
+            Imported::Named(export) => exports.get(export).cloned().or_else(|| {
+                self.resolving_css
+                    .then(|| Constant::Unavailable(ChainReason::Export(export.clone())))
+            }),
             Imported::Namespace => Some(Constant::Object(exports)),
         }
     }
@@ -1839,7 +2022,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     return fold_math(&name, &arguments);
                 }
                 if self.is_style_api(modules, &call.callee) {
-                    return Some(Constant::Style(self.css_styles(modules, call)));
+                    return Some(
+                        self.css_styles(modules, call)
+                            .unwrap_or(Constant::Style(None)),
+                    );
                 }
                 self.evaluate_stylex(modules, call)
             }
@@ -2049,6 +2235,12 @@ fn fold_binary(operator: BinaryOperator, left: &Constant, right: &Constant) -> O
     };
     number.is_finite().then_some(Constant::Number(number))
 }
+#[derive(Clone, Copy)]
+enum InlinePosition {
+    Rules,
+    Property,
+}
+
 /// Replaces reads of constants where styles read them: primitives in the
 /// arguments of style APIs and in style props, objects and arrays where they
 /// are read as style objects, as a copy elsewhere would change their identity.
@@ -2060,12 +2252,17 @@ struct Inline<'s, 'a> {
     symbols: &'s FxHashMap<SymbolId, Constant>,
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
+    css_failures: &'s mut Vec<String>,
     /// Inside what the build reads as style objects
     objects: bool,
     /// Inside the arguments of a style API or a style prop
     styles: bool,
     /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
     px: bool,
+    position: InlinePosition,
+    /// Where a constant stands as a value or rules of a library reading
+    /// numbers as `px` lengths
+    marks: &'s crate::import_alias_visit::PxMarks,
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<SymbolId>,
@@ -2237,16 +2434,12 @@ impl<'a> Inline<'_, 'a> {
     }
 }
 
-/// `property` holding a number as the `px` length Emotion reads it as
-fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
-    if let Some(number) = crate::utils::js_number_literal(&property.value)
+/// `value` as the `px` length Emotion reads it as when it is a number
+fn px_number<'a>(ast_builder: &AstBuilder<'a>, value: &mut Expression<'a>) {
+    if let Some(number) = crate::utils::js_number_literal(value)
         && number != 0.0
-        && property
-            .key
-            .static_name()
-            .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
     {
-        property.value = Expression::new_string_literal(
+        *value = Expression::new_string_literal(
             SPAN,
             Str::from_in(format!("{number}px").as_str(), ast_builder.allocator()),
             None,
@@ -2255,14 +2448,50 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
     }
 }
 
+/// `property` holding a number as the `px` length Emotion reads it as
+fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+    if let Some(key) = property.key.static_name()
+        && let Expression::ArrayExpression(array) = &property.value
+        && let Some(value) = crate::import_alias_visit::fallback_value(&key, array)
+    {
+        property.value = Expression::new_string_literal(
+            SPAN,
+            Str::from_in(value.as_str(), ast_builder.allocator()),
+            None,
+            ast_builder,
+        );
+    }
+    if property
+        .key
+        .static_name()
+        .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
+    {
+        px_number(ast_builder, &mut property.value);
+    }
+}
+
 /// The rules `rules` with their numbers as the `px` lengths Emotion reads them
 /// as, nested rules included
 fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
-    if let Expression::ObjectExpression(object) = rules {
-        for property in &mut object.properties {
-            if let ObjectPropertyKind::ObjectProperty(property) = property {
-                px_value(ast_builder, property);
-                px_rules(ast_builder, &mut property.value);
+    let mut pending = vec![rules];
+    while let Some(rules) = pending.pop() {
+        if let Expression::ArrayExpression(array) = rules {
+            pending.extend(
+                array
+                    .elements
+                    .iter_mut()
+                    .filter_map(|element| element.as_expression_mut()),
+            );
+        } else if let Expression::ObjectExpression(object) = rules {
+            for property in &mut object.properties {
+                if let ObjectPropertyKind::ObjectProperty(property) = property
+                    && property.key.static_name().is_none_or(|key| key != "vars")
+                {
+                    px_value(ast_builder, property);
+                    if matches!(property.value, Expression::ObjectExpression(_)) {
+                        pending.push(&mut property.value);
+                    }
+                }
             }
         }
     }
@@ -2305,7 +2534,7 @@ fn constant_literal<'a>(
                     constant_literal(builder, value, objects)?,
                     false,
                     false,
-                    false,
+                    key == "__proto__",
                     builder,
                 ));
             }
@@ -2323,17 +2552,44 @@ fn constant_literal<'a>(
 }
 
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
+    fn visit_object_property_kind(&mut self, property: &mut ObjectPropertyKind<'a>) {
+        if let ObjectPropertyKind::SpreadProperty(spread) = property
+            && !self.styles
+            && let Expression::Identifier(identifier) =
+                crate::utils::unwrap_syntax_only(&spread.argument)
+            && binding_of(self.scoping, identifier).is_some_and(|symbol| {
+                self.scoping.symbol_scope_id(symbol) != self.scoping.root_scope_id()
+            })
+            && let Some(value @ Constant::Record(_)) = self.constant(&spread.argument)
+            && let Some(literal) = constant_literal(self.ast_builder, &value, true)
+        {
+            spread.argument = literal;
+        } else {
+            walk_mut::walk_object_property_kind(self, property);
+        }
+    }
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if self.styles {
-            if let Some(literal) = self
-                .constant(expression)
-                .and_then(|constant| self.literal(&constant))
-            {
-                *expression = literal;
-                if self.px {
-                    px_rules(self.ast_builder, expression);
+            if let Some(constant) = self.constant(expression) {
+                if let Constant::Failed(message) = constant {
+                    self.css_failures.push(message);
+                    return;
                 }
-                return;
+                if let Some(literal) = self.literal(&constant) {
+                    let span = expression.span();
+                    let marked = self.marks.contains(&(span.start, span.end));
+                    *expression = literal;
+                    if marked {
+                        px_number(self.ast_builder, expression);
+                    }
+                    if (self.px || marked)
+                        && (matches!(self.position, InlinePosition::Rules)
+                            || matches!(expression, Expression::ObjectExpression(_)))
+                    {
+                        px_rules(self.ast_builder, expression);
+                    }
+                    return;
+                }
             }
             if let Some(chosen) = self.chosen(expression) {
                 *expression = chosen;
@@ -2341,7 +2597,12 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 return;
             }
         }
+        let span = expression.span();
+        let marked = self.styles && self.marks.contains(&(span.start, span.end));
         walk_mut::walk_expression(self, expression);
+        if marked && matches!(expression, Expression::ObjectExpression(_)) {
+            px_rules(self.ast_builder, expression);
+        }
     }
 
     fn visit_tagged_template_expression(
@@ -2447,7 +2708,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         let inlined_number = self.px
             && self.styles
             && matches!(self.constant(&property.value), Some(Constant::Number(_)));
+        let outer = std::mem::replace(&mut self.position, InlinePosition::Property);
         walk_mut::walk_object_property(self, property);
+        self.position = outer;
         if property.shorthand && !matches!(property.value, Expression::Identifier(_)) {
             property.shorthand = false;
         }

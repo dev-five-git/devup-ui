@@ -9,7 +9,7 @@ use oxc_ast::{
     builder::AstBuilder,
 };
 use oxc_ast_visit::Visit;
-use oxc_span::SPAN;
+use oxc_span::{FileExtension, SPAN};
 use rustc_hash::FxHashSet;
 
 #[cfg(test)]
@@ -38,7 +38,12 @@ impl<'a> Visit<'a> for Names<'a> {
 impl StyledJsx {
     /// Reserve a name across all scopes before extraction removes or rewrites nodes.
     pub(crate) fn reserve(program: &Program<'_>) -> Option<Self> {
-        if program.source_type.is_jsx() {
+        if program.source_type.is_jsx()
+            && !matches!(
+                program.source_type.extension(),
+                Some(FileExtension::Js | FileExtension::Mjs | FileExtension::Cjs)
+            )
+        {
             return None;
         }
         let mut names = Names::default();

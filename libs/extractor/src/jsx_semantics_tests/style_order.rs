@@ -5,12 +5,25 @@ use serial_test::serial;
 #[serial]
 fn style_order_the_build_knows_is_kept() {
     let rendered = code(&format!(
-        "{BOX}const ORDER = 3;\nexport const a = <Box styleOrder={{ORDER}} color=\"red\" />;\nexport const b = <Box styleOrder={{5 as number}} color=\"red\" />;\nexport const c = <Box styleOrder={{undefined}} color=\"red\" />;\nexport const d = <Box styleOrder={{cond ? 1 : undefined}} color=\"red\" />;\nexport const e = <Box styleOrder={{cond && 2}} color=\"red\" />;\nexport const f = <Box styleOrder=\"7\" color=\"red\" />;\nexport const g = <Box styleOrder={{}} color=\"red\" />;\nexport const h = <Box styleOrder={{cond ? null : void 0}} color=\"red\" />;"
+        "{BOX}const ORDER = 3;\nexport const a = <Box styleOrder={{ORDER}} color=\"red\" />;\nexport const b = <Box styleOrder={{5 as number}} color=\"red\" />;\nexport const c = <Box styleOrder={{undefined}} color=\"red\" />;\nexport const d = <Box styleOrder={{cond ? 1 : undefined}} color=\"red\" />;\nexport const e = <Box styleOrder={{cond && 2}} color=\"red\" />;\nexport const f = <Box styleOrder=\"7\" color=\"red\" />;\nexport const h = <Box styleOrder={{cond ? null : void 0}} color=\"red\" />;"
     ));
 
     for order in ["--3-", "--5-", "--255-", "--1-", "--2-", "--7-"] {
         assert!(rendered.contains(order), "{order}: {rendered}");
     }
+}
+
+#[test]
+#[serial]
+fn empty_style_order_expression_is_a_located_parse_error() {
+    let message = error(&format!(
+        "{BOX}export const g = <Box styleOrder={{}} color=\"red\" />;"
+    ));
+    assert!(message.starts_with("a.tsx:2:34:"), "{message}");
+    assert!(
+        message.contains("JSX attributes must only be assigned a non-empty 'expression'"),
+        "{message}"
+    );
 }
 
 #[test]

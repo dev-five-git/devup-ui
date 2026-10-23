@@ -2,11 +2,11 @@
 
 use super::DevupVisitor;
 use super::capture::Captured;
+use super::element_props::{flatten_known, is_unknown_spread};
 use super::order::{
     Item, Reach, Role, classify, is_merged, is_style, last_captured, reach, suspends,
     written_properties,
 };
-use super::spread_slots::is_unknown_spread;
 use crate::utils::Suspends;
 use css::disassemble_property;
 use oxc_allocator::{CloneIn, GetAllocator};
@@ -19,38 +19,6 @@ use oxc_ast_visit::Visit;
 use oxc_span::SPAN;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
-
-pub(super) fn spread_attribute<'b, 'a>(
-    attribute: &'b JSXAttributeItem<'a>,
-) -> Option<&'b oxc_ast::ast::JSXSpreadAttribute<'a>> {
-    match attribute {
-        SpreadAttribute(spread) => Some(spread),
-        Attribute(_) => None,
-    }
-}
-
-pub(super) fn prune_shadowed<'a>(
-    object: &mut oxc_ast::ast::ObjectExpression<'a>,
-    written: &mut FxHashSet<Cow<'a, str>>,
-) {
-    let mut given = Vec::new();
-    object.properties.retain(|property| {
-        let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) = property else {
-            return true;
-        };
-        let Some(key) = crate::utils::get_str_by_property_key(&property.key) else {
-            return true;
-        };
-        if css::is_special_property::is_special_property(&key) {
-            return true;
-        }
-        let names: Vec<_> = disassemble_property(&key).map(Cow::into_owned).collect();
-        let overridden = names.iter().all(|name| written.contains(name.as_str()));
-        given.extend(names);
-        !overridden
-    });
-    written.extend(given.into_iter().map(Cow::Owned));
-}
 
 /// What an element evaluates once, in the order its attributes are written
 #[derive(Default)]
@@ -167,6 +135,13 @@ impl<'a> DevupVisitor<'a> {
         let children_suspend = element.children.iter().any(child_suspends);
         let attributes = &mut element.opening_element.attributes;
         for attribute in attributes.iter_mut() {
+            if let SpreadAttribute(spread) = attribute
+                && !is_unknown_spread(&spread.argument)
+                && let Expression::ObjectExpression(object) =
+                    crate::utils::unwrap_syntax_only_mut(&mut spread.argument)
+            {
+                flatten_known(&self.ast, object);
+            }
             if let Attribute(attribute) = attribute
                 && !matches!(&attribute.name, Identifier(name) if name.name == "css")
                 && let Some(JSXAttributeValue::ExpressionContainer(container)) =
@@ -198,7 +173,6 @@ impl<'a> DevupVisitor<'a> {
                 SpreadAttribute(spread) if is_unknown_spread(&spread.argument) => {
                     let name = self.names.fresh("__devupSpread");
                     if super::call_order::unsafe_to_extract(&spread.argument) {
-                        self.report_hidden_selector(&spread.argument);
                         captured.push(self.snapshot_as(name, &mut spread.argument));
                     } else {
                         order.spreads.insert(spread.span.start, order.values.len());

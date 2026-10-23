@@ -657,6 +657,7 @@ impl TailwindClassName<'_> {
             ExtractStyleValue::Css(ExtractCss {
                 css: rule.to_string(),
                 file: PROPERTY_RULES_FILE.to_string(),
+                order: 0,
             })
         }));
         styles

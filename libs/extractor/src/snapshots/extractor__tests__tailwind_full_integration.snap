@@ -528,62 +528,72 @@ ToBTreeSet {
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-border-style{syntax:\"*\";inherits:false;initial-value:solid}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-duration{syntax:\"*\";inherits:false}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-ease{syntax:\"*\";inherits:false}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-inset-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-inset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-leading{syntax:\"*\";inherits:false}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-ring-offset-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-ring-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
+                file: "@devup-ui/tailwind",
+                order: 0,
                 css: "@property --tw-shadow-color{syntax:\"*\";inherits:false}",
-                file: "@devup-ui/tailwind",
             },
         ),
         Css(
             ExtractCss {
-                css: "@property --tw-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
                 file: "@devup-ui/tailwind",
+                order: 0,
+                css: "@property --tw-shadow{syntax:\"*\";inherits:false;initial-value:0 0 #0000}",
             },
         ),
     },

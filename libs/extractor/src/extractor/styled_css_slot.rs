@@ -15,12 +15,13 @@ use oxc_span::SPAN;
 use oxc_syntax::operator::LogicalOperator;
 use rustc_hash::FxHashSet;
 
+use super::styled_capability::StyledCapability;
 use super::styled_jsx::StyledJsx;
 use crate::utils::unwrap_syntax_only;
 
 pub(crate) struct StyledContext<'s> {
     pub jsx: &'s mut Option<StyledJsx>,
-    pub css_slot: Option<&'s StyledCssSlot>,
+    pub capability: Option<&'s StyledCapability>,
 }
 
 pub(crate) enum CssPropLowering {
@@ -84,11 +85,15 @@ impl<'a> Visit<'a> for Names {
 impl StyledCssSlot {
     /// Reserve a private prop before extraction can remove authored names or keys.
     pub(crate) fn reserve(program: &Program<'_>) -> Self {
+        Self::reserve_named(program, "__devupCss")
+    }
+
+    pub(crate) fn reserve_named(program: &Program<'_>, prefix: &str) -> Self {
         let mut names = Names::default();
         names.visit_program(program);
         let mut suffix = 0;
         loop {
-            let name = format!("__devupCss{suffix}");
+            let name = format!("{prefix}{suffix}");
             if !names.0.contains(&name) {
                 return Self(name);
             }

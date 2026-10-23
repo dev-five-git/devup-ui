@@ -1,7 +1,6 @@
 //! A dynamic `as` value belongs to props evaluation, not the first call argument.
 
 use super::DevupVisitor;
-use super::capture::Captured;
 use crate::utils::call_with_values;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::{
@@ -69,7 +68,7 @@ impl<'a> DevupVisitor<'a> {
     pub(super) fn finish_element_call(
         &mut self,
         call: &mut CallExpression<'a>,
-        mut values: Vec<Captured<'a>>,
+        mut values: Vec<super::capture::Captured<'a>>,
         default_tag: &str,
     ) {
         if values.is_empty() {

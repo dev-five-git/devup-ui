@@ -4,7 +4,6 @@
 //! declares, so a parameter, a `const` or a function sharing the name stays
 //! the code it is.
 
-mod class_names;
 mod lookup;
 mod required;
 mod visits;
@@ -21,7 +20,6 @@ use crate::component::ExportVariableKind;
 use crate::stylex::StylexFunction;
 use crate::util_type::UtilType;
 
-pub use class_names::ClassNamesSymbols;
 pub use visits::requires;
 
 /// What stands for `namespace.styled` once the visit has read it as a binding:

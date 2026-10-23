@@ -6,19 +6,25 @@ use css::file_map::reset_file_map;
 mod binding_edges;
 mod boundary_classes;
 mod boundary_selection;
+mod call_diagnostics;
+mod call_spread_attachment;
 mod calls;
 mod capture_edges;
 mod capture_preservation;
-mod captures;
 mod create_element;
+mod create_element_attachment;
 mod css_prop;
 mod errors;
 mod evaluation_edges;
 mod forwarded;
 mod gate_edges;
 mod ordered;
+mod pass_through;
+mod pass_through_edges;
+mod pass_through_known;
 mod repeated;
 mod slots;
+mod spread_repair;
 mod style_order;
 mod styled;
 mod type_imports;
@@ -70,40 +76,6 @@ fn error(source: &str) -> String {
         .unwrap_or_else(|| panic!("the negative fixture compiles: {source}"))
 }
 
-/// A style that gives way to a spread: its property, breakpoint, the code
-/// setting the variable it reads, the variable and the value it keeps
-struct Slot {
-    property: String,
-    level: u8,
-    identifier: String,
-    variable: String,
-    fallback: String,
-}
-
-fn slots(output: &ExtractOutput) -> Vec<Slot> {
-    let mut found: Vec<_> = output
-        .styles
-        .iter()
-        .filter_map(|style| match (style, style.extract(None)) {
-            (
-                ExtractStyleValue::Dynamic(dynamic),
-                Some(StyleProperty::Variable { variable_name, .. }),
-            ) => Some(Slot {
-                property: dynamic.property().to_string(),
-                level: dynamic.level(),
-                identifier: captures::materialized(dynamic.identifier(), &output.code),
-                variable: variable_name,
-                fallback: dynamic.fallback()?.to_string(),
-            }),
-            _ => None,
-        })
-        .collect();
-    found.sort_by(|a, b| {
-        (&a.property, a.level, &a.fallback).cmp(&(&b.property, b.level, &b.fallback))
-    });
-    found
-}
-
 fn static_styles(output: &ExtractOutput) -> Vec<(String, String)> {
     let mut found: Vec<_> = output
         .styles
@@ -130,12 +102,4 @@ fn run(body: &str) -> String {
         |error| panic!("{error}: {script}"),
         |text| text.to_std_string_escaped(),
     )
-}
-
-/// What the code `identifier` of a slot reads once `setup` has bound the
-/// props the spreads give: the value as JSON, or `undefined` when it sets none
-fn read(identifier: &str, setup: &str) -> String {
-    run(&format!(
-        "{setup} const slot = {identifier}; return slot === undefined ? 'undefined' : JSON.stringify(slot);"
-    ))
 }

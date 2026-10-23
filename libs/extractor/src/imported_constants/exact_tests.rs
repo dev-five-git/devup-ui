@@ -79,10 +79,16 @@ fn jsx12_primitives_when_lexical_bindings_share_names() {
 #[serial_test::serial]
 fn jsx12_primitives_when_nested_scopes_read_imports_and_outer_constants() {
     let output = extracted("import { Box } from '@devup-ui/react'; import { BASE } from './values'; const STEP = 2; export function f() { const n = BASE + STEP; { const n = 9; observe(n); } const value = (`${n}px` as const) satisfies string; return <Box zIndex={n} width={value} />; }", "export const BASE = 5;").unwrap_or_else(|error| panic!("jsx12_primitives_when_nested_scopes_read_imports_and_outer_constants: {error}"));
-    assert_eq!(
-        static_values(&output),
-        vec!["7px".to_string(), "7".to_string()]
-    );
+    let mut values = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            ExtractStyleValue::Static(style) => Some((style.property(), style.value())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    values.sort_unstable();
+    assert_eq!(values, vec![("width", "7px"), ("z-index", "7")]);
     assert_eq!(output.dependencies, vec!["/src/values.ts".to_string()]);
 }
 

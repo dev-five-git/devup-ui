@@ -1,7 +1,3 @@
-//! Negative cases paired with legacy snapshots. Unknown spreads must precede
-//! explicit selector/typography props; lexical self-initialization is a TDZ error,
-//! unlike the hoisted `var` self-read retained as the positive dynamic control.
-
 use crate::{ExtractOption, extract};
 use css::class_map::reset_class_map;
 use css::file_map::reset_file_map;
@@ -48,16 +44,11 @@ import clsx from 'clsx'
     />
 "#;
 
-    let message = error("test.tsx", source, core_option());
-
-    assert!(
-        message.starts_with("test.tsx:11:7: `<DevupButton>` cannot use `typography`"),
-        "{message}"
-    );
-    assert!(
-        message.contains("write the spread before `typography`"),
-        "{message}"
-    );
+    let compiled =
+        extract("test.tsx", source, core_option()).unwrap_or_else(|error| panic!("{error}"));
+    assert!(compiled.code.contains("typo-buttonS"), "{}", compiled.code);
+    assert!(compiled.code.contains("typo-buttonM"), "{}", compiled.code);
+    assert!(compiled.code.contains("...props"), "{}", compiled.code);
 }
 
 pub(super) fn extract_selector() {
@@ -84,21 +75,10 @@ pub(super) fn extract_selector() {
     </Center>
         ";
 
-    let message = error("test.tsx", source, core_option());
-
-    for (location, key) in [("test.tsx:3:7", "_active"), ("test.tsx:9:7", "_hover")] {
-        assert!(
-            message.contains(&format!("{location}: `<Center>` cannot use `{key}`")),
-            "{message}"
-        );
-        assert!(
-            message.contains(&format!("replace the whole `{key}` object")),
-            "{message}"
-        );
-        assert!(
-            message.contains(&format!("write the spread before `{key}`")),
-            "{message}"
-        );
+    let compiled =
+        extract("test.tsx", source, core_option()).unwrap_or_else(|error| panic!("{error}"));
+    for selector in ["&:active", "&:hover"] {
+        assert!(compiled.styles.iter().any(|style|matches!(style,crate::ExtractStyleValue::Static(value) if value.selector().is_some_and(|value|value.to_string().contains(selector)))),"{selector}: {}",compiled.code);
     }
 }
 
@@ -126,20 +106,10 @@ export default function Card({
 
         ";
 
-    let message = error("test.jsx", source, core_option());
-
-    assert!(
-        message.starts_with("test.jsx:10:7: `<VStack>` cannot use `_active`"),
-        "{message}"
-    );
-    assert!(
-        message.contains("replace the whole `_active` object"),
-        "{message}"
-    );
-    assert!(
-        message.contains("write the spread before `_active`"),
-        "{message}"
-    );
+    let compiled =
+        extract("test.jsx", source, core_option()).unwrap_or_else(|error| panic!("{error}"));
+    assert!(compiled.styles.iter().any(|style|matches!(style,crate::ExtractStyleValue::Static(value) if value.value()=="scale(.95)")),"{}",compiled.code);
+    assert!(compiled.code.contains("...props"), "{}", compiled.code);
 }
 
 pub(super) fn test_inline_local_constants() {

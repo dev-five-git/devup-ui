@@ -20,6 +20,7 @@ fn inline(code: &str) -> (String, Inlined) {
         &ExtractOption::default(),
         None,
         CssProp::Off,
+        &crate::import_alias_visit::PxMarks::default(),
     );
     (Codegen::new().build(&program).code, result)
 }

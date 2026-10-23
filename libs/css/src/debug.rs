@@ -20,6 +20,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_set_debug() {
+        let _state = crate::test_state::TestStateGuard::new();
         set_debug(true);
         assert!(is_debug());
         set_debug(false);

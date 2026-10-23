@@ -1,0 +1,10 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "Add an internal aggregate compiler-state reset for isolated tests, scoped native cleanup and Next test-cache isolation; verify real Bun registration callbacks and packed production consumers across bundlers and browsers. No new application build errors are introduced.",
+  "date": "2026-10-07T00:00:00.000Z"
+}

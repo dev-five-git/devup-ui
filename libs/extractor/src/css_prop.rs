@@ -20,7 +20,10 @@ use rustc_hash::FxHashSet;
 
 use crate::ImportAlias;
 use crate::css_utils::{Place, interpolation_place};
-use crate::utils::{binding_root, get_string_by_literal_expression, unwrap_syntax_only};
+use crate::utils::{
+    binding_root, get_key_by_literal_expression, get_string_by_literal_expression,
+    unwrap_syntax_only,
+};
 
 /// The package whose alias makes elements take the `css` prop
 pub(crate) const EMOTION_REACT: &str = "@emotion/react";
@@ -283,14 +286,16 @@ pub(crate) fn is_emotion(source: &str) -> bool {
 
 /// Where the JSX pragma in the comment text `comment` names `@emotion/react`
 /// as the module JSX is built with
-pub(crate) fn emotion_pragma(comment: &str) -> Option<usize> {
-    let at = comment.find("@jsxImportSource")? + "@jsxImportSource".len();
-    let value = comment[at..].trim_start();
-    let rest = value.strip_prefix(EMOTION_REACT)?;
-    rest.chars()
-        .next()
-        .is_none_or(|c| c.is_whitespace() || c == '*')
-        .then(|| comment.len() - value.len())
+#[cfg(test)]
+fn emotion_pragma(comment: &str) -> Option<usize> {
+    let closing = if comment.ends_with('*') { "/" } else { "*/" };
+    let source = format!("/*{comment}{closing}\nexport const anchor=1;");
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&allocator, &source, oxc_span::SourceType::tsx()).parse();
+    assert!(!parsed.diagnostics.has_errors());
+    crate::jsx_import_source::emotion_replacements(&parsed.program)
+        .first()
+        .map(|(start, _, _)| start - "/*".len())
 }
 
 /// The React module an Emotion JSX runtime stands in for
@@ -426,42 +431,24 @@ pub(crate) fn render_function<'b, 'a>(
     }
 }
 
-/// The names Emotion's `<ClassNames>` child function takes `css` and the
-/// theme by
+/// The lexical bindings of a `<ClassNames>` child function's APIs and theme.
 #[derive(Default, Clone, Copy)]
-pub(crate) struct ClassNamesParams<'a> {
-    pub css: Option<&'a str>,
-    pub theme: Option<&'a str>,
+pub(crate) struct ClassNamesParams {
+    pub css: Option<SymbolId>,
+    pub cx: Option<SymbolId>,
+    pub theme: Option<SymbolId>,
 }
 
-/// A binding a `<ClassNames>` child function declares for what it takes
-#[derive(Clone, Copy)]
-struct Local<'a> {
-    name: &'a str,
-    symbol: Option<SymbolId>,
-}
-
-#[derive(Default, Clone, Copy)]
-struct ClassNamesLocals<'a> {
-    css: Option<Local<'a>>,
-    cx: Option<Local<'a>>,
-    theme: Option<Local<'a>>,
+impl ClassNamesParams {
+    pub(crate) fn is(slot: Option<SymbolId>, symbol: Option<SymbolId>) -> bool {
+        slot.is_some() && slot == symbol
+    }
 }
 
 /// What `params` take of `{ css, cx, theme }`; `None` when they take it in a
 /// way the build cannot follow
-pub(crate) fn class_names_params<'a>(
-    params: &FormalParameters<'a>,
-) -> Option<ClassNamesParams<'a>> {
-    let locals = class_names_locals(params)?;
-    Some(ClassNamesParams {
-        css: locals.css.map(|local| local.name),
-        theme: locals.theme.map(|local| local.name),
-    })
-}
-
-fn class_names_locals<'a>(params: &FormalParameters<'a>) -> Option<ClassNamesLocals<'a>> {
-    let mut names = ClassNamesLocals::default();
+pub(crate) fn class_names_params(params: &FormalParameters<'_>) -> Option<ClassNamesParams> {
+    let mut names = ClassNamesParams::default();
     if params.rest.is_some() {
         return None;
     }
@@ -488,10 +475,7 @@ fn class_names_locals<'a>(params: &FormalParameters<'a>) -> Option<ClassNamesLoc
                     "theme" => &mut names.theme,
                     _ => return None,
                 };
-                *slot = Some(Local {
-                    name: local.name.as_str(),
-                    symbol: local.symbol_id.get(),
-                });
+                *slot = local.symbol_id.get();
             }
         }
         _ => return None,
@@ -519,37 +503,36 @@ fn class_names_function_params<'b, 'a>(
 }
 
 /// What the child function of the `<ClassNames>` element `element` takes
-pub(crate) fn class_names_child<'a>(element: &JSXElement<'a>) -> Option<ClassNamesParams<'a>> {
+pub(crate) fn class_names_child(element: &JSXElement<'_>) -> Option<ClassNamesParams> {
     class_names_function_params(element).and_then(class_names_params)
 }
 
-/// The bindings the child function of the `<ClassNames>` element `element`
-/// takes `css` and `cx` by, which read styles
-fn class_names_calls(element: &JSXElement<'_>) -> Vec<SymbolId> {
-    class_names_function_params(element)
-        .and_then(class_names_locals)
-        .map(|names| {
-            [names.css, names.cx]
-                .into_iter()
-                .flatten()
-                .filter_map(|local| local.symbol)
-                .collect()
-        })
+/// The child function's `css` and `cx` bindings, which read styles.
+pub(crate) fn class_names_calls(element: &JSXElement<'_>) -> Vec<SymbolId> {
+    class_names_child(element)
+        .map(|names| [names.css, names.cx].into_iter().flatten().collect())
         .unwrap_or_default()
 }
 
-/// Write the reads of the theme bound to `theme` in `expression`, a CSS value
-/// when `value`, as the CSS variables the `ThemeProvider` sets: the reads
-/// `resolve` tells stand for the binding, not those of a local sharing its
-/// name. `Err` holds the first read the build cannot write so.
+/// Write the reads of the active themes in `expression`, a CSS value
+/// when `value`, as the CSS variables the `ThemeProvider` sets; `Err` holds
+/// the first read the build cannot write so
 pub(crate) fn read_theme<'a>(
     ast: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    theme: ThemeRoot<'a>,
+    names: &[ClassNamesParams],
     value: bool,
     resolve: Resolve<'_>,
 ) -> Result<(), Expression<'a>> {
-    let roots = [theme];
+    let roots: Vec<_> = names
+        .iter()
+        .filter_map(|names| names.theme)
+        .map(|symbol| ThemeRoot {
+            name: "",
+            symbol: Some(symbol),
+            key: None,
+        })
+        .collect();
     let mut reads = ThemeReads {
         ast,
         roots: &roots,
@@ -636,7 +619,7 @@ impl<'a> ThemeReads<'_, 'a> {
                     cursor = &member.object;
                 }
                 Expression::ComputedMemberExpression(member) => {
-                    match get_string_by_literal_expression(&member.expression) {
+                    match get_key_by_literal_expression(&member.expression) {
                         Some(key) => path.push(key.into_owned()),
                         None => exact = false,
                     }
@@ -650,7 +633,8 @@ impl<'a> ThemeReads<'_, 'a> {
                 Expression::Identifier(identifier) => {
                     let symbol = (self.resolve)(identifier);
                     let root = self.roots.iter().find(|root| {
-                        root.name == identifier.name.as_str() && root.symbol == symbol
+                        root.symbol == symbol
+                            && (symbol.is_some() || root.name == identifier.name.as_str())
                     })?;
                     path.extend(root.key.clone());
                     path.reverse();
@@ -760,11 +744,18 @@ pub(crate) fn template_parts<'a>(
     let mut parts = Vec::new();
     let mut text = String::new();
     let mut depth = 0usize;
+    let mut quotes = css::quoted::QuoteState::default();
     let mut from = 0;
     for (index, expression) in template.expressions.iter().enumerate() {
         let quasi = template.quasis[index].value.raw.as_str();
         text.push_str(quasi);
-        depth = (depth + quasi.matches('{').count()).saturating_sub(quasi.matches('}').count());
+        for byte in quasi.bytes().filter(|&byte| quotes.is_syntax(byte)) {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
         let place = interpolation_place(&text, &template.quasis[index + 1..]);
         if matches!(place, Place::Value) || get_string_by_literal_expression(expression).is_some() {
             continue;
@@ -1060,6 +1051,27 @@ mod tests {
         let (code, requirement) = parts("`${selector} { color: red; }`", true).unwrap_err();
         assert_eq!(requirement, UNPLACED);
         assert_eq!(expression_to_code(&code), "selector;");
+    }
+
+    #[rstest::rstest]
+    #[case("`content: '{'; ${base}; color:red;`")]
+    #[case("`content: '${label}{'; ${base}; color:red;`")]
+    #[case("`content: '${first}${last}{'; ${base}; color:red;`")]
+    #[case("`&:hover {content:'{';} ${base}; color:red;`")]
+    fn quoted_boundaries_keep_mixins_top_level(#[case] code: &str) {
+        // Given quoted braces, including a string split across quasis.
+        let allocator = Allocator::default();
+        let ast = AstBuilder::new(&allocator);
+        let Expression::TemplateLiteral(template) = parsed(&allocator, code) else {
+            panic!("expected template literal");
+        };
+        // When the css prop is split around its top-level mixin.
+        let parts = template_parts(&ast, &template, true).unwrap();
+        // Then the mixin remains its own expression between two text segments.
+        assert_eq!(
+            parts.get(1).map(expression_to_code),
+            Some("base;".to_string())
+        );
     }
 }
 

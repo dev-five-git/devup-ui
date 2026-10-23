@@ -88,6 +88,7 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
         } else {
             let file_num = map.len();
             map.insert(filename.to_string(), file_num);
+            crate::slot_reservation::record_insert();
             file_num
         }
     })
@@ -99,6 +100,7 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
 /// not on which file a worker reaches first; files that appear later (in
 /// development) are numbered after the existing ones.
 pub fn seed_file_numbers(files: &[String]) {
+    let _reservation = crate::slot_reservation::FileSeedGuard::default();
     let mut sorted: Vec<String> = files.iter().map(|file| canonical(file)).collect();
     sorted.sort_unstable();
     sorted.dedup();
@@ -253,6 +255,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_set_and_get_file_map() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut test_map = BiHashMap::new();
         test_map.insert("test-key".to_string(), 42);
         set_file_map(test_map.clone());
@@ -266,6 +269,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_reset_file_map() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut test_map = BiHashMap::new();
         test_map.insert("reset-key".to_string(), 1);
         set_file_map(test_map);
@@ -277,6 +281,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_canonical_identity_when_empty() {
+        let _state = crate::test_state::TestStateGuard::new();
         reset_canonical_map();
         assert_eq!(canonical("a.tsx"), "a.tsx");
     }
@@ -284,6 +289,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_canonical_mapped_and_unmapped() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = std::collections::HashMap::new();
         m.insert("child.tsx".to_string(), "parent.tsx".to_string());
         set_canonical_map(m);
@@ -297,6 +303,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_canonical_map_roundtrip() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = std::collections::HashMap::new();
         m.insert("a".to_string(), "b".to_string());
         set_canonical_map(m.clone());
@@ -324,6 +331,7 @@ mod tests {
 
         const THREADS: usize = 8;
         const FILES: usize = 200;
+        let _state = crate::test_state::TestStateGuard::new();
 
         reset_file_map();
 

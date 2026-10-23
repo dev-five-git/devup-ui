@@ -29,9 +29,12 @@ fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(
         symbols: &symbols,
         style: &style,
         css_props: &css_props,
+        css_failures: &mut Vec::new(),
         objects: false,
         styles: false,
         px: false,
+        position: InlinePosition::Rules,
+        marks: &crate::import_alias_visit::PxMarks::default(),
         class_names: Vec::new(),
     };
     let expression = parsed

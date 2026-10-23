@@ -51,18 +51,14 @@ fn shadowed_object_when_multiple_spreads_select_props_does_not_replace_the_intri
         &format!(
             "{BOX}export const a=(Object,first,last)=><Box className=\"direct\" style={{{{opacity:1}}}} color=\"red\" {{...first}} {{...last}}/>;"
         ),
-        r"a(null,{'className':'first','style':{'opacity':2}},{'className':undefined,'style':undefined})",
+        r"(()=>{const e=a(null,{'className':'first','style':{'opacity':2}},{'className':undefined,'style':undefined});return {className:e.props.className,styleUndefined:e.props.style===undefined};})()",
     );
     assert!(
-        actual.element["props"]["className"]
+        actual.element["className"]
             .as_str()
             .is_some_and(|class| !class.contains("first") && !class.contains("direct"))
     );
-    assert!(
-        actual.element["props"]["style"]
-            .as_object()
-            .is_some_and(|style| !style.contains_key("opacity"))
-    );
+    assert_eq!(actual.element["styleUndefined"], true);
 }
 
 #[test]

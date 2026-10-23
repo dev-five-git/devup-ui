@@ -1,198 +1,137 @@
 use super::*;
+use rstest::rstest;
 use serial_test::serial;
 
-fn slot_of<'a>(found: &'a [Slot], property: &str) -> &'a Slot {
-    found
-        .iter()
-        .find(|slot| slot.property == property)
-        .unwrap_or_else(|| panic!("a slot for `{property}`"))
-}
-
-#[test]
+#[rstest]
+#[case("{color:'blue'}", "{}", "blue")]
+#[case("{color:'blue'}", "{color:'green'}", "green")]
+#[case("{}", "{color:'green'}", "green")]
+#[case("{}", "{}", "missing")]
+#[case("{ p: 2 }", "{}", "missing")]
+#[case("{}", "{ p: 2 }", "missing")]
 #[serial]
-fn the_last_spread_having_the_key_wins_and_a_missing_key_keeps_the_earlier_one() {
-    let output = output(&format!(
-        "{BOX}export const a = (a, b) => <Box color=\"red\" {{...a}} p={{1}} {{...b}} />;"
-    ));
-    let found = slots(&output);
-    let color = &slot_of(&found, "color").identifier;
-    let padding = &slot_of(&found, "padding").identifier;
-
-    assert_eq!(found.len(), 2);
-    let both = |a: &str, b: &str| format!("const a = {a}; const b = {b};");
-    assert_eq!(read(color, &both("{ color: 'blue' }", "{}")), "\"blue\"");
-    assert_eq!(
-        read(color, &both("{ color: 'blue' }", "{ color: 'green' }")),
-        "\"green\""
+fn repeated_spreads_when_keys_differ_keep_dom_precedence(
+    #[case] first: &str,
+    #[case] last: &str,
+    #[case] color: &str,
+) {
+    let source =
+        format!("{BOX}export const a=(a,b)=><Box color='red' {{...a}} p={{1}} {{...b}}/>;");
+    let actual = whole::evaluate(
+        &source,
+        &format!("a({first},{last}).props.color??'missing'"),
     );
-    assert_eq!(read(color, &both("{}", "{ color: 'green' }")), "\"green\"");
-    assert_eq!(read(color, &both("{}", "{}")), "undefined");
-    assert_eq!(read(padding, &both("{ p: 2 }", "{}")), "undefined");
-    assert_eq!(read(padding, &both("{}", "{ p: 2 }")), "2");
-}
-
-#[test]
-#[serial]
-fn a_later_own_undefined_clears_what_an_earlier_spread_gave() {
-    let output = output(&format!(
-        "{BOX}export const a = (first, last) => <Box color=\"red\" {{...first}} {{...last}} />;"
-    ));
-    let identifier = &slots(&output)[0].identifier;
-    let both = |first: &str, last: &str| format!("const first = {first}; const last = {last};");
-
+    assert_eq!(actual.element, color);
     assert_eq!(
-        read(
-            identifier,
-            &both("{ color: 'blue' }", "{ color: undefined }")
-        ),
-        "undefined"
-    );
-    assert_eq!(
-        read(identifier, &both("{ color: 'blue' }", "{ color: null }")),
-        "null"
-    );
-    assert_eq!(
-        read(identifier, &both("{ color: 'blue' }", "{}")),
-        "\"blue\""
+        static_styles(&output(&source)),
+        vec![
+            ("color".into(), "red".into()),
+            ("padding".into(), "4px".into())
+        ]
     );
 }
 
-#[test]
+#[rstest]
+#[case("{color:undefined}", "undefined")]
+#[case("{color:null}", "null")]
+#[case("{}", "blue")]
 #[serial]
-fn an_explicit_style_written_after_the_spread_is_the_only_one_that_counts() {
-    let output = output(&format!(
-        "{BOX}export const a = (rest) => <Box color=\"red\" {{...rest}} color=\"blue\" />;"
-    ));
-
-    assert_eq!(slots(&output).len(), 0);
+fn own_absence_when_written_later_replaces_only_dom_data(
+    #[case] last: &str,
+    #[case] expected: &str,
+) {
+    let source =
+        format!("{BOX}export const a=(first,last)=><Box color='red' {{...first}} {{...last}}/>;");
     assert_eq!(
-        static_styles(&output),
-        vec![("color".to_string(), "blue".to_string())]
+        whole::evaluate(
+            &source,
+            &format!("String(a({{color:'blue'}},{last}).props.color)")
+        )
+        .element,
+        expected
+    );
+    assert_eq!(
+        static_styles(&output(&source)),
+        vec![("color".into(), "red".into())]
     );
 }
 
-#[test]
+#[rstest]
+#[case("<Box color='red' {...rest} color='blue'/>", "color", "blue")]
+#[case("<Box bg='red' background='blue' {...rest}/>", "background", "blue")]
+#[case("<Box {...rest} {...{color:'red'}}/>", "color", "red")]
+#[case("<Box {...{color:'red'}} {...rest} color='blue'/>", "color", "blue")]
 #[serial]
-fn an_alias_written_later_replaces_the_earlier_key_of_the_property() {
-    let output = output(&format!(
-        "{BOX}export const a = (rest) => <Box bg=\"red\" background=\"blue\" {{...rest}} />;"
-    ));
-    let found = slots(&output);
-
-    assert_eq!(found.len(), 1);
-    assert_eq!(found[0].fallback, "blue");
-    assert_eq!(found[0].variable, "--background-spread-background-0-");
-}
-
-#[test]
-#[serial]
-fn a_literal_spread_before_an_unknown_one_gives_way_with_its_own_keys() {
-    let output = output(&format!(
-        "{BOX}export const a = (rest) => <Box {{...{{ color: 'red', p: 1 }}}} {{...rest}} />;"
-    ));
-    let found = slots(&output);
-
+fn known_writes_when_spreads_interleave_keep_last_authored_value(
+    #[case] element: &str,
+    #[case] property: &str,
+    #[case] value: &str,
+) {
+    let source = format!("{BOX}export const a=(rest)=>{element};");
     assert_eq!(
-        found
-            .iter()
-            .map(|slot| (slot.property.as_str(), slot.fallback.as_str()))
-            .collect::<Vec<_>>(),
-        vec![("color", "red"), ("padding", "4px")]
+        static_styles(&output(&source)),
+        vec![(property.into(), value.into())]
     );
     assert_eq!(
-        read(
-            &slot_of(&found, "color").identifier,
-            "const rest = { color: 'blue', margin: 1 };"
-        ),
-        "\"blue\""
-    );
-    assert_eq!(
-        read(
-            &slot_of(&found, "padding").identifier,
-            "const rest = { color: 'blue', margin: 1 };"
-        ),
-        "undefined"
+        whole::evaluate(&source, "a({color:'raw'}).props.color").element,
+        "raw"
     );
 }
 
 #[test]
 #[serial]
-fn a_literal_holding_a_spread_is_one_more_source_to_read() {
-    let output = output(&format!(
-        "{BOX}export const a = (a, b) => <Box color=\"red\" {{...{{ ...a }}}} {{...b}} />;"
-    ));
-    let found = slots(&output);
-
-    assert_eq!(found.len(), 1);
-    let both = |a: &str, b: &str| format!("const a = {a}; const b = {b};");
+fn known_literal_when_unknown_spread_follows_keeps_its_styles() {
+    let source =
+        format!("{BOX}export const a=(rest)=><Box {{...{{color:'red',p:1}}}} {{...rest}}/>;");
     assert_eq!(
-        read(&found[0].identifier, &both("{ color: 'x' }", "{}")),
-        "\"x\""
+        static_styles(&output(&source)),
+        vec![
+            ("color".into(), "red".into()),
+            ("padding".into(), "4px".into())
+        ]
+    );
+    let actual = whole::evaluate(&source, "a({color:'blue',margin:1}).props");
+    assert_eq!(actual.element["color"], "blue");
+    assert_eq!(actual.element["margin"], 1);
+}
+
+#[test]
+#[serial]
+fn nested_opaque_spreads_when_followed_by_another_keep_dom_winners() {
+    let source = format!("{BOX}export const a=(a,b)=><Box color='red' {{...{{...a}}}} {{...b}}/>;");
+    assert_eq!(
+        whole::evaluate(
+            &source,
+            "[a({color:'x'},{}).props.color,a({color:'x'},{color:'y'}).props.color]"
+        )
+        .element,
+        serde_json::json!(["x", "y"])
     );
     assert_eq!(
-        read(
-            &found[0].identifier,
-            &both("{ color: 'x' }", "{ color: 'y' }")
-        ),
-        "\"y\""
+        static_styles(&output(&source)),
+        vec![("color".into(), "red".into())]
     );
 }
 
 #[test]
 #[serial]
-fn a_literal_spread_after_the_unknown_one_stays_a_plain_style() {
-    let output = output(&format!(
-        "{BOX}export const a = (rest) => <Box {{...rest}} {{...{{ color: 'red' }}}} />;"
-    ));
-
-    assert_eq!(slots(&output).len(), 0);
-    assert_eq!(
-        static_styles(&output),
-        vec![("color".to_string(), "red".to_string())]
-    );
-}
-
-#[test]
-#[serial]
-fn a_literal_spread_replaced_by_a_later_attribute_leaves_no_slot() {
-    let output = output(&format!(
-        "{BOX}export const a = (rest) => <Box {{...{{ color: 'red' }}}} {{...rest}} color=\"blue\" />;"
-    ));
-
-    assert_eq!(slots(&output).len(), 0);
-    assert_eq!(
-        static_styles(&output),
-        vec![("color".to_string(), "blue".to_string())]
-    );
-}
-
-#[test]
-#[serial]
-fn a_literal_spread_keeps_the_props_that_are_not_styles() {
+fn known_literals_when_styles_are_removed_keep_dom_props() {
     let rendered = code(&format!(
-        "{BOX}export const a = (rest) => <Box {{...{{ color: 'red', id: 'x' }}}} {{...rest}} />;"
+        "{BOX}export const a=(rest)=><Box {{...{{color:'red',id:'x'}}}} {{...rest}}/>;"
     ));
-
     assert!(rendered.contains("id: \"x\""), "{rendered}");
     assert!(!rendered.contains("color: \"red\""), "{rendered}");
 }
 
 #[test]
 #[serial]
-fn two_attributes_of_one_property_do_not_share_a_variable_when_written_differently() {
-    let output = output(&format!(
-        "{BOX}export const a = (rest) => <Box mx={{1}} ml={{2}} {{...rest}} />;"
-    ));
-    let variables: std::collections::BTreeSet<String> = slots(&output)
-        .iter()
-        .map(|slot| slot.variable.clone())
-        .collect();
-
+fn authored_aliases_when_one_target_is_shadowed_keep_the_other() {
+    let source = format!("{BOX}export const a=(rest)=><Box mx={{1}} ml={{2}} {{...rest}}/>;");
     assert_eq!(
-        variables,
-        std::collections::BTreeSet::from([
-            "--margin-left-spread-ml-0-".to_string(),
-            "--margin-right-spread-mx-0-".to_string()
-        ])
+        static_styles(&output(&source)),
+        vec![
+            ("margin-left".into(), "8px".into()),
+            ("margin-right".into(), "4px".into())
+        ]
     );
 }

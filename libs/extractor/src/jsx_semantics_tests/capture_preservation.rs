@@ -34,12 +34,17 @@ fn computed_literal_selector_keys_when_captured_keep_the_static_rule() {
 
 #[test]
 #[serial]
-fn a_computed_literal_selector_when_an_unknown_key_can_replace_it_is_located() {
-    let message = error(&format!(
+fn computed_literal_selectors_when_unknown_keys_follow_keep_their_rule() {
+    let source = format!(
         "{BOX}{JSX_RUNTIME}export const a=(key)=>jsx(Box,{{['_hover']:{{bg:'blue'}},[key]:'red'}});"
-    ));
-    assert!(message.contains("cannot use `_hover`"), "{message}");
-    assert!(message.starts_with("a.tsx:3:"), "{message}");
+    );
+    assert!(output(&source).styles.iter().any(|style|matches!(style,ExtractStyleValue::Static(value) if value.value()=="blue" && value.selector().is_some())));
+    let actual = whole::evaluate(
+        &source,
+        "a({toString(){trace.push('key');return '_hover';}}).props._hover",
+    );
+    assert_eq!(actual.element, "red");
+    assert_eq!(actual.trace, serde_json::json!(["key"]));
 }
 
 #[test]

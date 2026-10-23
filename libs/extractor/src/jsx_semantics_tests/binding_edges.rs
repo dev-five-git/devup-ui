@@ -63,10 +63,20 @@ fn shadowed_globals_when_spreads_copy_props_do_not_capture_generated_names() {
         "{BOX}export const a=(Object,undefined,__devupSpread0,__devupValue0)=> <Box color={{__devupValue0}} {{...__devupSpread0}} />;"
     );
     let actual = evaluate(&source, "a(null,'not-undefined',{color:void 0},'red')");
+    assert_eq!(
+        actual.element["props"]["className"]
+            .as_str()
+            .unwrap_or_else(|| panic!("class name: {}", actual.element))
+            .split_whitespace()
+            .count(),
+        1
+    );
     assert!(
         actual.element["props"]["style"]
             .as_object()
-            .is_some_and(serde_json::Map::is_empty)
+            .unwrap_or_else(|| panic!("expected an authored style object"))
+            .values()
+            .any(|value| value == "red")
     );
 }
 

@@ -110,19 +110,19 @@ pub fn split_selector_list(selector: &str) -> Vec<&str> {
     let mut parts = vec![];
     let mut depth = 0usize;
     let mut start = 0;
-    for (index, c) in selector.char_indices() {
+    for (index, c) in crate::quoted::unquoted_bytes(selector) {
         match c {
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                parts.push(selector[start..index].trim());
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                parts.push(crate::quoted::trim_css(&selector[start..index]));
                 start = index + 1;
             }
             _ => {}
         }
     }
     if !selector.is_empty() {
-        parts.push(selector[start..].trim());
+        parts.push(crate::quoted::trim_css(&selector[start..]));
     }
     parts
 }
@@ -134,11 +134,11 @@ fn substitute(template: &str, parent: &str) -> String {
     if parents.len() > 1 {
         parents
             .iter()
-            .map(|parent| template.replace('&', parent))
+            .map(|parent| crate::quoted::replace_unquoted(template, b'&', parent))
             .collect::<Vec<_>>()
             .join(",")
     } else {
-        template.replace('&', parent)
+        crate::quoted::replace_unquoted(template, b'&', parent).into_owned()
     }
 }
 
@@ -789,6 +789,10 @@ mod tests {
     #[case("&:hover", vec!["&:hover"])]
     #[case(" a > b , i ", vec!["a > b", "i"])]
     #[case(":is(a, b), [title=\"a,b\"]", vec![":is(a, b)", "[title=\"a,b\"]"])]
+    #[case(r#"&[title="a,]b"], &:focus"#, vec![r#"&[title="a,]b"]"#, "&:focus"])]
+    #[case(r"&.a\,b, &:focus", vec![r"&.a\,b", "&:focus"])]
+    #[case(r"&.a\(, &:focus", vec![r"&.a\(", "&:focus"])]
+    #[case(r#"&[title="a\",]b"], &:focus"#, vec![r#"&[title="a\",]b"]"#, "&:focus"])]
     fn test_split_selector_list(#[case] selector: &str, #[case] expected: Vec<&str>) {
         assert_eq!(split_selector_list(selector), expected);
     }

@@ -165,6 +165,9 @@ pub(super) fn suspends(expression: &Expression<'_>) -> bool {
 
 /// The style keys a written object gives without executing it.
 pub(super) fn written_properties(expression: &Expression<'_>) -> Vec<String> {
+    if super::element_props::is_unknown_spread(expression) {
+        return Vec::new();
+    }
     match crate::utils::unwrap_syntax_only(expression) {
         Expression::ObjectExpression(object) => object
             .properties
