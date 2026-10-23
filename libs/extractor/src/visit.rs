@@ -920,6 +920,7 @@ impl<'a> DevupVisitor<'a> {
                         0,
                         &None,
                         LiteralHandling::ExpandResponsiveThemeToken,
+                        &mut |_| {},
                     );
                     if let Some(element) = element {
                         let mut unreadable = Vec::new();
@@ -4188,19 +4189,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     &self.ast,
                 );
                 let mut props_styles = vec![];
+                let ast = AstBuilder::new(self.ast.allocator());
                 let ExtractResult {
                     styles,
                     tag: _tag,
                     style_order,
                     style_vars,
                     props,
-                } = extract_style_from_expression(
-                    &self.ast,
+                } = extract_with_policy::<false>(
+                    &ast,
                     None,
                     it.arguments[1].to_expression_mut(),
                     0,
                     &None,
                     LiteralHandling::ExpandResponsiveThemeToken,
+                    &mut |value| match value {
+                        // DevupVisitor leaves bare identifier references unchanged.
+                        Expression::Identifier(_) => {}
+                        _ => self.visit_expression(value),
+                    },
                 );
                 props_styles.extend(styles);
 
