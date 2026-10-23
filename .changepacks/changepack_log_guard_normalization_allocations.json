@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "Reduce temporary allocations while preserving compiled-source guard facts, scope analysis and diagnostics. No new build errors.",
+  "date": "2026-10-23T00:00:00.000Z"
+}

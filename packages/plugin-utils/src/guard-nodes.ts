@@ -17,13 +17,22 @@ export function guardNode(value: unknown): GuardNode | undefined {
     return
   const fields = new Map<string, readonly GuardNode[]>()
   for (const [key, child] of Object.entries(value)) {
-    const children = (Array.isArray(child) ? child : [child]).flatMap(
-      (item: unknown) => {
-        const node = guardNode(item)
-        return node ? [node] : []
-      },
-    )
-    if (children.length) fields.set(key, children)
+    if (Array.isArray(child)) {
+      let children: GuardNode[] | undefined
+      const length = child.length
+      for (let index = 0; index < length; index++) {
+        if (!(index in child)) continue
+        const node = guardNode(child[index])
+        if (node) {
+          if (children) children.push(node)
+          else children = [node]
+        }
+      }
+      if (children) fields.set(key, children)
+    } else {
+      const node = guardNode(child)
+      if (node) fields.set(key, [node])
+    }
   }
   return {
     kind: value.type,
