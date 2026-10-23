@@ -23,6 +23,8 @@ use crate::utils::{is_vanilla_extract_file, unwrap_syntax_only};
 use crate::visit::DevupVisitor;
 use crate::{ExtractOption, ModuleResolver};
 
+pub(crate) mod relevance;
+
 /// What a module exports, which marks the components other files select
 #[derive(Default)]
 pub(crate) struct Exports {
@@ -347,6 +349,7 @@ impl<'a> Reader<'_, 'a> {
                 &format!("{}/compat", self.option.package),
             ),
             names: FxHashSet::default(),
+            scoping: &scoping,
         };
         used.visit_program(program);
         crate::style_values::selectors(program, &mut |expression| {
@@ -460,6 +463,29 @@ struct Used<'s> {
     css_prop: bool,
     css: CssTakers<'s>,
     names: FxHashSet<String>,
+    scoping: &'s oxc_semantic::Scoping,
+}
+
+impl Used<'_> {
+    fn retarget(&self, expression: &Expression<'_>) -> Option<String> {
+        let root = match unwrap_syntax_only(expression) {
+            Expression::Identifier(identifier) => identifier,
+            Expression::StaticMemberExpression(member) => {
+                let Expression::Identifier(identifier) = &member.object else {
+                    return None;
+                };
+                identifier
+            }
+            _ => return None,
+        };
+        let symbol = self
+            .scoping
+            .get_reference(root.reference_id.get()?)
+            .symbol_id()?;
+        (self.scoping.get_root_binding(root.name) == Some(symbol))
+            .then(|| written_name(expression))
+            .flatten()
+    }
 }
 
 impl<'a> Visit<'a> for Used<'_> {
@@ -473,7 +499,7 @@ impl<'a> Visit<'a> for Used<'_> {
             Expression::StaticMemberExpression(member)
                 if member.property.name == "withComponent" =>
             {
-                written_name(&member.object)
+                self.retarget(&member.object)
             }
             _ if self.css.property(call, |_| true).is_some() => call
                 .arguments
@@ -503,6 +529,7 @@ impl<'a> Visit<'a> for Used<'_> {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod relevance_tests;
     use std::collections::{BTreeSet, HashMap};
 
     use insta::assert_debug_snapshot;
