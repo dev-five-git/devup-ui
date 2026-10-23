@@ -94,17 +94,31 @@ try {
       match[1],
       match[2].replace(/;$/, ''),
     ])
-  assert.deepEqual(
-    rules(artifacts.css['devup-ui.css']),
-    [],
-    'fallback base must have no atoms',
-  )
   const expected = [
     'color:red',
     'background:blue',
     'opacity:.25',
     'opacity:.75',
   ]
+  // Vite hoists by default (atomHoist 2): both suppliers are reached by two
+  // pages, so their atoms live in the shared base under global short counters
+  // while page-only atoms stay private. Next Turbopack suppresses hoisting.
+  const hoisted = adapter === 'vite'
+  const baseRules = rules(artifacts.css['devup-ui.css'])
+  if (hoisted) {
+    assert.deepEqual(
+      baseRules.map(([, declaration]) => declaration).sort(),
+      expected.slice(0, 2).sort(),
+      'base must hold exactly the hoisted supplier atoms',
+    )
+    assert.equal(
+      new Set(baseRules.map(([key]) => key)).size,
+      baseRules.length,
+      'hoisted supplier atoms must keep distinct global counters',
+    )
+  } else {
+    assert.deepEqual(baseRules, [], 'fallback base must have no atoms')
+  }
   for (const [index, file] of files.entries()) {
     const generated = [
       ...artifacts.js[file].code.matchAll(
@@ -113,11 +127,21 @@ try {
     ].flatMap((match) => match[1].trim().split(/\s+/))
     assert.equal(generated.length, 1, 'real JSX extraction required')
     const [name] = generated
+    const global = hoisted && index < 2
     assert.match(
       name,
-      /^[a-z0-9]+-[a-z0-9]+$/,
-      'short per-file counters required',
+      global ? /^[a-z0-9]+$/ : /^[a-z0-9]+-[a-z0-9]+$/,
+      global
+        ? 'short global counters required for hoisted atoms'
+        : 'short per-file counters required',
     )
+    if (global) {
+      assert.deepEqual(
+        baseRules.filter(([key]) => key === name),
+        [[name, expected[index]]],
+        'hoisted atom must live in the shared base',
+      )
+    }
     assert.ok(
       imports[file].some((sheet) => sheet !== 'devup-ui.css'),
       'own local CSS import required',

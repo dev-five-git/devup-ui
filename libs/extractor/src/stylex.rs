@@ -25,9 +25,19 @@ pub enum StylexFunction {
     DefineConsts,
     PositionTry,
     ViewTransitionClass,
+    /// Reads inside the value of a `stylex.create()` style
+    FirstThatWorks,
+    /// Reads inside a `stylex.create()` namespace, spread
+    Include,
+    /// The `types` object, whose members wrap a `stylex.defineVars()` value
+    Types,
 }
 
-const STYLEX_EXPORTS: [(&str, StylexFunction); 10] = [
+/// Tells which `StyleX` API a callee or member object reads, by the binding it
+/// reads and not by its spelling
+pub type StylexResolver<'r> = &'r dyn Fn(&Expression<'_>) -> Option<StylexFunction>;
+
+const STYLEX_EXPORTS: [(&str, StylexFunction); 13] = [
     ("create", StylexFunction::Create),
     ("props", StylexFunction::Props),
     ("attrs", StylexFunction::Attrs),
@@ -38,6 +48,9 @@ const STYLEX_EXPORTS: [(&str, StylexFunction); 10] = [
     ("defineConsts", StylexFunction::DefineConsts),
     ("positionTry", StylexFunction::PositionTry),
     ("viewTransitionClass", StylexFunction::ViewTransitionClass),
+    ("firstThatWorks", StylexFunction::FirstThatWorks),
+    ("include", StylexFunction::Include),
+    ("types", StylexFunction::Types),
 ];
 
 impl StylexFunction {
@@ -57,11 +70,13 @@ impl StylexFunction {
             .map_or("", |(name, _)| name)
     }
 
-    /// What a call must be to compile away, for the functions that do
+    /// What a call must be to compile away, for the functions that do. The
+    /// helpers read inside an enclosing `StyleX` call, which reports what it
+    /// cannot read of them
     #[must_use]
     pub const fn requirement(&self) -> Option<&'static str> {
         match self {
-            Self::Props | Self::Attrs => None,
+            Self::Props | Self::Attrs | Self::FirstThatWorks | Self::Include | Self::Types => None,
             Self::CreateTheme => Some(
                 "it takes a `defineVars()` group, of this file or imported, and an object literal",
             ),
@@ -93,9 +108,12 @@ pub type Conditions = Vec<(AtRuleKind, String)>;
 /// The values a `StyleX` variable takes: a literal, or a condition object of a
 /// `default` and at-rule keys (`@media`, `@supports`, `@container`), either
 /// possibly wrapped in `types.*()`. `None` when a value is not static.
-pub fn variable_values(value: &Expression<'_>) -> Option<Vec<(Conditions, String)>> {
+pub fn variable_values(
+    value: &Expression<'_>,
+    resolver: StylexResolver<'_>,
+) -> Option<Vec<(Conditions, String)>> {
     let mut values = Vec::new();
-    collect_variable_values(value, &mut Vec::new(), &mut values)?;
+    collect_variable_values(value, &mut Vec::new(), &mut values, resolver)?;
     Some(values)
 }
 
@@ -103,8 +121,9 @@ fn collect_variable_values(
     value: &Expression<'_>,
     conditions: &mut Conditions,
     values: &mut Vec<(Conditions, String)>,
+    resolver: StylexResolver<'_>,
 ) -> Option<()> {
-    let value = unwrap_types_call(value);
+    let value = unwrap_types_call(value, resolver);
     if let Some(text) = get_string_by_literal_expression(value) {
         values.push((conditions.clone(), text.into_owned()));
         return Some(());
@@ -121,21 +140,24 @@ fn collect_variable_values(
         };
         let key = get_string_by_property_key(&property.key)?;
         if key == "default" {
-            collect_variable_values(&property.value, conditions, values)?;
+            collect_variable_values(&property.value, conditions, values, resolver)?;
             continue;
         }
         let (kind, query) = split_at_rule_key(&key)?;
         conditions.push((kind, normalize_query(query)));
-        collect_variable_values(&property.value, conditions, values)?;
+        collect_variable_values(&property.value, conditions, values, resolver)?;
         conditions.pop();
     }
     Some(())
 }
 
 #[must_use]
-pub fn unwrap_types_call<'b, 'a>(value: &'b Expression<'a>) -> &'b Expression<'a> {
+pub fn unwrap_types_call<'b, 'a>(
+    value: &'b Expression<'a>,
+    resolver: StylexResolver<'_>,
+) -> &'b Expression<'a> {
     match value {
-        Expression::CallExpression(call) if is_types_call(&call.callee) => call
+        Expression::CallExpression(call) if is_types_call(&call.callee, resolver) => call
             .arguments
             .first()
             .and_then(oxc_ast::ast::Argument::as_expression)
@@ -190,37 +212,14 @@ pub fn css_variable_block(selector: &str, assignments: &[(String, String)]) -> S
     css
 }
 
-/// Check if a call expression is `stylex.firstThatWorks()` or named `firstThatWorks()`.
-pub fn is_first_that_works_call(callee: &Expression) -> bool {
-    // stylex.firstThatWorks(...)
-    if let Expression::StaticMemberExpression(member) = callee
-        && member.property.name.as_str() == "firstThatWorks"
-    {
-        return true;
-    }
-    // firstThatWorks(...) (named import)
-    if let Expression::Identifier(ident) = callee
-        && ident.name.as_str() == "firstThatWorks"
-    {
-        return true;
-    }
-    false
+/// Whether `callee` reads the `firstThatWorks` the package gives
+pub fn is_first_that_works_call(callee: &Expression, resolver: StylexResolver<'_>) -> bool {
+    resolver(callee) == Some(StylexFunction::FirstThatWorks)
 }
 
-/// Check if a call expression is `stylex.include()` or named `include()`.
-/// This is a static check that does NOT require access to the visitor.
-pub fn is_include_call_static(callee: &Expression) -> bool {
-    if let Expression::StaticMemberExpression(member) = callee
-        && member.property.name.as_str() == "include"
-    {
-        return true;
-    }
-    if let Expression::Identifier(ident) = callee
-        && ident.name.as_str() == "include"
-    {
-        return true;
-    }
-    false
+/// Whether `callee` reads the `include` the package gives
+pub fn is_include_call_static(callee: &Expression, resolver: StylexResolver<'_>) -> bool {
+    resolver(callee) == Some(StylexFunction::Include)
 }
 
 /// A reference to a stylex.include(base.member) call found inside `stylex.create()`.
@@ -231,19 +230,11 @@ pub struct StylexIncludeRef {
     pub offset: u32,
 }
 
-/// Check if a call expression is `stylex.types.X()` or `types.X()` (type wrapper).
-pub fn is_types_call(callee: &Expression) -> bool {
-    if let Expression::StaticMemberExpression(member) = callee {
-        // stylex.types.X(...)
-        if let Expression::StaticMemberExpression(inner) = &member.object {
-            return inner.property.name.as_str() == "types";
-        }
-        // types.X(...) (named import)
-        if let Expression::Identifier(ident) = &member.object {
-            return ident.name.as_str() == "types";
-        }
-    }
-    false
+/// Whether `callee` is a member of the `types` the package gives, as
+/// `stylex.types.color` or `types.color`
+pub fn is_types_call(callee: &Expression, resolver: StylexResolver<'_>) -> bool {
+    matches!(callee, Expression::StaticMemberExpression(member)
+        if resolver(&member.object) == Some(StylexFunction::Types))
 }
 
 /// Convert camelCase CSS property name to kebab-case.
@@ -548,6 +539,7 @@ pub fn decompose_value_conditions(
     parent_selectors: &[SelectorPart],
     leaf: &dyn Fn(&str, &Expression) -> Option<String>,
     errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
 ) -> Vec<DecomposedStyle> {
     if let Some(s) = leaf(css_property, value) {
         return decomposed_leaf(css_property, Some(s), parent_selectors)
@@ -564,7 +556,7 @@ pub fn decompose_value_conditions(
 
     // CallExpression: firstThatWorks() → multiple fallback values with current selectors
     if let Expression::CallExpression(call) = value
-        && is_first_that_works_call(&call.callee)
+        && is_first_that_works_call(&call.callee, resolver)
     {
         let mut results = vec![];
         for arg in call.arguments.iter().rev() {
@@ -584,7 +576,7 @@ pub fn decompose_value_conditions(
 
     // CallExpression: types.*() → extract inner value, pass through selectors
     if let Expression::CallExpression(call) = value
-        && is_types_call(&call.callee)
+        && is_types_call(&call.callee, resolver)
         && let Some(s) = call
             .arguments
             .first()
@@ -645,6 +637,7 @@ pub fn decompose_value_conditions(
             &selectors,
             leaf,
             errors,
+            resolver,
         ));
     }
 
@@ -731,10 +724,11 @@ mod tests {
         let leaf = |property: &str, value: &Expression| {
             stylex_value(property, value).map(std::borrow::Cow::into_owned)
         };
-        let styles: Vec<_> = decompose_value_conditions("color", value, &[], &leaf, &mut vec![])
-            .into_iter()
-            .map(|style| (style.value, style.selector.map(|s| s.to_string())))
-            .collect();
+        let styles: Vec<_> =
+            decompose_value_conditions("color", value, &[], &leaf, &mut vec![], &|_| None)
+                .into_iter()
+                .map(|style| (style.value, style.selector.map(|s| s.to_string())))
+                .collect();
         assert_eq!(
             styles,
             vec![

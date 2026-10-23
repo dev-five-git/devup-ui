@@ -38,7 +38,7 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
 
   test('no runtime CSS-in-JS globals are present', async ({ page }) => {
     const runtimeGlobals = await page.evaluate(() => {
-      const win = window as Record<string, unknown>
+      const win = window
       return {
         // Common CSS-in-JS runtime indicators
         __devup__: '__devup__' in win,
@@ -147,15 +147,47 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
       .evaluate((element) => Array.from(element.classList))
 
     expect(headingClasses.length).toBeGreaterThan(1)
-    const atomicClasses = headingClasses.filter((className) =>
-      /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className),
-    )
-    expect(atomicClasses.length).toBeGreaterThan(1)
+    const isCounter = (name: string): boolean => {
+      // num_to_nm_base: 27 initial symbols, 37 continuation symbols, ad escape.
+      const raw = name.replace(/a-d$/, 'ad')
+      if (!/^[a-z_]/.test(raw) || /[^a-z0-9_]/.test(raw)) return false
+      if (raw.replace(/ad$/, 'a-d') !== name) return false
+      let value = 'abcdefghijklmnopqrstuvwxyz_'.indexOf(raw.charAt(0))
+      for (const digit of raw.slice(1)) {
+        value =
+          37 * value +
+          27 +
+          'abcdefghijklmnopqrstuvwxyz0123456789_'.indexOf(digit)
+        // The compiler's counter is a wasm32 usize, not a fixed string length.
+        if (value > 0xffffffff) return false
+      }
+      return true
+    }
+    const isAtomicClass = (className: string): boolean => {
+      if (
+        /^typo-[a-z0-9]+$/i.test(className) ||
+        /^(?:css|emotion|sc|styled|stitches)-[a-z0-9]+/i.test(className)
+      )
+        return false
+      return (
+        isCounter(className) ||
+        Array.from(className).some(
+          (character, index) =>
+            character === '-' &&
+            isCounter(className.slice(0, index)) &&
+            isCounter(className.slice(index + 1)),
+        )
+      )
+    }
+    const atomicClasses = headingClasses.filter(isAtomicClass)
+    expect(
+      atomicClasses.length,
+      `Expected multiple compiled atoms, received: ${headingClasses.join(' ')}`,
+    ).toBeGreaterThan(1)
     expect(
       headingClasses.every(
         (className) =>
-          /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className) ||
-          /^typo-[a-z0-9]+$/i.test(className),
+          isAtomicClass(className) || /^typo-[a-z0-9]+$/i.test(className),
       ),
       `Expected compact base-37 classes, received: ${headingClasses.join(' ')}`,
     ).toBe(true)

@@ -212,3 +212,9 @@ mod implicit_theme_scope;
 
 #[path = "local_member_guard.rs"]
 mod local_member_guard;
+
+#[path = "integration_semantics.rs"]
+mod integration_semantics;
+
+#[path = "integration_execution.rs"]
+mod integration_execution;

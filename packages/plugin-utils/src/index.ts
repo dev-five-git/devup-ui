@@ -1,4 +1,8 @@
-export { beginBuild, type ResettableEngine } from './build-session'
+export {
+  beginBuild,
+  getBuildOwnership,
+  type ResettableEngine,
+} from './build-session'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
@@ -38,6 +42,7 @@ export {
   type ReservationInput,
   type ReservationInventory,
 } from './reservation-discovery'
+export { reservationGraph } from './reservation-graph'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,

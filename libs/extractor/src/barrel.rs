@@ -94,31 +94,41 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
     let program = Parser::new(&allocator, &module.code, source_type)
         .parse()
         .program;
-    let mut imports: FxHashMap<&str, Link> = FxHashMap::default();
+    let semantic = SemanticBuilder::new().build(&program).semantic;
+    let mut imports: FxHashMap<SymbolId, Link> = FxHashMap::default();
     for statement in &program.body {
-        match statement {
-            Statement::ImportDeclaration(import) if !import.import_kind.is_type() => {
-                for specifier in import.specifiers.iter().flatten() {
-                    let (local, imported) = match specifier {
-                        ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                            (&named.local, Some(named.imported.name().to_string()))
-                        }
-                        ImportDeclarationSpecifier::ImportDefaultSpecifier(default) => {
-                            (&default.local, Some("default".to_string()))
-                        }
-                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                            (&namespace.local, None)
-                        }
-                    };
-                    imports.insert(
-                        local.name.as_str(),
+        if let Statement::ImportDeclaration(import) = statement
+            && !import.import_kind.is_type()
+        {
+            for specifier in import.specifiers.iter().flatten() {
+                let (local, imported) = match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(named)
+                        if !named.import_kind.is_type() =>
+                    {
+                        (&named.local, Some(named.imported.name().to_string()))
+                    }
+                    ImportDeclarationSpecifier::ImportSpecifier(_) => continue,
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(default) => {
+                        (&default.local, Some("default".to_string()))
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
+                        (&namespace.local, None)
+                    }
+                };
+                imports.extend(local.symbol_id.get().map(|symbol| {
+                    (
+                        symbol,
                         Link::From {
                             source: import.source.value.to_string(),
                             imported,
                         },
-                    );
-                }
+                    )
+                }));
             }
+        }
+    }
+    for statement in &program.body {
+        match statement {
             Statement::ExportFromDeclaration(export) if !export.export_kind.is_type() => {
                 for specifier in export
                     .specifiers
@@ -155,8 +165,8 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                     .iter()
                     .filter(|s| !s.export_kind.is_type())
                 {
-                    let link = imports
-                        .get(specifier.local.name().as_str())
+                    let link = export_symbol(&specifier.local, &semantic)
+                        .and_then(|symbol| imports.get(&symbol))
                         .cloned()
                         .unwrap_or(Link::Own);
                     exports
@@ -165,8 +175,8 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                 }
             }
             Statement::VariableDeclaration(declaration) => {
-                for (name, link) in alias_links(declaration, &imports) {
-                    imports.insert(name, link);
+                for (id, link) in alias_links(declaration, &imports, &semantic) {
+                    imports.extend(id.symbol_id.get().map(|symbol| (symbol, link)));
                 }
             }
             Statement::ExportDeclaration(export) => {
@@ -174,16 +184,18 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                     exports.named.insert(name, Link::Own);
                 }
                 if let Declaration::VariableDeclaration(declaration) = &export.declaration {
-                    for (name, link) in alias_links(declaration, &imports) {
-                        exports.named.insert(name.to_string(), link.clone());
-                        imports.insert(name, link);
+                    for (id, link) in alias_links(declaration, &imports, &semantic) {
+                        exports.named.insert(id.name.to_string(), link.clone());
+                        imports.extend(id.symbol_id.get().map(|symbol| (symbol, link)));
                     }
                 }
             }
             Statement::ExportDefaultDeclaration(export) => {
                 let link = match &export.declaration {
                     ExportDefaultDeclarationKind::Identifier(name) => {
-                        imports.get(name.name.as_str()).cloned()
+                        reference_symbol(name, &semantic)
+                            .and_then(|symbol| imports.get(&symbol))
+                            .cloned()
                     }
                     _ => None,
                 };
@@ -200,13 +212,14 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
 /// Where `Namespace.member` leads, for a namespace a module imports
 fn member_link(
     member: &StaticMemberExpression<'_>,
-    imports: &FxHashMap<&str, Link>,
+    imports: &FxHashMap<SymbolId, Link>,
+    semantic: &Semantic<'_>,
 ) -> Option<Link> {
     if let Expression::Identifier(object) = &member.object
         && let Some(Link::From {
             source,
             imported: None,
-        }) = imports.get(object.name.as_str())
+        }) = reference_symbol(object, semantic).and_then(|symbol| imports.get(&symbol))
     {
         Some(Link::From {
             source: source.clone(),
@@ -220,9 +233,10 @@ fn member_link(
 /// The bindings a `const` declaration makes of what a module imports
 /// (`const B = Box`, `const C = Devup.css`), with where each leads
 fn alias_links<'a>(
-    declaration: &oxc_ast::ast::VariableDeclaration<'a>,
-    imports: &FxHashMap<&str, Link>,
-) -> Vec<(&'a str, Link)> {
+    declaration: &'a oxc_ast::ast::VariableDeclaration<'a>,
+    imports: &FxHashMap<SymbolId, Link>,
+    semantic: &Semantic<'_>,
+) -> Vec<(&'a BindingIdentifier<'a>, Link)> {
     if declaration.kind != VariableDeclarationKind::Const {
         return Vec::new();
     }
@@ -234,13 +248,40 @@ fn alias_links<'a>(
                 return None;
             };
             let link = match declarator.init.as_ref()? {
-                Expression::Identifier(init) => imports.get(init.name.as_str())?.clone(),
-                Expression::StaticMemberExpression(member) => member_link(member, imports)?,
+                Expression::Identifier(init) => {
+                    imports.get(&reference_symbol(init, semantic)?)?.clone()
+                }
+                Expression::StaticMemberExpression(member) => {
+                    member_link(member, imports, semantic)?
+                }
                 _ => return None,
             };
-            Some((id.name.as_str(), link))
+            Some((id.as_ref(), link))
         })
         .collect()
+}
+
+fn reference_symbol(
+    reference: &oxc_ast::ast::IdentifierReference<'_>,
+    semantic: &Semantic<'_>,
+) -> Option<SymbolId> {
+    reference
+        .reference_id
+        .get()
+        .and_then(|id| semantic.scoping().get_reference(id).symbol_id())
+}
+
+fn export_symbol(
+    local: &oxc_ast::ast::ModuleExportName<'_>,
+    semantic: &Semantic<'_>,
+) -> Option<SymbolId> {
+    match local {
+        oxc_ast::ast::ModuleExportName::IdentifierReference(reference) => {
+            reference_symbol(reference, semantic)
+        }
+        oxc_ast::ast::ModuleExportName::IdentifierName(_)
+        | oxc_ast::ast::ModuleExportName::StringLiteral(_) => None,
+    }
 }
 
 /// Follows re-exports through the modules a resolver reads
@@ -461,6 +502,7 @@ impl Generated {
 }
 
 mod aliases;
+mod gate;
 use aliases::{Reach, declarator_removal, export_edits, is_assigned_from};
 
 fn unreadable(local: &str, code: &str) -> String {
@@ -979,36 +1021,42 @@ pub(crate) fn rewrite(
             ));
         }
     }
-    let locals: FxHashMap<String, Reach> = found
-        .bound
-        .iter()
-        .filter(|bound| bound.devup.1.as_deref().is_some_and(compiled_export))
-        .map(|bound| {
-            (
-                bound.binding.name.to_string(),
-                (bound.source.clone(), Some(bound.imported.clone())),
-            )
-        })
-        .chain(found.namespaces.iter().map(|declared| {
-            (
-                declared.binding.name.to_string(),
-                (declared.source.clone(), None),
-            )
-        }))
-        .collect();
-    edits.extend(export_edits(&program, code, locals));
     let wants_semantic = !found.namespaces.is_empty()
         || !found.opaque.is_empty()
-        || found
+        || (found
             .bound
             .iter()
-            .any(|bound| is_assigned_from(code, bound.binding.name.as_str()))
-        || (!found.bound.is_empty() && (code.contains("= keyframes(") || code.contains("= css(")));
+            .any(|bound| bound.devup.1.as_deref().is_some_and(compiled_export))
+            && (gate::has_export_candidate(&program)
+                || code.contains("= keyframes(")
+                || code.contains("= css(")
+                || found.bound.iter().any(|bound| {
+                    bound.devup.1.as_deref().is_some_and(compiled_export)
+                        && is_assigned_from(code, bound.binding.name.as_str())
+                })));
     let (mut edits, errors) = if wants_semantic {
         let semantic = SemanticBuilder::new()
             .with_build_nodes(true)
             .build(&program)
             .semantic;
+        let locals: FxHashMap<SymbolId, Reach> = found
+            .bound
+            .iter()
+            .filter(|bound| bound.devup.1.as_deref().is_some_and(compiled_export))
+            .filter_map(|bound| {
+                Some((
+                    bound.binding.symbol_id.get()?,
+                    (bound.source.clone(), Some(bound.imported.clone())),
+                ))
+            })
+            .chain(found.namespaces.iter().filter_map(|declared| {
+                Some((
+                    declared.binding.symbol_id.get()?,
+                    (declared.source.clone(), None),
+                ))
+            }))
+            .collect();
+        edits.extend(export_edits(&semantic, code, locals));
         let mut rewriter = Rewriter {
             code,
             semantic: &semantic,
@@ -1072,3 +1120,6 @@ pub(crate) fn rewrite(
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests;
+
+#[cfg(test)]
+mod scope_tests;
