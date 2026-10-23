@@ -14,6 +14,7 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
+import type { Plugin } from 'vite'
 
 import { DevupUI } from '../plugin'
 
@@ -61,6 +62,9 @@ interface ViteTestPlugin {
   enforce: 'pre'
   apply: () => boolean
   closeBundle: () => void
+  buildApp: NonNullable<Plugin['buildApp']>
+  buildStart: NonNullable<Plugin['buildStart']>
+  configureServer: NonNullable<Plugin['configureServer']>
   config: (
     this: { meta?: ConfigHookMeta } | void,
     userConfig?: ViteConfig,
@@ -80,6 +84,7 @@ interface ViteTestPlugin {
     server: {
       moduleGraph: {
         invalidateModule: (...args: unknown[]) => void
+        idToModuleMap?: ReadonlyMap<string, object>
       }
       ws: { send: (...args: unknown[]) => void }
     }
@@ -148,10 +153,17 @@ function createCodeExtractResult(
   } as unknown as CodeExtractResult
 }
 
+const activePlugins: ViteTestPlugin[] = []
+
 function createPlugins(
   options?: Parameters<typeof DevupUI>[0],
 ): [ViteTestPlugin, ViteTestRestorePlugin] {
-  return DevupUI(options) as unknown as [ViteTestPlugin, ViteTestRestorePlugin]
+  const plugins = DevupUI(options) as unknown as [
+    ViteTestPlugin,
+    ViteTestRestorePlugin,
+  ]
+  activePlugins.push(plugins[0])
+  return plugins
 }
 
 function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
@@ -220,6 +232,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  for (const plugin of activePlugins.splice(0)) plugin.closeBundle()
   existsSyncSpy.mockRestore()
   mkdirSpy.mockRestore()
   readFileSpy.mockRestore()
@@ -252,6 +265,9 @@ describe('devupUIVitePlugin', () => {
       apply: expect.any(Function),
       generateBundle: expect.any(Function),
       configResolved: expect.any(Function),
+      buildApp: expect.any(Function),
+      configureServer: expect.any(Function),
+      buildStart: expect.any(Function),
       resolveId: expect.any(Function),
     })
     expect(plugin.apply()).toBe(true)
@@ -264,6 +280,7 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should apply options', async (options) => {
     const plugin = createPlugin(options)
+    await plugin.configResolved()
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
@@ -1136,16 +1153,171 @@ describe('devupUIVitePlugin', () => {
       expect(first).not.toContain('?t=')
     })
 
+    describe('serve sheet module identity', () => {
+      const sheets = ['devup-ui.css', 'devup-ui-3.css'] as const
+      const initialCss = '.a{color:red}'
+      let nowSpy: ReturnType<typeof spyOn<typeof Date, 'now'>>
+
+      beforeEach(() => {
+        nowSpy = spyOn(Date, 'now').mockReturnValue(1_730_000_000_000)
+      })
+
+      afterEach(() => {
+        nowSpy.mockRestore()
+      })
+
+      function resolveSheet(plugin: ViteTestPlugin, fileName: string) {
+        const id = plugin.resolveId(fileName, join('df', 'devup-ui', fileName))
+        if (typeof id !== 'string') throw new TypeError('Sheet did not resolve')
+        return id
+      }
+
+      async function writeSheet(
+        plugin: ViteTestPlugin,
+        fileName: string,
+        css: string,
+      ) {
+        getCssSpy.mockReturnValue(css)
+        codeExtractSpy.mockReturnValue(
+          createCodeExtractResult({
+            css,
+            cssFile: fileName,
+            updatedBaseStyle: fileName === 'devup-ui.css',
+          }),
+        )
+        await plugin.transform(
+          `const sheet = ${JSON.stringify([fileName, css])}`,
+          'sheet-owner.tsx',
+        )
+      }
+
+      it.each(sheets)(
+        'keeps %s identity when only the clock advances before any write',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          const first = resolveSheet(plugin, fileName)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(second).toBe(first)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps %s identity when the same text is transformed again',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          await writeSheet(plugin, fileName, initialCss)
+          const first = resolveSheet(plugin, fileName)
+          writeFileSpy.mockClear()
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, fileName, initialCss)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(writeFileSpy).not.toHaveBeenCalled()
+          expect(second).toBe(first)
+        },
+      )
+
+      it.each(
+        sheets.flatMap((fileName) =>
+          [
+            { change: 'longer', css: '.a{color:blue}' },
+            { change: 'shorter', css: '.a{top:0}' },
+            { change: 'same-length', css: '.a{color:sky}' },
+          ].map((change) => ({ fileName, ...change })),
+        ),
+      )(
+        'changes $fileName identity when $change text is written at the same clock time',
+        async ({ fileName, css }) => {
+          // Given: prime the load cache too, so length-based identity is exercised.
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          await writeSheet(plugin, fileName, initialCss)
+          plugin.load(fileName)
+          const first = resolveSheet(plugin, fileName)
+          writeFileSpy.mockClear()
+
+          // When
+          await writeSheet(plugin, fileName, css)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(writeFileSpy.mock.calls).toEqual([
+            [join(resolve('df', 'devup-ui'), fileName), css, 'utf-8'],
+          ])
+          expect(second).not.toBe(first)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps other sheets independent when %s changes',
+        async (changedSheet) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          for (const sheet of sheets)
+            await writeSheet(plugin, sheet, initialCss)
+          const otherSheet =
+            changedSheet === 'devup-ui.css' ? 'devup-ui-3.css' : 'devup-ui.css'
+          const otherId = resolveSheet(plugin, otherSheet)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, changedSheet, '.a{color:sky}')
+
+          // Then
+          expect(resolveSheet(plugin, otherSheet)).toBe(otherId)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps the build path for %s when text changes and time advances',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'build' })
+          await writeSheet(plugin, fileName, initialCss)
+          const first = resolveSheet(plugin, fileName)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, fileName, '.a{color:sky}')
+
+          // Then
+          expect(first).toBe(join(resolve('df', 'devup-ui'), fileName))
+          expect(resolveSheet(plugin, fileName)).toBe(first)
+        },
+      )
+    })
+
     it('cache-busts the id during dev so a growing sheet invalidates', async () => {
       const plugin = createPlugin({})
       await plugin.configResolved({ command: 'serve' })
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ cssFile: '', updatedBaseStyle: true }),
+      )
+      await plugin.transform('code', 'layout.tsx')
+      const importer = join('df', 'devup-ui', 'devup-ui.css')
+      const first = plugin.resolveId('devup-ui.css', importer)
 
-      expect(
-        plugin.resolveId(
-          'devup-ui.css',
-          join('df', 'devup-ui', 'devup-ui.css'),
-        ),
-      ).toContain('?t=')
+      getCssSpy.mockReturnValue('css code with added styles')
+      await plugin.transform('const addedStyles = true', 'layout.tsx')
+      const second = plugin.resolveId('devup-ui.css', importer)
+
+      expect(first).toMatch(/\?v=\d+$/)
+      expect(second).toMatch(/\?v=\d+$/)
+      expect(second).not.toBe(first)
     })
   })
 
@@ -1857,308 +2029,10 @@ export const a = <div css={{ color: 'red' }} />`
     expect(bundle).toEqual({})
   })
 
-  it('should call setPrefix when prefix option is provided', () => {
-    DevupUI({ prefix: 'my-prefix' })
+  it('should call setPrefix when prefix option is configured', async () => {
+    const plugin = createPlugin({ prefix: 'my-prefix' })
+    await plugin.configResolved()
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
-  })
-})
-
-describe('devupUIVitePlugin atom hoisting', () => {
-  type ConfigResolved = (config: unknown) => Promise<void>
-  const runConfigResolved = async (
-    options: Parameters<typeof DevupUI>[0],
-    config: unknown,
-  ) => {
-    const [plugin] = DevupUI(options) as unknown as [
-      { configResolved: ConfigResolved },
-    ]
-    await plugin.configResolved(config)
-  }
-
-  let buildCanonicalMapSpy: ReturnType<typeof spyOn>
-  let computeFileReachSpy: ReturnType<typeof spyOn>
-  let importCanonicalMapSpy: ReturnType<typeof spyOn>
-  let importFileRoutesSpy: ReturnType<typeof spyOn>
-  let setAtomHoistSpy: ReturnType<typeof spyOn>
-
-  beforeEach(() => {
-    buildCanonicalMapSpy = spyOn(
-      pluginUtils,
-      'buildCanonicalMap',
-    ).mockReturnValue({})
-    computeFileReachSpy = spyOn(
-      pluginUtils,
-      'computeFileReach',
-    ).mockReturnValue({})
-    importCanonicalMapSpy = spyOn(wasm, 'importCanonicalMap').mockReturnValue(
-      undefined,
-    )
-    importFileRoutesSpy = spyOn(wasm, 'importFileRoutes').mockReturnValue(
-      undefined,
-    )
-    setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
-  })
-
-  afterEach(() => {
-    buildCanonicalMapSpy.mockRestore()
-    computeFileReachSpy.mockRestore()
-    importCanonicalMapSpy.mockRestore()
-    importFileRoutesSpy.mockRestore()
-    setAtomHoistSpy.mockRestore()
-  })
-
-  it('does nothing when atomHoist is explicitly zero', async () => {
-    await runConfigResolved({ atomHoist: 0 }, { root: '/p' })
-    expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-  })
-
-  describe('default regressions', () => {
-    beforeEach(() => {
-      computeFileReachSpy.mockReturnValue({
-        '/p/src/shared.tsx': [0, 1],
-        '/p/src/a.tsx': [0],
-        '/p/src/b.tsx': [1],
-      })
-    })
-
-    it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
-      'availability: keeps per-file mode across environments for request %s',
-      async (atomHoist) => {
-        // Given: the same plugin is shared by Vite environment builds.
-        const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
-        const plugin = createPlugin({ atomHoist })
-        try {
-          // When: configuration and both environment transforms run.
-          await plugin.configResolved({ root: '/p', command: 'build' })
-          for (const consumer of ['client', 'server'] as const) {
-            await plugin.transform.call(
-              { environment: { name: consumer, config: { consumer } } },
-              'code',
-              '/p/src/a.tsx',
-            )
-          }
-          // Then: no atom-only pre-pass or repeated warning is possible.
-          expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-          expect(computeFileReachSpy).not.toHaveBeenCalled()
-          expect(importFileRoutesSpy).not.toHaveBeenCalled()
-          expect(setAtomHoistSpy).not.toHaveBeenCalled()
-          expect(warningSpy).toHaveBeenCalledTimes(
-            atomHoist !== undefined &&
-              Number.isFinite(atomHoist) &&
-              atomHoist > 0
-              ? 1
-              : 0,
-          )
-        } finally {
-          plugin.closeBundle()
-          warningSpy.mockRestore()
-        }
-      },
-    )
-
-    it.each([
-      ['omitted', {}],
-      ['undefined', { atomHoist: undefined }],
-    ])(
-      'keeps omitted atomHoist %s silent without consulting route reach',
-      async (_label, options) => {
-        const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
-        try {
-          await runConfigResolved(options, { root: '/p' })
-          expect(computeFileReachSpy).not.toHaveBeenCalled()
-          expect(importFileRoutesSpy).not.toHaveBeenCalled()
-          expect(setAtomHoistSpy).not.toHaveBeenCalled()
-          expect(warningSpy).not.toHaveBeenCalled()
-        } finally {
-          warningSpy.mockRestore()
-        }
-      },
-    )
-
-    it.each([0, -1, NaN, Infinity, -Infinity])(
-      'keeps legacy OFF for atomHoist %s',
-      async (atomHoist) => {
-        // Given: two routes, not a single-entry fallback.
-        // When: an explicitly disabled numeric option is supplied.
-        await runConfigResolved({ atomHoist }, { root: '/p' })
-        // Then: the atom-only pre-pass has no effects.
-        expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-        expect(computeFileReachSpy).not.toHaveBeenCalled()
-        expect(importFileRoutesSpy).not.toHaveBeenCalled()
-        expect(setAtomHoistSpy).not.toHaveBeenCalled()
-      },
-    )
-
-    it('defers a custom threshold above the minimum until reservation lands', async () => {
-      // Given: two routes and a custom threshold.
-      // When: config resolves.
-      await runConfigResolved({ atomHoist: 3 }, { root: '/p' })
-      // Then: unavailable atom hoisting never installs a threshold.
-      expect(setAtomHoistSpy).not.toHaveBeenCalled()
-      expect(computeFileReachSpy).not.toHaveBeenCalled()
-    })
-
-    it.each([
-      ['omitted', {}],
-      ['undefined', { atomHoist: undefined }],
-      ['enabled', { atomHoist: 2 }],
-    ])(
-      'ignores %s atomHoist before planning in actual singleCss mode',
-      async (_label, options) => {
-        // Given: the real config/transform hooks under explicit OFF.
-        const off = createPlugin({ singleCss: true, atomHoist: 0 })
-        await off.configResolved({ root: '/p' })
-        const offConfig = callConfig(off, ROLLUP_META)
-        await off.transform('code', '/p/src/a.tsx')
-        const offExtractions = [...codeExtractSpy.mock.calls]
-        codeExtractSpy.mockClear()
-        // When: only the requested atom policy changes.
-        const on = createPlugin({ singleCss: true, ...options })
-        await on.configResolved({ root: '/p' })
-        await on.transform('code', '/p/src/a.tsx')
-        const onConfig = callConfig(on, ROLLUP_META)
-        // Then: no canonical/reach mutation and identical extraction IDs/import flags.
-        expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-        expect(importCanonicalMapSpy).not.toHaveBeenCalled()
-        expect(computeFileReachSpy).not.toHaveBeenCalled()
-        expect(importFileRoutesSpy).not.toHaveBeenCalled()
-        expect(setAtomHoistSpy).not.toHaveBeenCalled()
-        expect(codeExtractSpy.mock.calls).toEqual(offExtractions)
-        expect(codeExtractSpy).toHaveBeenCalledWith(
-          '/p/src/a.tsx',
-          'code',
-          '@devup-ui/react',
-          expect.any(String),
-          true,
-          true,
-          false,
-          expect.anything(),
-        )
-        const cssId = resolve('df', 'devup-ui', 'devup-ui.css')
-        expect(
-          onConfig.build?.rollupOptions?.output?.manualChunks?.(cssId, ''),
-        ).toBe(
-          offConfig.build?.rollupOptions?.output?.manualChunks?.(cssId, ''),
-        )
-      },
-    )
-  })
-
-  it('defers atom-only collapse and bucket folding until reservation lands', async () => {
-    buildCanonicalMapSpy.mockReturnValue({
-      '/p/src/child.tsx': '/p/src/parent.tsx',
-      '/p/src/glob.tsx': '@global',
-    })
-    computeFileReachSpy.mockReturnValue({
-      '/p/src/parent.tsx': [0, 1],
-      '/p/src/child.tsx': [0],
-      '/p/src/glob.tsx': [0, 1],
-      '/p/src/r1.tsx': [1],
-    })
-    await runConfigResolved(
-      { atomHoist: 2 },
-      { root: '/p', build: { rollupOptions: { input: { a: 'src/a.tsx' } } } },
-    )
-    expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-    expect(importCanonicalMapSpy).not.toHaveBeenCalled()
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-    expect(importFileRoutesSpy).not.toHaveBeenCalled()
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['app', 'app'],
-    ['src', 'src'],
-  ])('defers atom reach in %s/ layouts', async (_name, dir) => {
-    existsSyncSpy.mockImplementation(
-      (path: string) => path === resolve('/p', dir),
-    )
-    computeFileReachSpy.mockReturnValue({
-      '/p/a.tsx': [0],
-      '/p/b.tsx': [1],
-    })
-
-    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
-
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-  })
-
-  it('does not infer atom reach when neither conventional dir exists', async () => {
-    existsSyncSpy.mockReturnValue(false)
-    computeFileReachSpy.mockReturnValue({
-      '/p/a.tsx': [0],
-      '/p/b.tsx': [1],
-    })
-
-    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
-
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-  })
-
-  it('defers even the former minimum-clamped threshold', async () => {
-    computeFileReachSpy.mockReturnValue({
-      '/p/src/a.tsx': [0],
-      '/p/src/b.tsx': [1],
-    })
-    await runConfigResolved({ atomHoist: 1 }, { root: '/p' })
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-  })
-
-  it('stays off when fewer than two routes are reachable', async () => {
-    computeFileReachSpy.mockReturnValue({ '/p/src/a.tsx': [0] })
-    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-  })
-
-  it('does not infer atom reach from HTML entries before PR B', async () => {
-    computeFileReachSpy.mockReturnValue({
-      '/p/src/a.tsx': [0],
-      '/p/src/b.tsx': [1],
-    })
-    await runConfigResolved(
-      { atomHoist: 2 },
-      { root: '/p', build: { rollupOptions: { input: 'index.html' } } },
-    )
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-  })
-
-  it('keeps atom reach deferred for array and string JS entries', async () => {
-    computeFileReachSpy.mockReturnValue({
-      '/p/src/a.tsx': [0],
-      '/p/src/b.tsx': [1],
-    })
-    await runConfigResolved(
-      { atomHoist: 2 },
-      { root: '/p', build: { rollupOptions: { input: ['src/a.tsx'] } } },
-    )
-    await runConfigResolved(
-      { atomHoist: 2 },
-      { root: '/p', build: { rollupOptions: { input: 'src/a.tsx' } } },
-    )
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-  })
-
-  it('never reaches the unavailable atom pre-pass even if it would fail', async () => {
-    buildCanonicalMapSpy.mockImplementation(() => {
-      throw new Error('boom')
-    })
-    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
-    expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
-  })
-
-  it('keeps atom reach deferred when config.root is absent', async () => {
-    computeFileReachSpy.mockReturnValue({
-      '/p/src/a.tsx': [0],
-      '/p/src/b.tsx': [1],
-    })
-    await runConfigResolved({ atomHoist: 2 }, {})
-    expect(computeFileReachSpy).not.toHaveBeenCalled()
-    expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 })
 

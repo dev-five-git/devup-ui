@@ -83,7 +83,11 @@ function mergeExtendedConfigs(
  * @param configPath - Path to the devup.json file
  * @returns Resolved configuration with all extends merged
  */
-export function loadDevupConfigSync(configPath: string): DevupConfig {
+export function loadDevupConfigSync(
+  configPath: string,
+  inputs?: Set<string>,
+): DevupConfig {
+  inputs?.add(resolve(configPath))
   if (!existsSync(configPath)) {
     return {}
   }
@@ -101,7 +105,7 @@ export function loadDevupConfigSync(configPath: string): DevupConfig {
   return mergeExtendedConfigs(
     config,
     config.extends.map((extendPath) =>
-      loadDevupConfigSync(resolve(configDir, extendPath)),
+      loadDevupConfigSync(resolve(configDir, extendPath), inputs),
     ),
   )
 }
@@ -115,7 +119,9 @@ export function loadDevupConfigSync(configPath: string): DevupConfig {
  */
 export async function loadDevupConfig(
   configPath: string,
+  inputs?: Set<string>,
 ): Promise<DevupConfig> {
+  inputs?.add(resolve(configPath))
   if (!existsSync(configPath)) {
     return {}
   }
@@ -133,7 +139,9 @@ export async function loadDevupConfig(
   // Load extends sequentially to preserve merge order
   const extendedConfigs: DevupConfig[] = []
   for (const extendPath of config.extends) {
-    extendedConfigs.push(await loadDevupConfig(resolve(configDir, extendPath)))
+    extendedConfigs.push(
+      await loadDevupConfig(resolve(configDir, extendPath), inputs),
+    )
   }
 
   return mergeExtendedConfigs(config, extendedConfigs)

@@ -71,6 +71,12 @@ describe('coordinator port file', () => {
     expect(Bun.file(file).size).toBe(0)
   })
 
+  it('allows first-run cleanup when no coordinator port file exists', () => {
+    const file = join(tmp(), 'coordinator.port')
+
+    expect(() => removeStalePortFile(file)).not.toThrow()
+  })
+
   it('names port, owner pid, state and recovery when the coordinator is unreachable', () => {
     const dir = tmp()
     const file = join(dir, 'coordinator.port')
