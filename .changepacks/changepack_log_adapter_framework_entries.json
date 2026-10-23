@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Avoid scanning excluded framework entry directories when an adapter supplies the complete production extraction inventory, preserving generic entry closure and explicitly included packages. No new build errors.",
+  "date": "2026-10-23T00:00:00.000Z"
+}

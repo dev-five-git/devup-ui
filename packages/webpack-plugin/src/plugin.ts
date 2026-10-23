@@ -362,7 +362,12 @@ export class DevupUIWebpackPlugin {
         ...sourceDirs,
         ...entries
           .map((file) => dirname(file))
-          .filter((directory) => directory !== resolve(cwd)),
+          .filter(
+            (directory) =>
+              directory !== resolve(cwd) &&
+              (this.options.productionPrewarmFiles === undefined ||
+                !this.excludeModules.test(directory)),
+          ),
       ]),
     ]
     const generated = [
