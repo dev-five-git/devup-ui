@@ -1073,3 +1073,20 @@ fn aliases_that_are_not_package_exports_stay_declarations() {
     assert!(code.contains("N1"), "{code}");
     assert!(project.error("ui.tsx").contains("ui.tsx:3:"));
 }
+
+#[test]
+fn unsupported_child_grammar_does_not_admit_barrel_exports() {
+    let module = ResolvedModule {
+        path: "/src/ui.data".to_string(),
+        code: "export { Box } from '@devup-ui/react'".to_string(),
+        source_type: None,
+    };
+
+    let exports = super::analyze(&module, "@devup-ui/react");
+
+    assert_eq!(exports.path, module.path);
+    assert_eq!(exports.named.len(), 0);
+    assert_eq!(exports.stars, Vec::<String>::new());
+    assert!(exports.mentions_package);
+    assert!(!exports.trivial);
+}

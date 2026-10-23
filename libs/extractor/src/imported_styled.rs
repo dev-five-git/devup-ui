@@ -925,6 +925,28 @@ export default styled.span`margin: 1px;`;
     }
 
     #[test]
+    fn ignored_component_module_does_not_become_a_dependency_or_cached_source() {
+        let allocator = Allocator::default();
+        let option = option();
+        let resolver = |_: &str, _: &str| Some(ModuleResolution::Ignored);
+        let mut reader = Reader {
+            option: &option,
+            resolver: &resolver,
+            allocator: &allocator,
+            modules: FxHashMap::default(),
+            reading: Vec::new(),
+            dependencies: BTreeSet::new(),
+        };
+
+        let module = reader.module("./ignored", "/src/app.tsx");
+
+        assert!(module.is_none());
+        assert_eq!(reader.dependencies, BTreeSet::new());
+        assert_eq!(reader.modules.len(), 0);
+        assert_eq!(reader.reading, Vec::<String>::new());
+    }
+
+    #[test]
     #[serial]
     fn exports_name_what_a_module_gives_other_files() {
         let code = "import styled from '@emotion/styled';\nexport const A = 1, { b } = {};\nconst C = 2;\nexport { C, C as D };\nexport default C;\nexport function f() {}\nexport type { C as T };";
