@@ -2,6 +2,6 @@
   "changes": {
     "packages/eslint-plugin/package.json": "Patch"
   },
-  "note": "Fix sparse trailing-null autofixes to preserve authored values and earlier holes while removing the maximal trailing run of nulls and holes only when the last element is literal null; remove an unreachable AST guard and restore complete behavior coverage on the latest Bun without exclusions or new build errors.",
+  "note": "Fix sparse trailing-null autofixes to preserve authored values, complete parenthesized syntax and earlier holes using token-based edit boundaries while removing the maximal trailing run of nulls and holes only when the last element is canonical literal null; preserve regular-expression and BigInt literals without validating regex syntax, preserve existing comment and trailing-comma handling, remove an unreachable AST guard and restore complete behavior coverage on the latest Bun without exclusions or new build errors.",
   "date": "2026-10-22T00:00:00.000Z"
 }

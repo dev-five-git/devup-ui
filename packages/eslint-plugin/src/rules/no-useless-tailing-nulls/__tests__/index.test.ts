@@ -1,9 +1,110 @@
 import { RuleTester } from '@typescript-eslint/rule-tester'
-import { describe } from 'bun:test'
+import { TSESLint } from '@typescript-eslint/utils'
+import { describe, expect, it } from 'bun:test'
+import { parser } from 'typescript-eslint'
 
 import { noUselessTailingNulls } from '../index'
 
 describe('no-useless-tailing-nulls rule', () => {
+  const boundaryCases = [
+    ['[0,(1),,null]', '[0,(1)]'],
+    ['[0,((1)),,null]', '[0,((1))]'],
+    ['[0,(1),null]', '[0,(1)]'],
+    ['[0,(1),,(null)]', '[0,(1)]'],
+    ['[(null)]', '[]'],
+    ['[1,null]', '[1]'],
+    ['[0,((1)),,((null))]', '[0,((1))]'],
+    ['[((null)),(null)]', '[]'],
+    [
+      '[0,( /* value */ 1 /* inner */ ), /* remove */ , (null)]',
+      '[0,( /* value */ 1 /* inner */ )]',
+    ],
+    ['[1 /* remove */, /* remove */ null /* keep */]', '[1 /* keep */]'],
+    ['[/* keep */ (null),null]', '[/* keep */ ]'],
+    ['[, /* remove */ (null)]', '[]'],
+    ['[0,(1),null,]', '[0,(1),]'],
+    ['[0,((1)),,((null)),]', '[0,((1)),]'],
+    ['[(null),]', '[,]'],
+    ['[null,]', '[,]'],
+    ['[1,null, /* keep */]', '[1, /* keep */]'],
+    ['[1,null /* keep */,]', '[1 /* keep */,]'],
+    [
+      '[0,(1), /* remove */ null /* keep */, /* tail */]',
+      '[0,(1) /* keep */, /* tail */]',
+    ],
+    ['[/* keep */ ((null)) /* tail */]', '[/* keep */  /* tail */]'],
+  ] as const
+  const literalKindCases = [
+    ['[/(/,null]', '[/(/]'],
+    ['[/a/gg,null]', '[/a/gg]'],
+    ['[/a/z,null]', '[/a/z]'],
+    ['[/a/gg,,null]', '[/a/gg]'],
+    ['[/a/g,null]', '[/a/g]'],
+    ['[/a/g,,null]', '[/a/g]'],
+    ['[(/(/),,(null)]', '[(/(/)]'],
+    ['[1n,null]', '[1n]'],
+    ['[0xFFn,,null]', '[0xFFn]'],
+    ['[1n,null,,(null),]', '[1n,]'],
+  ] as const
+  const literalKindControls = [
+    '[/(/]',
+    '[/a/gg]',
+    '[/a/z]',
+    '[1,null,/(/]',
+    '[/a/g]',
+    '[1n]',
+    '[0xFFn]',
+    '[null,1n]',
+  ] as const
+  const literalKindValidTests = literalKindControls.flatMap((value) =>
+    [false, true].map((jsx) => ({
+      code: `import {css,Box} from '@devup-ui/react';\n${jsx ? `<Box w={${value}} />` : `css({w:${value}})`}`,
+      filename: 'src/app/page.tsx',
+    })),
+  )
+  const boundaryTests = [...boundaryCases, ...literalKindCases].flatMap(
+    ([value, fixed]) =>
+      [false, true].map((jsx) => ({
+        code: `import {css,Box} from '@devup-ui/react';\n${jsx ? `<Box w={${value}} />` : `css({w:${value}})`}`,
+        output: `import {css,Box} from '@devup-ui/react';\n${jsx ? `<Box w={${fixed}} />` : `css({w:${fixed}})`}`,
+        filename: 'src/app/page.tsx',
+        errors: [{ messageId: 'uselessTailingNulls' as const }],
+      })),
+  )
+  it.each([
+    ...boundaryTests,
+    ...literalKindValidTests.map((test) => ({ ...test, output: test.code })),
+  ])(
+    'preserves authored syntax and parses when fixing $code',
+    ({ code, output }) => {
+      const linter = new TSESLint.Linter()
+      const config = {
+        files: ['**/*.tsx'],
+        languageOptions: {
+          parser,
+          parserOptions: { ecmaFeatures: { jsx: true } },
+        },
+        plugins: { devup: { rules: { trailing: noUselessTailingNulls } } },
+        rules: { 'devup/trailing': 'error' },
+      } satisfies TSESLint.FlatConfig.Config
+
+      const result = linter.verifyAndFix(code, config, {
+        filename: 'src/app/page.tsx',
+      })
+
+      expect(result.output).toBe(output)
+      expect(
+        linter.verify(
+          result.output,
+          { ...config, rules: {} },
+          {
+            filename: 'src/app/page.tsx',
+          },
+        ),
+      ).toEqual([])
+      expect(result.messages).toEqual([])
+    },
+  )
   const ruleTester = new RuleTester({
     languageOptions: {
       ecmaVersion: 'latest',
@@ -16,6 +117,7 @@ describe('no-useless-tailing-nulls rule', () => {
   })
   ruleTester.run('no-useless-tailing-nulls rule', noUselessTailingNulls, {
     valid: [
+      ...literalKindValidTests,
       // Real parser holes are absent elements, not Literal null nodes.
       ...[
         '[]',
@@ -58,6 +160,7 @@ describe('no-useless-tailing-nulls rule', () => {
       })),
     ],
     invalid: [
+      ...boundaryTests,
       ...[
         ['[null]', '[]'],
         ['[null,null]', '[]'],
