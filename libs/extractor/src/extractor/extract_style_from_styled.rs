@@ -793,7 +793,7 @@ fn resolve_styled_call_target<'a>(
 /// - styled.div({ bg: "red" })
 /// - styled(Component)({ bg: "red" })
 pub fn extract_style_from_styled<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: super::style_inputs::StyleInputs<'_, 'a>,
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
     imports: Kinds<'_>,
@@ -801,6 +801,7 @@ pub fn extract_style_from_styled<'a>(
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
+    let ast_builder = inputs.ast;
     let Naming {
         split_filename,
         markers,
@@ -1027,7 +1028,7 @@ pub fn extract_style_from_styled<'a>(
             props,
             ..
         } = extract_style_from_expression(
-            ast_builder,
+            inputs,
             None,
             if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
                 &mut spread.argument

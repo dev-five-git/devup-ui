@@ -9,14 +9,11 @@ use crate::{
     },
     utils::{get_string_by_property_key, readable_code, runtime_value, unwrap_syntax_only_mut},
 };
-use oxc_ast::{
-    ast::{Expression, ObjectPropertyKind},
-    builder::AstBuilder,
-};
+use oxc_ast::ast::{Expression, ObjectPropertyKind};
 use oxc_span::GetSpan;
 
 pub(crate) fn extract_keyframes_with_location<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: super::style_inputs::StyleInputs<'_, 'a>,
     expression: &mut Expression<'a>,
 ) -> (KeyframesExtractResult, Option<u32>) {
     let mut keyframes = ExtractKeyframes::default();
@@ -67,7 +64,7 @@ pub(crate) fn extract_keyframes_with_location<'a>(
             continue;
         };
         let ExtractResult { styles, .. } = extract_style_from_expression(
-            ast_builder,
+            inputs,
             None,
             &mut o.value,
             0,

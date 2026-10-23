@@ -1,3 +1,4 @@
+use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
     extractor::{
@@ -21,13 +22,14 @@ use oxc_span::SPAN;
 use std::collections::BTreeMap;
 
 pub(super) fn extract_member<'a, const LOCATE: bool>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
+    let ast_builder = inputs.ast;
     let mem_expression = &mem
         .expression
         .clone_in_with_semantic_ids(ast_builder.allocator());
@@ -102,7 +104,7 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                     && let Some(p) = p.as_expression_mut()
                 {
                     return extract_with_policy::<LOCATE>(
-                        ast_builder,
+                        inputs,
                         name,
                         p,
                         level,
@@ -135,7 +137,7 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(
                         extract_with_policy::<LOCATE>(
-                            ast_builder,
+                            inputs,
                             name,
                             p,
                             level,
@@ -179,7 +181,7 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                 {
                     return ExtractResult {
                         styles: extract_with_policy::<LOCATE>(
-                            ast_builder,
+                            inputs,
                             name,
                             &mut o.value,
                             level,
@@ -203,7 +205,7 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                     property_name,
                     Box::new(ExtractStyleProp::StaticArray(
                         extract_with_policy::<LOCATE>(
-                            ast_builder,
+                            inputs,
                             name,
                             &mut o.value,
                             level,

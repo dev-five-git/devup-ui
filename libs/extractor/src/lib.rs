@@ -62,6 +62,8 @@ mod tailwind_motion;
 mod tailwind_theme;
 #[doc(hidden)]
 pub mod test_state;
+#[cfg(test)]
+mod unresolved_global_inputs_tests;
 mod util_type;
 mod utils;
 mod vanilla_extract;
@@ -660,10 +662,14 @@ fn extract_source(
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
     if (!visitor.errors.is_empty() || visitor.composes_unknown)
-        && !visitor
-            .errors
-            .iter()
-            .any(|(_, error)| dead_properties::terminal_error(error))
+        && !visitor.errors.iter().any(|(_, error)| {
+            dead_properties::terminal_error(error)
+                || error
+                    .rsplit_once(" at build time: ")
+                    .is_some_and(|(_, requirement)| {
+                        requirement == extractor::global_inputs::FONT_TEMPLATE_INPUT
+                    })
+        })
         && values_run.is_none()
         && !utils::is_vanilla_extract_file(filename)
         && let Some((computed, value_edits, read)) = build_time_values::evaluate(
@@ -10351,79 +10357,32 @@ keyframes({
         // empty
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import {Box} from '@devup-ui/core'
-        <Box _is={{
-          params: [],
-        }} />
-        ",
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+        crate::unresolved_global_inputs_tests::rejects_at(
+            "import {Box} from '@devup-ui/react';\nexport const view=<Box _is={{params:[]}}/>;",
+            "[]",
+            false,
+        );
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
-        <Box _is={{
-          params: [""],
-          _hover: {
-            bg: "blue"
-          }
-        }} />
-        "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+        crate::unresolved_global_inputs_tests::rejects_at(
+            "import {Box} from '@devup-ui/react';\nexport const view=<Box _is={{params:[\"\"],_hover:{bg:'blue'}}}/>;",
+            "\"\"",
+            false,
+        );
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
-        <Box _is={{
-          params: ["", ""],
-          _hover: {
-            bg: "blue"
-          }
-        }} />
-        "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+        crate::unresolved_global_inputs_tests::rejects_at(
+            "import {Box} from '@devup-ui/react';\nexport const view=<Box _is={{params:[\"\",\"\"],_hover:{bg:'blue'}}}/>;",
+            "\"\"",
+            false,
+        );
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+        crate::unresolved_global_inputs_tests::rejects_at(
+            r#"import {Box} from '@devup-ui/react'
         <Box _is={{
           params: ["test", variable],
           _hover: {
@@ -10431,23 +10390,14 @@ keyframes({
           }
         }} />
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+            "variable",
+            false,
+        );
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {globalCss} from '@devup-ui/core'
+        crate::unresolved_global_inputs_tests::rejects_at(
+            r#"import {globalCss} from '@devup-ui/react'
         globalCss({
           "_is": {
             params: ["test", variable],
@@ -10458,23 +10408,18 @@ keyframes({
           }
         })
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
-            )
-            .unwrap()
-        ));
+            "variable",
+            false,
+        );
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import {css} from '@devup-ui/core'
+        assert_debug_snapshot!(
+            "extract_advenced_selector-8",
+            ToBTreeSet::from(
+                extract(
+                    "test.tsx",
+                    r#"import {css} from '@devup-ui/core'
         css({
           "_is": {
             params: ["test"],
@@ -10482,16 +10427,17 @@ keyframes({
           }
         })
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: false,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
+                    ExtractOption {
+                        package: "@devup-ui/core".to_string(),
+                        css_dir: "@devup-ui/core".to_string(),
+                        single_css: false,
+                        import_main_css: false,
+                        import_aliases: HashMap::new()
+                    }
+                )
+                .unwrap()
             )
-            .unwrap()
-        ));
+        );
     }
 
     #[test]
@@ -21472,7 +21418,7 @@ export const j = css(...{ bg: 'red' });",
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:2:41: `<Global>` cannot use `x` at build time: its values must be literals, theme tokens or constants"
+            "test.tsx:2:49: `<Global>` cannot use `x` at build time: its values must be literals, theme tokens or constants"
         );
     }
 

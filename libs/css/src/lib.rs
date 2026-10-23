@@ -14,6 +14,7 @@ pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod quoted;
 pub mod rm_css_comment;
+pub mod selector_params;
 mod selector_separator;
 pub mod slot_reservation;
 pub mod style_selector;

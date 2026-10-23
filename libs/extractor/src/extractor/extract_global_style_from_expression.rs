@@ -1,18 +1,13 @@
-use std::borrow::Cow;
-
 use crate::{
     ExtractStyleProp,
-    css_utils::{CssToStyleResult, css_to_style_literal},
-    extract_style::{
-        extract_font_face::ExtractFontFace, extract_import::ExtractImport,
-        extract_style_value::ExtractStyleValue,
-    },
+    extract_style::extract_style_value::ExtractStyleValue,
     extractor::{
         GlobalExtractResult,
         extract_style_from_expression::{
             LiteralHandling, at_rule_record_kind, extract_style_from_expression, misplaced,
             place_in_layer, unreadable, unreadable_key, yield_typography,
         },
+        global_inputs::{GlobalInputs, font_faces, imports},
     },
     utils::{
         SELECTOR_NAME, get_str_by_property_key, get_string_by_literal_expression,
@@ -21,13 +16,11 @@ use crate::{
 };
 use css::{
     at_rule::{media_shorthand_query, split_at_rule_key},
-    disassemble_property,
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
     style_selector::{AtRule, AtRuleKind, StyleSelector, is_selector_name},
     utils::to_kebab_case,
 };
 use oxc_ast::{
-    ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
+    ast::{Expression, ObjectPropertyKind},
     builder::AstBuilder,
 };
 use oxc_span::GetSpan;
@@ -35,10 +28,10 @@ use oxc_span::GetSpan;
 pub fn extract_global_style_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    file: &str,
+    inputs: &GlobalInputs<'_, 'a>,
 ) -> GlobalExtractResult<'a> {
     let mut styles = vec![];
-    collect_global_styles(ast_builder, expression, file, &[], &mut styles);
+    collect_global_styles(ast_builder, expression, inputs, &[], &mut styles);
     GlobalExtractResult {
         styles,
         style_order: None,
@@ -63,7 +56,7 @@ fn global_at_rule_key(name: &str) -> Option<AtRule> {
 fn collect_global_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    file: &str,
+    inputs: &GlobalInputs<'_, 'a>,
     at_rules: &[AtRule],
     styles: &mut Vec<ExtractStyleProp<'a>>,
 ) {
@@ -91,7 +84,7 @@ fn collect_global_styles<'a>(
                                     collect_global_styles(
                                         ast_builder,
                                         &mut entry.value,
-                                        file,
+                                        inputs,
                                         &nested,
                                         styles,
                                     );
@@ -115,7 +108,7 @@ fn collect_global_styles<'a>(
                             collect_global_styles(
                                 ast_builder,
                                 &mut o.value,
-                                file,
+                                inputs,
                                 at_rules,
                                 &mut layered,
                             );
@@ -124,168 +117,17 @@ fn collect_global_styles<'a>(
                         } else if let Some(at_rule) = global_at_rule_key(&name) {
                             let mut nested = at_rules.to_vec();
                             nested.push(at_rule);
-                            collect_global_styles(ast_builder, &mut o.value, file, &nested, styles);
+                            collect_global_styles(
+                                ast_builder,
+                                &mut o.value,
+                                inputs,
+                                &nested,
+                                styles,
+                            );
                         } else if name == "imports" {
-                            if let Expression::ArrayExpression(arr) = &o.value {
-                                for p in &arr.elements {
-                                    // `...spread` elements carry no statically readable url.
-                                    let Some(element) = p.as_expression() else {
-                                        continue;
-                                    };
-                                    if let Expression::ObjectExpression(obj) = element {
-                                        let mut url = None;
-                                        let mut query = None;
-                                        for p in &obj.properties {
-                                            if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                && let Some(ident) = get_str_by_property_key(&o.key)
-                                            {
-                                                if ident == "url" {
-                                                    url =
-                                                        get_string_by_literal_expression(&o.value);
-                                                } else if ident == "query" {
-                                                    query =
-                                                        get_string_by_literal_expression(&o.value);
-                                                }
-                                            }
-                                        }
-                                        if let Some(url) = url {
-                                            // Build `"url"` (+ optional ` query`)
-                                            // in one presized buffer instead of a
-                                            // nested `format!` that allocates a
-                                            // throwaway inner `String`.
-                                            let mut import_url = String::with_capacity(
-                                                url.len()
-                                                    + 2
-                                                    + query.as_ref().map_or(0, |q| q.len() + 1),
-                                            );
-                                            import_url.push('"');
-                                            import_url.push_str(&url);
-                                            import_url.push('"');
-                                            if let Some(query) = query {
-                                                import_url.push(' ');
-                                                import_url.push_str(&query);
-                                            }
-                                            styles.push(ExtractStyleProp::Static(
-                                                ExtractStyleValue::Import(ExtractImport {
-                                                    file: file.to_string(),
-                                                    order: 0,
-                                                    url: import_url,
-                                                }),
-                                            ));
-                                        }
-                                    } else if !matches!(element, Expression::NumericLiteral(_))
-                                        && let Some(url) = get_string_by_literal_expression(element)
-                                    {
-                                        styles.push(ExtractStyleProp::Static(
-                                            ExtractStyleValue::Import(ExtractImport {
-                                                file: file.to_string(),
-                                                order: 0,
-                                                url: url.into_owned(),
-                                            }),
-                                        ));
-                                    }
-                                }
-                            }
+                            styles.extend(imports(ast_builder, &mut o.value, inputs));
                         } else if name == "fontFaces" {
-                            if let Expression::ArrayExpression(arr) = &o.value {
-                                for p in &arr.elements {
-                                    if let ArrayExpressionElement::ObjectExpression(o) = p {
-                                        let invalid: Vec<_> = o
-                                            .properties
-                                            .iter()
-                                            .filter_map(|property| match property {
-                                                ObjectPropertyKind::ObjectProperty(property) => {
-                                                    crate::dead_properties::authored_declaration_error(
-                                                        &get_str_by_property_key(&property.key)?,
-                                                        property.key.span().start,
-                                                    )
-                                                }
-                                                ObjectPropertyKind::SpreadProperty(_) => None,
-                                            })
-                                            .collect();
-                                        if !invalid.is_empty() {
-                                            styles.extend(invalid);
-                                            continue;
-                                        }
-                                        let properties = o
-                                            .properties
-                                            .iter()
-                                            .filter_map(|p| {
-                                                if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                    && let Some(property_name) =
-                                                        get_str_by_property_key(&o.key)
-                                                    && let Some(s) =
-                                                        get_string_by_literal_expression(&o.value)
-                                                {
-                                                    let it = disassemble_property(&property_name)
-                                                        .map(|p| {
-                                                            let v = if check_multi_css_optimize(&p)
-                                                            {
-                                                                optimize_multi_css_value(&s)
-                                                            } else {
-                                                                Cow::Borrowed(&*s)
-                                                            };
-                                                            if p == "src" {
-                                                                (
-                                                                    p.into_owned(),
-                                                                    wrap_url(&v).into_owned(),
-                                                                )
-                                                            } else {
-                                                                (p.into_owned(), v.into_owned())
-                                                            }
-                                                        });
-                                                    Some(it.collect::<Vec<_>>())
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .flatten()
-                                            .collect();
-                                        styles.push(ExtractStyleProp::Static(
-                                            ExtractStyleValue::FontFace(ExtractFontFace {
-                                                file: file.to_string(),
-                                                order: 0,
-                                                properties,
-                                            }),
-                                        ));
-                                    } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
-                                        let invalid = crate::dead_properties::template_errors(t);
-                                        if !invalid.is_empty() {
-                                            styles.extend(invalid);
-                                            continue;
-                                        }
-                                        let css_styles = css_to_style_literal(t, 0, &None)
-                                            .into_iter()
-                                            .filter_map(|ex| {
-                                                if let CssToStyleResult::Static(st) = ex {
-                                                    Some(ExtractStyleValue::Static(st))
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect::<Vec<_>>();
-                                        styles.push(ExtractStyleProp::Static(
-                                            ExtractStyleValue::FontFace(ExtractFontFace {
-                                                order: 0,
-                                                properties: css_styles
-                                                    .iter()
-                                                    .filter_map(|p| {
-                                                        if let ExtractStyleValue::Static(st) = p {
-                                                            Some((
-                                                                st.property().to_string(),
-                                                                st.value().to_string(),
-                                                            ))
-                                                        } else {
-                                                            None
-                                                        }
-                                                    })
-                                                    .collect(),
-                                                file: file.to_string(),
-                                            }),
-                                        ));
-                                    }
-                                }
-                            }
+                            styles.extend(font_faces(ast_builder, &mut o.value, inputs));
                         } else {
                             // Handle @layer property in globalStyle
                             // Extract the layer name if present in the style object
@@ -317,7 +159,7 @@ fn collect_global_styles<'a>(
                                 } else {
                                     name
                                 },
-                                file.to_string(),
+                                inputs.file.to_string(),
                             );
                             // `None` when the enclosing at-rules can never match together.
                             let selector = at_rules.iter().try_fold(global, |selector, rule| {
@@ -326,7 +168,10 @@ fn collect_global_styles<'a>(
                             let extracted = selector
                                 .map(|selector| {
                                     extract_style_from_expression(
-                                        ast_builder,
+                                        super::style_inputs::StyleInputs::with_values(
+                                            ast_builder,
+                                            inputs.values,
+                                        ),
                                         None,
                                         &mut o.value,
                                         0,
@@ -356,7 +201,7 @@ fn collect_global_styles<'a>(
                     collect_global_styles(
                         ast_builder,
                         o.argument.get_inner_expression_mut(),
-                        file,
+                        inputs,
                         at_rules,
                         styles,
                     );

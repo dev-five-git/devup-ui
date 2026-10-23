@@ -1350,7 +1350,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                                 style_order,
                                 ..
                             } = extract_style_from_expression(
-                                &builder,
+                                (&builder).into(),
                                 None,
                                 &mut rules,
                                 0,
