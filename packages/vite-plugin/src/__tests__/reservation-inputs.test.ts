@@ -87,6 +87,44 @@ it('preserves non-JSON define strings in HTML substitutions', async () => {
   ])
 })
 
+it.each(['ENOENT', 'EISDIR', 'EACCES', 'EPERM', 'ENOTDIR'])(
+  'keeps unreadable HTML watchable and discovers later entries after %s',
+  async (code) => {
+    // Given
+    using project = fixture()
+    project.write(
+      'index.html',
+      '<script type=module src="./entry.js"></script>',
+    )
+    using read = spyOn(fs, 'readFileSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('HTML input is unavailable'), { code })
+    })
+
+    // When
+    const result = await physicalEnvironmentEntries(
+      { root: project.root },
+      { input: ['unavailable.html', 'index.html', 'static.js'] },
+    )
+
+    // Then
+    expect(read).toHaveBeenNthCalledWith(
+      1,
+      join(project.root, 'unavailable.html'),
+      'utf8',
+    )
+    expect(result).toEqual({
+      entries: [
+        { request: join(project.root, 'entry.js'), context: project.root },
+        { request: join(project.root, 'static.js'), context: project.root },
+      ],
+      html: [
+        join(project.root, 'unavailable.html'),
+        join(project.root, 'index.html'),
+      ],
+    })
+  },
+)
+
 it('propagates unexpected physical HTML read failures rather than marking preparation ready', async () => {
   // Given
   using project = fixture()
