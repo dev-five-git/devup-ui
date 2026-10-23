@@ -16,13 +16,7 @@ import {
   loadDevupConfigSync,
 } from '../load-config'
 
-const parent = join(
-  tmpdir(),
-  'opencode',
-  'workers',
-  'w20-plugins-core',
-  'shared',
-)
+const parent = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'shared')
 let root: string
 beforeEach(() => {
   mkdirSync(parent, { recursive: true })

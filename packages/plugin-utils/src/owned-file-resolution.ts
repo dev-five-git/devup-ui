@@ -16,6 +16,7 @@ export function resolveFile(
   candidateBase: string,
   options: {
     readonly extensions: readonly string[]
+    readonly admitFile?: (filename: string) => boolean
     readonly excludedDirectory: (directory: string) => boolean
     readonly inputs?: ResolutionInputCollector
   } = {
@@ -29,7 +30,11 @@ export function resolveFile(
     options.excludedDirectory(candidateBase)
   )
     return false
-  if (isFile(candidateBase, options.inputs)) return resolve(candidateBase)
+  if (
+    (options.admitFile?.(candidateBase) ?? true) &&
+    isFile(candidateBase, options.inputs)
+  )
+    return resolve(candidateBase)
   for (const extension of options.extensions) {
     const candidate = `${candidateBase}${extension}`
     if (isFile(candidate, options.inputs)) return resolve(candidate)

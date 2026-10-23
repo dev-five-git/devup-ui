@@ -46,11 +46,13 @@ before reading source, preparation or numbering needle checks. `node_modules`
 and test/spec files remain absent from directory enumeration.
 
 Opt-in extensions also participate in extensionless graph resolution and route
-recognition. Explicit existing file paths still resolve with
-`createModuleResolver` without opting into their extension, but Markdown must be
-prepared before its source can be returned. Numbering forwards
+recognition. Without a preparer, Markdown is unreadable to
+`createModuleResolver` and returns `undefined`; JS/TS candidates such as
+`Description.mdx.ts` can still resolve. Other explicit existing files retain
+their normal resolution. With a preparer, Markdown must be prepared before its
+source can be returned. Numbering forwards
 selection and exclusions to the scanner rather than reading then filtering.
-The public module resolver retains its legacy extensionless `.mdx` probing;
+The prepared module resolver retains extensionless `.mdx` probing;
 the graph's path-only resolver probes extra extensions only when selected.
 
 ## Synchronous and prepared-source graphs
@@ -147,8 +149,8 @@ source. The resolver never awaits: **any thenable is rejected immediately**.
 Async compilers must finish preparation into a caller-owned cache first, then
 pass the same synchronous lookup hook to both graph and resolver.
 
-With or without a hook, `.mdx`, `.md`, and explicit `includeMdx` extensions cannot
-reach WASM without prepared JavaScript. Missing preparation, thenables and hook
+With a hook, `.mdx`, `.md`, and explicit `includeMdx` extensions cannot
+reach WASM without prepared JavaScript. Missing cache entries, thenables and hook
 exceptions fail at the actual importer `:1:1` (the callback has no import span),
 name the actual module and preserve the cause. Move imported values into JS/TS
 when Markdown compilation is not available; this API does not add MDX support

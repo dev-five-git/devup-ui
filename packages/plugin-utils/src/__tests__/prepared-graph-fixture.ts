@@ -17,9 +17,9 @@ export function createPreparedFixture(setRoot: (root: string) => void) {
   beforeEach(() => {
     const parent = join(
       tmpdir(),
-      'opencode',
-      'workers',
-      'w20-plugins-core',
+      'devup-ui-probes',
+      'plugin',
+      'scratch',
       'shared-api',
     )
     mkdirSync(parent, { recursive: true })

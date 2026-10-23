@@ -18,9 +18,9 @@ let entry: string
 beforeEach(() => {
   const parent = join(
     tmpdir(),
-    'opencode',
-    'workers',
-    'w20-plugins-core',
+    'devup-ui-probes',
+    'plugin',
+    'scratch',
     'shared-api',
   )
   fs.mkdirSync(parent, { recursive: true })

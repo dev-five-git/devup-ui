@@ -20,9 +20,9 @@ const wasm = resolve(
 ).replaceAll('\\', '/')
 const scratch = join(
   tmpdir(),
-  'opencode',
-  'workers',
-  'w20-plugins-core',
+  'devup-ui-probes',
+  'plugin',
+  'scratch',
   'bun-conditions',
 )
 mkdirSync(scratch, { recursive: true })

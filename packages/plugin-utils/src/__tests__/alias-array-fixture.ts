@@ -13,7 +13,7 @@ const installedRequire = createRequire(
 const enhancedResolve = installedRequire('enhanced-resolve')
 
 export function aliasFixture() {
-  const parent = join(tmpdir(), 'opencode', 'workers', 'w20-plugins-core')
+  const parent = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch')
   fs.mkdirSync(parent, { recursive: true })
   const root = fs.realpathSync.native(
     fs.mkdtempSync(join(parent, 'alias-array-')),

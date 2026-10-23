@@ -9,9 +9,9 @@ import { enumerateProductionSourceFiles } from '../production-source-files'
 
 let root: string
 beforeEach(() => {
-  const parent = join(tmpdir(), 'opencode/workers/w20-plugins-core')
+  const parent = join(tmpdir(), 'devup-ui-probes/plugin/scratch')
   fs.mkdirSync(parent, { recursive: true })
-  root = fs.realpathSync.native(fs.mkdtempSync(join(parent, 'w20k-p1-')))
+  root = fs.realpathSync.native(fs.mkdtempSync(join(parent, 'source-files-')))
 })
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 function file(path: string, content = 'export {}'): string {

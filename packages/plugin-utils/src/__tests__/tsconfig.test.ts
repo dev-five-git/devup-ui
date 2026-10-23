@@ -13,13 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { buildStaticImportGraph, createModuleResolver } from '../import-graph'
 import { readPathAliases } from '../tsconfig'
 
-const parent = join(
-  tmpdir(),
-  'opencode',
-  'workers',
-  'w20-plugins-core',
-  'shared',
-)
+const parent = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'shared')
 let root: string
 beforeEach(() => {
   mkdirSync(parent, { recursive: true })

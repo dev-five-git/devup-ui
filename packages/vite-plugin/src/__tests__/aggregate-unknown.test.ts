@@ -81,9 +81,9 @@ it('rejects a real late plugin-emitted module absent from the static source grap
   resetBuildState()
   const parent = join(
     tmpdir(),
-    'opencode',
-    'workers',
-    'w20-plugins-core',
+    'devup-ui-probes',
+    'plugin',
+    'scratch',
     'shared-api',
   )
   mkdirSync(parent, { recursive: true })

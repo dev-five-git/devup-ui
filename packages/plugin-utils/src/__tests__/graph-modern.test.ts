@@ -21,13 +21,7 @@ import {
 } from '../import-graph'
 import { SOURCE_EXTENSIONS } from '../shared'
 
-const parent = join(
-  tmpdir(),
-  'opencode',
-  'workers',
-  'w20-plugins-core',
-  'shared',
-)
+const parent = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'shared')
 let root: string
 beforeEach(() => {
   mkdirSync(parent, { recursive: true })
@@ -227,7 +221,7 @@ describe('MDX ESM discovery', () => {
         'src/main.ts',
         "import './page.mdx'\nimport('./lazy.mdx')",
       )
-      const page = fixture(
+      fixture(
         'src/page.mdx',
         "import '../outside/provider.js'\n\n# Raw markdown",
       )
@@ -239,9 +233,9 @@ describe('MDX ESM discovery', () => {
       expect(graph.files.filter((file) => file.endsWith('.mdx'))).toEqual([])
       expect(graph.staticImports.get(entry)).toEqual(new Set())
       expect(graph.dynamicImports.get(entry)).toEqual(new Set())
-      expect(() =>
+      expect(
         createModuleResolver({ cwd: root })('./page.mdx', entry),
-      ).toThrow(page)
+      ).toBeUndefined()
     },
   )
 

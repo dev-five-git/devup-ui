@@ -187,9 +187,9 @@ it('selects Markdown routes and extensionless imports only with exact opt-in', (
   const entry = file('src/page.md', "import './leaf'\n\n# Heading")
   const leaf = file('src/leaf.md', '# Leaf')
   file('src/other.mdx')
-  expect(() => createModuleResolver({ cwd: root })('./leaf.md', entry)).toThrow(
-    leaf,
-  )
+  expect(
+    createModuleResolver({ cwd: root })('./leaf.md', entry),
+  ).toBeUndefined()
   expect(createModuleResolver({ cwd: root })('./leaf', entry)).toBeUndefined()
   const graph = buildStaticImportGraph('src', undefined, {
     cwd: root,
@@ -202,12 +202,10 @@ it('selects Markdown routes and extensionless imports only with exact opt-in', (
   ])
 })
 
-it('rejects unprepared legacy extensionless MDX while the graph remains default-off', () => {
+it('leaves unprepared extensionless MDX unreadable while the graph remains default-off', () => {
   const entry = file('src/main.ts', "import './page'")
-  const page = file('src/page.mdx', '# Heading')
-  expect(() => createModuleResolver({ cwd: root })('./page', entry)).toThrow(
-    page,
-  )
+  file('src/page.mdx', '# Heading')
+  expect(createModuleResolver({ cwd: root })('./page', entry)).toBeUndefined()
   expect(buildStaticImportGraph('src', undefined, { cwd: root }).files).toEqual(
     [entry],
   )

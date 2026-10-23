@@ -1189,11 +1189,12 @@ export function createModuleResolver({
   toId = (path) => path,
   ...options
 }: CreateModuleResolverOptions = {}): ModuleResolver {
+  const prepared = createPreparedResolver(options)
   const resolver = createModulePathResolver({
     ...options,
-    includeMdx: options.includeMdx ?? true,
+    includeMdx: options.prepareSource ? (options.includeMdx ?? true) : false,
+    admitFile: prepared.admitFile,
   })
-  const prepared = createPreparedResolver(options)
   return Object.assign(
     (specifier: string, importer: string) => {
       const resolution = resolver(specifier, importer)
@@ -1234,9 +1235,12 @@ export function createModulePathResolver(
     conditions = ['import', 'module', 'require', 'node'],
     alias = {},
     includeMdx,
+    admitFile,
     onResolutionInputs,
     allowPackage,
-  }: ModulePathResolverOptions = {},
+  }: ModulePathResolverOptions & {
+    readonly admitFile?: (filename: string) => boolean
+  } = {},
   excludedDirectory: (
     directory: string,
   ) => boolean = createDirectoryExclusion(),
@@ -1256,7 +1260,7 @@ export function createModulePathResolver(
   return (specifier, importer) => {
     const inputs = collect(setup)
     const fileResolver = (path: string) =>
-      resolveFile(path, { extensions, excludedDirectory, inputs })
+      resolveFile(path, { extensions, admitFile, excludedDirectory, inputs })
     const from = resolve(cwd, importer)
     try {
       return resolveModuleAlias(specifier, {

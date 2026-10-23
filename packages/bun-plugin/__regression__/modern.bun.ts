@@ -16,7 +16,7 @@ const entry = resolve(import.meta.dir, '../src/register.ts').replaceAll(
   '\\',
   '/',
 )
-const scratch = join(tmpdir(), 'opencode', 'workers', 'w20-plugins-core', 'bun')
+const scratch = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'bun')
 mkdirSync(scratch, { recursive: true })
 
 function run(

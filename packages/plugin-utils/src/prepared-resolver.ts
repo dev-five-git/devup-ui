@@ -64,6 +64,12 @@ export function createPreparedResolver(options: {
       : []),
   ])
   return {
+    admitFile(filename: string): boolean {
+      return (
+        options.prepareSource !== undefined ||
+        !markdownExtensions.has(extname(filename).toLowerCase())
+      )
+    },
     read(filename: string, importer: string): PreparedSource {
       const previousId = idsByFilename.get(filename)
       if (previousId !== undefined) generations.delete(previousId)

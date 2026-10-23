@@ -14,13 +14,7 @@ import {
   SOURCE_FILE_RE,
 } from '../shared'
 
-const parent = join(
-  tmpdir(),
-  'opencode',
-  'workers',
-  'w20-plugins-core',
-  'shared',
-)
+const parent = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'shared')
 mkdirSync(parent, { recursive: true })
 const root = realpathSync(mkdtempSync(join(parent, 'paths-')))
 afterAll(() => rmSync(root, { recursive: true, force: true }))

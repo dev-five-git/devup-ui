@@ -14,7 +14,11 @@ it.each(['.mdx', '.md', '.mdown'])(
   'rejects unprepared %s at the importer',
   (extension) => {
     const module = file(`src/value${extension}`, '# Raw')
-    const resolver = createModuleResolver({ cwd: root, includeMdx: ['.mdown'] })
+    const resolver = createModuleResolver({
+      cwd: root,
+      includeMdx: ['.mdown'],
+      prepareSource: () => undefined,
+    })
     expect(() => resolver(module, 'src/main.tsx')).toThrow(
       `${resolve(root, 'src/main.tsx')}:1:1`,
     )

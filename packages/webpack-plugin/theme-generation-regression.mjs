@@ -23,7 +23,7 @@ import {
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const root = realpathSync.native(
   mkdtempSync(
-    join(process.env.DEVUP_CSS_EVIDENCE_DIR ?? tmpdir(), 'w20i-theme-'),
+    join(process.env.DEVUP_CSS_EVIDENCE_DIR ?? tmpdir(), 'theme-generation-'),
   ),
 )
 try {

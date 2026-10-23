@@ -11,13 +11,7 @@ import { join, resolve } from 'node:path'
 import { expect, it } from 'bun:test'
 
 it('reextracts an importer when only its build-time token changes under normal Bun watch caching', async () => {
-  const scratch = join(
-    tmpdir(),
-    'opencode',
-    'workers',
-    'w20-plugins-core',
-    'bun',
-  )
+  const scratch = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'bun')
   mkdirSync(scratch, { recursive: true })
   const root = realpathSync.native(mkdtempSync(join(scratch, 'watch-')))
   const plugin = resolve(import.meta.dir, '../src/register.ts').replaceAll(

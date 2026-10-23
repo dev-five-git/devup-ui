@@ -20,9 +20,9 @@ import {
 
 const parent = join(
   tmpdir(),
-  'opencode',
-  'workers',
-  'w20-plugins-core',
+  'devup-ui-probes',
+  'plugin',
+  'scratch',
   'mdx-shared',
 )
 let root: string

@@ -18,7 +18,7 @@ import { expect, it } from 'bun:test'
 import { compileMdx, createMdxPreparation } from '../mdx'
 import { fixture } from './callback-fixture.test'
 
-const scratch = join(tmpdir(), 'opencode', 'workers', 'w20-plugins-core', 'bun')
+const scratch = join(tmpdir(), 'devup-ui-probes', 'plugin', 'scratch', 'bun')
 mkdirSync(scratch, { recursive: true })
 
 it('compiles original MDX when the project has the real compiler', async () => {
