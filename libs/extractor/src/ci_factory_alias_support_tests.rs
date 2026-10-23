@@ -47,7 +47,7 @@ impl Binding {
 
 fn extract_fixture(source: &str, single_css: bool, active: bool) -> ExtractOutput {
     extract(
-        "/src/W70h-native.js",
+        "/src/alias-native.js",
         source,
         ExtractOption {
             single_css,
@@ -63,7 +63,7 @@ fn extract_fixture(source: &str, single_css: bool, active: bool) -> ExtractOutpu
 }
 
 fn observe(output: &ExtractOutput, invocation: &str, single_css: bool) -> (Vec<String>, Vec<String>) {
-    let observed = render_observation(output, invocation, (!single_css).then_some("/src/W70h-native.js"));
+    let observed = render_observation(output, invocation, (!single_css).then_some("/src/alias-native.js"));
     let (trace, mut declarations): (Vec<String>, Vec<String>) = serde_json::from_str(&observed).unwrap();
     // These fixtures have distinct CSS properties, never competing declarations.
     declarations.sort();
