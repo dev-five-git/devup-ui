@@ -195,6 +195,28 @@ mod tests {
         assert!(!error.contains("panicked"));
     }
 
+    #[test]
+    fn generated_parse_diagnostic_uses_generated_coordinates_without_authored_edits() {
+        let allocator = Allocator::default();
+        let generated = "const broken = ;";
+        let edits = [(0, 5, 30)];
+        let errors = super::parse_source(&allocator, generated, SourceType::ts()).unwrap_err();
+
+        let error = crate::ParsingDiagnostic {
+            filename: "/src/generated.css.ts",
+            code: "\n\nconst authored = 1;",
+            generated: Some(generated),
+            evaluated: Some(("\n\n\nconst original = 1;", &[&edits])),
+            alias_edits: &edits,
+            namespace_edits: &edits,
+            source_type: SourceType::ts(),
+            compiled_mdx: false,
+        }
+        .locate(errors);
+
+        assert!(error.starts_with("/src/generated.css.ts:1:16:"), "{error}");
+    }
+
     #[rstest]
     #[case("js")]
     #[case("mjs")]

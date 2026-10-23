@@ -2,6 +2,6 @@
   "changes": {
     "bindings/devup-ui-wasm/package.json": "Patch"
   },
-  "note": "Exercise unsupported child grammars and ignored styled imports without changing resolver behavior. No new build errors.",
+  "note": "Exercise unsupported child grammars and ignored styled imports without changing resolver behavior. Isolate parser diagnostic coordinate mapping and verify real malformed generated source retains generated coordinates without authored edit remapping. No new build errors.",
   "date": "2026-10-21T00:00:00.000Z"
 }

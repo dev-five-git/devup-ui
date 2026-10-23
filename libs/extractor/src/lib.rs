@@ -465,6 +465,33 @@ struct SourceEdits<'a> {
     values_run: Option<&'a [(usize, usize)]>,
 }
 
+struct ParsingDiagnostic<'a> {
+    filename: &'a str,
+    code: &'a str,
+    generated: Option<&'a str>,
+    evaluated: Option<(&'a str, &'a [&'a [import_alias_visit::Edit]])>,
+    alias_edits: &'a [import_alias_visit::Edit],
+    namespace_edits: &'a [import_alias_visit::Edit],
+    source_type: SourceType,
+    compiled_mdx: bool,
+}
+
+impl ParsingDiagnostic<'_> {
+    fn locate(self, errors: Vec<(u32, String)>) -> String {
+        let errors = parsing::syntax_errors(errors, self.compiled_mdx);
+        if let Some(generated) = self.generated {
+            located_errors(self.filename, generated, &[], errors, self.source_type)
+        } else {
+            let (source, earlier_edits) = self.evaluated.unwrap_or((self.code, &[]));
+            let edits: Vec<&[import_alias_visit::Edit]> = [self.alias_edits, self.namespace_edits]
+                .into_iter()
+                .chain(earlier_edits.iter().copied())
+                .collect();
+            located_errors(self.filename, source, &edits, errors, self.source_type)
+        }
+    }
+}
+
 fn extract_source(
     filename: &str,
     code: &str,
@@ -716,29 +743,17 @@ fn extract_source(
 
     let mut program =
         parsing::parse_source(&allocator, code_to_parse, source_type).map_err(|errors| {
-            if processed_code.is_some() {
-                located_errors(
-                    filename,
-                    code_to_parse,
-                    &[],
-                    parsing::syntax_errors(errors, compiled_mdx),
-                    source_type,
-                )
-            } else {
-                let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
-                let edits: Vec<&[import_alias_visit::Edit]> =
-                    [alias_edits.as_slice(), namespace_edits.as_slice()]
-                        .into_iter()
-                        .chain(earlier_edits.iter().copied())
-                        .collect();
-                located_errors(
-                    filename,
-                    source,
-                    &edits,
-                    parsing::syntax_errors(errors, compiled_mdx),
-                    source_type,
-                )
+            ParsingDiagnostic {
+                filename,
+                code,
+                generated: processed_code.as_deref(),
+                evaluated,
+                alias_edits: &alias_edits,
+                namespace_edits: &namespace_edits,
+                source_type,
+                compiled_mdx,
             }
+            .locate(errors)
         })?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
