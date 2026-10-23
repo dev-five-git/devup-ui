@@ -38,14 +38,19 @@ export function createWebpackReservation(
           typeof entry === 'function'
             ? []
             : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
-                requests
-                  .filter(
-                    (request) =>
-                      !request
-                        .slice(request.lastIndexOf('!') + 1)
-                        .startsWith('\0'),
+                requests.flatMap((request) => {
+                  const resource = request
+                    .slice(request.lastIndexOf('!') + 1)
+                    .split('?')[0]
+                  if (
+                    !resource ||
+                    resource.startsWith('\0') ||
+                    (/^[a-z][a-z\d+.-]*:/i.test(resource) &&
+                      !/^[a-z]:[\\/]/i.test(resource))
                   )
-                  .map((request) => ({ request, context: root })),
+                    return []
+                  return [{ request: resource, context: root }]
+                }),
               ),
         include: options.include,
         cwd: root,
