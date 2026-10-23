@@ -229,7 +229,15 @@ pub fn extract_style_from_expression<'a>(
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
 ) -> ExtractResult<'a> {
-    extract_with_policy::<false>(inputs, name, expression, level, selector, literal_handling)
+    extract_with_policy::<false>(
+        inputs,
+        name,
+        expression,
+        level,
+        selector,
+        literal_handling,
+        &mut |_| {},
+    )
 }
 
 /// Extract styles, optionally retaining authored locations of dynamic object leaves.
@@ -240,6 +248,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
     level: u8,
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
     let ast_builder = inputs.ast;
     let mut typo = false;
@@ -288,7 +297,8 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             {
                                 // The upfront authored walk already checks every root key,
                                 // including the literal spreads flattened above.
-                                for disassembled in disassemble_property(&name) {
+                                let mut properties = disassemble_property(&name);
+                                while let Some(disassembled) = properties.next() {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
@@ -304,15 +314,20 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                                 ast_builder.allocator(),
                                             ));
                                     } else {
+                                        let mut sibling = (properties.len() != 0).then(|| {
+                                            prop.value
+                                                .clone_in_with_semantic_ids(ast_builder.allocator())
+                                        });
                                         let ExtractResult {
                                             styles, tag: _tag, ..
                                         } = extract_with_policy::<LOCATE>(
                                             inputs,
                                             Some(disassembled),
-                                            &mut prop.value,
+                                            sibling.as_mut().unwrap_or(&mut prop.value),
                                             0,
                                             &None,
                                             LiteralHandling::ExpandResponsiveThemeToken,
+                                            prepare,
                                         );
                                         props_styles.extend(styles);
                                         tag = _tag.or(tag);
@@ -333,6 +348,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                 0,
                                 &None,
                                 LiteralHandling::ExpandResponsiveThemeToken,
+                                prepare,
                             );
                             props_styles.extend(styles);
                             tag = _tag.or(tag);
@@ -362,6 +378,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             level,
                             &None,
                             literal_handling,
+                            prepare,
                         )
                         .styles,
                     ))),
@@ -373,6 +390,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             level,
                             selector,
                             literal_handling,
+                            prepare,
                         )
                         .styles,
                     ))),
@@ -407,12 +425,12 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
         for part in split_selector_list(name) {
             styles.extend(extract_under_key::<LOCATE>(
                 inputs,
-                part,
-                offset,
-                &mut expression.clone_in(ast_builder.allocator()),
+                (part, offset),
+                &mut expression.clone_in_with_semantic_ids(ast_builder.allocator()),
                 level,
                 selector,
                 literal_handling,
+                prepare,
             ));
         }
         return ExtractResult {
@@ -452,12 +470,12 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     for part in split_selector_list(key_name.trim()) {
                         props.extend(extract_under_key::<LOCATE>(
                             inputs,
-                            part,
-                            offset,
-                            &mut o.value.clone_in(ast_builder.allocator()),
+                            (part, offset),
+                            &mut o.value.clone_in_with_semantic_ids(ast_builder.allocator()),
                             level,
                             selector,
                             literal_handling,
+                            prepare,
                         ));
                     }
                 }
@@ -484,6 +502,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         level,
                         selector,
                         literal_handling,
+                        prepare,
                     )
                     .styles;
                     place_in_layer(&mut styles, &layer);
@@ -514,6 +533,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             level,
                             &Some(at_selector),
                             literal_handling,
+                            prepare,
                         )
                         .styles,
                     );
@@ -530,12 +550,12 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
             return ExtractResult {
                 styles: extract_under_key::<LOCATE>(
                     inputs,
-                    name,
-                    offset,
+                    (name, offset),
                     expression,
                     level,
                     selector,
                     literal_handling,
+                    prepare,
                 ),
                 ..ExtractResult::default()
             };
@@ -649,13 +669,14 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         expression,
                         level,
                         selector,
+                        prepare,
                     )],
                     ..ExtractResult::default()
                 },
                 None => unreadable(expression),
             },
             Expression::ComputedMemberExpression(mem) => {
-                extract_member::<LOCATE>(inputs, name, mem, level, selector)
+                extract_member::<LOCATE>(inputs, name, mem, level, selector, prepare)
             }
             Expression::TemplateLiteral(_) => {
                 let Some(name) = name else {
@@ -709,6 +730,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             expression,
                             level,
                             selector,
+                            prepare,
                         )]
                     },
                     ..ExtractResult::default()
@@ -788,6 +810,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             expression,
                             level,
                             selector,
+                            prepare,
                         )],
                         ..ExtractResult::default()
                     }
@@ -816,6 +839,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     level,
                     selector,
                     literal_handling,
+                    prepare,
                 )
             }
             Expression::ConditionalExpression(conditional)
@@ -833,6 +857,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     level,
                     selector,
                     literal_handling,
+                    prepare,
                 )
             }
             Expression::LogicalExpression(logical) => {
@@ -844,6 +869,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         level,
                         selector,
                         literal_handling,
+                        prepare,
                     )
                     .styles,
                 )));
@@ -893,6 +919,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                     level,
                                     selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             ))),
@@ -925,6 +952,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                 idx as u8,
                                 selector,
                                 LiteralHandling::KeepSingleClass,
+                                prepare,
                             )
                             .styles,
                         );
@@ -947,6 +975,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         level,
                         selector,
                         literal_handling,
+                        prepare,
                     )
                 } else {
                     ExtractResult {
@@ -960,6 +989,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                     level,
                                     selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             ))),
@@ -971,6 +1001,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                     level,
                                     selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             ))),
@@ -1004,6 +1035,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                     level,
                                     &selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             );
@@ -1024,16 +1056,20 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         props.push(error);
                         continue;
                     }
-                    for name in disassemble_property(&key_name) {
+                    let mut properties = disassemble_property(&key_name);
+                    while let Some(name) = properties.next() {
                         let name: &str = &name;
+                        let mut sibling = (properties.len() != 0)
+                            .then(|| o.value.clone_in_with_semantic_ids(ast_builder.allocator()));
                         props.extend(
                             extract_with_policy::<LOCATE>(
                                 inputs,
                                 Some(name),
-                                &mut o.value,
+                                sibling.as_mut().unwrap_or(&mut o.value),
                                 level,
                                 &selector,
                                 literal_handling,
+                                prepare,
                             )
                             .styles,
                         );
@@ -1060,6 +1096,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 // A sequence keeps its parentheses, as its code is written into
                 // the element's style object, where a comma ends the property
                 Some(name) if matches!(expression, Expression::SequenceExpression(_)) => {
+                    prepare(expression);
                     let code = expression_to_code(expression);
                     ExtractResult {
                         styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
@@ -1082,6 +1119,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         expression,
                         level,
                         selector,
+                        prepare,
                     )],
                     ..ExtractResult::default()
                 },
@@ -1301,13 +1339,14 @@ impl From<Option<StyleSelector>> for Nested {
 
 fn extract_under_key<'a, const LOCATE: bool>(
     inputs: StyleInputs<'_, 'a>,
-    key: &str,
-    offset: u32,
+    located_key: (&str, u32),
     expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> Vec<ExtractStyleProp<'a>> {
+    let (key, offset) = located_key;
     match nest_selectors_key(selector.as_ref(), key) {
         Nested::Under(nested) => {
             extract_with_policy::<LOCATE>(
@@ -1317,6 +1356,7 @@ fn extract_under_key<'a, const LOCATE: bool>(
                 level,
                 &Some(nested),
                 literal_handling,
+                prepare,
             )
             .styles
         }
@@ -1431,9 +1471,10 @@ fn conditional_typography<'a>(
 pub fn dynamic_style<'a>(
     ast_builder: &AstBuilder<'a>,
     name: &str,
-    expression: &Expression<'a>,
+    expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractStyleProp<'a> {
     if let Some(map) = get_enum_property_map(name) {
         ExtractStyleProp::Enum {
@@ -1455,6 +1496,7 @@ pub fn dynamic_style<'a>(
                 .collect(),
         }
     } else {
+        prepare(expression);
         ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
             name,
             level,

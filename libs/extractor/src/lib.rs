@@ -44,6 +44,7 @@ mod quoted_strings_tests;
 pub mod reservation_state;
 #[cfg(test)]
 mod responsive_selector_tests;
+mod scope;
 mod source_map;
 mod style_collector;
 mod style_values;
@@ -638,12 +639,10 @@ fn extract_source(
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.import_css(inlined.css_styles);
-    if let Some(scoping) = inlined.scoping {
-        visitor.reuse_scoping(scoping);
-    }
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.reuse_scoping(inlined.scoping);
     visitor.import_styled(imported.components);
     visitor.reserve_styled(styled_capability);
     visitor.visit_program(&mut program);
@@ -1049,6 +1048,15 @@ mod tests {
         include!("stylex_exact_key_tests.rs");
         mod ci_factory_alias {
             include!("ci_factory_alias_tests.rs");
+        }
+        mod factory_dynamic_value {
+            include!("factory_dynamic_value_tests.rs");
+            mod controls {
+                include!("factory_dynamic_value_controls_tests.rs");
+            }
+            mod keyframes {
+                include!("factory_dynamic_value_keyframes_tests.rs");
+            }
         }
 
         use super::*;
@@ -15890,7 +15898,7 @@ export const a = {element}"
     )]
     #[case(
         "stylex.props(on && s.red, on && s.red)",
-        "{ className: on ? \"color-0-red--255\" : on ? \"color-0-red--255\" : \"\" }"
+        "(_s0 = !!on, { className: on ? \"color-0-red--255\" : _s0 ? \"color-0-red--255\" : \"\" })"
     )]
     #[case(
         "stylex.props(s['blue'], s.hover)",

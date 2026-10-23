@@ -3,6 +3,7 @@
 //! reading the binding read that name
 
 mod absence;
+use std::rc::Rc;
 
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{Argument, BindingPattern, Expression, Str, TemplateLiteral};
@@ -32,7 +33,7 @@ pub enum StyleValue {
 
 #[derive(Default)]
 pub struct StyleValues<'a> {
-    scoping: Option<std::rc::Rc<Scoping>>,
+    scoping: Option<Rc<Scoping>>,
     values: FxHashMap<SymbolId, StyleValue>,
     /// Known imported styles, including top-level constant aliases, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
@@ -45,7 +46,9 @@ pub struct StyleValues<'a> {
 }
 
 impl<'a> StyleValues<'a> {
-    pub fn new(scoping: std::rc::Rc<Scoping>) -> Self {
+    /// The values of the bindings `scoping`, which the other readers of the
+    /// program share, tells
+    pub fn new(scoping: Rc<Scoping>) -> Self {
         Self {
             scoping: Some(scoping),
             values: FxHashMap::default(),
@@ -59,14 +62,6 @@ impl<'a> StyleValues<'a> {
 
     pub const fn has_scoping(&self) -> bool {
         self.scoping.is_some()
-    }
-
-    pub fn reads_root_binding(&self, identifier: &oxc_ast::ast::IdentifierReference<'_>) -> bool {
-        self.scoping.as_ref().is_none_or(|scoping| {
-            scoping
-                .get_root_binding(identifier.name.as_str().into())
-                .is_none_or(|root| self.reference_symbol(identifier) == Some(root))
-        })
     }
 
     pub fn import(&mut self, imported: FxHashMap<String, Vec<ExtractStyleValue>>) {

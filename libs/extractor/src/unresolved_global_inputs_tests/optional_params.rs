@@ -4,6 +4,29 @@ use rstest::rstest;
 use serial_test::serial;
 
 #[rstest]
+#[serial]
+fn factory_values_compile_when_selector_params_are_proven_absent(
+    #[values(false, true)] single_css: bool,
+) {
+    // Given a factory value that must compile inside a selector with absent params.
+    let source = "import {Box,css} from '@devup-ui/react';\nimport {jsx} from 'react/jsx-runtime';\nexport const view=jsx(Box,{_hover:{params:undefined,other:css({overflow:'hidden'})}});";
+    // When the factory and its nested style call are extracted together.
+    let output = extract_fixture(source, single_css).unwrap_or_else(|error| panic!("{error}"));
+    // Then the nested call contributes its styles and the factory keeps its value slot.
+    assert!(output.styles.iter().any(|style| matches!(style,
+        ExtractStyleValue::Static(style) if style.property == "overflow" && style.value == "hidden"
+    )));
+    assert_eq!(
+        output
+            .styles
+            .iter()
+            .filter(|style| matches!(style, ExtractStyleValue::Dynamic(_)))
+            .count(),
+        1
+    );
+}
+
+#[rstest]
 #[case(("Box", "export const view=<Box _hover={{params:ABSENT,color:'red'}}/>;"))]
 #[case(("globalCss", "globalCss({body:{_hover:{params:ABSENT,color:'red'}}});"))]
 #[case(("styled", "export const Card=styled('div',{_hover:{params:ABSENT,color:'red'}});"))]

@@ -7,6 +7,14 @@ use oxc_span::Span;
 use rustc_hash::FxHashSet;
 
 impl StyleValues<'_> {
+    pub(crate) fn absence_proof(&self) -> Self {
+        Self {
+            scoping: self.scoping.clone(),
+            absent_references: self.absent_references.clone(),
+            ..Self::default()
+        }
+    }
+
     /// Prove that an authored `undefined` reads the unbound global, not a binding.
     pub(crate) fn is_unbound_undefined(&self, expression: &Expression<'_>) -> bool {
         let Expression::Identifier(identifier) = unwrap_syntax_only(expression) else {
