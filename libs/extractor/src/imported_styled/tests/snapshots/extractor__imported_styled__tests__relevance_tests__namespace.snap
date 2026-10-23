@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/imported_styled/tests/relevance_tests.rs
+expression: "format!(\"{}\\n{:?}\", output.code, output.dependencies)"
+---
+"import \"@devup-ui/react/devup-ui.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nimport * as UI from \"./base\";\nexport const A = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"a\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"big\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"b--a a--b d\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--c\": (p=>p.big?`20px`:`10px`)(rest) },\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n\n[\"/src/base.tsx\"]"

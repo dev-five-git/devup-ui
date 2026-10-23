@@ -1151,6 +1151,7 @@ impl<'a> DevupVisitor<'a> {
                         || import.source.value == "@stylexjs/stylex")
             });
             (imports_api
+                || !self.imported_styled.is_empty()
                 || self.css_prop != CssProp::Off
                 || crate::scope::requires(program, &self.package))
             .then(|| {

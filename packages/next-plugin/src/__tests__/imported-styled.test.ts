@@ -5,8 +5,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import * as wasm from '@devup-ui/wasm'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
@@ -105,6 +107,101 @@ describe('styled components another module defines', () => {
     expect(after.code).toContain('DevupAs = "main"')
     expect(wasm.getCss(null, false)).toContain('color:green')
   })
+
+  for (const singleCss of [false, true]) {
+    for (const trigger of ['', "import { styled } from '@devup-ui/react'\n"]) {
+      it(`retargets an imported dynamic component without a styling import (${singleCss}, ${!!trigger})`, async () => {
+        // Given the same origin and resolver as the composing consumer.
+        const source = `${trigger}import { Dyn } from '@/Base'\nexport const Retargeted = Dyn.withComponent('a')\n`
+        const relevant = wasm.hasDevupUI(
+          'src/Retargeted.tsx',
+          source,
+          '@devup-ui/react',
+          { '@emotion/react': null, '@emotion/styled': 'styled' },
+        )
+        const compile = (file: string, code: string) =>
+          wasm.codeExtractWithoutSourceMap(
+            file,
+            code,
+            '@devup-ui/react',
+            '@devup-ui/react',
+            singleCss,
+            false,
+            false,
+            { '@emotion/react': null, '@emotion/styled': 'styled' },
+          )
+        const transpiler = new Bun.Transpiler({
+          loader: 'tsx',
+          tsconfig: { compilerOptions: { jsx: 'react' } },
+        })
+        const preload = createRequire(import.meta.url).resolve(
+          'bun-test-env-dom',
+        )
+        const testing = createRequire(preload).resolve('@testing-library/react')
+        const react = pathToFileURL(
+          createRequire(testing).resolve('react'),
+        ).href
+        const moduleUrl = (code: string) => {
+          const javascript = transpiler
+            .transformSync(
+              code.replace(/^import ["'][^"']+\.css["'];?\s*$/gm, ''),
+            )
+            .replace(/from ["']react["']/g, `from ${JSON.stringify(react)}`)
+          return `data:text/javascript;base64,${Buffer.from(`import * as React from ${JSON.stringify(react)};\n${javascript}`).toString('base64')}`
+        }
+        const base = moduleUrl(
+          compile(
+            'src/Base.tsx',
+            readFileSync(join(root, 'src/Base.tsx'), 'utf8'),
+          ).code,
+        )
+
+        // When the complete emitted consumer module is evaluated and rendered.
+        const emitted = compile('src/Retargeted.tsx', source)
+        const compiled = await import(
+          moduleUrl(
+            emitted.code.replace(
+              /from ["']@\/Base["']/g,
+              `from ${JSON.stringify(base)}`,
+            ),
+          )
+        )
+        const ref = { current: null }
+        for (const big of [false, true]) {
+          const element = compiled.Retargeted.render(
+            { big, children: 'child' },
+            ref,
+          )
+
+          // Then the retargeted element retains its ref, child and dynamic CSS.
+          expect(element.type).toBe('a')
+          expect(element.props.ref).toBe(ref)
+          expect(element.props.children).toBe('child')
+          const fileNumber = /devup-ui-(\d+)\.css$/.exec(
+            emitted.cssFile ?? '',
+          )?.[1]
+          const css = wasm.getCss(fileNumber ? Number(fileNumber) : null, false)
+          const declarations = element.props.className
+            .split(' ')
+            .flatMap((name: string) =>
+              [...css.matchAll(new RegExp(`\\.${name}\\{([^}]+)\\}`, 'g'))].map(
+                (match) => match[1],
+              ),
+            )
+            .join(';')
+          const fontSize = /font-size:([^;}]+)/
+            .exec(declarations)?.[1]
+            ?.replace(
+              /var\((--[\w-]+)\)/g,
+              (_match: string, variable: string) =>
+                element.props.style[variable],
+            )
+          expect(fontSize).toBe(big ? '20px' : '10px')
+        }
+        expect(relevant).toBe(true)
+      })
+    }
+  }
 
   it('selects a component by the class its own module gives it', () => {
     write(

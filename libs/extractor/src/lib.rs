@@ -438,6 +438,13 @@ fn extract_source(
     // gives an element a `css` prop, or had an import rewritten
     let has_relevant_import = transformed_code.contains(option.package.as_str())
         || transformed_code.contains(STYLEX_PACKAGE);
+    let allocator = Allocator::default();
+    let retargeted = if !has_relevant_import && css_prop == css_prop::CssProp::Off {
+        imported_styled::relevance::read(&allocator, filename, &transformed_code, &option, resolver)
+    } else {
+        imported_styled::Reading::default()
+    };
+    let has_imported_retarget = !retargeted.components.is_empty();
     let unchanged = || ExtractOutput {
         styles: FxHashSet::default(),
         code: code.to_string(),
@@ -450,6 +457,7 @@ fn extract_source(
         .iter()
         .any(|(start, end, _)| &namespace_code[*start..*end] == "@emotion/react");
     if !has_relevant_import
+        && !has_imported_retarget
         && css_prop == css_prop::CssProp::Off
         && (alias_edits.is_empty() || pragma_rewritten)
     {
@@ -587,8 +595,6 @@ fn extract_source(
         css_files.push(main_css_path(&option.css_dir));
     }
     css_files.push(css_file.clone());
-    let allocator = Allocator::default();
-
     let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
@@ -612,7 +618,9 @@ fn extract_source(
         failures.dedup();
         return Err(failures.join("\n").into());
     }
-    let imported = if processed_code.is_none() {
+    let imported = if has_imported_retarget {
+        retargeted
+    } else if processed_code.is_none() {
         imported_styled::read(
             &oxc_ast::builder::AstBuilder::new(&allocator),
             &program,
@@ -645,6 +653,7 @@ fn extract_source(
     visitor.reserve_styled(styled_capability);
     visitor.visit_program(&mut program);
     if !has_relevant_import
+        && !has_imported_retarget
         && alias_edits.is_empty()
         && namespace_edits.is_empty()
         && !visitor.compiled_css_prop
@@ -1022,7 +1031,18 @@ pub fn has_devup_ui_with(
                     import_aliases,
                 );
                 !aliased.edits.is_empty() || aliased.css_prop != css_prop::CssProp::Off
-            })
+            }
+            || (imported_styled::relevance::candidate(code) && {
+                let allocator = Allocator::default();
+                let option = ExtractOption {
+                    package: package.to_string(),
+                    import_aliases: import_aliases.clone(),
+                    ..ExtractOption::default()
+                };
+                !imported_styled::relevance::read(&allocator, filename, code, &option, resolver)
+                    .components
+                    .is_empty()
+            }))
 }
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
