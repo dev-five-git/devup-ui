@@ -85,6 +85,33 @@ mod tests {
     #[rstest]
     #[case("undefined;", true)]
     #[case("let undefined = runtime; undefined;", false)]
+    fn absence_survives_cleared_ids_when_scoping_is_not_supplied(
+        #[case] source: &str,
+        #[case] absent: bool,
+    ) {
+        // Given authored references without a caller-supplied semantic analysis.
+        let arena = Allocator::default();
+        let parsed = Parser::new(&arena, source, SourceType::tsx()).parse();
+        let mut values = StyleValues::default();
+        values.record_absence(&parsed.program);
+        let Statement::ExpressionStatement(statement) =
+            &parsed.program.body[parsed.program.body.len() - 1]
+        else {
+            panic!("expected expression");
+        };
+        let Expression::Identifier(identifier) = &statement.expression else {
+            panic!("expected identifier");
+        };
+        identifier.reference_id.set(None);
+        // When extraction consults the authored-span proof after IDs are cleared.
+        let result = values.is_unbound_undefined(&statement.expression);
+        // Then only the unbound global is absent, never a shadowing binding.
+        assert_eq!(result, absent);
+    }
+
+    #[rstest]
+    #[case("undefined;", true)]
+    #[case("let undefined = runtime; undefined;", false)]
     #[case("other;", false)]
     #[case("null;", false)]
     fn absence_requires_an_unbound_undefined_reference(#[case] source: &str, #[case] absent: bool) {
