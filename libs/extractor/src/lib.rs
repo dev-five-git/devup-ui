@@ -15701,7 +15701,7 @@ const Button = styled.button({ bg: 'red' })
     )]
     #[case(
         "css(yellow, fade)",
-        r#""k-525370705245237976 color-0-red-_a__c_hover-255 color-0-yellow--255""#
+        r#""a color-0-red-_a__c_hover-255 color-0-yellow--255""#
     )]
     #[case(
         "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",

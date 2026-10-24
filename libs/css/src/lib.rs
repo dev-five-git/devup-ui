@@ -463,34 +463,26 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
         );
     }
     with_prefix(|prefix| {
-        if is_debug() {
-            let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
+        let filename_key = filename.unwrap_or_default();
+        let class_num = class_num_for_key(filename_key, |key| {
+            key.reserve(2 + keyframes.len());
+            key.push_str("k-");
+            key.push_str(keyframes);
+        });
+        if let Some(fname) = filename {
+            let file_num = num_to_nm_base(get_file_num_by_filename(fname));
+            let mut result =
+                String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
             result.push_str(prefix);
-            result.push_str("k-");
-            result.push_str(keyframes);
+            result.push_str(&file_num);
+            result.push('-');
+            result.push_str(&class_num);
             result
         } else {
-            let filename_key = filename.unwrap_or_default();
-            let class_num = class_num_for_key(filename_key, |key| {
-                key.reserve(2 + keyframes.len());
-                key.push_str("k-");
-                key.push_str(keyframes);
-            });
-            if let Some(fname) = filename {
-                let file_num = num_to_nm_base(get_file_num_by_filename(fname));
-                let mut result =
-                    String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
-                result.push_str(prefix);
-                result.push_str(&file_num);
-                result.push('-');
-                result.push_str(&class_num);
-                result
-            } else {
-                let mut result = String::with_capacity(prefix.len() + class_num.len());
-                result.push_str(prefix);
-                result.push_str(&class_num);
-                result
-            }
+            let mut result = String::with_capacity(prefix.len() + class_num.len());
+            result.push_str(prefix);
+            result.push_str(&class_num);
+            result
         }
     })
 }
@@ -1348,8 +1340,8 @@ mod tests {
         );
         reset_class_map();
         set_debug(true);
-        assert_eq!(keyframes_to_keyframes_name("spin", None), "k-spin");
-        assert_eq!(keyframes_to_keyframes_name("spin1", None), "k-spin1");
+        assert_eq!(keyframes_to_keyframes_name("spin", None), "a");
+        assert_eq!(keyframes_to_keyframes_name("spin1", None), "b");
     }
 
     #[test]
