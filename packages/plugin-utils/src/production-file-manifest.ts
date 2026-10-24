@@ -28,6 +28,13 @@ export interface ProductionManifestContext {
   readonly toId: (path: string) => string
   readonly prepareSource?: PrepareSource
   readonly unpreparedMarkdown?: 'reserve-only'
+  readonly onImports?: (
+    path: string,
+    imports: readonly {
+      readonly kind: 'static' | 'dynamic'
+      readonly path: string
+    }[],
+  ) => void
 }
 export interface ProductionFileManifestOptions {
   readonly contexts: readonly ProductionManifestContext[]
@@ -153,6 +160,10 @@ export async function collectProductionFileManifest(
         !compiled && /\.[mc]?tsx?$/i.test(path),
       )
       const result: ProductionSourceFile[] = []
+      const resolvedImports: {
+        readonly kind: 'static' | 'dynamic'
+        readonly path: string
+      }[] = []
       for (const reference of imports) {
         const resolution = resolver(reference.specifier, path)
         if (!resolution) continue
@@ -162,13 +173,17 @@ export async function collectProductionFileManifest(
           case undefined: {
             const target = resolution.path
             const realPath = realpathSync.native(target)
-            if (!excluded(realPath)) result.push({ path: target, realPath })
+            if (!excluded(realPath)) {
+              result.push({ path: target, realPath })
+              resolvedImports.push({ kind: reference.kind, path: target })
+            }
             break
           }
         }
       }
       result.sort((a, b) => compareCodePoints(a.path, b.path))
       adjacency.set(path, result)
+      context.onImports?.(path, resolvedImports)
       return result
     }
 

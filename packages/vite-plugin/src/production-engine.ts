@@ -29,6 +29,7 @@ interface Runtime {
   readonly plan: ProductionContext
   readonly modules: NonphysicalModules
   learned: readonly string[]
+  reserved: boolean
 }
 
 export class ProductionGeneration {

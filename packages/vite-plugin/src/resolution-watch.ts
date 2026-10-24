@@ -4,7 +4,9 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { resolutionWatchPath, SOURCE_FILE_RE } from '@devup-ui/plugin-utils'
 import type { ViteDevServer } from 'vite'
 
-export function createMissingInputWatch() {
+export function createMissingInputWatch(
+  invalidate?: (importer: string) => void,
+) {
   const missingByEnvironment = new Map<object, Map<string, Set<string>>>()
   let server: ViteDevServer | undefined
   const changed = (file: string) => {
@@ -14,6 +16,7 @@ export function createMissingInputWatch() {
       for (const [importer, inputs] of missingByEnvironment.get(environment) ??
         []) {
         if (!inputs.has(path)) continue
+        invalidate?.(importer)
         for (const module of environment.moduleGraph.getModulesByFile(
           importer,
         ) ?? []) {
@@ -37,6 +40,9 @@ export function createMissingInputWatch() {
         missingByEnvironment.get(environment) ?? new Map<string, Set<string>>()
       importers.set(importer, new Set())
       missingByEnvironment.set(environment, importers)
+    },
+    observeFile(importer: string, path: string, environment: object) {
+      missingByEnvironment.get(environment)?.get(importer)?.add(path)
     },
     observe(importer: string, path: string, environment: object) {
       const inputs = missingByEnvironment.get(environment)?.get(importer)

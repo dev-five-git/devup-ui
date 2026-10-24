@@ -13,3 +13,12 @@ export type {
   BuildIntegration,
   ResettableEngine,
 } from '@devup-ui/plugin-utils/internal/build-admission'
+
+const ownership = (globalThis.__devupBuildOwnership ??= {
+  running: 0,
+  generation: 0,
+})
+
+export function getBuildOwnership(): Readonly<typeof ownership> {
+  return { ...ownership }
+}

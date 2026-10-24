@@ -231,13 +231,12 @@ fn class_names_binding_mutation_shadow_is_runtime_escape(
     let source =
         format!("import {{ClassNames}} from '@emotion/react';const data={{padding:1}};{body}");
     let parsed = Parser::new(&arena, &source, SourceType::tsx()).parse();
-    let takers = crate::css_prop::CssTakers::new(
-        &parsed.program,
-        crate::css_prop::CssProp::Off,
-        "@devup-ui/react/compat",
-    );
     // When: classify whether the ordinary shadow may change data.
-    let uses = crate::mutations::uses(&parsed.program, &|name| name == "ClassNames", Some(&takers));
+    let uses = crate::mutations::uses(
+        &parsed.program,
+        &|name| name == "ClassNames",
+        Some((crate::css_prop::CssProp::Off, "@devup-ui/react/compat")),
+    );
     // Then: data escapes to runtime code; it must not be treated as compile-only use.
     assert_eq!(
         uses.get("data").is_some_and(|uses| uses

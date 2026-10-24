@@ -91,7 +91,7 @@ const options: ProductionOptions = {
   importAliases: {},
 }
 
-it('reads each successful lexical input once across environments, closures and relevance while atom hoisting is deferred, then expires', async () => {
+it('reads each successful lexical input once across environments, closures and active hoisting, then expires', async () => {
   // Given two routes, dormant roots, inherited config and two real export branches.
   const fixture = await productionFixture()
   const shared = await fixture.file(
@@ -183,7 +183,7 @@ it('reads each successful lexical input once across environments, closures and r
   try {
     // When the real preparation visits all policies and environments.
     const manifest = await prepareProductionManifest(config, options, () => {})
-    // Then membership stays context-local, atom activation stays deferred and only byte reads are shared.
+    // Then membership stays context-local, the real hoist union closes, and byte reads are shared.
     for (const [key, branch] of [
       ['browser', browser],
       ['server', server],
@@ -209,9 +209,19 @@ it('reads each successful lexical input once across environments, closures and r
         'import',
         key === 'browser' ? 'browser' : 'node',
       ])
-      expect(context?.routes).toEqual({})
-      expect(context?.canonical).toEqual({})
-      expect(context?.threshold).toBeUndefined()
+      expect(context?.routes).toEqual({ [a]: [0], [b]: [1], [shared]: [0, 1] })
+      expect(context?.canonical).toEqual(
+        Object.fromEntries(
+          ['browser', 'node'].flatMap((branch) => [
+            [`${fixture.root}/node_modules/palette/${branch}.js`, a],
+            [
+              `${fixture.root}/node_modules/palette/${branch}/node_modules/target/index.js`,
+              a,
+            ],
+          ]),
+        ),
+      )
+      expect(context?.threshold).toBe(2)
     }
     expect(Object.fromEntries(counts)).toEqual(
       Object.fromEntries(tracked.map((path) => [path, 1])),

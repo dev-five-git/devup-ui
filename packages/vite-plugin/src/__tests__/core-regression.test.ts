@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url'
 
 import { ConfigLoadError } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
-import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
+import { afterEach, beforeEach, expect, it } from 'bun:test'
 import { createServer, type Plugin, type ViteDevServer } from 'vite'
 
 import { DevupUI } from '../plugin'
@@ -90,6 +90,7 @@ it('clears declarations when a real theme file becomes empty', async () => {
 })
 
 it('preserves the prior theme on a malformed watched config', async () => {
+  // Given
   await writeFile(
     join(root, 'devup.json'),
     JSON.stringify({ theme: { colors: { default: { preserved: 'red' } } } }),
@@ -106,31 +107,43 @@ it('preserves the prior theme on a malformed watched config', async () => {
   const prior = await readFile(join(root, 'df/theme.d.ts'), 'utf-8')
   const priorCss = wasm.getCss(null, false)
   expect(server.watcher.getWatched()).toEqual({})
+  // When
   await writeFile(join(root, 'devup.json'), '{')
-  const diagnostic = spyOn(console, 'error').mockImplementation(() => {})
-  try {
-    console.error('[unrelated] config diagnostic from another server')
-    await plugin.watchChange(join(root, 'devup.json'))
-    expect(await readFile(join(root, 'df/theme.d.ts'), 'utf-8')).toBe(prior)
-    const targeted = diagnostic.mock.calls.find(
-      ([message]) =>
-        message ===
-        `[devup-ui] theme update failed at ${join(root, 'devup.json')}`,
+  const error: unknown = await plugin
+    .watchChange(join(root, 'devup.json'))
+    .then(
+      () => undefined,
+      (failure: unknown) => failure,
     )
-    expect(targeted?.[0]).toBe(
-      `[devup-ui] theme update failed at ${join(root, 'devup.json')}`,
-    )
-    const error = targeted?.[1]
-    expect(error).toBeInstanceOf(ConfigLoadError)
-    if (!(error instanceof ConfigLoadError))
-      throw new TypeError('Expected config load diagnostic')
-    expect(error.file).toBe(join(root, 'devup.json'))
-    expect(error.cause).toBeInstanceOf(SyntaxError)
-    expect(wasm.getCss(null, false)).toBe(priorCss)
-    expect(priorCss).toContain('--preserved')
-  } finally {
-    diagnostic.mockRestore()
-  }
+  // Then: retain stored state, but never expose it as a successful current snapshot.
+  expect(error).toBeInstanceOf(ConfigLoadError)
+  if (!(error instanceof ConfigLoadError))
+    throw new TypeError('Expected propagated config load error')
+  expect(error.file).toBe(join(root, 'devup.json'))
+  expect(error.message).toContain(`${join(root, 'devup.json')}:1:1:`)
+  expect(error.cause).toBeInstanceOf(SyntaxError)
+  expect(await readFile(join(root, 'df/theme.d.ts'), 'utf-8')).toBe(prior)
+  expect(wasm.getCss(null, false)).toBe(priorCss)
+  expect(priorCss).toContain('--preserved')
+  const load = Reflect.get(plugin, 'load')
+  if (typeof load !== 'function') throw new TypeError('Expected load hook')
+  expect(() => Reflect.apply(load, {}, ['devup-ui.css'])).toThrow(error)
+  await writeFile(
+    join(root, 'consumer.ts'),
+    "import {css} from '@devup-ui/react'; export const color = css({color:'$preserved'})",
+  )
+  await expect(server.transformRequest('/consumer.ts')).rejects.toThrow(
+    `${join(root, 'devup.json')}:1:1:`,
+  )
+  await writeFile(
+    join(root, 'devup.json'),
+    JSON.stringify({ theme: { colors: { default: { preserved: 'blue' } } } }),
+  )
+  await plugin.watchChange(join(root, 'devup.json'))
+  expect(await server.transformRequest('/consumer.ts')).toBeDefined()
+  expect(Reflect.apply(load, {}, ['devup-ui.css'])).toContain(
+    '--preserved:blue',
+  )
 })
 
 it('rejects a malformed setup config rather than clearing it silently', async () => {

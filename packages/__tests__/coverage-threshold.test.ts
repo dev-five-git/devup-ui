@@ -11,8 +11,9 @@ const manifest: unknown = await Bun.file(resolve(root, 'package.json')).json()
 assert(
   typeof manifest === 'object' && manifest !== null && 'scripts' in manifest,
 )
-const { scripts } = manifest
-assert(typeof scripts === 'object' && scripts !== null)
+const { scripts: scriptValues } = manifest
+assert(typeof scriptValues === 'object' && scriptValues !== null)
+const scripts = scriptValues
 
 function script(name: string): string {
   const command: unknown = Reflect.get(scripts, name)
@@ -34,6 +35,17 @@ function bunTestCommands(
       if (words[1] === 'run') return bunTestCommands(String(words[2]), visited)
       return words.includes('test') ? [words] : []
     })
+}
+
+function configPath(words: readonly string[]): string | undefined {
+  for (const [index, word] of words.entries()) {
+    if (word.startsWith('--config=')) return word.slice('--config='.length)
+    if (word === '--config') {
+      const path = words[index + 1]
+      if (typeof path === 'string') return path
+    }
+  }
+  return undefined
 }
 
 // `root` and `preload` name repository files; every other option applies unchanged.
@@ -76,6 +88,27 @@ it('collects coverage in every Bun test run of the test script', () => {
   const commands = bunTestCommands('test')
   expect(commands).not.toEqual([])
   expect(commands.filter((words) => !words.includes('--coverage'))).toEqual([])
+})
+
+it.each([
+  ['--config=PATH', ['bun', '--config=./bunfig.vite.toml', 'test']],
+  ['--config PATH', ['bun', '--config', './bunfig.vite.toml', 'test']],
+])('finds explicit config paths written as %s', (_, words) => {
+  expect(configPath(words)).toBe('./bunfig.vite.toml')
+})
+
+it('requires every explicit Bun test config to be fully covered', async () => {
+  const paths = bunTestCommands('test')
+    .map(configPath)
+    .filter((path): path is string => path !== undefined)
+  expect(paths).not.toEqual([])
+
+  for (const path of paths) {
+    const config = Bun.TOML.parse(await Bun.file(resolve(root, path)).text())
+    expect(config).toMatchObject({
+      test: { coverageThreshold: { lines: 1, functions: 1, statements: 1 } },
+    })
+  }
 })
 
 it.each([

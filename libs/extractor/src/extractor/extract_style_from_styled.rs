@@ -45,6 +45,9 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 /// only the runtime gives that component
 const STYLED_BASE: &str = "DevupStyled";
 
+/// The Devup UI component an expression reads, by the bindings of the file
+pub type Kinds<'k> = &'k dyn Fn(&Expression<'_>) -> Option<ExportVariableKind>;
+
 const STYLED_FACTORY: &str =
     "it renders a tag, a component or a value naming one, with rule objects or CSS text";
 
@@ -554,12 +557,16 @@ fn inherited_parts<'a>(
                 inherited
                     .attrs
                     .iter()
-                    .map(|a| a.clone_in(allocator))
+                    .map(|a| a.clone_in_with_semantic_ids(allocator))
                     .collect(),
             )
         },
     );
-    all_attrs.extend(attrs.iter().map(|attr| attr.clone_in(allocator)));
+    all_attrs.extend(
+        attrs
+            .iter()
+            .map(|attr| attr.clone_in_with_semantic_ids(allocator)),
+    );
     (classes, all_attrs)
 }
 
@@ -611,7 +618,10 @@ impl<'a> Base<'a> {
                 .iter()
                 .map(|style| style.clone_in(allocator))
                 .collect(),
-            attrs: attrs.iter().map(|attr| attr.clone_in(allocator)).collect(),
+            attrs: attrs
+                .iter()
+                .map(|attr| attr.clone_in_with_semantic_ids(allocator))
+                .collect(),
             reads,
             forward,
             markers: Vec::new(),
@@ -671,7 +681,7 @@ pub fn extended<'b, 'a>(expression: &'b Expression<'a>) -> Option<&'b Expression
 fn extract_base_tag_and_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
     input: &Expression<'a>,
-    imports: &FxHashMap<String, ExportVariableKind>,
+    imports: Kinds<'_>,
 ) -> Option<Base<'a>> {
     match unwrap_syntax_only(input) {
         Expression::StaticMemberExpression(member) => {
@@ -692,7 +702,7 @@ fn extract_base_tag_and_class_name<'a>(
 fn tag_from_argument<'a>(
     ast_builder: &AstBuilder<'a>,
     argument: &Argument<'a>,
-    imports: &FxHashMap<String, ExportVariableKind>,
+    imports: Kinds<'_>,
 ) -> Option<Base<'a>> {
     let argument = unwrap_syntax_only(argument.as_expression()?);
     match argument {
@@ -704,9 +714,7 @@ fn tag_from_argument<'a>(
         Expression::Identifier(ident) if ident.name == "undefined" => return None,
         _ => {}
     }
-    if let Expression::Identifier(ident) = argument
-        && let Some(kind) = imports.get(ident.name.as_str())
-    {
+    if let Some(kind) = imports(argument) {
         return Some(Base {
             styles: Some(kind.extract()),
             ..Base::named(kind.to_tag().to_string())
@@ -756,7 +764,7 @@ fn jsx_name(expression: &Expression<'_>) -> Option<String> {
 fn resolve_styled_call_target<'a>(
     ast_builder: &AstBuilder<'a>,
     call: &CallExpression<'a>,
-    imports: &FxHashMap<String, ExportVariableKind>,
+    imports: Kinds<'_>,
 ) -> Option<(Base<'a>, usize)> {
     if call.arguments.len() == 1
         && let Some(base) = extract_base_tag_and_class_name(ast_builder, &call.callee, imports)
@@ -788,7 +796,7 @@ pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
-    imports: &FxHashMap<String, ExportVariableKind>,
+    imports: Kinds<'_>,
     modifiers: (&[Expression<'a>], Option<Forward>),
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
@@ -1202,7 +1210,7 @@ fn clone_all<'s, 'a>(
 ) -> impl Iterator<Item = Expression<'a>> + 's {
     expressions
         .iter()
-        .map(|expression| expression.clone_in(ast_builder.allocator()))
+        .map(|expression| expression.clone_in_with_semantic_ids(ast_builder.allocator()))
 }
 
 /// The name the attrs wrapper binds props to, chosen not to shadow what the
@@ -1215,7 +1223,7 @@ const ATTRS_PROPS: &str = "__devupProps";
 pub fn take_styled_modifiers<'a>(
     ast_builder: &AstBuilder<'a>,
     factory: &mut Expression<'a>,
-    is_styled: impl Fn(&str) -> bool,
+    is_styled: impl Fn(&Expression<'_>) -> bool,
 ) -> (Vec<Expression<'a>>, Vec<Expression<'a>>) {
     let mut attrs = Vec::new();
     let mut configs = Vec::new();
@@ -1286,7 +1294,10 @@ pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u3
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";
 
-fn is_modified_styled(expression: &Expression<'_>, is_styled: impl Fn(&str) -> bool) -> bool {
+fn is_modified_styled(
+    expression: &Expression<'_>,
+    is_styled: impl Fn(&Expression<'_>) -> bool,
+) -> bool {
     let mut expression = unwrap_syntax_only(expression);
     let mut modified = false;
     while let Some(object) = modifier_object(expression) {
@@ -1296,10 +1307,10 @@ fn is_modified_styled(expression: &Expression<'_>, is_styled: impl Fn(&str) -> b
     modified
         && match expression {
             Expression::StaticMemberExpression(member) => {
-                matches!(&member.object, Expression::Identifier(ident) if is_styled(&ident.name))
+                matches!(&member.object, object @ Expression::Identifier(_) if is_styled(object))
             }
             Expression::CallExpression(call) => {
-                matches!(&call.callee, Expression::Identifier(ident) if is_styled(&ident.name))
+                matches!(&call.callee, callee @ Expression::Identifier(_) if is_styled(callee))
             }
             _ => false,
         }
@@ -1365,7 +1376,11 @@ fn sets_plain_props(attr: &Expression<'_>) -> bool {
 fn spread_attrs<'a>(ast_builder: &AstBuilder<'a>, attrs: &[Expression<'a>]) -> Expression<'a> {
     let mut merged = identifier(ast_builder, ATTRS_PROPS);
     for attr in attrs {
-        merged = spread_objects(ast_builder, merged, attr.clone_in(ast_builder.allocator()));
+        merged = spread_objects(
+            ast_builder,
+            merged,
+            attr.clone_in_with_semantic_ids(ast_builder.allocator()),
+        );
     }
     merged
 }
@@ -1389,7 +1404,10 @@ fn merge_attrs<'a>(ast_builder: &AstBuilder<'a>, attrs: &[Expression<'a>]) -> Ex
                 oxc_allocator::Vec::new_in(ast_builder),
                 ast_builder,
             ),
-            resolve_attrs(ast_builder, attr.clone_in(ast_builder.allocator())),
+            resolve_attrs(
+                ast_builder,
+                attr.clone_in_with_semantic_ids(ast_builder.allocator()),
+            ),
         );
         let merge = call_with_values(
             ast_builder,
@@ -1439,7 +1457,7 @@ fn resolve_attrs<'a>(ast_builder: &AstBuilder<'a>, attr: Expression<'a>) -> Expr
         Expression::new_unary_expression(
             SPAN,
             UnaryOperator::Typeof,
-            attr.clone_in(ast_builder.allocator()),
+            attr.clone_in_with_semantic_ids(ast_builder.allocator()),
             ast_builder,
         ),
         BinaryOperator::StrictEquality,

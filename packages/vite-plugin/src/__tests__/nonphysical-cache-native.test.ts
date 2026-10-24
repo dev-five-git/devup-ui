@@ -16,7 +16,10 @@ import {
 } from './production-fixture'
 
 type TestPlugin = Omit<Plugin, 'watchChange' | 'closeWatcher'> & {
-  watchChange(this: void, id: string): Promise<void>
+  watchChange(
+    this: { addWatchFile(path: string): void },
+    id: string,
+  ): Promise<void>
   closeWatcher(): void
 }
 
@@ -51,7 +54,12 @@ it('updates the production sheet through the actual tuple theme hook (UNIT dispa
       '{"theme":{"colors":{"default":{"primary":"blue"}}}}',
     )
     // When the public hook dispatches the replacement theme for that same generation.
-    await tuple[0].watchChange.call(undefined, theme)
+    const watched: string[] = []
+    await tuple[0].watchChange.call(
+      { addWatchFile: (path) => watched.push(path) },
+      theme,
+    )
+    expect(watched).toContain(theme)
     // Then the actual materialized production sheet contains the new theme.
     const css = await readFile(
       `${fixture.root}/df/devup-ui/devup-ui.css`,

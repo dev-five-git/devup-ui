@@ -136,11 +136,8 @@ interface HotUpdateEnvironment {
 }
 
 interface ViteTestPlugin {
-  buildStart: Plugin['buildStart']
-  buildApp: Plugin['buildApp']
   buildEnd: Plugin['buildEnd']
   closeWatcher: Plugin['closeWatcher']
-  configureServer: Plugin['configureServer']
   environment?: {
     name: string
     config: {
@@ -153,6 +150,9 @@ interface ViteTestPlugin {
   enforce: 'pre'
   apply: () => boolean
   closeBundle: () => void
+  buildApp: NonNullable<Plugin['buildApp']>
+  buildStart: NonNullable<Plugin['buildStart']>
+  configureServer: NonNullable<Plugin['configureServer']>
   config: (
     this: { meta?: ConfigHookMeta } | void,
     userConfig?: ViteConfig,
@@ -291,7 +291,11 @@ function createCodeExtractResult(
 function createPlugins(
   options?: Parameters<typeof DevupUI>[0],
 ): [ViteTestPlugin, ViteTestRestorePlugin] {
-  return DevupUI(options) as unknown as [ViteTestPlugin, ViteTestRestorePlugin]
+  const plugins = DevupUI(options) as unknown as [
+    ViteTestPlugin,
+    ViteTestRestorePlugin,
+  ]
+  return plugins
 }
 
 function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
@@ -379,8 +383,8 @@ beforeEach(() => {
   consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
 })
 
-afterEach(() => {
-  for (const plugin of pluginInstances) plugin.closeBundle()
+afterEach(async () => {
+  for (const plugin of pluginInstances) await plugin.closeBundle()
   pluginInstances.clear()
   existsSyncSpy.mockRestore()
   mkdirSpy.mockRestore()
@@ -1455,16 +1459,180 @@ describe('devupUIVitePlugin', () => {
       expect(first).not.toContain('?t=')
     })
 
+    describe('serve sheet module identity', () => {
+      const sheets = ['devup-ui.css', 'devup-ui-3.css'] as const
+      const initialCss = '.a{color:red}'
+      let nowSpy: ReturnType<typeof spyOn<typeof Date, 'now'>>
+
+      beforeEach(() => {
+        nowSpy = spyOn(Date, 'now').mockReturnValue(1_730_000_000_000)
+      })
+
+      afterEach(() => {
+        nowSpy.mockRestore()
+      })
+
+      function resolveSheet(plugin: ViteTestPlugin, fileName: string) {
+        const id = plugin.resolveId(fileName, join('df', 'devup-ui', fileName))
+        if (typeof id !== 'string') throw new TypeError('Sheet did not resolve')
+        return id
+      }
+
+      async function writeSheet(
+        plugin: ViteTestPlugin,
+        fileName: string,
+        css: string,
+      ) {
+        getCssSpy.mockReturnValue(css)
+        codeExtractSpy.mockReturnValue(
+          createCodeExtractResult({
+            css,
+            cssFile: fileName,
+            updatedBaseStyle: fileName === 'devup-ui.css',
+          }),
+        )
+        await plugin.transform(
+          `const sheet = ${JSON.stringify([fileName, css])}`,
+          'sheet-owner.tsx',
+        )
+      }
+
+      it.each(sheets)(
+        'keeps %s identity when only the clock advances before any write',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          const first = resolveSheet(plugin, fileName)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(second).toBe(first)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps %s identity when the same text is transformed again',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          await writeSheet(plugin, fileName, initialCss)
+          const first = resolveSheet(plugin, fileName)
+          writeFileSpy.mockClear()
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, fileName, initialCss)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(writeFileSpy).not.toHaveBeenCalled()
+          expect(second).toBe(first)
+        },
+      )
+
+      it.each(
+        sheets.flatMap((fileName) =>
+          [
+            { change: 'longer', css: '.a{color:blue}' },
+            { change: 'shorter', css: '.a{top:0}' },
+            { change: 'same-length', css: '.a{color:sky}' },
+          ].map((change) => ({ fileName, ...change })),
+        ),
+      )(
+        'changes $fileName identity when $change text is written at the same clock time',
+        async ({ fileName, css }) => {
+          // Given: prime the load cache too, so length-based identity is exercised.
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          await writeSheet(plugin, fileName, initialCss)
+          plugin.load(fileName)
+          const first = resolveSheet(plugin, fileName)
+          writeFileSpy.mockClear()
+
+          // When
+          await writeSheet(plugin, fileName, css)
+          const second = resolveSheet(plugin, fileName)
+
+          // Then
+          expect(writeFileSpy.mock.calls).toEqual([
+            [join(resolve('df', 'devup-ui'), fileName), css, 'utf-8'],
+          ])
+          expect(second).not.toBe(first)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps other sheets independent when %s changes',
+        async (changedSheet) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({ command: 'serve' })
+          for (const sheet of sheets)
+            await writeSheet(plugin, sheet, initialCss)
+          const otherSheet =
+            changedSheet === 'devup-ui.css' ? 'devup-ui-3.css' : 'devup-ui.css'
+          const otherId = resolveSheet(plugin, otherSheet)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, changedSheet, '.a{color:sky}')
+
+          // Then
+          expect(resolveSheet(plugin, otherSheet)).toBe(otherId)
+        },
+      )
+
+      it.each(sheets)(
+        'keeps the build path for %s when text changes and time advances',
+        async (fileName) => {
+          // Given
+          const plugin = createPlugin({})
+          await plugin.configResolved({
+            command: 'build',
+            root: process.cwd(),
+            environments: {
+              client: {
+                resolve: { conditions: [] },
+                build: { outDir: 'dist', rollupOptions: { input: [] } },
+              },
+            },
+          })
+          await writeSheet(plugin, fileName, initialCss)
+          const first = resolveSheet(plugin, fileName)
+
+          // When
+          nowSpy.mockReturnValue(1_730_000_000_001)
+          await writeSheet(plugin, fileName, '.a{color:sky}')
+
+          // Then
+          expect(first).toBe(join(resolve('df', 'devup-ui'), fileName))
+          expect(resolveSheet(plugin, fileName)).toBe(first)
+        },
+      )
+    })
+
     it('cache-busts the id during dev so a growing sheet invalidates', async () => {
       const plugin = createPlugin({})
       await plugin.configResolved({ command: 'serve' })
+      codeExtractSpy.mockImplementation(() =>
+        createCodeExtractResult({ cssFile: '', updatedBaseStyle: true }),
+      )
+      await plugin.transform('code', 'layout.tsx')
+      const importer = join('df', 'devup-ui', 'devup-ui.css')
+      const first = plugin.resolveId('devup-ui.css', importer)
 
-      expect(
-        plugin.resolveId(
-          'devup-ui.css',
-          join('df', 'devup-ui', 'devup-ui.css'),
-        ),
-      ).toContain('?t=')
+      getCssSpy.mockReturnValue('css code with added styles')
+      await plugin.transform('const addedStyles = true', 'layout.tsx')
+      const second = plugin.resolveId('devup-ui.css', importer)
+
+      expect(first).toMatch(/\?v=\d+$/)
+      expect(second).toMatch(/\?v=\d+$/)
+      expect(second).not.toBe(first)
     })
   })
 
@@ -1864,21 +2032,22 @@ describe('devupUIVitePlugin', () => {
     expect(environment.hot.send).not.toHaveBeenCalled()
   })
 
-  it('should print error when watch change error', async () => {
+  it('propagates the original publication error when watch refresh fails', async () => {
+    // Given
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
     existsSyncSpy.mockImplementation(
       (path: fs.PathLike) => path === resolve('devup.json'),
     )
+    const error = new Error('error')
     mkdirSpy.mockImplementation(() => {
-      throw new Error('error')
+      throw error
     })
     const plugin = createPlugin({})
-    await plugin.watchChange('devup.json')
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining(resolve('devup.json')),
-      expect.any(Error),
-    )
+    // When / Then
+    await expect(plugin.watchChange('devup.json')).rejects.toBe(error)
+    expect(() => plugin.load('devup-ui.css')).toThrow(error)
+    expect(console.error).not.toHaveBeenCalled()
   })
 
   it('should load', () => {
@@ -2257,7 +2426,7 @@ describe('devupUIVitePlugin atom hoisting', () => {
     expect(setAtomHoistSpy).not.toHaveBeenCalled()
   })
 
-  describe('W66 default regressions', () => {
+  describe('default and explicit atom policies', () => {
     beforeEach(() => {
       computeFileReachSpy.mockReturnValue({
         '/p/src/shared.tsx': [0, 1],
@@ -2267,7 +2436,7 @@ describe('devupUIVitePlugin atom hoisting', () => {
     })
 
     it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
-      'W66 availability: keeps per-file mode across environments for request %s',
+      'applies the physical reservation policy across environments for request %s',
       async (atomHoist) => {
         // Given: the same plugin is shared by Vite environment builds.
         const warningSpy = spyOn(console, 'warn').mockImplementation(() => {})
@@ -2295,19 +2464,30 @@ describe('devupUIVitePlugin atom hoisting', () => {
               '/p/src/a.tsx',
             )
           }
-          // Then: no atom-only pre-pass runs; production replays the explicit OFF plan once.
-          expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
-          expect(computeFileReachSpy).not.toHaveBeenCalled()
-          expect(importCanonicalMapSpy.mock.calls).toEqual([[{}]])
-          expect(importFileRoutesSpy.mock.calls).toEqual([[{}]])
-          expect(setAtomHoistSpy.mock.calls).toEqual([[null]])
-          expect(warningSpy).toHaveBeenCalledTimes(
-            atomHoist !== undefined &&
-              Number.isFinite(atomHoist) &&
-              atomHoist > 0
-              ? 1
-              : 0,
+          // Then: each production context uses the requested physical reservation policy.
+          const threshold = atomHoist ?? 2
+          const enabled = Number.isFinite(threshold) && threshold > 0
+          expect(buildCanonicalMapSpy).toHaveBeenCalledTimes(enabled ? 1 : 0)
+          expect(computeFileReachSpy).toHaveBeenCalledTimes(enabled ? 1 : 0)
+          const plan = enabled
+            ? pluginUtils.planAtomHoist(
+                {},
+                {
+                  '/p/src/shared.tsx': [0, 1],
+                  '/p/src/a.tsx': [0],
+                  '/p/src/b.tsx': [1],
+                },
+                threshold,
+              )
+            : undefined
+          expect(importCanonicalMapSpy).toHaveBeenLastCalledWith({})
+          expect(importFileRoutesSpy).toHaveBeenLastCalledWith(
+            plan?.reachByBucket ?? {},
           )
+          expect(setAtomHoistSpy).toHaveBeenLastCalledWith(
+            plan?.threshold ?? null,
+          )
+          expect(warningSpy).not.toHaveBeenCalled()
         } finally {
           plugin.closeBundle()
           warningSpy.mockRestore()

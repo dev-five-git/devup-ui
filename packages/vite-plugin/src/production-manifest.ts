@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
 
 import {
@@ -12,6 +13,7 @@ import {
   PreparationInputs,
   type ProductionManifestFile,
   type ProductionNumberingPlan,
+  type ReservationRow,
   type ResolutionInputObserver,
   resolveProjectPaths,
   resolveSourceDirs,
@@ -21,7 +23,15 @@ import {
 import type { ResolvedConfig } from 'vite'
 
 import type { DevupUIPluginOptions } from './plugin'
-import { productionEntryInputs } from './production-entry-inputs'
+import {
+  productionEntryInputs,
+  productionHtmlEntries,
+} from './production-entry-inputs'
+import {
+  productionHoist,
+  type ProductionHoistContext,
+  ProductionImports,
+} from './production-hoist'
 import { productionRootClosure } from './production-root-closure'
 import { productionRootSources } from './production-root-sources'
 
@@ -48,6 +58,7 @@ export interface ProductionContext extends ProductionNumberingPlan {
   readonly scan: readonly string[]
   readonly routes: Readonly<Record<string, readonly number[]>>
   readonly threshold: number | undefined
+  readonly slots: readonly ReservationRow[]
 }
 
 export function createExtractionGate(
@@ -100,14 +111,36 @@ async function prepareManifest(
     distDir: options.distDir,
     ...(options.cssDir === undefined ? {} : { cssDir: options.cssDir }),
   })
-  const devup = await loadDevupConfig(paths.devupFile)
+  const configFiles = new Set<string>()
+  const devup = await loadDevupConfig(paths.devupFile, configFiles).finally(
+    () => {
+      observe({
+        fileDependencies: [...configFiles].filter((path) => existsSync(path)),
+        missingDependencies: [...configFiles].filter(
+          (path) => !existsSync(path),
+        ),
+      })
+    },
+  )
   const theme = withTailwindCss(devup.theme ?? {}, devup, config.root)
   const tailwindFiles = tailwindCssFiles(devup, config.root)
   const roots = resolveSourceDirs(config.root, options.sourceDirs)
   const configured = Object.entries(config.environments)
-  const contexts: ProductionContext[] = []
+  const exclude = [
+    paths.distDir,
+    paths.cssDir,
+    ...configured.map(([, environment]) =>
+      resolve(config.root, environment.build.outDir),
+    ),
+  ]
+  const hoistContexts: ProductionHoistContext[] = []
+  const contexts: Omit<
+    ProductionContext,
+    'canonical' | 'routes' | 'threshold' | 'slots'
+  >[] = []
   const gate = createExtractionGate(options)
   for (const [key, environment] of configured) {
+    const evidence = new ProductionImports()
     const { physicalEntries, selectedEntries, nonphysical, entryClosure } =
       productionEntryInputs(config.root, environment, options.mdxExtensions)
     const conditions = ['import', ...environment.resolve.conditions].map(
@@ -118,11 +151,16 @@ async function prepareManifest(
             : 'development'
           : condition,
     )
-    const exclude = [
-      paths.distDir,
-      paths.cssDir,
-      resolve(config.root, environment.build.outDir),
-    ]
+    const entries = [...selectedEntries]
+    if (!entryClosure)
+      entries.push(
+        ...(await productionHtmlEntries(config, environment, {
+          inputs,
+          conditions,
+          mdxExtensions: options.mdxExtensions,
+          observe,
+        })),
+      )
     const discovered = await collectProductionFileManifest(
       {
         contexts: [
@@ -132,7 +170,7 @@ async function prepareManifest(
               roots: entryClosure ? [] : roots,
               ...(entryClosure
                 ? { sourceFiles: selectedEntries }
-                : { entries: physicalEntries }),
+                : { entries: [...physicalEntries, ...entries] }),
               cwd: config.root,
               includeMdx: options.mdxExtensions,
               exclude,
@@ -145,6 +183,7 @@ async function prepareManifest(
             },
             toId: (path) => path.replaceAll('\\', '/'),
             unpreparedMarkdown: 'reserve-only',
+            onImports: evidence.observe,
           },
         ],
         include: options.include,
@@ -173,6 +212,7 @@ async function prepareManifest(
               onResolutionInputs: observe,
             },
             toId: (path) => path.replaceAll('\\', '/'),
+            onImports: evidence.observe,
           },
           { include: options.include, exclude },
           gate,
@@ -202,9 +242,12 @@ async function prepareManifest(
         const code = inputs.read(file.path)
         return gate.relevant(code)
       })
-    const canonical: Readonly<Record<string, string>> = {}
-    const routes: Readonly<Record<string, readonly number[]>> = {}
-    const threshold: number | undefined = undefined
+    hoistContexts.push({
+      files: [...memberships.values()],
+      selected: files,
+      entries,
+      imports: evidence.imports,
+    })
     const store = createNonphysicalIdStore({
       integration: 'Vite',
       resolvedRoot: config.root,
@@ -217,21 +260,27 @@ async function prepareManifest(
         context: key,
         files,
         nonphysical: Object.freeze([...nonphysical, ...learned]),
-        canonical,
         conditions,
-        routes,
-        threshold,
         store,
         learned,
         scan: Object.freeze([...files.map((file) => file.id), ...nonphysical]),
       }),
     )
   }
+  const hoist = await productionHoist(config, options, {
+    contexts: hoistContexts,
+    inputs,
+  })
   return {
     paths,
     root: config.root,
     theme,
     tailwindFiles,
-    contexts: Object.freeze(contexts),
+    configFiles: [...configFiles],
+    contexts: Object.freeze(
+      contexts.map((context): ProductionContext =>
+        Object.freeze({ ...context, ...hoist }),
+      ),
+    ),
   }
 }

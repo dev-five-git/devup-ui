@@ -97,6 +97,10 @@ export function productionRootClosure(
     const cached = adjacency.get(path)
     if (cached) return cached
     const result: ProductionSourceFile[] = []
+    const resolvedImports: {
+      readonly kind: 'static' | 'dynamic'
+      readonly path: string
+    }[] = []
     for (const reference of (preparation?.scan ?? scanImports)(
       read(path),
       /\.[jt]sx$/i.test(path),
@@ -113,12 +117,14 @@ export function productionRootClosure(
             path: resolution.path,
             realPath: realpathSync.native(resolution.path),
           })
+          resolvedImports.push({ kind: reference.kind, path: resolution.path })
           break
         default:
           resolution satisfies never
       }
     }
     adjacency.set(path, result)
+    context.onImports?.(path, resolvedImports)
     return result
   }
   const frame = (

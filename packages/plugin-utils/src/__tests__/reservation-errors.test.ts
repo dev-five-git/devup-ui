@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
-import { createModuleResolver } from '../import-graph'
+import { createModuleResolver, listSourceFiles } from '../import-graph'
 import { ConfigLoadError } from '../load-config'
 import { PackageManifestShapeError } from '../package-manifest'
 import { collectReservationInputs } from '../reservation-discovery'
@@ -112,6 +112,33 @@ it('continues valid directories when an earlier source root changes from directo
     ['broken-root/A.tsx', STYLE, '../df/devup-ui'],
     ['src/Z.tsx', STYLE, '../df/devup-ui'],
   ])
+})
+
+it('propagates a source root directory-read failure without an error handler', () => {
+  using fs = fixture()
+  fs.write('file-root', 'not a directory')
+
+  expect(() => listSourceFiles(join(fs.root, 'file-root'))).toThrow(
+    expect.objectContaining({ code: 'ENOTDIR' }),
+  )
+})
+
+it('rethrows the original directory-read error when its handler declines it', () => {
+  using fs = fixture()
+  fs.write('file-root', 'not a directory')
+  let received: unknown
+  let thrown: unknown
+
+  try {
+    listSourceFiles(join(fs.root, 'file-root'), [], {}, (error) => {
+      received = error
+      return false
+    })
+  } catch (error) {
+    thrown = error
+  }
+  expect(thrown).toMatchObject({ code: 'ENOTDIR' })
+  expect(thrown).toBe(received)
 })
 
 it('leaves the normal resolver as publisher of a reachable broken manifest error', () => {

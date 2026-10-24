@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import {
   createCompatTypes,
+  createModuleResolver,
   createThemeInterfaceArgs,
   loadDevupConfig,
   ProductionNumbering,
@@ -19,6 +20,7 @@ import {
   importFileRoutes,
   registerShorthands,
   registerTheme,
+  reserveClassSlots,
   seedFileMap,
   setAtomHoist,
   setDebug,
@@ -126,6 +128,7 @@ export class ProductionActivation {
           plan,
           modules: new NonphysicalModules(plan.files),
           learned: plan.learned,
+          reserved: false,
         })
       }
       const first = manifest.contexts[0]
@@ -137,6 +140,9 @@ export class ProductionActivation {
         generation.owner,
         manifest.contexts,
       )
+      for (const plan of manifest.contexts)
+        this.run(plan.context, () => undefined, generation)
+      generation.current = first.context
     } catch (error) {
       generation.fail()
       throw error
@@ -177,15 +183,32 @@ export class ProductionActivation {
       await writeFile(join(paths.cssDir, 'devup-ui.css'), data.base, 'utf8')
   }
 
-  async updateTheme(): Promise<void> {
+  async updateTheme(
+    observe: ResolutionInputObserver = () => {},
+  ): Promise<void> {
     const generation = this.generation
     const manifest = generation.manifest
     if (manifest === undefined) throw new ProductionNumberingError('unseeded')
-    const devup = await loadDevupConfig(manifest.paths.devupFile)
+    const configFiles = new Set<string>()
+    const devup = await loadDevupConfig(
+      manifest.paths.devupFile,
+      configFiles,
+    ).finally(() => {
+      generation.manifest = { ...manifest, configFiles: [...configFiles] }
+    })
+    if (this.lifecycle.input()) {
+      await this.prepare(observe)
+      return
+    }
     const theme = withTailwindCss(devup.theme ?? {}, devup, manifest.root)
     const tailwindFiles = tailwindCssFiles(devup, manifest.root)
     generation.assertOpen()
-    generation.manifest = { ...manifest, theme, tailwindFiles }
+    generation.manifest = {
+      ...manifest,
+      theme,
+      tailwindFiles,
+      configFiles: [...configFiles],
+    }
     for (const runtime of generation.contexts.values())
       runtime.modules.invalidatePreparation()
     await this.writeData(this.context, generation)
@@ -193,6 +216,10 @@ export class ProductionActivation {
 
   get tailwindFiles(): readonly string[] {
     return this.generation.manifest?.tailwindFiles ?? []
+  }
+
+  get configFiles(): readonly string[] {
+    return this.generation.manifest?.configFiles ?? []
   }
 
   run<T>(key: string, action: () => T, generation = this.generation): T {
@@ -214,6 +241,25 @@ export class ProductionActivation {
             setAtomHoist(runtime.plan.threshold ?? null)
             setModuleResolver(undefined)
             generation.numbering?.seed({ seedFileMap, importCanonicalMap }, key)
+            if (generation.numbering !== undefined && !runtime.reserved) {
+              setModuleResolver(
+                createModuleResolver({
+                  cwd: manifest.root,
+                  conditions: runtime.plan.conditions,
+                  toId: (path) => path.replaceAll('\\', '/'),
+                }),
+              )
+              reserveClassSlots(
+                runtime.plan.slots,
+                this.options.package,
+                this.options.singleCss,
+                true,
+                false,
+                this.options.importAliases,
+              )
+              runtime.reserved = true
+              setModuleResolver(undefined)
+            }
             generation.current = key
             return action()
           }),

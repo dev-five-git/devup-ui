@@ -2,6 +2,7 @@ export { BuildGeneration, type GenerationEngine } from './build-generation'
 export {
   beginBuild,
   type BuildIntegration,
+  getBuildOwnership,
   MixedBuildIntegrationError,
   resetOwnedBuildState,
   type ResettableEngine,
@@ -125,6 +126,7 @@ export {
   type ReservationInput,
   type ReservationInventory,
 } from './reservation-discovery'
+export { reservationGraph } from './reservation-graph'
 export {
   type ResolutionInputObserver,
   type ResolutionInputs,

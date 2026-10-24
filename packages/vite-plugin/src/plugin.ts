@@ -5,12 +5,14 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   collectNumberedFiles,
+  ConfigLoadError,
   createCompatTypes,
   createModuleResolver,
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
   extractedNeedles,
+  getBuildOwnership,
   getFileNumByFilename,
   type ImportAliases,
   isMdxSource,
@@ -52,10 +54,14 @@ import type {
 } from 'vite'
 
 import { createAggregateCssPreparation } from './aggregate-css'
+import { createCompiledDependencies } from './compiled-dependencies'
 import { createCompiledGuard } from './compiled-guard'
+import { ConfigRefresh, watchConfigFiles } from './config-refresh'
 import { createExtractionGate } from './production-manifest'
 import { ProductionActivation } from './production-numbering'
+import { createViteReservation } from './reservation'
 import { createMissingInputWatch } from './resolution-watch'
+import { createServerWatch } from './server-watch'
 
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
@@ -65,6 +71,29 @@ import { createMissingInputWatch } from './resolution-watch'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
+
+type SourceInput = { readonly code: string }
+type ExtractionCapture = {
+  readonly session: ExtractionSession
+  readonly file: string
+  readonly input: SourceInput
+  readonly ownership: number
+  readonly reservation: number
+  readonly config: number
+}
+type ExtractionFlight = {
+  readonly capture: ExtractionCapture
+  readonly result: { readonly code: string; readonly map: string | undefined }
+  readonly dependencies: readonly string[]
+  readonly ready: Promise<void>
+}
+type ExtractionSession = {
+  ready: boolean
+  readonly flights: Map<string, ExtractionFlight>
+}
+function createExtractionSession(): ExtractionSession {
+  return { ready: false, flights: new Map() }
+}
 
 /**
  * Names each devup CSS module after its own file, so every module is emitted
@@ -239,9 +268,8 @@ export interface DevupUIPluginOptions {
   sourceDirs?: string | string[]
   mdxExtensions?: readonly string[]
   /**
-   * Reserved for route-aware atom hoisting after PR B adds shared class-slot
-   * reservation. Until then, Vite keeps per-file names and warns
-   * once for explicit finite positive requests. Ignored in singleCss mode.
+   * Hoist canonical buckets reached by at least this many module boundaries.
+   * Defaults to 2; 0 disables. Frozen for this build; ignored in singleCss mode.
    */
   atomHoist?: number
   /**
@@ -255,12 +283,14 @@ export interface DevupUIPluginOptions {
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
   root: string,
-): Promise<string[]> {
-  const config = await loadDevupConfig(options.devupFile)
+  inputs: Set<string>,
+  publishTailwind: (files: string[]) => void,
+): Promise<void> {
+  const config = await loadDevupConfig(options.devupFile, inputs)
   const theme = config.theme ?? {}
 
   registerTheme(withTailwindCss(theme, config, root))
-  const tailwindFiles = tailwindCssFiles(config, root)
+  publishTailwind(tailwindCssFiles(config, root))
   const interfaceCode = getThemeInterface(
     ...createThemeInterfaceArgs(options.package),
   )
@@ -277,7 +307,6 @@ async function writeDataFiles(
       getEngineCss(null, false),
     )
   }
-  return tailwindFiles
 }
 
 export function DevupUI({
@@ -292,7 +321,7 @@ export function DevupUI({
   prefix,
   shorthands,
   sourceDirs: configuredSourceDirs,
-  atomHoist,
+  atomHoist = 2,
   importAliases: userImportAliases,
   mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
@@ -310,15 +339,38 @@ export function DevupUI({
     releaseLegacy?.()
     releaseLegacy = undefined
   }
-  if (
-    !singleCss &&
-    atomHoist !== undefined &&
-    Number.isFinite(atomHoist) &&
-    atomHoist > 0
+  let closing = false
+  let ownedWork = 0
+  let drained: PromiseWithResolvers<void> | undefined
+  function releaseBuild() {
+    endBuild()
+  }
+  function own<This, Args extends unknown[], T>(
+    work: (this: This, ...args: Args) => Promise<T>,
+    admit = true,
   ) {
-    console.warn(
-      '[devup-ui] Vite atomHoist is unavailable until shared class-slot reservation lands in PR B; keeping per-file names, while existing shared slots remain arrival-ordered.',
-    )
+    return async function (this: This, ...args: Args): Promise<T | undefined> {
+      if (admit && closing && isServe) return
+      if (admit && !releaseLegacy && !production.active) {
+        releaseLegacy = beginBuild(
+          initialized ? {} : { resetBuildState },
+          integration,
+        )
+        initialized = true
+        closing = false
+        drained = undefined
+      }
+      ownedWork++
+      try {
+        return await work.apply(this, args)
+      } finally {
+        ownedWork--
+        if (closing && ownedWork === 0) {
+          releaseBuild()
+          drained?.resolve()
+        }
+      }
+    }
   }
   const importAliases = mergeImportAliases(
     userImportAliases,
@@ -366,6 +418,27 @@ export function DevupUI({
   }
   const cssMap = new Map()
   const aggregateCss = createAggregateCssPreparation()
+  const reservation = createViteReservation({
+    package: libPackage,
+    include,
+    importAliases,
+    singleCss,
+    atomHoist,
+    get cssDir() {
+      return cssDir
+    },
+    get distDir() {
+      return distDir
+    },
+    relevant: (file) =>
+      isConfigFile(file) ||
+      isTailwindFile(file) ||
+      compiledDependencies.hasSupplier(file),
+  })
+  const compiledDependencies = createCompiledDependencies()
+  let stopWatching: (() => void) | undefined
+  let watcherSession: ExtractionSession | undefined
+  let watchConfigInputs: (() => void) | undefined
   let resolvedConfig: ResolvedConfig | undefined
   // Set by the client `generateBundle`, run by the late hook of the sibling
   // plugin once @vitejs/plugin-rsc has forwarded.
@@ -376,7 +449,9 @@ export function DevupUI({
   let seedWarningEmitted = false
   const setupWatchFiles = new Set<string>()
   const missingWatchContexts = new Map<object, (path: string) => void>()
-  const missingInputWatch = createMissingInputWatch()
+  const missingInputWatch = createMissingInputWatch((importer) => {
+    latestInputs.delete(resolve(importer))
+  })
   let fallbackConditions: readonly string[] = [
     'import',
     'module',
@@ -413,27 +488,96 @@ export function DevupUI({
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
   const writtenCss = new Map<string, string>()
+  const sheetRevisions = new Map<string, number>()
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
   // The files the project's Tailwind CSS is read from, which change what a
   // Tailwind class compiles to
   let tailwindFiles: readonly string[] = []
+  let configFiles = new Set([resolve(devupFile)])
+  let activeConfigFiles = configFiles
+  let activeTailwindFiles: string[] = []
+  const configState = new ConfigRefresh()
+  let extractionSession = createExtractionSession()
+  const latestInputs = new Map<string, SourceInput>()
+  function rotateExtractionSession() {
+    latestInputs.clear()
+    return (extractionSession = createExtractionSession())
+  }
+  function currentCapture(capture: ExtractionCapture) {
+    const ownership = getBuildOwnership()
+    return (
+      isServe &&
+      !!releaseLegacy &&
+      !closing &&
+      capture.session === extractionSession &&
+      extractionSession.ready &&
+      latestInputs.get(capture.file) === capture.input &&
+      ownership.running === 1 &&
+      ownership.generation === capture.ownership &&
+      configState.refreshing === 0 &&
+      configState.generation === capture.config &&
+      reservation.revision === capture.reservation &&
+      reservation.prepared === capture.reservation
+    )
+  }
+  const isConfigFile = (file: string) =>
+    configFiles.has(resolve(file)) ||
+    activeConfigFiles.has(resolve(file)) ||
+    production.configFiles.includes(resolve(file))
+  const refreshConfig = () =>
+    configState.run(async () => {
+      if (production.active) {
+        await production.updateTheme(observeSetup)
+        tailwindFiles = production.tailwindFiles
+        return
+      }
+      const inputs = new Set([resolve(devupFile)])
+      try {
+        activeConfigFiles = inputs
+        await writeDataFiles(
+          {
+            package: libPackage,
+            cssDir,
+            devupFile,
+            distDir,
+            singleCss,
+          },
+          projectRoot,
+          inputs,
+          (files) => {
+            activeTailwindFiles = files
+            watchConfigInputs?.()
+          },
+        )
+      } finally {
+        configFiles = inputs
+        tailwindFiles = activeTailwindFiles
+        activeTailwindFiles = []
+        reservation.invalidate()
+        watchConfigInputs?.()
+      }
+    })
   const isTailwindFile = (file: string) =>
-    tailwindFiles.some(
+    [...tailwindFiles, ...activeTailwindFiles].some(
       (tailwindFile) => resolve(tailwindFile) === resolve(file),
     )
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
+    sheetRevisions.set(fileName, (sheetRevisions.get(fileName) ?? 0) + 1)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
   const sourceTransform = {
     async transform(code, id) {
+      const session = extractionSession
       if (!extractCss) return
       resolveFallbackPaths()
       const fileName = id.replace(/\?.*$/s, '')
       if (!extractionGate.selected(fileName)) return
+      const beforeRefresh = configState.wait()
+      if (beforeRefresh) await beforeRefresh
       const environment = this.environment ?? plugin
       if (production.active) {
         await production.prepare(observeSetup)
@@ -441,17 +585,48 @@ export function DevupUI({
         for (const path of tailwindFiles)
           this.addWatchFile(path.replaceAll('\\', '/'))
       }
+      if (!production.active) await reservation.reserve()
+      const afterRefresh = configState.wait()
+      if (afterRefresh) await afterRefresh
+      const file = resolve(fileName)
+      let input = latestInputs.get(file)
+      if (isServe && input?.code !== code) {
+        input = { code }
+        latestInputs.set(file, input)
+      }
+      const capture = input && {
+        session,
+        file,
+        input,
+        ownership: getBuildOwnership().generation,
+        reservation: reservation.revision,
+        config: configState.generation,
+      }
+      const eligible = capture && currentCapture(capture)
+      const cached = eligible ? session.flights.get(id) : undefined
+      if (cached && currentCapture(cached.capture)) {
+        compiledDependencies.update(
+          this.environment?.name ?? 'client',
+          id,
+          cached.dependencies,
+        )
+        for (const dependency of cached.dependencies)
+          this.addWatchFile(dependency)
+        await cached.ready
+        await configState.ready()
+        return cached.result
+      }
       const context = production.active
         ? (this.environment?.name ?? production.context)
         : undefined
       const preserveSymlinks =
-        this.environment?.config.resolve.preserveSymlinks ??
+        this.environment?.config?.resolve?.preserveSymlinks ??
         resolvedConfig?.resolve?.preserveSymlinks
       const watch =
         isServe ||
         this.meta?.watchMode ||
         !!(
-          this.environment?.config.build?.watch ?? resolvedConfig?.build?.watch
+          this.environment?.config?.build?.watch ?? resolvedConfig?.build?.watch
         )
       missingInputWatch.start(fileName, environment)
       aggregateCss.observe(this.environment ?? plugin, id)
@@ -463,7 +638,8 @@ export function DevupUI({
         !extractionGate.admission(code)
       )
         return
-      const environmentConditions = this.environment?.config.resolve.conditions
+      const environmentConditions =
+        this.environment?.config?.resolve?.conditions
       const resolver = moduleResolver(
         (environmentConditions
           ? ['import', ...environmentConditions]
@@ -476,13 +652,13 @@ export function DevupUI({
             : condition,
         ),
         (inputs) => {
-          for (const path of inputs.fileDependencies)
-            this.addWatchFile(
-              (watch
-                ? resolutionWatchPath(path, preserveSymlinks)
-                : path
-              ).replaceAll('\\', '/'),
-            )
+          for (const path of inputs.fileDependencies) {
+            const watched = (
+              watch ? resolutionWatchPath(path, preserveSymlinks) : path
+            ).replaceAll('\\', '/')
+            this.addWatchFile(watched)
+            missingInputWatch.observeFile(fileName, watched, environment)
+          }
           for (const path of inputs.missingDependencies) {
             const watched = (
               watch ? resolutionWatchPath(path, preserveSymlinks) : path
@@ -566,6 +742,11 @@ export function DevupUI({
           if ('free' in output) output.free()
         }
       })()
+      compiledDependencies.update(
+        this.environment?.name ?? 'client',
+        id,
+        dependencies,
+      )
       for (const dependency of dependencies) this.addWatchFile(dependency)
       const promises: Promise<void>[] = []
       if (updatedBaseStyle)
@@ -576,8 +757,31 @@ export function DevupUI({
         if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
         if (css) promises.push(writeCssFile(basename(cssFile), css))
       }
-      await Promise.all(promises)
-      return { code: extractedCode, map }
+      const result = { code: extractedCode, map }
+      if (!eligible) {
+        await Promise.all(promises)
+        await configState.ready()
+        return result
+      }
+      const flight: ExtractionFlight = {
+        capture,
+        result,
+        dependencies: [...dependencies],
+        ready: Promise.all(promises).then(
+          () => {
+            if (session.flights.get(id) === flight && !currentCapture(capture))
+              session.flights.delete(id)
+          },
+          (error: unknown) => {
+            if (session.flights.get(id) === flight) session.flights.delete(id)
+            throw error
+          },
+        ),
+      }
+      session.flights.set(id, flight)
+      await flight.ready
+      await configState.ready()
+      return result
     },
   } satisfies Pick<Plugin, 'transform'>
   const plugin = {
@@ -586,10 +790,10 @@ export function DevupUI({
     // otherwise recreates this plugin for every environment build, which makes
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
-    configureServer(server) {
-      missingInputWatch.attach(server)
-    },
     async configResolved(config) {
+      closing = false
+      drained = undefined
+      const session = rotateExtractionSession()
       resolvedConfig = config
       try {
         isServe = config?.command === 'serve'
@@ -669,10 +873,7 @@ export function DevupUI({
           createCompatTypes(importAliases),
           'utf-8',
         )
-        tailwindFiles = await writeDataFiles(
-          { package: libPackage, cssDir, devupFile, distDir, singleCss },
-          projectRoot,
-        )
+        await refreshConfig()
 
         try {
           // Numbers come from the sorted paths of every file the build can
@@ -706,6 +907,39 @@ export function DevupUI({
           { cause },
         )
       }
+      reservation.configure(config)
+      if (extractionSession === session) session.ready = true
+    },
+    configureServer(server) {
+      missingInputWatch.attach(server)
+      if (watcherSession === extractionSession) rotateExtractionSession()
+      stopWatching?.()
+      watcherSession = extractionSession
+      for (const environment of Object.values(server.environments ?? {})) {
+        reservation.configure({
+          ...server.config,
+          environments: {
+            [environment.name]: environment.config,
+          },
+        })
+      }
+      const watching = createServerWatch(
+        server.watcher,
+        reservation,
+        compiledDependencies.remove,
+      )
+      watchConfigInputs = () =>
+        watching.add([
+          ...configFiles,
+          ...activeConfigFiles,
+          ...tailwindFiles,
+          ...activeTailwindFiles,
+        ])
+      watchConfigInputs()
+      stopWatching = () => {
+        watching.close()
+        watchConfigInputs = undefined
+      }
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
       const release = beginBuild(
@@ -724,11 +958,6 @@ export function DevupUI({
         define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
       }
       const ret: Omit<UserConfig, 'plugins'> = {
-        server: {
-          watch: {
-            ignored: [`!${devupFile}`],
-          },
-        },
         define,
         optimizeDeps: {
           exclude: [...include, '@devup-ui/components', '@devup-editor/react'],
@@ -756,22 +985,52 @@ export function DevupUI({
         missingInputWatch.close()
         missingWatchContexts.clear()
       }
-      endBuild()
+      rotateExtractionSession()
+      closing = true
+      stopWatching?.()
+      if (ownedWork === 0) return releaseBuild()
+      drained ??= Promise.withResolvers<void>()
+      return drained.promise
     },
     async buildStart(options) {
+      if (!extractCss) return
       if (production.active) {
-        await production.prepare(observeSetup, () => {
-          writtenCss.clear()
-          cssMap.clear()
-        })
+        const attempted = new Set<string>()
+        try {
+          await production.prepare(
+            (inputs) => {
+              observeSetup(inputs)
+              for (const path of [
+                ...inputs.fileDependencies,
+                ...inputs.missingDependencies,
+              ])
+                attempted.add(path)
+            },
+            () => {
+              writtenCss.clear()
+              cssMap.clear()
+            },
+          )
+        } catch (error) {
+          if (error instanceof ConfigLoadError)
+            watchConfigFiles([...attempted], (path) => this.addWatchFile(path))
+          throw error
+        }
         production.start(this.environment?.name ?? production.context)
         tailwindFiles = production.tailwindFiles
+        watchConfigFiles(production.configFiles, (path) =>
+          this.addWatchFile(path),
+        )
+      } else {
+        await reservation.reserve()
+        for (const dependency of reservation.dependencies)
+          this.addWatchFile(dependency)
       }
       const watch =
         isServe ||
         this.meta?.watchMode ||
         !!(
-          this.environment?.config.build?.watch ?? resolvedConfig?.build?.watch
+          this.environment?.config?.build?.watch ?? resolvedConfig?.build?.watch
         )
       const addWatchFile = (path: string) => {
         this.addWatchFile(path)
@@ -798,7 +1057,7 @@ export function DevupUI({
           (watch
             ? resolutionWatchPath(
                 path,
-                this.environment?.config.resolve.preserveSymlinks ??
+                this.environment?.config?.resolve?.preserveSymlinks ??
                   resolvedConfig?.resolve?.preserveSymlinks,
               )
             : path
@@ -813,32 +1072,31 @@ export function DevupUI({
         this.environment?.config.build ?? resolvedConfig?.build ?? {},
       )
     },
-    async watchChange(this: void, id) {
+    async watchChange(id) {
       if (production.active) production.invalidate(id.replaceAll('\\', '/'))
       resolveFallbackPaths()
-      if (
-        (resolve(id) === resolve(devupFile) && existsSync(devupFile)) ||
-        (isTailwindFile(id) && existsSync(id))
-      ) {
+      reservation.invalidate(id)
+      if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
+          await own(refreshConfig)()
+        } finally {
           if (production.active) {
-            await production.updateTheme()
-            tailwindFiles = production.tailwindFiles
-            return
+            watchConfigFiles(production.configFiles, (path) =>
+              this.addWatchFile(path),
+            )
           }
-          tailwindFiles = await writeDataFiles(
-            { package: libPackage, cssDir, devupFile, distDir, singleCss },
-            projectRoot,
-          )
-        } catch (error) {
-          if (production.active) throw error
-          console.error(`[devup-ui] theme update failed at ${devupFile}`, error)
         }
       }
     },
     buildApp: {
       order: 'pre',
       async handler(builder) {
+        for (const environment of Object.values(builder.environments)) {
+          reservation.configure({
+            ...builder.config,
+            environments: { [environment.name]: environment.config },
+          })
+        }
         if (!production.active) return
         production.refine(builder.environments)
         await production.prepare(observeSetup)
@@ -859,13 +1117,29 @@ export function DevupUI({
       if (production.active) production.dispose()
       missingInputWatch.close()
       missingWatchContexts.clear()
-      endBuild()
+      rotateExtractionSession()
+      closing = true
+      stopWatching?.()
+      if (ownedWork === 0) return releaseBuild()
+      drained ??= Promise.withResolvers<void>()
+      return drained.promise
     },
     // Runs once per environment. Vite 6+ ignores `handleHotUpdate` on a plugin
     // that defines this hook, so the devup.json reload lives here as well.
     async hotUpdate({ file, modules, timestamp }) {
       resolveFallbackPaths()
+      reservation.invalidate(file, timestamp)
       const { environment } = this
+      for (const id of compiledDependencies.consumers(environment.name, file)) {
+        const consumer = environment.moduleGraph.getModuleById(id)
+        if (consumer)
+          environment.moduleGraph.invalidateModule(
+            consumer,
+            new Set(),
+            timestamp,
+            true,
+          )
+      }
       if (environment.config.consumer === 'server') {
         // A module runner cannot apply CSS, so Vite answers a sheet change
         // with a full reload: the render restarts mid-request, and the modules
@@ -877,19 +1151,13 @@ export function DevupUI({
           ? []
           : undefined
       }
-      const isDevupFile =
-        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      const isDevupFile = isConfigFile(file)
       const isTailwind = isTailwindFile(file) && existsSync(file)
       if (!isDevupFile && !isTailwind) {
         return
       }
 
-      if (production.active) await production.updateTheme()
-      else
-        tailwindFiles = await writeDataFiles(
-          { package: libPackage, cssDir, devupFile, distDir, singleCss },
-          projectRoot,
-        )
+      await own(refreshConfig)()
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
       // A Tailwind class compiles from the definitions of the Tailwind CSS, so
@@ -910,19 +1178,24 @@ export function DevupUI({
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
       resolveFallbackPaths()
-      const isDevupFile =
-        resolve(file) === resolve(devupFile) && existsSync(devupFile)
+      reservation.invalidate(file, timestamp)
+      for (const id of compiledDependencies.consumers('client', file)) {
+        const consumer = server.moduleGraph.getModuleById(id)
+        if (consumer)
+          server.moduleGraph.invalidateModule(
+            consumer,
+            new Set(),
+            timestamp,
+            true,
+          )
+      }
+      const isDevupFile = isConfigFile(file)
       const isTailwind = isTailwindFile(file) && existsSync(file)
       if (!isDevupFile && !isTailwind) {
         return
       }
 
-      if (production.active) await production.updateTheme()
-      else
-        tailwindFiles = await writeDataFiles(
-          { package: libPackage, cssDir, devupFile, distDir, singleCss },
-          projectRoot,
-        )
+      await own(refreshConfig)()
 
       const invalidatedModules = new Set<ModuleNode>()
       for (const mod of isTailwind
@@ -946,24 +1219,20 @@ export function DevupUI({
         resolve(importer ? join(dirname(importer), id) : id) ===
           resolve(join(cssDir, fileName))
       ) {
-        // Dev re-resolves through a changing id so a growing sheet invalidates
-        // the module. A build must not: a per-resolution id forks one file into
-        // several modules and makes output hashes differ between identical
-        // builds.
         if (!isServe) return join(cssDir, fileName)
+        // Only changed writes mint a module; `v` survives Vite's timestamp stripping.
         return join(
           cssDir,
-          `${fileName}?t=${
-            Date.now().toString() +
-            (cssMap.get(getFileNumByFilename(fileName))?.length ?? 0)
-          }`,
+          `${fileName}?v=${sheetRevisions.get(fileName) ?? 0}`,
         )
       }
     },
     load(id) {
       const fileName = basename(id).split('?')[0]
       if (DEVUP_CSS_FILE_RE.test(fileName)) {
-        const snapshot = () => {
+        const snapshot = (): string | Promise<string> => {
+          if (configState.refreshing) return configState.ready().then(snapshot)
+          configState.assertReady()
           const fileNum = getFileNumByFilename(fileName)
           const css = getCss(fileNum, false)
           cssMap.set(fileNum, css)
@@ -1069,5 +1338,9 @@ export function DevupUI({
     typeof aggregateGuard,
     typeof compiledGuard,
   ] = [plugin, restorePlugin, mdxPlugin, aggregateGuard, compiledGuard]
+  plugin.configResolved = own(plugin.configResolved, false)
+  plugin.buildStart = own(plugin.buildStart)
+  plugin.transform.handler = own(plugin.transform.handler)
+  mdxPlugin.transform = own(mdxPlugin.transform)
   return plugins
 }

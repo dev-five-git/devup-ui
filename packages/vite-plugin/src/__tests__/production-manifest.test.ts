@@ -10,7 +10,7 @@ import {
 import { productionFixture } from './production-fixture'
 
 it.each([false, true])(
-  'unions real condition branches and keeps the deferred hoist plan off for native entry records=%s',
+  'unions real condition branches and activates the closed hoist plan for native entry records=%s',
   async (record) => {
     // Given two actual routes and different physical package condition targets.
     const fixture = await productionFixture()
@@ -93,7 +93,7 @@ it.each([false, true])(
         options,
         () => {},
       )
-      // Then entry forms select distinct physical branches while the atom hoist plan stays off until PR B.
+      // Then entry forms select distinct physical branches under the shared active plan.
       const browser = manifest.contexts.find(
         (context) => context.context === 'browser',
       )
@@ -104,12 +104,23 @@ it.each([false, true])(
       expect(browser?.scan).not.toContain(nodeFile)
       expect(server?.scan).toContain(nodeFile)
       expect(server?.scan).not.toContain(browserFile)
-      expect(browser?.threshold).toBeUndefined()
+      expect(browser?.threshold).toBe(2)
       expect(browser?.scan).not.toContain('virtual:manifest.js')
       expect(server?.scan).not.toContain('virtual:manifest.js')
-      expect(browser?.canonical).toEqual({})
-      expect(browser?.routes).toEqual({})
-      expect(browser?.routes[shared]).toBeUndefined()
+      expect(browser?.canonical).toEqual(
+        Object.fromEntries(
+          ['browser', 'node'].flatMap((branch) => [
+            [`${fixture.root}/node_modules/condition-branch/${branch}.js`, a],
+            [
+              `${fixture.root}/node_modules/condition-branch/${branch}/node_modules/condition-target/index.js`,
+              a,
+            ],
+          ]),
+        ),
+      )
+      expect(browser?.routes).toEqual({ [a]: [0], [b]: [1], [shared]: [0, 1] })
+      expect(server?.canonical).toEqual(browser?.canonical)
+      expect(server?.routes).toEqual(browser?.routes)
     } finally {
       await fixture.close()
     }
@@ -215,7 +226,15 @@ it('reserves all configured contexts while keeping scan authority separate from 
     expect(browser?.conditions).toContain('browser')
     expect(server?.conditions).toContain('react-server')
     expect(browser?.learned).toEqual([])
-    expect(browser?.canonical).toEqual({})
+    expect(browser?.canonical).toEqual(
+      Object.fromEntries(
+        [
+          ...accepted.filter((path) => !path.includes('/node_modules/')),
+          `${fixture.root}/src/imports.js`,
+          `${fixture.root}/src/disabled.js`,
+        ].map((path) => [path, entry]),
+      ),
+    )
     expect(browser?.routes).toEqual({})
   } finally {
     await fixture.close()

@@ -1178,6 +1178,7 @@ export interface CreateModuleResolverOptions {
    */
   toId?: (path: string) => string
   readonly allowPackage?: (specifier: string) => boolean
+  readonly onPackageManifest?: (path: string) => void
 }
 
 /**
@@ -1220,6 +1221,7 @@ export type ModulePathResolverOptions = Pick<
   | 'includeMdx'
   | 'onResolutionInputs'
   | 'allowPackage'
+  | 'onPackageManifest'
 >
 export type ModulePathResolution =
   AliasResolution | IgnoredModule | false | undefined
@@ -1238,6 +1240,7 @@ export function createModulePathResolver(
     admitFile,
     onResolutionInputs,
     allowPackage,
+    onPackageManifest,
   }: ModulePathResolverOptions & {
     readonly admitFile?: (filename: string) => boolean
   } = {},
@@ -1287,6 +1290,7 @@ export function createModulePathResolver(
                       excludedDirectory,
                       aliased,
                       inputs,
+                      onPackageManifest,
                     })
                   : undefined)),
       })

@@ -121,9 +121,11 @@ function mergeExtendedConfigs(
  */
 export function loadDevupConfigSync(
   configPath: string,
+  inputs?: Set<string>,
   stack: readonly string[] = [],
 ): DevupConfig {
   const file = resolve(configPath)
+  inputs?.add(file)
   let config: DevupConfig
   let nextStack: string[]
   try {
@@ -151,7 +153,7 @@ export function loadDevupConfigSync(
   return mergeExtendedConfigs(
     config,
     config.extends.map((extendPath) =>
-      loadDevupConfigSync(resolve(configDir, extendPath), nextStack),
+      loadDevupConfigSync(resolve(configDir, extendPath), inputs, nextStack),
     ),
   )
 }
@@ -165,9 +167,11 @@ export function loadDevupConfigSync(
  */
 export async function loadDevupConfig(
   configPath: string,
+  inputs?: Set<string>,
   stack: readonly string[] = [],
 ): Promise<DevupConfig> {
   const file = resolve(configPath)
+  inputs?.add(file)
   let config: DevupConfig
   let nextStack: string[]
   try {
@@ -196,7 +200,7 @@ export async function loadDevupConfig(
   const extendedConfigs: DevupConfig[] = []
   for (const extendPath of config.extends) {
     extendedConfigs.push(
-      await loadDevupConfig(resolve(configDir, extendPath), nextStack),
+      await loadDevupConfig(resolve(configDir, extendPath), inputs, nextStack),
     )
   }
 

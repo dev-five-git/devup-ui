@@ -23,6 +23,7 @@ interface ModulePolicy {
   readonly excludedDirectory: (directory: string) => boolean
   readonly aliased: boolean
   readonly inputs?: ResolutionInputCollector
+  readonly onPackageManifest?: (path: string) => void
 }
 export interface ConfigPolicy {
   readonly purpose: 'tsconfig-extends'
@@ -85,8 +86,12 @@ export function resolvePackage(
             options.excludedDirectory(target)
           )
             return false
+          const manifestPath = join(packageDir, 'package.json')
+          options.onPackageManifest?.(
+            realpathResolution(manifestPath, options.inputs),
+          )
           const manifest = readPackageManifest(
-            join(packageDir, 'package.json'),
+            manifestPath,
             'module',
             options.inputs,
           )
