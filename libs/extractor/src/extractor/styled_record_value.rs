@@ -1,4 +1,4 @@
-use super::Preparation;
+use super::{Origin, Preparation};
 use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKind};
@@ -73,11 +73,12 @@ fn static_lookup_value(source: &Expression<'_>) -> bool {
     }
 }
 
-impl<'a> Preparation<'_, 'a> {
+impl<'a> Preparation<'_, '_, 'a> {
     pub(super) fn value(
         &mut self,
         source: &Expression<'a>,
         guard: &Expression<'a>,
+        key: &str,
     ) -> Option<Expression<'a>> {
         let source = unwrap_syntax_only(source);
         let builder = self.reads.builder;
@@ -119,8 +120,8 @@ impl<'a> Preparation<'_, 'a> {
                     ),
                     &self.reads.boolean(false),
                 );
-                let yes = self.value(&choice.consequent, &yes_guard)?;
-                let no = self.value(&choice.alternate, &no_guard)?;
+                let yes = self.value(&choice.consequent, &yes_guard, key)?;
+                let no = self.value(&choice.alternate, &no_guard, key)?;
                 Some(self.reads.choose(&test, &yes, &no))
             }
             Expression::LogicalExpression(logical) => {
@@ -143,7 +144,7 @@ impl<'a> Preparation<'_, 'a> {
                 let right_guard =
                     self.reads
                         .choose(guard, &takes_right, &self.reads.boolean(false));
-                let right = self.value(&logical.right, &right_guard)?;
+                let right = self.value(&logical.right, &right_guard, key)?;
                 Some(Expression::new_logical_expression(
                     source.span(),
                     left,
@@ -156,12 +157,28 @@ impl<'a> Preparation<'_, 'a> {
                 let mut array = array.clone_in(builder.allocator());
                 for element in &mut array.elements {
                     if let Some(value) = element.as_expression_mut() {
-                        *value = self.value(value, guard)?;
+                        *value = self.value(value, guard, key)?;
                     } else if matches!(element, ArrayExpressionElement::SpreadElement(_)) {
                         return None;
                     }
                 }
                 Some(Expression::ArrayExpression(array))
+            }
+            Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)
+                if matches!(self.origin, Origin::OrdinaryCallbacks)
+                    && crate::css_utils::theme_var_reference(source).is_none() =>
+            {
+                let call = crate::utils::wrap_direct_call(
+                    builder,
+                    source,
+                    &[Expression::new_identifier(oxc_span::SPAN, "rest", builder)],
+                );
+                let slot = self.reads.capture(&call, guard);
+                Some(crate::extractor::extract_style_from_styled::scalar::captured(
+                    builder,
+                    crate::extractor::extract_style_from_styled::scalar::Origin::OrdinaryProperty(key),
+                    slot,
+                ))
             }
             Expression::NullLiteral(_)
             | Expression::BigIntLiteral(_)

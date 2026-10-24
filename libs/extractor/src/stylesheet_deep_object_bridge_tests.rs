@@ -87,3 +87,27 @@ fn deep_object_template_value_rejects_when_interpolation_is_not_a_css_scalar() -
     );
     Ok(())
 }
+
+#[test]
+#[serial]
+fn merge_bridge_when_local_factory_composes_captured_rules_keeps_later_winners()
+-> Result<(), String> {
+    // Given
+    let expected = compile(
+        "import{css}from'@devup-ui/react';export const card=css({'@layer':{base:{color:'blue',p:3}}});",
+    )?;
+    let source = concat!(
+        "import{css}from'@devup-ui/react';",
+        "function cardStyle(color){const first={'@layer':{base:{color,p:1}}};",
+        "const second={'@layer':{base:{color:'blue',p:3}}};",
+        "let data=1;for(let i=0;i<128;i++)data={payload:data};",
+        "return css(first,second,{props:data})}",
+        "export const card=cardStyle('red');",
+    );
+    // When
+    let output = compile(source)?;
+    // Then
+    assert_eq!(output.code, expected.code);
+    assert_eq!(output.styles, expected.styles);
+    Ok(())
+}

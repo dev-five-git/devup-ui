@@ -88,3 +88,37 @@ fn empty_jsx_attribute_expressions_are_syntax_errors_not_absent_values(#[case] e
     assert!(error.contains("Cannot parse source:"), "{error}");
     assert!(error.contains("non-empty 'expression'"), "{error}");
 }
+
+#[rstest::rstest]
+#[case("css({ '@layer': { inherit: { color: props.color } } })", "inherit")]
+#[case("css`@layer initial { color: ${props.color}; }`", "@layer initial")]
+#[serial]
+fn merge_layer_diagnostics_when_rules_capture_function_local_values(
+    #[case] rules: &str,
+    #[case] location: &str,
+) {
+    // Given
+    let source = format!(
+        "import {{ css }} from '@devup-ui/react';\nexport function card(props) {{ return {rules}; }}"
+    );
+    let offset = source.find(location).unwrap_or_default();
+    let expected = crate::locate("/src/local-layer.tsx", &source, offset);
+    // When
+    let result =
+        extract_without_source_map("/src/local-layer.tsx", &source, ExtractOption::default());
+    // Then
+    let Err(error) = result else {
+        panic!("invalid component layer must be rejected");
+    };
+    let error = error.to_string();
+    assert!(
+        error
+            .lines()
+            .any(|line| line.starts_with(&format!("{expected}:"))),
+        "{error}"
+    );
+    assert!(
+        error.contains("name the layer") && error.contains("globalCss"),
+        "{error}"
+    );
+}

@@ -112,6 +112,10 @@ impl LibraryNumbers {
                 for element in &array.elements {
                     if let Some(element) = element.as_expression() {
                         self.pixelify(element);
+                    } else if let oxc_ast::ast::ArrayExpressionElement::SpreadElement(spread) =
+                        element
+                    {
+                        self.pixelify(&spread.argument);
                     }
                 }
             }
@@ -134,8 +138,27 @@ impl LibraryNumbers {
                 self.pixelify(&conditional.consequent);
                 self.pixelify(&conditional.alternate);
             }
-            Expression::LogicalExpression(logical) => self.pixelify(&logical.right),
+            Expression::LogicalExpression(logical) => {
+                if logical.operator != LogicalOperator::And {
+                    self.pixelify(&logical.left);
+                }
+                self.pixelify(&logical.right);
+            }
             Expression::ParenthesizedExpression(inner) => self.pixelify(&inner.expression),
+            Expression::ArrowFunctionExpression(arrow) => {
+                let rules = match &arrow.body {
+                    ArrowFunctionBody::FunctionBody(body) => returned(body),
+                    body => body.as_expression(),
+                };
+                if let Some(rules) = rules {
+                    self.pixelify(rules);
+                }
+            }
+            Expression::FunctionExpression(function) => {
+                if let Some(rules) = function.body.as_deref().and_then(returned) {
+                    self.pixelify(rules);
+                }
+            }
             rules => self.marks.push(Self::mark(rules)),
         }
     }
@@ -147,6 +170,10 @@ impl LibraryNumbers {
                 for element in &array.elements {
                     if let Some(element) = element.as_expression() {
                         self.pixelify_css(element);
+                    } else if let oxc_ast::ast::ArrayExpressionElement::SpreadElement(spread) =
+                        element
+                    {
+                        self.pixelify_css(&spread.argument);
                     }
                 }
             }
@@ -344,7 +371,10 @@ impl<'a> Visit<'a> for LibraryNumbers {
             Some(RulesAt::EveryArgument) => call
                 .arguments
                 .iter()
-                .filter_map(Argument::as_expression)
+                .filter_map(|argument| match argument {
+                    Argument::SpreadElement(spread) => Some(&spread.argument),
+                    argument => argument.as_expression(),
+                })
                 .collect(),
             None => vec![],
         };
@@ -1069,6 +1099,10 @@ fn generate_transformed_import(
 }
 
 #[cfg(test)]
+#[path = "numeric_context_tests.rs"]
+mod numeric_context_tests;
+
+#[cfg(test)]
 #[path = "import_alias_scoping_tests.rs"]
 mod scoping_tests;
 
@@ -1426,6 +1460,33 @@ styled.div({ top: "1px", p: 2 })
 styled.div(cond && { top: "1px" }, (flag ? { left: "2px" } : { right: "3px" }), { bottom: cond ? "4px" : "5px", left: (cond ? "7px" : "8px"), vars: flag && { x: 6 } })
 export const A = () => <><div styles={{ top: 1 }} /><Global {...props} styles={{ top: "1px" }} key={1} /></>"#
         );
+    }
+
+    #[rstest::rstest]
+    #[case("||", ["\"3px\"", "\"6px\"", "\"7px\""])]
+    #[case("??", ["\"3px\"", "\"6px\"", "\"7px\""])]
+    #[case("&&", ["3", "6", "7"])]
+    fn logical_rules_preserve_units_when_left_operand_can_supply_styles(
+        #[case] operator: &str,
+        #[case] left_units: [&str; 3],
+    ) {
+        // Given
+        let [padding, hover, layer] = left_units;
+        let source = format!(
+            "import styled from '@emotion/styled'; styled.div(p => ({{ padding: 3, lineHeight: 2, margin: 0, vars: {{ '--raw': 5 }}, _hover: {{ padding: 6 }}, '@layer': {{ base: {{ padding: 7 }} }} }}) {operator} {{ padding: 4 }});"
+        );
+        // When
+        let transformed = transform_import_aliases(
+            &source,
+            "logical-rules.tsx",
+            "@devup-ui/react",
+            &emotion_alias(),
+        );
+        // Then
+        let expected = format!(
+            "import {{ styled }} from '@devup-ui/react'; styled.div(p => ({{ padding: {padding}, lineHeight: 2, margin: 0, vars: {{ '--raw': 5 }}, _hover: {{ padding: {hover} }}, '@layer': {{ base: {{ padding: {layer} }} }} }}) {operator} {{ padding: \"4px\" }});"
+        );
+        assert_eq!(transformed, expected);
     }
 
     #[test]
