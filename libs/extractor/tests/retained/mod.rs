@@ -176,8 +176,15 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                 )
                                 .unwrap_or_else(|error| panic!("{error}"));
                             }
-                            ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
-                                panic!("fixture uses named or namespace imports")
+                            ImportDeclarationSpecifier::ImportDefaultSpecifier(default) => {
+                                let module = resolver(&import.source.value, filename)
+                                    .unwrap_or_else(|| panic!("fixture module must resolve"));
+                                write!(
+                                    imports,
+                                    "const {}=modules[{:?}].default;",
+                                    default.local.name, module.path
+                                )
+                                .unwrap_or_else(|error| panic!("{error}"));
                             }
                         }
                     }
@@ -187,13 +194,25 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                         format!("{}:{}", specifier.exported.name(), specifier.local.name())
                     }));
                 }
+                Statement::ExportDefaultDeclaration(export) => {
+                    let mut codegen = Codegen::new();
+                    codegen.print_expression(
+                        export
+                            .declaration
+                            .as_expression()
+                            .unwrap_or_else(|| panic!("fixture default must be an expression")),
+                    );
+                    exports.push(format!("default:({})", codegen.into_source_text()));
+                }
                 _ => {}
             }
         }
         program.body.retain(|statement| {
             !matches!(
                 statement,
-                Statement::ImportDeclaration(_) | Statement::ExportNamedDeclaration(_)
+                Statement::ImportDeclaration(_)
+                    | Statement::ExportNamedDeclaration(_)
+                    | Statement::ExportDefaultDeclaration(_)
             )
         });
         write!(

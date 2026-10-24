@@ -9,6 +9,10 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 #[path = "styled_record_selection.rs"]
 mod selection;
 
+#[cfg(test)]
+#[path = "styled_record_value_tests.rs"]
+mod tests;
+
 fn lookup_object<'a, 'b>(source: &'b Expression<'a>) -> &'b Expression<'a> {
     match source {
         Expression::TSAsExpression(value) => lookup_object(&value.expression),
@@ -50,7 +54,7 @@ fn template_free_lookup_index(source: &Expression<'_>) -> bool {
 }
 
 /// Only literal data can be replaced by the extractor's finite class lookup.
-fn static_lookup_value(source: &Expression<'_>) -> bool {
+fn static_lookup_value(source: &Expression<'_>, rules: bool) -> bool {
     let source = unwrap_syntax_only(source);
     if pure_lookup_literal(source) && get_string_by_literal_expression(source).is_some() {
         return true;
@@ -62,11 +66,11 @@ fn static_lookup_value(source: &Expression<'_>) -> bool {
                     && selection::property_key(&property.key).is_some()
                     && (property.computed
                         || selection::property_key(&property.key).as_deref() != Some("__proto__"))
-                    && static_lookup_value(&property.value))
+                    && if rules { static_lookup_value(&property.value, true) } else { pure_lookup_literal(&property.value) })
         }),
         Expression::ArrayExpression(array) => array.elements.iter().all(|element| match element {
             ArrayExpressionElement::Elision(_) => true,
-            _ => element.as_expression().is_some_and(static_lookup_value),
+            _ => element.as_expression().is_some_and(|value| if rules { static_lookup_value(value, true) } else { pure_lookup_literal(value) }),
         }),
         Expression::NullLiteral(_) => true,
         _ => false,
@@ -78,6 +82,7 @@ impl<'a> Preparation<'_, 'a> {
         &mut self,
         source: &Expression<'a>,
         guard: &Expression<'a>,
+        rules: bool,
     ) -> Option<Expression<'a>> {
         let source = unwrap_syntax_only(source);
         let builder = self.reads.builder;
@@ -89,7 +94,7 @@ impl<'a> Preparation<'_, 'a> {
                 if matches!(
                     lookup_object(&member.object),
                     Expression::ObjectExpression(_) | Expression::ArrayExpression(_)
-                ) && static_lookup_value(&member.object)
+                ) && static_lookup_value(&member.object, rules)
                     && template_free_lookup_index(&member.expression) =>
             {
                 let mut member = member.clone_in(builder.allocator());
@@ -119,8 +124,8 @@ impl<'a> Preparation<'_, 'a> {
                     ),
                     &self.reads.boolean(false),
                 );
-                let yes = self.value(&choice.consequent, &yes_guard)?;
-                let no = self.value(&choice.alternate, &no_guard)?;
+                let yes = self.value(&choice.consequent, &yes_guard, rules)?;
+                let no = self.value(&choice.alternate, &no_guard, rules)?;
                 Some(self.reads.choose(&test, &yes, &no))
             }
             Expression::LogicalExpression(logical) => {
@@ -143,7 +148,7 @@ impl<'a> Preparation<'_, 'a> {
                 let right_guard =
                     self.reads
                         .choose(guard, &takes_right, &self.reads.boolean(false));
-                let right = self.value(&logical.right, &right_guard)?;
+                let right = self.value(&logical.right, &right_guard, rules)?;
                 Some(Expression::new_logical_expression(
                     source.span(),
                     left,
@@ -156,7 +161,7 @@ impl<'a> Preparation<'_, 'a> {
                 let mut array = array.clone_in(builder.allocator());
                 for element in &mut array.elements {
                     if let Some(value) = element.as_expression_mut() {
-                        *value = self.value(value, guard)?;
+                        *value = self.value(value, guard, rules)?;
                     } else if matches!(element, ArrayExpressionElement::SpreadElement(_)) {
                         return None;
                     }

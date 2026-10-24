@@ -120,7 +120,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       {icon && (
         <Center
           aria-hidden
-
           boxSize="24px"
           className={classNames?.icon}
           color={

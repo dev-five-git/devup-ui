@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Add regression coverage for extraction safety, property pruning and source-order behavior; remove unreachable post-flatten spread handling and consolidate unknown property-shape rejection. Extraction output and build errors are unchanged.",
+  "date": "2026-10-24T00:00:00.000Z"
+}

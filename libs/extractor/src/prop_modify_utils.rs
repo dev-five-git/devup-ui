@@ -19,6 +19,9 @@ use oxc_span::SPAN;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+#[cfg(test)]
+mod written_tests;
+
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
 /// Returns `None` only when both branches are `None`.
@@ -522,15 +525,8 @@ pub fn get_class_name_expression<'a>(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
-    let mut tailwind = TailwindClassName {
-        style_order,
-        filename,
-        styles: Vec::new(),
-        rules: BTreeSet::new(),
-    };
-    let compiled = class_name_prop
-        .as_ref()
-        .and_then(|class_name| tailwind.compile_expression(ast_builder, class_name));
+    let (tailwind_styles, compiled) =
+        compile_tailwind_class_name(ast_builder, class_name_prop.as_ref(), style_order, filename);
     // A rebuilt `cond && "a"` still evaluates to `false`, which React would
     // render as `class="false"`, so it needs the same falsy guard as a passthrough.
     let class_name_to_use = compiled
@@ -548,7 +544,25 @@ pub fn get_class_name_expression<'a>(
     }
     let expression = merge_string_expressions(ast_builder, &class_expressions);
 
-    (expression, tailwind.into_styles())
+    (expression, tailwind_styles)
+}
+
+/// Returns extracted Tailwind styles and a replacement only when classes compiled.
+pub(crate) fn compile_tailwind_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_name: Option<&Expression<'a>>,
+    style_order: Option<u8>,
+    filename: Option<&str>,
+) -> (Vec<ExtractStyleValue>, Option<Expression<'a>>) {
+    let mut tailwind = TailwindClassName {
+        style_order,
+        filename,
+        styles: Vec::new(),
+        rules: BTreeSet::new(),
+    };
+    let compiled =
+        class_name.and_then(|class_name| tailwind.compile_expression(ast_builder, class_name));
+    (tailwind.into_styles(), compiled)
 }
 
 /// Compiles the Tailwind classes of a `cva(base, { variants, compoundVariants })`
@@ -998,11 +1012,15 @@ fn last_written<'a>(
                     SPAN,
                     Expression::new_string_literal(SPAN, key, None, ast_builder),
                     oxc_syntax::operator::BinaryOperator::In,
-                    crate::utils::wrap_direct_call(
-                        ast_builder,
-                        &Expression::new_identifier(SPAN, "Object", ast_builder),
-                        &[spread.clone_in(ast_builder.allocator())],
-                    ),
+                    if snapshot_reference(spread) {
+                        spread.clone_in(ast_builder.allocator())
+                    } else {
+                        crate::utils::wrap_direct_call(
+                            ast_builder,
+                            &Expression::new_identifier(SPAN, "Object", ast_builder),
+                            &[spread.clone_in(ast_builder.allocator())],
+                        )
+                    },
                     ast_builder,
                 );
                 Expression::new_conditional_expression(
@@ -1017,6 +1035,13 @@ fn last_written<'a>(
         });
     }
     value
+}
+
+/// Synthetic hygienic names identify null-prototype data snapshots, not user bindings.
+fn snapshot_reference(expression: &Expression<'_>) -> bool {
+    matches!(expression, Expression::Identifier(identifier)
+        if identifier.span == SPAN && identifier.reference_id.get().is_none()
+            && identifier.name.starts_with("__devupSpread"))
 }
 
 /// Whether the object literal `spread` names `key`, so it always holds it

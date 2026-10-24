@@ -211,17 +211,39 @@ fn whole_value_when_numeric_template_lookup_has_effects(
     let declarations: Vec<_> = output
         .styles
         .iter()
-        .filter_map(|style| {
-            let crate::ExtractStyleValue::Static(value) = style else {
-                return None;
-            };
-            assert_eq!(value.property(), "opacity");
-            let Some(crate::extract_style::style_property::StyleProperty::ClassName(name)) =
-                style.extract(if single_css { None } else { Some("lookup.ts") })
-            else {
-                panic!("static opacity must have a class");
-            };
-            Some((name, value.value()))
+        .map(|style| {
+            use crate::extract_style::style_property::StyleProperty;
+            match (
+                style,
+                style.extract(if single_css { None } else { Some("lookup.ts") }),
+            ) {
+                (crate::ExtractStyleValue::Static(value), Some(StyleProperty::ClassName(name))) => {
+                    serde_json::json!([
+                        name,
+                        value.property(),
+                        value.value(),
+                        null,
+                        value.level(),
+                        value.selector().map(ToString::to_string)
+                    ])
+                }
+                (
+                    crate::ExtractStyleValue::Dynamic(value),
+                    Some(StyleProperty::Variable {
+                        class_name,
+                        variable_name,
+                        ..
+                    }),
+                ) => serde_json::json!([
+                    class_name,
+                    value.property(),
+                    null,
+                    variable_name,
+                    value.level(),
+                    value.selector().map(ToString::to_string)
+                ]),
+                other => panic!("unexpected lookup declaration: {:?}", other.0),
+            }
         })
         .collect();
     let declarations = serde_json::to_string(&declarations)
@@ -238,7 +260,7 @@ fn whole_value_when_numeric_template_lookup_has_effects(
     let code = Codegen::new().build(&program).code.replace(" as const", "");
     // When: execute the actual emitted renderer, retaining definition-time observations.
     let script = format!(
-        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const rendered=Card.render({{}},null);const names=rendered.props.className.split(' ');const inline=Object.values(rendered.props.style||{{}}).filter(value=>value!=null).map(String);const selected={declarations}.filter(([name])=>names.includes(name)).map(([,value])=>value);JSON.stringify([before,String(Number(inline.length?inline[0]:selected[0])),enabled?inline:[],trace]);"
+        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const rendered=Card.render({{}},null);const names=rendered.props.className.split(' ');const selected={declarations}.filter(([name])=>names.includes(name)).map(([,property,value,variable,level,selector])=>[property,String(Number(variable?(rendered.props.style||{{}})[variable]:value)),level,selector]).sort();JSON.stringify([before,selected,trace]);"
     );
     let mut context = Context::default();
     let result = context
@@ -252,12 +274,7 @@ fn whole_value_when_numeric_template_lookup_has_effects(
             .as_string()
             .unwrap_or_else(|| panic!("emitted numeric template observation must be JSON"))
             .to_std_string_escaped(),
-        serde_json::json!([
-            [],
-            expected_opacity,
-            if enabled { vec!["0.5"] } else { vec![] },
-            expected_trace
-        ])
-        .to_string()
+        serde_json::json!([[], [["opacity", expected_opacity, 0, null]], expected_trace])
+            .to_string()
     );
 }

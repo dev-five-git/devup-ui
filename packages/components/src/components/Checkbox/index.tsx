@@ -70,13 +70,9 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
               _hover: !disabled && {
                 bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 100%, #000 15%), color-mix(in srgb, var(--primary, #6670F9) 100%, #FFF 15%))',
               },
-              _disabled: {
-                bg: 'light-dark(#F0F0F3, #47474A)',
-              },
+              _disabled: { bg: 'light-dark(#F0F0F3, #47474A)' },
             }}
-            _disabled={{
-              bg: 'light-dark( #F0F0F3, #47474A)',
-            }}
+            _disabled={{ bg: 'light-dark( #F0F0F3, #47474A)' }}
             _hover={
               !disabled && {
                 bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 10%, #FFF 90%), color-mix(in srgb, var(--primary, #6670F9) 20%, #000 80%))',
@@ -125,18 +121,14 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
                   ? 'light-dark(#D6D7DE, #47474A)'
                   : 'var(--checkIcon, #FFF)',
               }}
-              styleVars={{
-                checkIcon: colors?.checkIcon,
-              }}
+              styleVars={{ checkIcon: colors?.checkIcon }}
               zIndex="1"
             />
           )}
         </label>
 
         <label
-          className={css({
-            cursor: disabled ? 'not-allowed' : 'pointer',
-          })}
+          className={css({ cursor: disabled ? 'not-allowed' : 'pointer' })}
           htmlFor={generateId}
         >
           {typeof children === 'string' ? (
@@ -147,9 +139,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
                   : 'var(--text, light-dark(#2F2F2F, #EDEDED))'
               }
               fontSize="14px"
-              styleVars={{
-                text: colors?.text,
-              }}
+              styleVars={{ text: colors?.text }}
               userSelect="none"
             >
               {children}

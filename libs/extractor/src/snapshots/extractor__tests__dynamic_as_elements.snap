@@ -29,7 +29,7 @@ expression: outputs
     ),
     (
         "<List>{items.map((i) => <Box key={i.id} as={i.href ? 'a' : Link} p={1} />)}</List>",
-        "<List>{items.map((i) => i.href ? <a key={i.id} className=\"a-a\" /> : <Link key={i.id} className=\"a-a\" />)}</List>;",
+        "<List>{items.map((i) => ((__devupValue0, DevupAs0) => <DevupAs0 key={__devupValue0} className=\"a-a\" />)(i.id, (i.href ? \"a\" : Link) || \"div\"))}</List>;",
     ),
     (
         "<Box as={isLink && 'a'} />",
@@ -73,7 +73,7 @@ expression: outputs
     ),
     (
         "<Box as={['div', 'a'][i]} {...register('x')} p={1} />",
-        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", register(\"x\"));",
+        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", {\n\t__proto__: null,\n\t...register(\"x\")\n});",
     ),
     (
         "<Text as={b ? 'h1' : undefined} />",

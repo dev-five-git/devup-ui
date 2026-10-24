@@ -65,6 +65,7 @@ struct Base<'a> {
 /// renders in its place: what it renders, its classes and styles, and its
 /// attrs, as the extension applies them before its own
 pub struct StyledDefinition<'a> {
+    pub(crate) takes_styles: bool,
     name: String,
     target: Option<Expression<'a>>,
     bound: Option<Expression<'a>>,
@@ -168,6 +169,7 @@ impl<'a> StyledDefinition<'a> {
         }
         let allocator = builder.allocator();
         let mut inherited = Self {
+            takes_styles: self.takes_styles,
             name: self.name.clone(),
             target: self.target.as_ref().map(|value| value.clone_in(allocator)),
             bound: self.bound.as_ref().map(|value| value.clone_in(allocator)),
@@ -238,13 +240,18 @@ impl<'a> StyledDefinition<'a> {
 }
 
 impl StyledDefinition<'_> {
+    /// Whether the styles and attrs of this component read the prop `name`
+    #[must_use]
+    pub fn reads_prop(&self, name: &str) -> bool {
+        self.reads.whole || self.reads.names.iter().any(|read| read == name)
+    }
+
     /// Whether an element using this component keeps passing the prop `name`:
     /// what its styles read, what it passes on, and what React or the
     /// component itself takes
     #[must_use]
     pub fn takes(&self, name: &str) -> bool {
-        self.reads.whole
-            || self.reads.names.iter().any(|read| read == name)
+        self.reads_prop(name)
             || matches!(
                 name,
                 "className" | "style" | "as" | "forwardedAs" | "key" | "ref" | "children"
@@ -314,6 +321,7 @@ impl<'a> StyledDefinition<'a> {
     #[must_use]
     pub fn clone_in<'b>(&self, allocator: &'b oxc_allocator::Allocator) -> StyledDefinition<'b> {
         StyledDefinition {
+            takes_styles: self.takes_styles,
             name: self.name.clone(),
             target: self
                 .target
@@ -607,6 +615,7 @@ impl<'a> Base<'a> {
         let allocator = ast_builder.allocator();
         let (reads, forward) = props;
         StyledDefinition {
+            takes_styles: false,
             name: self.name.clone(),
             target: self
                 .target

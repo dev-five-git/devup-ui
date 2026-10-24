@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { Box, css, keyframes, globalCss } from '@devup-ui/react';\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = 'a' + SIZE;\nconst TINY = 0.0000001;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = 'px';\nconst SELF = SELF;\nlet mutable = 1;\nexport const a = <Box p={DOUBLE} m={UNIT} w={SIZE + 1} h={HALF} content={LABEL} top={`${TINY}px`} left={`${HUGE}px`} right={ZERO + PX} bottom={mutable} zIndex={SELF} />;\nexport const b = css({ padding: `${SIZE * 2}px`, margin: SIZE - 1, width: SIZE * SIZE, height: (SIZE) });\nexport const k = keyframes({ from: { opacity: SIZE / 8 } });\nglobalCss({ body: { padding: UNIT } });\nexport const c = <Box p={SIZE / 0} m={PX - 1} w={`${PX}${other}`} h={SIZE % 3} />;\",\nExtractOption::default(),).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import { Box, css, keyframes, globalCss } from '@devup-ui/react';\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = 'a' + SIZE;\nconst TINY = 0.0000001;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = 'px';\nvar SELF = SELF;\nlet mutable = 1;\nexport const a = <Box p={DOUBLE} m={UNIT} w={SIZE + 1} h={HALF} content={LABEL} top={`${TINY}px`} left={`${HUGE}px`} right={ZERO + PX} bottom={mutable} zIndex={SELF} />;\nexport const b = css({ padding: `${SIZE * 2}px`, margin: SIZE - 1, width: SIZE * SIZE, height: (SIZE) });\nexport const k = keyframes({ from: { opacity: SIZE / 8 } });\nglobalCss({ body: { padding: UNIT } });\nexport const c = <Box p={SIZE / 0} m={PX - 1} w={`${PX}${other}`} h={SIZE % 3} />;\",\nExtractOption::default(),).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -172,7 +172,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "`${`px`}${other}`",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },
@@ -203,5 +203,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = \"a\" + SIZE;\nconst TINY = 1e-7;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = \"px\";\nconst SELF = SELF;\nlet mutable = 1;\nexport const a = <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h a-i a-j\" style={{\n\t\"--a\": mutable,\n\t\"--b\": SELF\n}} />;\nexport const b = \"a-k a-l a-m a-n\";\nexport const k = \"a-o\";\n;\nexport const c = <div className=\"a-p a-q a-r a-d\" style={{\n\t\"--c\": 4/0,\n\t\"--d\": `px`-1,\n\t\"--e\": `${`px`}${other}`\n}} />;\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nconst SIZE = 4;\nconst UNIT = `${SIZE}px`;\nconst DOUBLE = SIZE * 2;\nconst HALF = SIZE / 2 - 1;\nconst LABEL = \"a\" + SIZE;\nconst TINY = 1e-7;\nconst HUGE = 1e21;\nconst ZERO = -0;\nconst PX = \"px\";\nvar SELF = SELF;\nlet mutable = 1;\nexport const a = <div className=\"a-a a-b a-c a-d a-e a-f a-g a-h a-i a-j\" style={{\n\t\"--a\": mutable,\n\t\"--b\": SELF\n}} />;\nexport const b = \"a-k a-l a-m a-n\";\nexport const k = \"a-o\";\n;\nexport const c = ((__devupValue0) => <div className=\"a-p a-q a-r a-d\" style={{\n\t\"--c\": 4/0,\n\t\"--d\": `px`-1,\n\t\"--e\": __devupValue0\n}} />)(`${\"px\"}${other}`);\n",
 }

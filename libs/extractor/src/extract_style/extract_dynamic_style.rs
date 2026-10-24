@@ -169,10 +169,12 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
         });
         let variable_name =
             sheet_to_variable_name(self.property.as_str(), self.level, selector.as_deref());
-        let declaration = format!(
-            "var({variable_name}){}",
-            if self.important { " !important" } else { "" }
-        );
+        let declaration = {
+            format!(
+                "var({variable_name}){}",
+                if self.important { " !important" } else { "" }
+            )
+        };
         StyleProperty::Variable {
             class_name: ordinary_class.unwrap_or_else(|| {
                 sheet_to_classname(
@@ -191,79 +193,5 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_dynamic_style() {
-        let style = ExtractDynamicStyle::new("color", 0, "primary", None);
-        assert_eq!(style.property(), "color");
-        assert_eq!(style.level(), 0);
-        assert_eq!(style.selector(), None);
-        assert_eq!(style.identifier(), "primary");
-        assert_eq!(style.style_order(), None);
-        assert!(!style.important());
-    }
-
-    #[test]
-    fn test_strip_important_plain() {
-        let (id, important) = strip_important("color".to_string());
-        assert_eq!(id, "color");
-        assert!(!important);
-    }
-
-    #[test]
-    fn test_debug_dynamic_style() {
-        let style = ExtractDynamicStyle::new("color", 2, "value", None);
-
-        assert_eq!(
-            format!("{style:?}"),
-            "ExtractDynamicStyle { property: \"color\", level: 2, identifier: \"value\", selector: None, style_order: None }"
-        );
-    }
-
-    #[test]
-    fn test_strip_important_when_not_a_suffix() {
-        let (id, important) = strip_important("color !important fallback".to_string());
-
-        assert_eq!(id, "color !important fallback");
-        assert!(!important);
-    }
-
-    #[test]
-    fn test_strip_important_template_literal() {
-        // Template literal: `${color} !important`
-        let (id, important) = strip_important("`${color} !important`".to_string());
-        assert_eq!(id, "`${color}`");
-        assert!(important);
-    }
-
-    #[test]
-    fn test_strip_important_double_quote() {
-        let (id, important) = strip_important("\"red !important\"".to_string());
-        assert_eq!(id, "\"red\"");
-        assert!(important);
-    }
-
-    #[test]
-    fn test_strip_important_single_quote() {
-        let (id, important) = strip_important("'red !important'".to_string());
-        assert_eq!(id, "'red'");
-        assert!(important);
-    }
-
-    #[test]
-    fn test_strip_important_bare() {
-        let (id, important) = strip_important("something !important".to_string());
-        assert_eq!(id, "something");
-        assert!(important);
-    }
-
-    #[test]
-    fn test_dynamic_style_with_important() {
-        let style = ExtractDynamicStyle::new("background", 0, "`${color} !important`", None);
-        assert_eq!(style.property(), "background");
-        assert_eq!(style.identifier(), "`${color}`");
-        assert!(style.important());
-    }
-}
+#[path = "dynamic_style_tests.rs"]
+mod tests;

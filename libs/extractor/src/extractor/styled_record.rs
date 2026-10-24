@@ -70,7 +70,12 @@ impl<'a> Preparation<'_, 'a> {
                                 key.as_str(),
                                 "styleOrder" | "styleVars" | "props" | "params" | "as"
                             ) {
-                                property.value = self.value(&property.value, guard)?;
+                                let rules = key.starts_with(['_', '@'])
+                                    || key == "selectors"
+                                    || super::extract_style_from_expression::is_nested_selector_key(
+                                        &key,
+                                    );
+                                property.value = self.value(&property.value, guard, rules)?;
                             }
                             property.shorthand = false;
                             let entry = Entry {

@@ -3890,6 +3890,25 @@ mod tests {
 
     #[test]
     #[serial]
+    fn authored_rules_when_unknown_spreads_follow_keep_important_and_responsive_values() {
+        let css = pipeline_css(
+            Theme::default(),
+            "export const a = (rest) => <Box bg={['red', null, '$primary']} color=\"blue !important\" {...rest} />;",
+        );
+
+        let control = pipeline_css(
+            Theme::default(),
+            "export const a = (rest) => <Box bg={['red', null, '$primary']} color=\"blue !important\" />;",
+        );
+        assert_eq!(css, control);
+        assert!(css.contains("background:red"), "{css}");
+        assert!(css.contains("color:blue !important"), "{css}");
+        assert!(css.contains("@media(min-width:768px)"), "{css}");
+        assert!(css.contains("var(--primary)"), "{css}");
+    }
+
+    #[test]
+    #[serial]
     #[allow(clippy::literal_string_with_formatting_args)]
     fn test_at_rule_pipeline() {
         for (source, expected) in [

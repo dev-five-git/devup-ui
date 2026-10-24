@@ -1,3 +1,5 @@
+#[path = "retained/capability.rs"]
+mod capability;
 mod retained;
 
 use retained::{BASE, run};
