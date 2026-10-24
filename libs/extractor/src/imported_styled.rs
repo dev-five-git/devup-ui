@@ -267,6 +267,7 @@ impl<'a> Reader<'_, 'a> {
         );
         visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
         visitor.import_css(inlined.css_styles);
+        visitor.errors.extend(inlined.errors);
         visitor.unknown_bindings(&inlined.unknown);
         visitor.changed_bindings(inlined.changed);
         visitor.takes_css_prop(css_prop);

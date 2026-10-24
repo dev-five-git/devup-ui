@@ -1,11 +1,14 @@
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
-use oxc_ast::{ast::Expression, builder::AstBuilder};
+use oxc_ast::{
+    ast::{ArrowFunctionBody, Expression},
+    builder::AstBuilder,
+};
 use oxc_span::{GetSpan, SPAN};
 
 use crate::utils::is_same_expression;
 
 /// Ordered reads shared by the class and variable expressions of one render.
-pub(super) struct Evaluations<'b, 'a> {
+pub(crate) struct Evaluations<'b, 'a> {
     pub builder: &'b AstBuilder<'a>,
     source: String,
     pub bindings: Vec<(String, Expression<'a>)>,
@@ -150,18 +153,18 @@ pub(super) fn visit_style_expressions<'a>(
     }
 }
 
-pub(super) fn bind_render<'a>(
+/// Ordered captures owned directly by a compiler-generated render arrow.
+pub(crate) fn bind_render_body<'a>(
     builder: &AstBuilder<'a>,
     bindings: Vec<(String, Expression<'a>)>,
     body: Expression<'a>,
-) -> Expression<'a> {
+) -> ArrowFunctionBody<'a> {
     use oxc_allocator::Vec as ArenaVec;
     use oxc_ast::ast::{
-        ArrowFunctionBody, BindingPattern, FormalParameterKind, FormalParameters, Statement,
-        VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+        BindingPattern, Statement, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
     };
     if bindings.is_empty() {
-        return body;
+        return body.into();
     }
     // Sibling declarations preserve dependent read order without one scope per capture.
     let mut statements = ArenaVec::with_capacity_in(bindings.len() + 1, builder);
@@ -202,6 +205,19 @@ pub(super) fn bind_render<'a>(
         )));
     }
     statements.push(Statement::new_return_statement(SPAN, Some(body), builder));
+    ArrowFunctionBody::new_function_body(SPAN, ArenaVec::new_in(builder), statements, builder)
+}
+
+pub(crate) fn bind_render<'a>(
+    builder: &AstBuilder<'a>,
+    bindings: Vec<(String, Expression<'a>)>,
+    body: Expression<'a>,
+) -> Expression<'a> {
+    use oxc_allocator::Vec as ArenaVec;
+    use oxc_ast::ast::{FormalParameterKind, FormalParameters};
+    if bindings.is_empty() {
+        return body;
+    }
     let arrow = Expression::new_arrow_function_expression(
         SPAN,
         false,
@@ -214,7 +230,7 @@ pub(super) fn bind_render<'a>(
             builder,
         ),
         None,
-        ArrowFunctionBody::new_function_body(SPAN, ArenaVec::new_in(builder), statements, builder),
+        bind_render_body(builder, bindings, body),
         builder,
     );
     Expression::new_call_expression(

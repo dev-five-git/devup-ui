@@ -31,6 +31,9 @@ use crate::extractor::extract_style_from_expression::{
 use crate::stylex::StylexFunction;
 use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 
+#[path = "consumed_references.rs"]
+mod consumed_references;
+use consumed_references::ConsumedReferences;
 #[cfg(test)]
 #[path = "imported_constants_px_tests.rs"]
 mod px_tests;
@@ -219,10 +222,86 @@ pub(crate) struct Inlined {
     pub css_failures: Vec<String>,
     pub unknown: Unknown,
     pub changed: Changed,
+    /// Style objects declared below the top level that styles read, which
+    /// code elsewhere reads too, so the build cannot tell they are unchanged
+    pub errors: Vec<(u32, String)>,
     /// The semantic analysis of the program as parsed, so the visitor reuses
     /// it: constants inlined later leave the ids of surviving references as
     /// they are. `None` when no analysis was needed
     pub scoping: Option<Rc<Scoping>>,
+}
+
+/// A `const` below the top level of the module holding an object or array
+/// literal that is all written out, which styles read as they read top-level
+/// constants when nothing else reads it
+struct LocalConstant {
+    name: String,
+    /// Where its binding is written
+    binding: u32,
+    value: Constant,
+}
+
+/// The `const` declarations holding object or array literals all written out
+#[derive(Default)]
+struct LocalConstants {
+    found: Vec<LocalConstant>,
+}
+
+/// `expression` as the value it writes out, when every part of it is written
+/// out as a literal
+fn written_out(expression: &Expression<'_>) -> Option<Constant> {
+    match expression {
+        Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+        Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
+        Expression::NullLiteral(_) => Some(Constant::Null),
+        Expression::ParenthesizedExpression(inner) => written_out(&inner.expression),
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .map(|element| written_out(element.as_expression()?))
+            .collect::<Option<Vec<_>>>()
+            .map(|values| Constant::Array(Rc::new(values))),
+        Expression::ObjectExpression(object) => object
+            .properties
+            .iter()
+            .map(|property| {
+                let ObjectPropertyKind::ObjectProperty(property) = property else {
+                    return None;
+                };
+                if property.computed
+                    || property.method
+                    || property.kind != oxc_ast::ast::PropertyKind::Init
+                {
+                    return None;
+                }
+                let key = crate::utils::get_str_by_property_key(&property.key)?;
+                Some((key.to_string(), written_out(&property.value)?))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|entries| Constant::Record(Rc::new(entries))),
+        expression => crate::utils::js_number_literal(expression).map(Constant::Number),
+    }
+}
+
+impl<'a> Visit<'a> for LocalConstants {
+    fn visit_variable_declaration(&mut self, declaration: &oxc_ast::ast::VariableDeclaration<'a>) {
+        if declaration.kind == VariableDeclarationKind::Const {
+            for declarator in &declaration.declarations {
+                if let oxc_ast::ast::BindingPattern::BindingIdentifier(binding) = &declarator.id
+                    && let Some(init) = &declarator.init
+                    && let Some(value) = written_out(init)
+                    && matches!(value, Constant::Record(_) | Constant::Array(_))
+                {
+                    self.found.push(LocalConstant {
+                        name: binding.name.to_string(),
+                        binding: binding.span.start,
+                        value,
+                    });
+                }
+            }
+        }
+        walk::walk_variable_declaration(self, declaration);
+    }
 }
 
 /// Bindings styles read that hold an object or array code changes, whole or
@@ -484,18 +563,27 @@ fn inline_in<'a>(
             }
         }
     }
+    style.visit_program(program);
     let mut read = StyleReads {
         style: &style,
         css_props: &css_props,
         names: FxHashSet::default(),
+        locals: FxHashSet::default(),
         depth: 0,
         class_names: Vec::new(),
     };
     read.visit_program(program);
-    if read.names.is_empty() {
+    if read.names.is_empty() && read.locals.is_empty() {
         return Inlined::default();
     }
     let names = read.names;
+    let mut locals = LocalConstants::default();
+    locals.visit_program(program);
+    locals.found.retain(|local| {
+        read.locals
+            .iter()
+            .any(|symbol| scoping.symbol_span(*symbol).start == local.binding)
+    });
     let mut modules = Modules {
         resolver,
         option,
@@ -575,7 +663,7 @@ fn inline_in<'a>(
         // Constants are only worth reading when a style reads a name that may
         // hold one
         let reads_math = names.contains("Math") && !scope.binds("Math");
-        if !reads_math && !names.iter().any(|name| scope.binds(name)) {
+        if !reads_math && locals.found.is_empty() && !names.iter().any(|name| scope.binds(name)) {
             return Inlined::default();
         }
         for name in &names {
@@ -632,8 +720,21 @@ fn inline_in<'a>(
         reads_math
     };
     inlined.dependencies = modules.exports.into_keys().collect();
+    let mut declared = Vec::new();
+    for symbol in scoping.symbol_ids() {
+        if scoping.symbol_scope_id(symbol) != scoping.root_scope_id()
+            && scoping.symbol_flags(symbol).is_const_variable()
+            && let Some(local) = locals
+                .found
+                .iter()
+                .find(|local| local.binding == scoping.symbol_span(symbol).start)
+        {
+            symbols.insert(symbol, local.value.clone());
+            declared.push((symbol, local));
+        }
+    }
     if !symbols.is_empty() || reads_math {
-        Inline {
+        let mut inline = Inline {
             ast_builder,
             scoping,
             symbols: &symbols,
@@ -646,9 +747,18 @@ fn inline_in<'a>(
             px: false,
             position: InlinePosition::Rules,
             marks: px,
+            replaced: ConsumedReferences::new(scoping),
             class_names: Vec::new(),
+        };
+        inline.visit_program(program);
+        for (symbol, local) in declared {
+            let read = inline.replaced.count(symbol);
+            if read > 0 && read < scoping.get_resolved_reference_ids(symbol).len() {
+                inlined
+                    .errors
+                    .push((local.binding, crate::utils::local_style_error(&local.name)));
+            }
         }
-        .visit_program(program);
     }
     inlined
 }
@@ -825,12 +935,34 @@ impl<'s> StyleSymbols<'s> {
         }
     }
 }
+impl<'a> Visit<'a> for StyleSymbols<'_> {
+    fn visit_variable_declarator(&mut self, declarator: &oxc_ast::ast::VariableDeclarator<'a>) {
+        if let Some(Expression::Identifier(init)) = &declarator.init
+            && let Some(from) = binding_of(self.scoping, init)
+            && let Some(to) = declarator
+                .id
+                .get_binding_identifier()
+                .and_then(|identifier| identifier.symbol_id.get())
+        {
+            for symbols in [&mut self.roots, &mut self.functions, &mut self.css] {
+                if symbols.contains(&from) {
+                    symbols.insert(to);
+                }
+            }
+        }
+        walk::walk_variable_declarator(self, declarator);
+    }
+}
+
 /// Names read inside the props of the package's components and the arguments
 /// of its functions
 struct StyleReads<'s> {
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
     names: FxHashSet<String>,
+    /// Local bindings demanded by genuine style positions, separate from
+    /// the root names used for module lookup and diagnostics.
+    locals: FxHashSet<SymbolId>,
     depth: usize,
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
@@ -848,8 +980,12 @@ impl StyleReads<'_> {
 
 impl<'a> Visit<'a> for StyleReads<'_> {
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
-        if self.depth > 0 && reads_top_level(self.style.scoping, identifier) {
-            self.names.insert(identifier.name.to_string());
+        if self.depth > 0 {
+            if reads_top_level(self.style.scoping, identifier) {
+                self.names.insert(identifier.name.to_string());
+            } else if let Some(symbol) = binding_of(self.style.scoping, identifier) {
+                self.locals.insert(symbol);
+            }
         }
     }
 
@@ -2100,6 +2236,8 @@ struct Inline<'s, 'a> {
     /// Where a constant stands as a value or rules of a library reading
     /// numbers as `px` lengths
     marks: &'s crate::import_alias_visit::PxMarks,
+    /// Semantic references erased by style folding or constant selection.
+    replaced: ConsumedReferences<'s>,
     /// The bindings the `<ClassNames>` child functions around take `css` and
     /// `cx` by
     class_names: Vec<SymbolId>,
@@ -2199,15 +2337,20 @@ impl<'a> Inline<'_, 'a> {
 
     /// The side of a condition or of `&&`, `||` or `??` a constant or literal
     /// chooses, taken out of `expression`
-    fn chosen(&self, expression: &mut Expression<'a>) -> Option<Expression<'a>> {
+    fn chosen(&mut self, expression: &mut Expression<'a>) -> Option<Expression<'a>> {
         use oxc_allocator::TakeIn;
 
         let allocator = self.ast_builder;
         match expression {
             Expression::ConditionalExpression(conditional) => {
-                Some(if self.holds(&conditional.test)? {
+                let holds = self.holds(&conditional.test)?;
+                self.replaced.consume(&conditional.test);
+                // Only scan the erased side; the selected side is visited normally.
+                Some(if holds {
+                    self.replaced.consume(&conditional.alternate);
                     conditional.consequent.take_in(allocator)
                 } else {
+                    self.replaced.consume(&conditional.consequent);
                     conditional.alternate.take_in(allocator)
                 })
             }
@@ -2221,8 +2364,10 @@ impl<'a> Inline<'_, 'a> {
                     }
                 };
                 Some(if keep_left {
+                    self.replaced.consume(&logical.right);
                     logical.left.take_in(allocator)
                 } else {
+                    self.replaced.consume(&logical.left);
                     logical.right.take_in(allocator)
                 })
             }
@@ -2396,6 +2541,7 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 if let Some(literal) = self.literal(&constant) {
                     let span = expression.span();
                     let marked = self.marks.contains(&(span.start, span.end));
+                    self.replaced.consume(expression);
                     *expression = literal;
                     if marked {
                         px_number(self.ast_builder, expression);

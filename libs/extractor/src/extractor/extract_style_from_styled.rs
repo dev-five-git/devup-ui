@@ -15,16 +15,15 @@ use crate::{
         ExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
         styled_record::prepare,
-        styled_record_evaluation::{Evaluations, bind_render, visit_style_expressions},
+        styled_record_evaluation::{Evaluations, bind_render_body, visit_style_expressions},
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
     styled_reads::{Forward, Reads, withheld},
     utils::{
-        STYLE_OBJECT, StyleArguments, build_time_error, call_with_values, expression_to_code,
-        merge_object_expressions, readable_code, reads_directly, style_arguments,
-        uncomposable_error, unplaced_error, unreadable_styles, unwrap_syntax_only,
-        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
+        STYLE_OBJECT, build_time_error, call_with_values, expression_to_code,
+        merge_object_expressions, readable_code, unplaced_error, unreadable_styles,
+        unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -40,6 +39,16 @@ use oxc_ast_visit::VisitMut;
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
+
+#[path = "styled_props.rs"]
+mod props;
+
+#[path = "styled_arguments.rs"]
+mod arguments;
+
+#[cfg(test)]
+#[path = "styled_render_body_tests.rs"]
+mod render_body_tests;
 
 /// The binding a styled component reads the component it renders through, when
 /// only the runtime gives that component
@@ -216,6 +225,9 @@ impl<'a> StyledDefinition<'a> {
         }
         for (_, value) in &mut inherited.bindings {
             rename.visit_expression(value);
+        }
+        for class in &mut inherited.classes {
+            rename.visit_expression(class);
         }
         for style in &mut inherited.styles {
             visit_style_expressions(builder, style, &mut |value| rename.visit_expression(value));
@@ -797,7 +809,7 @@ pub fn extract_style_from_styled<'a>(
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
     imports: Kinds<'_>,
-    modifiers: (&[Expression<'a>], Option<Forward>),
+    modifiers: (&[Expression<'a>], Option<Forward>, &[u32]),
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
@@ -805,7 +817,7 @@ pub fn extract_style_from_styled<'a>(
         split_filename,
         markers,
     } = naming;
-    let (attrs, forward) = modifiers;
+    let (attrs, forward, refused_array_controllers) = modifiers;
     let mut original_scope = expression.clone_in(ast_builder.allocator());
     let inherited = inherited.map(|definition| definition.rebind(ast_builder, &mut original_scope));
     let inherited = inherited.as_ref();
@@ -816,28 +828,22 @@ pub fn extract_style_from_styled<'a>(
     }
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
+    let mut captured_bindings = Vec::new();
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
     {
-        match style_arguments(ast_builder, &call.arguments) {
-            Some(StyleArguments { classes, rules }) => {
-                call.arguments =
-                    oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
-                composed_classes = classes;
-            }
-            None if !reads_directly(&call.arguments) => {
-                errors.push((call.span.start, uncomposable_error(&call.arguments)));
-                call.arguments = oxc_allocator::Vec::from_array_in(
-                    [Argument::from(Expression::new_object_expression(
-                        SPAN,
-                        oxc_allocator::Vec::new_in(ast_builder),
-                        ast_builder,
-                    ))],
-                    ast_builder,
-                );
-            }
-            None => {}
-        }
+        let prepared = arguments::prepare(
+            ast_builder,
+            call,
+            arguments::Context {
+                scope: &mut original_scope,
+                reads: &mut reads,
+                refused: refused_array_controllers,
+            },
+        );
+        composed_classes = prepared.classes;
+        captured_bindings = prepared.bindings;
+        errors.extend(prepared.errors);
     }
     let (result, new_expr, definition) = if let Expression::TaggedTemplateExpression(tag) =
         expression
@@ -1012,6 +1018,7 @@ pub fn extract_style_from_styled<'a>(
                 .map(|(name, value)| (name.clone(), value.clone_in(ast_builder.allocator())))
                 .collect()
         });
+        bindings.extend(captured_bindings);
         bindings.extend(match prepared {
             Some(prepared) => {
                 call.arguments[style_index] = Argument::from(prepared.rules);
@@ -1997,7 +2004,7 @@ fn create_styled_component<'a>(
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
         params,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        bind_render(ast_builder, bindings, body).into(),
+        bind_render_body(ast_builder, bindings, body),
         ast_builder,
     )
 }

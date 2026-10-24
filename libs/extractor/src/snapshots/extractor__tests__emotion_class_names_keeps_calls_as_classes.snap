@@ -1,0 +1,9 @@
+---
+source: libs/extractor/src/lib.rs
+expression: outputs
+---
+[
+    "Error: test.tsx:2:65: `<ClassNames>` cannot use `cx(getClass())` at build time: `css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these",
+    "Error: test.tsx:2:76: `<ClassNames>` cannot use `cx(css({ color: \"red\" }), on && getClass(), css({ color: \"blue\" }))` at build time: `css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these",
+    "Error: test.tsx:2:70: `<ClassNames>` cannot use `cx(o.getClass(), [make(1)], \"x\")` at build time: `css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these",
+]

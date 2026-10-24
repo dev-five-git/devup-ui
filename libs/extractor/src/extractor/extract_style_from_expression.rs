@@ -639,20 +639,21 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
             }
             // `styled.div({ color: (p) => p.theme.brand })` — the object spelling of
             // the template interpolation, resolved to the same build-time `var()`.
-            Expression::ArrowFunctionExpression(_) => match (name, theme_var_reference(expression))
-            {
-                (Some(name), Some(reference)) => ExtractResult {
-                    styles: create_static_styles(
-                        name,
-                        &reference,
-                        &[level],
-                        selector,
-                        ThemeTokenResolution::default(),
-                    ),
-                    ..ExtractResult::default()
-                },
-                _ => unreadable(expression),
-            },
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
+                match (name, theme_var_reference(expression)) {
+                    (Some(name), Some(reference)) => ExtractResult {
+                        styles: create_static_styles(
+                            name,
+                            &reference,
+                            &[level],
+                            selector,
+                            ThemeTokenResolution::default(),
+                        ),
+                        ..ExtractResult::default()
+                    },
+                    _ => unreadable(expression),
+                }
+            }
             // Each variant is kept on its own line so per-line coverage
             // tools (tarpaulin on CI) can attribute the hit to the exact
             // pattern being exercised.
@@ -1117,12 +1118,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 Some(_) if matches!(expression, Expression::NullLiteral(_)) => {
                     ExtractResult::default()
                 }
-                Some(_)
-                    if matches!(
-                        expression,
-                        Expression::FunctionExpression(_) | Expression::ClassExpression(_)
-                    ) =>
-                {
+                Some(_) if matches!(expression, Expression::ClassExpression(_)) => {
                     unreadable(expression)
                 }
                 // A sequence keeps its parentheses, as its code is written into
