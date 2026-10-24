@@ -58,6 +58,7 @@ impl<'a> Visit<'a> for Collector<'_, 'a> {
             for declarator in &declaration.declarations {
                 if let Some(identifier) = declarator.id.get_binding_identifier()
                     && let Some(symbol) = identifier.symbol_id.get()
+                    && !self.scoping.get_resolved_reference_ids(symbol).is_empty()
                     && !self
                         .scoping
                         .get_resolved_reference_ids(symbol)

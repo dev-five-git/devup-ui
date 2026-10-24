@@ -505,7 +505,6 @@ fn inline_in<'a>(
         class_names: Vec::new(),
     };
     read.visit_program(program);
-    let initialization = initialization::Initialization::new(program, scoping);
     let (declarations, copies) = lexical::declarations(ast_builder, program, scoping);
     for reference in &copies {
         read.symbols
@@ -525,6 +524,7 @@ fn inline_in<'a>(
     if read.names.is_empty() && read.symbols.is_empty() {
         return Inlined::default();
     }
+    let initialization = initialization::Initialization::new(program, scoping);
     let mut inlined = Inlined {
         errors: initialization.errors(&read.references, scoping),
         ..Inlined::default()
