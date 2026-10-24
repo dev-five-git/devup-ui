@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Preserve exact JavaScript literal property keys in static lookups and generated finite class maps, independently of CSS numeric value normalization. Only fold standalone unary string coercion when its spelling is proven to agree with JavaScript Number; other values retain the existing conservative dynamic or located build-error path without a styling runtime.",
-  "date": "2026-10-17T00:00:00.000Z"
-}
