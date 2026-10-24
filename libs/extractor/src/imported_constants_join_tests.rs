@@ -2,6 +2,54 @@ use super::*;
 use rstest::rstest;
 
 #[test]
+fn compiled_css_shorthand_when_inlined_keeps_the_css_property_name() {
+    // Given: a real local rule constant is passed as a compiled JSX shorthand property.
+    let arena = Allocator::default();
+    let source =
+        "import {jsx} from '@emotion/react';const css={ margin: 2 };const view=jsx('div',{css});";
+    let mut parsed = Parser::new(&arena, source, SourceType::mjs()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0);
+    let options = ExtractOption {
+        import_aliases: std::collections::HashMap::from([(
+            "@emotion/react".into(),
+            crate::ImportAlias::NamedToNamed,
+        )]),
+        ..Default::default()
+    };
+    // When: ordinary constant inlining rewrites the value at the compiled CSS-prop root.
+    let result = inline_constants(
+        &AstBuilder::new(&arena),
+        &mut parsed.program,
+        "shorthand.ts",
+        &options,
+        None,
+        CssProp::Everywhere,
+        &FxHashSet::default(),
+    );
+    assert_eq!(result.errors, vec![]);
+    parsed
+        .program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = oxc_codegen::Codegen::new().build(&parsed.program).code;
+    let script = format!(
+        "function jsx(target,props){{return {{target,props}};}}{code};JSON.stringify(view);"
+    );
+    let actual = boa_engine::Context::default()
+        .eval(boa_engine::Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("{error}"))
+        .as_string()
+        .unwrap_or_else(|| panic!("expected JSON observation"))
+        .to_std_string_escaped();
+    // Then: the rewritten value is valid JavaScript under the original css key, with Emotion pixels.
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&actual)
+            .unwrap_or_else(|error| panic!("{error}")),
+        serde_json::json!({"target":"div","props":{"css":{"margin":"2px"}}})
+    );
+}
+
+#[test]
 fn pixel_rules_when_nested_selectors_are_arrays_preserve_unitless_values()
 -> Result<(), Box<dyn std::error::Error>> {
     // Given: selector arrays retain numbers for native extraction to scale later.

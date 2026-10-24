@@ -30,6 +30,10 @@ impl StyledDefinition<'_> {
 #[derive(Clone)]
 pub(super) struct Shape(pub Vec<Option<CascadeKey>>, Coverage);
 
+#[cfg(test)]
+#[path = "styled_residual_tests.rs"]
+mod tests;
+
 pub(super) struct Selections<'a> {
     pub shape: Shape,
     pub values: Vec<Option<Expression<'a>>>,

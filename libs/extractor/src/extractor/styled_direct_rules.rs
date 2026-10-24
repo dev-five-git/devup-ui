@@ -79,6 +79,10 @@ struct Slots<'b, 'p, 'a> {
     names: FxHashMap<String, usize>,
 }
 
+#[cfg(test)]
+#[path = "styled_direct_rules_tests.rs"]
+mod tests;
+
 impl<'a> VisitMut<'a> for Slots<'_, '_, 'a> {
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if let Expression::Identifier(identifier) = expression

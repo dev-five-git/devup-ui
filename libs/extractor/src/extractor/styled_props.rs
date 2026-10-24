@@ -123,42 +123,49 @@ pub(super) fn lower<'a>(
             };
             *returned = branches::returned(builder, schedule, &local);
             capture::declare(builder, &mut function, &local);
-            skeleton
+            Some(skeleton)
         } else {
             let mut skeleton = object.clone_in_with_semantic_ids(builder.allocator());
             leaves.object(&mut skeleton).map_err(map_error)?;
             *returned = Expression::new_array_expression(SPAN, leaves.values, builder);
-            Expression::ObjectExpression(skeleton)
+            Some(Expression::ObjectExpression(skeleton))
         }
-    } else if let Some(bindings) = bindings {
-        let local = evaluations.fresh_name();
-        leaves.values.push(values::zero(builder).into());
-        let mut plan = branches::Branches {
-            builder,
-            name: &name,
-            leaves,
-            local: &local,
-            bindings,
-            rules: Vec::new(),
-        };
-        let schedule = plan.schedule(returned).map_err(map_error)?;
-        *returned = branches::returned(builder, schedule, &local);
-        let skeleton = plan.skeleton();
-        capture::declare(builder, &mut function, &local);
-        skeleton
     } else {
-        return Ok(None);
+        bindings
+            .map(|bindings| {
+                let local = evaluations.fresh_name();
+                leaves.values.push(values::zero(builder).into());
+                let mut plan = branches::Branches {
+                    builder,
+                    name: &name,
+                    leaves,
+                    local: &local,
+                    bindings,
+                    rules: Vec::new(),
+                };
+                let schedule = plan.schedule(returned).map_err(map_error)?;
+                *returned = branches::returned(builder, schedule, &local);
+                let skeleton = plan.skeleton();
+                Ok((skeleton, local))
+            })
+            .transpose()?
+            .map(|(skeleton, local)| {
+                capture::declare(builder, &mut function, &local);
+                skeleton
+            })
     };
-    let value = Expression::new_call_expression(
-        SPAN,
-        function,
-        None,
-        oxc_allocator::Vec::from_array_in([identifier(builder, "rest").into()], builder),
-        false,
-        builder,
-    );
-    *style = skeleton;
-    Ok(Some(Plan::Whole(Invocation { name, value })))
+    Ok(skeleton.map(|skeleton| {
+        let value = Expression::new_call_expression(
+            SPAN,
+            function,
+            None,
+            oxc_allocator::Vec::from_array_in([identifier(builder, "rest").into()], builder),
+            false,
+            builder,
+        );
+        *style = skeleton;
+        Plan::Whole(Invocation { name, value })
+    }))
 }
 
 pub(super) fn lower_direct<'a>(
@@ -225,6 +232,10 @@ fn call_with_props<'a>(
     }
     Ok(Some(original))
 }
+
+#[cfg(test)]
+#[path = "styled_props_admission_tests.rs"]
+mod admission_tests;
 
 #[cfg(test)]
 #[path = "styled_preparation_cost_tests.rs"]

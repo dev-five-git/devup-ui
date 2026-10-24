@@ -6,6 +6,42 @@ mod fixtures;
 use super::namespace_css_slots::modules;
 use fixtures::{Case, Site};
 
+#[test]
+#[serial]
+fn compiled_forwarding_when_props_have_no_spread_inlines_and_filters_the_target() {
+    // Given: without an outer spread the same disjoint css rules admit native inlining.
+    let source = "const Card=styled.article({color:'red'});const App=()=>jsx(Card,{id:'inline',css:{padding:1},$private:'secret'});";
+    // When: the public extractor lowers compiled JSX and the resulting element renders.
+    let actual = super::execute(
+        "forwarding.ts",
+        source,
+        "const raw=App();const final=render(raw);JSON.stringify([typeof raw.target==='string',final.target,final.props.id,Object.hasOwn(final.props,'$private'),values(final,'color'),values(final,'padding')]);",
+    );
+    // Then: the native target receives public props and both rules, but no private prop.
+    assert_eq!(
+        actual,
+        serde_json::json!([true, "article", "inline", false, ["red"], ["1px"]])
+    );
+}
+
+#[test]
+#[serial]
+fn compiled_forwarding_when_props_include_a_spread_retains_the_renderer() {
+    // Given: a spread prevents proof of the rendered tag even with disjoint css rules.
+    let source = "const Card=styled.article({color:'red'});const App=()=>jsx(Card,{...{id:'spread'},css:{padding:1},$private:'secret'});";
+    // When: the public extractor lowers compiled JSX and the emitted renderer runs.
+    let actual = super::execute(
+        "forwarding.ts",
+        source,
+        "const raw=App();const final=render(raw);JSON.stringify([typeof raw.target==='string',final.target,final.props.id,Object.hasOwn(final.props,'$private'),values(final,'color'),values(final,'padding')]);",
+    );
+    // Then: the retained styled boundary filters private props and keeps both sets of rules.
+    assert_eq!(
+        actual,
+        serde_json::json!([false, "article", "spread", false, ["red"], ["1px"]])
+    );
+}
+
 fn observe(site: Site, case: Case, single_css: bool) -> serde_json::Value {
     let fixture = fixtures::fixture(site, case);
     let files: Vec<_> = fixture

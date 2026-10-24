@@ -63,6 +63,8 @@ fn callback_record_when_later_spread_is_unknown_rolls_back_only_its_own_captures
 #[case("styled.div(p=>({color:p.on?(p.input.inner?p.color:null):null}))", "{on:false,input:{get inner(){throw Error('inactive')}}}", serde_json::json!([]))]
 #[case("styled.div(p=>(p.on||false)&&{color:'red'})", "{on:false}", serde_json::json!([]))]
 #[case("styled.div(p=>(p.on||false)&&{color:'red'})", "{on:true}", serde_json::json!(["red"]))]
+#[case("styled.div(p=>{return p.on?{color:p.color}:{color:'blue'};})", "{on:true,color:'red'}", serde_json::json!(["red"]))]
+#[case("styled.div(p=>{return p.on?{color:p.color}:{color:'blue'};})", "{on:false,color:'red'}", serde_json::json!(["blue"]))]
 #[case("styled.div(p=>({[p.input.key]:p.color,get unused(){throw Error('getter must not run')}})&&{color:'blue'})", "{input:{key:'color'},color:'red'}", serde_json::json!(["blue"]))]
 #[serial_test::serial]
 fn rendered_rules_when_nested_choices_or_template_property_callbacks_select_keep_authored_values(

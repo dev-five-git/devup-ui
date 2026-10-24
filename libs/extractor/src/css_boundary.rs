@@ -158,10 +158,8 @@ impl<'a> DevupVisitor<'a> {
                 let names = props
                     .properties
                     .iter()
-                    .filter_map(|property| match property {
-                        ObjectPropertyKind::ObjectProperty(property) => property.key.static_name(),
-                        ObjectPropertyKind::SpreadProperty(_) => None,
-                    });
+                    .filter_map(ObjectPropertyKind::as_property)
+                    .filter_map(|property| property.key.static_name());
                 let denied = forwarding::denied(definition, names, forwarding::Site::Renderer);
                 filter_object(&self.ast, props, &denied);
             }

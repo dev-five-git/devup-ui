@@ -121,6 +121,10 @@ impl<'a> Theme<'_, '_, 'a> {
 
 struct Functions(Option<(u32, String)>);
 
+#[cfg(test)]
+#[path = "styled_props_discarded_tests.rs"]
+mod tests;
+
 impl<'a> Visit<'a> for Functions {
     fn visit_expression(&mut self, expression: &Expression<'a>) {
         if self.0.is_some() {

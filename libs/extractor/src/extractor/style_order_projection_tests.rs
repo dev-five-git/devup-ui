@@ -3,6 +3,9 @@ use crate::{
     extract_style::extract_style_value::ExtractStyleValue, gen_class_name::gen_class_names,
 };
 
+#[path = "style_order_nullish_tests.rs"]
+mod nullish;
+
 #[rstest::rstest]
 #[case::keep(false, "12px")]
 #[case::replace(true, "16px")]
