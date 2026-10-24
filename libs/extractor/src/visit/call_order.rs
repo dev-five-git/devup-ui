@@ -113,9 +113,7 @@ impl<'a> DevupVisitor<'a> {
             }
             let mut captured = Vec::new();
             match property {
-                ObjectPropertyKind::SpreadProperty(spread)
-                    if is_unknown_spread(&spread.argument) =>
-                {
+                ObjectPropertyKind::SpreadProperty(spread) => {
                     let name = self.names.fresh("__devupSpread");
                     if unsafe_to_extract(&spread.argument) {
                         captured.push(self.snapshot_as(name, &mut spread.argument));
@@ -123,9 +121,6 @@ impl<'a> DevupVisitor<'a> {
                         order.spreads.insert(spread.span.start, order.values.len());
                         order.values.push((name, None));
                     }
-                }
-                ObjectPropertyKind::SpreadProperty(spread) => {
-                    self.capture_shape(&mut spread.argument, &mut captured);
                 }
                 ObjectPropertyKind::ObjectProperty(written)
                     if written.computed && written.key.static_name().is_none() =>

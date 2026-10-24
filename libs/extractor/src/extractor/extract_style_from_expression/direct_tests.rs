@@ -5,6 +5,46 @@ use oxc_parser::Parser;
 use oxc_span::SourceType;
 use rstest::rstest;
 
+#[test]
+fn root_styles_when_dom_props_are_present_extract_only_styles_and_keep_dom_values() {
+    let allocator = Allocator::default();
+    let ast = AstBuilder::new(&allocator);
+    let mut expression = Parser::new(
+        &allocator,
+        "({color:'red', id:readId(), 'data-label':'kept'})",
+        SourceType::tsx(),
+    )
+    .parse_expression()
+    .unwrap_or_else(|error| panic!("{error:?}"));
+
+    let result = extract_style_from_expression(
+        &ast,
+        None,
+        &mut expression,
+        0,
+        &None,
+        LiteralHandling::ExpandResponsiveThemeToken,
+    );
+
+    let values: Vec<_> = result
+        .styles
+        .iter()
+        .flat_map(ExtractStyleProp::extract)
+        .collect();
+    assert!(
+        matches!(values.as_slice(), [ExtractStyleValue::Static(value)]
+        if value.property() == "color" && value.value() == "red")
+    );
+    let remaining = expression_to_code(&expression);
+    assert_eq!(
+        evaluate(
+            &format!("JSON.stringify({})", remaining.trim_end_matches(';')),
+            "let calls=0; const readId=()=>{if(++calls!==1)throw Error('repeated'); return 'identity';};"
+        ),
+        r#"{"id":"identity","data-label":"kept"}"#
+    );
+}
+
 fn styles(source: &str, name: Option<&str>) -> (Vec<ExtractStyleValue>, Vec<String>) {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);

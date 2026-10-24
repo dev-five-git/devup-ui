@@ -9,6 +9,10 @@ use oxc_span::SPAN;
 use rustc_hash::FxHashSet;
 use std::borrow::Cow;
 
+#[cfg(test)]
+#[path = "element_props_tests.rs"]
+mod tests;
+
 /// Prove the entire spread's own keys before capture replaces its syntax.
 pub(super) fn is_unknown_spread(argument: &Expression<'_>) -> bool {
     let mut pending = vec![argument];

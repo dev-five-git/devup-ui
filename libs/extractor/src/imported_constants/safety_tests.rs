@@ -2,6 +2,52 @@ use super::*;
 use rstest::rstest;
 
 #[rstest]
+#[case("__proto__", "false|red")]
+#[case("['__proto__']", "true|red")]
+fn lexical_copy_when_proto_is_a_setter_does_not_invent_an_own_property(
+    #[case] key: &str,
+    #[case] expected: &str,
+) {
+    let allocator = Allocator::default();
+    let source = format!(
+        "import {{css}} from '@devup-ui/react'; function run(){{const props={{{key}:null,color:'red'}};return css({{...props}});}} run();"
+    );
+    let mut parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0);
+
+    inline_constants(
+        &AstBuilder::new(&allocator),
+        &mut parsed.program,
+        "proto.tsx",
+        &ExtractOption::default(),
+        None,
+        CssProp::Off,
+        &crate::import_alias_visit::PxMarks::default(),
+    );
+
+    parsed
+        .program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = oxc_codegen::Codegen::new().build(&parsed.program).code;
+    let script = format!(
+        "const css = props => [Object.hasOwn(props, '__proto__'), props.color].join('|'); {code}"
+    );
+    let mut context = boa_engine::Context::default();
+    let actual = context
+        .eval(boa_engine::Source::from_bytes(script.as_bytes()))
+        .unwrap_or_else(|error| panic!("{error}: {script}"));
+    assert_eq!(
+        actual
+            .as_string()
+            .unwrap_or_else(|| panic!("string required: {actual:?}"))
+            .to_std_string_escaped(),
+        expected,
+        "{code}"
+    );
+}
+
+#[rstest]
 #[case("tone; const tone='red';", None)]
 #[case("const tone='red'; tone;", Some("\"red\""))]
 fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(

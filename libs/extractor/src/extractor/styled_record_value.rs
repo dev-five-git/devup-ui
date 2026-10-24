@@ -9,6 +9,10 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 #[path = "styled_record_selection.rs"]
 mod selection;
 
+#[cfg(test)]
+#[path = "styled_record_value_tests.rs"]
+mod tests;
+
 fn lookup_object<'a, 'b>(source: &'b Expression<'a>) -> &'b Expression<'a> {
     match source {
         Expression::TSAsExpression(value) => lookup_object(&value.expression),

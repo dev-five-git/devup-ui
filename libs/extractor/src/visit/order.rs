@@ -165,23 +165,26 @@ pub(super) fn suspends(expression: &Expression<'_>) -> bool {
 
 /// The style keys a written object gives without executing it.
 pub(super) fn written_properties(expression: &Expression<'_>) -> Vec<String> {
-    if super::element_props::is_unknown_spread(expression) {
-        return Vec::new();
-    }
     match crate::utils::unwrap_syntax_only(expression) {
-        Expression::ObjectExpression(object) => object
-            .properties
-            .iter()
-            .flat_map(|property| match property {
-                ObjectPropertyKind::ObjectProperty(property) => property
-                    .key
-                    .static_name()
-                    .filter(|name| !css::is_special_property::is_special_property(name))
-                    .map(|name| vec![name.to_string()])
-                    .unwrap_or_default(),
-                ObjectPropertyKind::SpreadProperty(spread) => written_properties(&spread.argument),
-            })
-            .collect(),
+        Expression::ObjectExpression(object)
+            if !super::element_props::is_unknown_spread(expression) =>
+        {
+            object
+                .properties
+                .iter()
+                .flat_map(|property| match property {
+                    ObjectPropertyKind::ObjectProperty(property) => property
+                        .key
+                        .static_name()
+                        .filter(|name| !css::is_special_property::is_special_property(name))
+                        .map(|name| vec![name.to_string()])
+                        .unwrap_or_default(),
+                    ObjectPropertyKind::SpreadProperty(spread) => {
+                        written_properties(&spread.argument)
+                    }
+                })
+                .collect()
+        }
         _ => Vec::new(),
     }
 }
