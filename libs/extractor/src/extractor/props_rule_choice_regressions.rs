@@ -1,4 +1,4 @@
-use super::super::w27_props_rule_choices_tests::support::{active, declarations};
+use super::super::props_rule_choice_tests::support::{active, declarations};
 use rstest::rstest;
 
 #[rstest]
@@ -99,7 +99,7 @@ fn bound_undefined_when_scalar_css_value_remains_a_css_variable() {
     assert!(output.code.contains("--"));
     assert!(output.styles.iter().any(|style| matches!(style, crate::ExtractStyleValue::Dynamic(value) if value.property() == "color")));
     let observed = crate::styled_source_tests::captured_render::execute(
-        ("w27-choices-active.tsx", None),
+        ("rule-choices-active.tsx", None),
         &output,
         "const element=render({target:make('purple'),props:{}});JSON.stringify(values(element,'color'));",
     );
@@ -130,7 +130,7 @@ fn bound_undefined_when_unreachable_rule_branch_is_skipped() {
 fn compile(rules: &str) -> crate::ExtractOutput {
     let source = format!("import {{ styled }} from '@devup-ui/react'; {rules}");
     crate::extract(
-        "w27-choices-active.tsx",
+        "rule-choices-active.tsx",
         &source,
         crate::ExtractOption {
             single_css: true,

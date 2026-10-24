@@ -1,7 +1,7 @@
 use crate::{ExtractOption, ExtractOutput, ExtractStyleValue, ImportAlias, ResolvedModule};
 use std::collections::HashMap;
 
-#[path = "w27_styled_known_mixins_regressions.rs"]
+#[path = "known_mixin_regressions.rs"]
 mod regressions;
 
 fn option() -> ExtractOption {
@@ -26,11 +26,11 @@ fn imported(base: &str, body: &str) -> ExtractOutput {
         format!("import styled from '@emotion/styled'; import {{ Base }} from './base'; {body}");
     let resolver = move |specifier: &str, _: &str| {
         (specifier == "./base").then(|| ResolvedModule {
-            path: "/w27/base.tsx".to_string(),
+            path: "/composition/base.tsx".to_string(),
             code: module.clone(),
         })
     };
-    crate::extract_with_modules("/w27/entry.tsx", &entry, option(), false, &resolver)
+    crate::extract_with_modules("/composition/entry.tsx", &entry, option(), false, &resolver)
         .unwrap_or_else(|error| panic!("{error}"))
 }
 
@@ -62,7 +62,7 @@ fn checked_declarations(output: &ExtractOutput) -> Result<Vec<(String, String)>,
     Ok(styles)
 }
 
-#[path = "w27_coverage_tests.rs"]
+#[path = "known_mixin_execution_tests.rs"]
 mod coverage_tests;
 
 #[test]
@@ -142,7 +142,7 @@ fn layered_metadata_keeps_later_atom_when_known_mixins_share_layer() {
         .program;
     let mut visitor = crate::visit::DevupVisitor::new(
         &allocator,
-        "w27-layers.tsx",
+        "mixin-layers.tsx",
         "@devup-ui/react",
         vec![],
         None,
@@ -174,7 +174,7 @@ fn layered_metadata_keeps_later_atom_when_known_mixins_share_layer() {
     assert_eq!(visitor.errors, vec![]);
     let mut layers: Vec<_> = visitor
         .styles
-        .into_styles("w27-layers.tsx")
+        .into_styles("mixin-layers.tsx")
         .iter()
         .filter_map(|value| match value {
             ExtractStyleValue::Static(style) => {
@@ -219,7 +219,7 @@ fn inline_calls_and_tags_are_known_when_imported_base_composes_them() {
 #[serial_test::serial]
 fn dynamic_values_keep_variables_when_known_mixin_joins_template() {
     let source = "import styled from '@emotion/styled'; import { css } from '@emotion/react'; const mixin = css({ padding: 4 }); export const Choice = styled.div`${mixin}; width: ${p => p.width};`;";
-    let output = crate::extract("w27-dynamic-mixin.tsx", source, option())
+    let output = crate::extract("dynamic-mixin.tsx", source, option())
         .unwrap_or_else(|error| panic!("{error}"));
     assert!(output.styles.iter().any(
         |value| matches!(value, ExtractStyleValue::Dynamic(style) if style.property() == "width")
@@ -239,7 +239,7 @@ fn dynamic_values_keep_variables_when_known_mixin_joins_template() {
 #[serial_test::serial]
 fn runtime_class_stays_opaque_when_styles_are_unknown() {
     let source = "import styled from '@emotion/styled'; import { runtime } from './runtime'; export const Choice = styled.div`${runtime}; color: blue;`;";
-    let output = crate::extract("w27-unknown-mixin.tsx", source, option())
+    let output = crate::extract("unknown-mixin.tsx", source, option())
         .unwrap_or_else(|error| panic!("{error}"));
     assert!(output.code.contains("runtime"));
     assert_eq!(declarations(&output), [("color".into(), "blue".into())]);
@@ -249,7 +249,7 @@ fn runtime_class_stays_opaque_when_styles_are_unknown() {
 #[serial_test::serial]
 fn runtime_class_remains_when_known_mixin_is_composed_beside_it() {
     let source = "import styled from '@emotion/styled'; import { css } from '@emotion/react'; import { runtime } from './runtime'; const mixin = css({ color: 'red' }); export const Choice = styled.div`${runtime}; ${mixin}; color: blue;`;";
-    let output = crate::extract("w27-mixed-mixins.tsx", source, option())
+    let output = crate::extract("mixed-mixins.tsx", source, option())
         .unwrap_or_else(|error| panic!("{error}"));
     let choice = output.code.split("const Choice").nth(1).unwrap_or_default();
     assert!(choice.contains("runtime"));

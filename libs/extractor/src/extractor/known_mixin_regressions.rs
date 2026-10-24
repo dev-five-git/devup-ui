@@ -1,4 +1,4 @@
-use super::super::w27_props_rule_choices_tests::support::{active, declarations};
+use super::super::props_rule_choice_tests::support::{active, declarations};
 use crate::{ExtractOption, ExtractStyleValue};
 
 fn compile(template: &str) -> crate::ExtractOutput {

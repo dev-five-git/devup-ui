@@ -2221,13 +2221,13 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
 }
 
 #[cfg(test)]
-#[path = "local_exact_constants_w27_tests.rs"]
-mod local_exact_constants_w27_tests;
+#[path = "local_exact_constants_tests.rs"]
+mod local_exact_constants_tests;
 
-#[path = "local_rule_shapes_w27.rs"]
+#[path = "local_rule_shapes.rs"]
 mod local_rule_shapes;
 
-#[path = "local_capture_reads_w27.rs"]
+#[path = "local_capture_reads.rs"]
 mod local_capture_reads;
 
 #[path = "bound_style_callbacks.rs"]

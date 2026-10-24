@@ -7,7 +7,7 @@ use super::StyledBindings;
 use crate::utils::{is_pure, unwrap_syntax_only};
 
 #[cfg(test)]
-#[path = "w27_styled_choice_coverage.rs"]
+#[path = "styled_choice_tests.rs"]
 mod coverage_tests;
 
 #[cfg(test)]

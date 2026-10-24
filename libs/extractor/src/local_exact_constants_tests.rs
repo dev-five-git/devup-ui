@@ -8,10 +8,10 @@ use serial_test::serial;
 #[path = "static_member_test_support.rs"]
 mod member_paths;
 
-#[path = "local_shape_composition_w27_tests.rs"]
+#[path = "local_shape_composition_tests.rs"]
 mod composition;
 
-#[path = "local_shape_hygiene_w27_tests.rs"]
+#[path = "local_shape_hygiene_tests.rs"]
 mod hygiene;
 
 fn emotion_option() -> ExtractOption {

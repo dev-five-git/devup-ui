@@ -33,11 +33,11 @@ pub(super) fn boundaries(text: &str) -> impl Iterator<Item = (usize, char)> + '_
 }
 
 #[cfg(test)]
-mod w62o_tests {
+mod tests {
     use super::boundaries;
 
     #[test]
-    fn w62o_layer_boundaries_resume_when_bad_strings_end_at_raw_newlines() {
+    fn layer_boundaries_resume_when_bad_strings_end_at_raw_newlines() {
         // Given
         for newline in ["\n", "\r", "\r\n", "\u{c}"] {
             let text = format!("content: 'broken{newline}; @layer base {{ color: red; }}");
@@ -57,7 +57,7 @@ mod w62o_tests {
     }
 
     #[test]
-    fn w62o_layer_boundaries_resume_when_a_function_contains_a_bad_string() {
+    fn layer_boundaries_resume_when_a_function_contains_a_bad_string() {
         // Given
         let text = "background: fn('broken\n); @layer base { color: red; }";
         // When
@@ -67,7 +67,7 @@ mod w62o_tests {
     }
 
     #[test]
-    fn w62o_layer_boundaries_stay_quoted_when_hex_escapes_consume_newlines() {
+    fn layer_boundaries_stay_quoted_when_hex_escapes_consume_newlines() {
         // Given
         for escape in ["\\62\n", "\\000062\r\n", "\\62\u{c}", "\\\r\n"] {
             let text =
@@ -80,7 +80,7 @@ mod w62o_tests {
     }
 
     #[test]
-    fn w62o_layer_boundaries_ignore_comments_and_nested_function_delimiters() {
+    fn layer_boundaries_ignore_comments_and_nested_function_delimiters() {
         // Given
         let text =
             "/* ' \\ { ; ( */ @layer base { value: fn((a;{b}), '};'); /* ) } */ color: red; }";
@@ -91,7 +91,7 @@ mod w62o_tests {
     }
 
     #[test]
-    fn w62o_layer_boundaries_keep_escaped_delimiters_and_unicode_byte_offsets() {
+    fn layer_boundaries_keep_escaped_delimiters_and_unicode_byte_offsets() {
         // Given
         let text = "@layer 한글\\{base { content: '\\' }'; color: red; }";
         // When
@@ -109,7 +109,7 @@ mod w62o_tests {
     }
 
     #[test]
-    fn w62o_layer_boundaries_ignore_eof_string_payload_whitespace() {
+    fn layer_boundaries_ignore_eof_string_payload_whitespace() {
         // Given
         let text = "@layer base { content: 'open };   ";
         // When

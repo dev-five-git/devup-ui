@@ -30,18 +30,20 @@ fn compile(source: &str, single_css: bool, surface: Surface) -> crate::ExtractOu
     }
     let resolver = |specifier: &str, _: &str| {
         (specifier == "./base").then(|| ResolvedModule {
-            path: "/w27/base.ts".into(),
+            path: "/composition/base.ts".into(),
             code: String::new(),
         })
     };
     let result = match surface {
-        Surface::Extract => crate::extract("/w27/entry.ts", source, option),
-        Surface::WithoutMap => crate::extract_without_source_map("/w27/entry.ts", source, option),
+        Surface::Extract => crate::extract("/composition/entry.ts", source, option),
+        Surface::WithoutMap => {
+            crate::extract_without_source_map("/composition/entry.ts", source, option)
+        }
         Surface::Modules(map) => {
-            crate::extract_with_modules("/w27/entry.ts", source, option, map, &resolver)
+            crate::extract_with_modules("/composition/entry.ts", source, option, map, &resolver)
         }
         Surface::ModulesPlain => {
-            crate::extract_with_modules("/w27/entry.ts", source, option, false, &resolver)
+            crate::extract_with_modules("/composition/entry.ts", source, option, false, &resolver)
         }
     };
     let output = result.unwrap_or_else(|error| panic!("{surface:?}: {error}"));
@@ -75,9 +77,9 @@ fn original_binding_survives_when_import_discovery_reads_recovered_callbacks(
     let _state = crate::test_state::TestStateGuard::new();
     // When: extract and execute the complete renderer, observing the authored closure.
     let output = compile(SOURCE, single_css, surface);
-    let bucket = (!single_css).then(|| css::file_map::canonical("/w27/entry.ts"));
+    let bucket = (!single_css).then(|| css::file_map::canonical("/composition/entry.ts"));
     let actual = execute_extracted(
-        ("/w27/entry.ts", bucket.as_deref()),
+        ("/composition/entry.ts", bucket.as_deref()),
         &output,
         &format!(
             "const e=render({{target:Card,props:{{value:{value}}}}});JSON.stringify([observe(),values(e,'padding')]);"
@@ -108,9 +110,9 @@ fn callback_contract_survives_when_module_discovery_runs(
     );
     // When: use the exact alias-enabled module/no-map surface.
     let output = compile(&source, single_css, Surface::Modules(false));
-    let bucket = (!single_css).then(|| css::file_map::canonical("/w27/entry.ts"));
+    let bucket = (!single_css).then(|| css::file_map::canonical("/composition/entry.ts"));
     let actual = execute_extracted(
-        ("/w27/entry.ts", bucket.as_deref()),
+        ("/composition/entry.ts", bucket.as_deref()),
         &output,
         "const e=render({target:Card,props:{ value: 4 }});JSON.stringify([observe(),values(e,'padding').map(value=>typeof value==='function'?'function':value)]);",
     );
@@ -122,14 +124,14 @@ fn callback_contract_survives_when_module_discovery_runs(
 fn semantic_identity_survives_when_import_discovery_follows_callback_recovery() {
     // Given: recovered callbacks and their original scoping, before rendering.
     let arena = oxc_allocator::Allocator::default();
-    let mut program = crate::parsing::parse(&arena, "/w27/entry.ts", SOURCE)
+    let mut program = crate::parsing::parse(&arena, "/composition/entry.ts", SOURCE)
         .unwrap_or_else(|error| panic!("scoping fixture: {error:?}"));
     let builder = oxc_ast::builder::AstBuilder::new(&arena);
     let option = ExtractOption::default();
     let mut inlined = crate::imported_constants::inline_constants(
         &builder,
         &mut program,
-        "/w27/entry.ts",
+        "/composition/entry.ts",
         &option,
         None,
         crate::css_prop::CssProp::Off,
@@ -174,7 +176,7 @@ fn semantic_identity_survives_when_import_discovery_follows_callback_recovery() 
     crate::imported_styled::read(
         &builder,
         &program,
-        "/w27/entry.ts",
+        "/composition/entry.ts",
         &option,
         Some(&|_, _| None),
         crate::css_prop::CssProp::Off,

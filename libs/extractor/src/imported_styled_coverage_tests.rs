@@ -60,7 +60,7 @@ fn imported_evaluation_when_source_is_unparseable_returns_no_computed_module() {
     };
     // When
     let result = reader.evaluate_values(
-        "/w27/broken.tsx",
+        "/composition/broken.tsx",
         "export const Broken = ;",
         &crate::imported_constants::Unknown::default(),
     );

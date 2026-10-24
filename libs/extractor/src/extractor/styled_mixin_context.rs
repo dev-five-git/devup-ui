@@ -10,7 +10,7 @@ pub(super) enum ContextError {
 }
 
 #[cfg(test)]
-#[path = "w27_styled_context_coverage.rs"]
+#[path = "styled_mixin_context_tests.rs"]
 mod coverage_tests;
 
 pub(super) fn contextualize<'a>(

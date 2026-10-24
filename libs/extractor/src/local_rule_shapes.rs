@@ -8,7 +8,7 @@ use oxc_semantic::Scoping;
 use oxc_span::GetSpan;
 use rustc_hash::FxHashMap;
 
-#[path = "local_shape_captures_w27.rs"]
+#[path = "local_shape_captures.rs"]
 mod captures;
 pub(super) use captures::collect as collect_captures;
 

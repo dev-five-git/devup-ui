@@ -1099,8 +1099,8 @@ fn generate_transformed_import(
 }
 
 #[cfg(test)]
-#[path = "numeric_context_w27_tests.rs"]
-mod numeric_context_w27_tests;
+#[path = "numeric_context_tests.rs"]
+mod numeric_context_tests;
 
 #[cfg(test)]
 #[path = "import_alias_scoping_tests.rs"]

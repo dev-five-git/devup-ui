@@ -1,7 +1,7 @@
 use crate::extract_style::ExtractStyleProperty;
 use crate::{ExtractOption, ExtractOutput, ExtractStyleValue, extract};
 
-#[path = "w27_props_rule_choices_regressions.rs"]
+#[path = "props_rule_choice_regressions.rs"]
 mod regressions;
 
 #[path = "styled_choice_test_support.rs"]
@@ -9,17 +9,14 @@ pub(super) mod support;
 
 fn selected_classes(output: &ExtractOutput, on: bool) -> Vec<String> {
     let mut classes: Vec<_> = crate::styled_source_tests::captured_render::active(
-        (
-            "w27-props-rule-choices.tsx",
-            Some("w27-props-rule-choices.tsx"),
-        ),
+        ("props-rule-choices.tsx", Some("props-rule-choices.tsx")),
         output,
         &format!("{{on:{on},width:'24px'}}"),
     )
     .iter()
     .map(|style| {
         style
-            .extract(Some("w27-props-rule-choices.tsx"))
+            .extract(Some("props-rule-choices.tsx"))
             .unwrap_or_else(|| panic!("selected declaration class identity"))
             .to_string()
     })
@@ -48,20 +45,14 @@ fn class_for(output: &ExtractOutput, property: &str, value: &str) -> String {
             | ExtractStyleValue::Keyframes(_) => None,
         })
         .unwrap_or_else(|| panic!("missing {property}: {value}"));
-    style
-        .extract(Some("w27-props-rule-choices.tsx"))
-        .to_string()
+    style.extract(Some("props-rule-choices.tsx")).to_string()
 }
 
 fn compile(rules: &str) -> ExtractOutput {
     let source =
         format!("import {{ styled }} from '@devup-ui/react'; {rules} export {{ Choice }};");
-    extract(
-        "w27-props-rule-choices.tsx",
-        &source,
-        ExtractOption::default(),
-    )
-    .unwrap_or_else(|error| panic!("{error}"))
+    extract("props-rule-choices.tsx", &source, ExtractOption::default())
+        .unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn values(output: &ExtractOutput, property: &str) -> Vec<String> {
@@ -153,10 +144,7 @@ fn dynamic_leaf_uses_variable_when_rule_branch_is_selected() {
         [class_for(&output, "width", "12px")]
     );
     let observed = crate::styled_source_tests::captured_render::execute(
-        (
-            "w27-props-rule-choices.tsx",
-            Some("w27-props-rule-choices.tsx"),
-        ),
+        ("props-rule-choices.tsx", Some("props-rule-choices.tsx")),
         &output,
         "const element=render({target:Choice,props:{on:true,width:'24px'}});JSON.stringify(values(element,'width'));",
     );
@@ -229,10 +217,10 @@ fn unknown_shapes_are_rejected_when_function_cannot_name_rules() {
         let source = format!(
             "import {{ styled }} from '@devup-ui/react'; const Choice = styled('div')({rules});"
         );
-        let Err(error) = extract("w27-unknown.tsx", &source, ExtractOption::default()) else {
+        let Err(error) = extract("unknown-rule.tsx", &source, ExtractOption::default()) else {
             panic!("unknowable rules must fail at build time");
         };
-        assert!(error.to_string().contains("w27-unknown.tsx:"));
+        assert!(error.to_string().contains("unknown-rule.tsx:"));
         assert!(error.to_string().contains("cannot use"));
     }
 }

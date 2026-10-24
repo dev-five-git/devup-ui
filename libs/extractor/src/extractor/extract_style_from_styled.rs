@@ -2006,16 +2006,16 @@ fn create_styled_component<'a>(
 }
 
 #[cfg(test)]
-#[path = "w27_props_rule_choices_tests.rs"]
-mod w27_props_rule_choices_tests;
+#[path = "props_rule_choice_tests.rs"]
+mod props_rule_choice_tests;
 
 #[cfg(test)]
-#[path = "w27_styled_linux_coverage.rs"]
-mod w27_styled_linux_coverage;
+#[path = "styled_extraction_edge_tests.rs"]
+mod styled_extraction_edge_tests;
 
 #[cfg(test)]
-#[path = "w27_styled_known_mixins_tests.rs"]
-mod w27_styled_known_mixins_tests;
+#[path = "known_mixin_tests.rs"]
+mod known_mixin_tests;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]

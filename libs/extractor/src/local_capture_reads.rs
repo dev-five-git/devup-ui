@@ -12,7 +12,7 @@ use oxc_span::Span;
 use oxc_syntax::{reference::ReferenceId, symbol::SymbolId};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-#[path = "capture_public_exports_w27.rs"]
+#[path = "capture_public_exports.rs"]
 mod public_exports;
 
 /// Names generated styled scopes bind after semantic references become strings.

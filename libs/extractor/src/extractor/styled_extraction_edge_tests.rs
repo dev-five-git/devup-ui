@@ -1,7 +1,7 @@
 use super::*;
 use rstest::rstest;
 
-#[path = "w27_styled_statement_coverage.rs"]
+#[path = "styled_statement_tests.rs"]
 mod statements;
 
 #[rstest]
@@ -174,7 +174,7 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
         .flat_map(ExtractStyleProp::extract)
         .collect::<Vec<_>>();
     assert_eq!(
-        super::w27_props_rule_choices_tests::support::declarations(&styles),
+        super::props_rule_choice_tests::support::declarations(&styles),
         [("opacity".into(), ".6".into())]
     );
     Ok(())

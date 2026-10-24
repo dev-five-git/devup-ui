@@ -100,7 +100,7 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
             crate::css_utils::rm_last_semi_colon(&expression_to_code(value))
         )?;
     }
-    let selected = super::super::w27_props_rule_choices_tests::support::evaluate(
+    let selected = super::super::props_rule_choice_tests::support::evaluate(
         &format!(
             "(()=>{{{schedule}return {};}})()",
             crate::css_utils::rm_last_semi_colon(&code)

@@ -5,7 +5,7 @@ use oxc_ast::{
 };
 
 #[cfg(test)]
-#[path = "w27_styled_template_parts_tests.rs"]
+#[path = "styled_template_part_tests.rs"]
 mod coverage_tests;
 
 // Use the CSS parser's lexer so quotes, escapes, comments and functions never

@@ -2,7 +2,7 @@ use crate::{ExtractOption, ExtractStyleValue, ResolvedModule, extract, extract_w
 use rstest::rstest;
 use serial_test::serial;
 
-#[path = "w27_styled_composition_coverage.rs"]
+#[path = "styled_composition_tests.rs"]
 mod styled_composition;
 
 #[test]
@@ -11,7 +11,7 @@ fn declaration_oracle_when_given_unsupported_atom_rejects_instead_of_filtering_i
     let styles = [ExtractStyleValue::Typography("body".into())];
     // When
     let result = std::panic::catch_unwind(|| {
-        super::super::w27_props_rule_choices_tests::support::declarations(&styles)
+        super::super::props_rule_choice_tests::support::declarations(&styles)
     });
     // Then
     assert!(result.is_err(), "unsupported atoms must fail the oracle");
@@ -32,7 +32,7 @@ fn active_oracle_when_output_has_unsupported_atom_rejects_even_if_class_is_inact
         .insert(ExtractStyleValue::Typography("body".into()));
     // When
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        super::super::w27_props_rule_choices_tests::support::active(&output, "{}")
+        super::super::props_rule_choice_tests::support::active(&output, "{}")
     }));
     // Then
     assert!(
@@ -119,12 +119,18 @@ fn deep_namespace_when_given_css_prop_does_not_inherit_one_level_definition()
     let source = "/** @jsxImportSource @emotion/react */ import * as UI from './base'; export const result = <UI.Nested.Child css={{ color: 'blue' }} />;";
     let resolver = |specifier: &str, _: &str| {
         (specifier == "./base").then(|| ResolvedModule {
-        path: "/w27/base.tsx".into(),
+        path: "/composition/base.tsx".into(),
         code: "import styled from '@emotion/styled'; export const Child = styled.div`color: red;`;".into(),
     })
     };
     // When
-    let output = extract_with_modules("/w27/entry.tsx", source, super::option(), false, &resolver)?;
+    let output = extract_with_modules(
+        "/composition/entry.tsx",
+        source,
+        super::option(),
+        false,
+        &resolver,
+    )?;
     // Then
     assert!(output.code.contains("UI.Nested.Child"), "{}", output.code);
     assert_eq!(
@@ -148,17 +154,23 @@ fn unknown_namespace_selector_when_not_an_exact_member_reports_error(
     );
     let resolver = |specifier: &str, _: &str| {
         (specifier == "./base").then(|| ResolvedModule {
-        path: "/w27/base.tsx".into(),
+        path: "/composition/base.tsx".into(),
         code: "import styled from '@emotion/styled'; export const Child = styled.div`color: red;`;".into(),
     })
     };
     // When
-    let error = extract_with_modules("/w27/entry.tsx", &source, super::option(), false, &resolver)
-        .err()
-        .ok_or("unknown selector unexpectedly compiled")?
-        .to_string();
+    let error = extract_with_modules(
+        "/composition/entry.tsx",
+        &source,
+        super::option(),
+        false,
+        &resolver,
+    )
+    .err()
+    .ok_or("unknown selector unexpectedly compiled")?
+    .to_string();
     // Then
-    assert!(error.starts_with("/w27/entry.tsx:1:"), "{error}");
+    assert!(error.starts_with("/composition/entry.tsx:1:"), "{error}");
     assert!(error.contains(selector), "{error}");
     assert!(error.contains("at build time"), "{error}");
     Ok(())

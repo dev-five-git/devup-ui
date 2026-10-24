@@ -1,4 +1,4 @@
-use super::super::super::w27_props_rule_choices_tests::support::{active, declarations};
+use super::super::super::props_rule_choice_tests::support::{active, declarations};
 use crate::{ExtractOption, extract};
 use rstest::rstest;
 use serial_test::serial;

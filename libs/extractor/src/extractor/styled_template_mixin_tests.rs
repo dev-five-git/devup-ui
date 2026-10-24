@@ -117,7 +117,7 @@ fn known_class_when_empty_or_nonempty_selects_rules_before_context_lowering(
                     crate::css_utils::rm_last_semi_colon(&crate::utils::expression_to_code(value))
                 )?;
             }
-            let selected = super::super::w27_props_rule_choices_tests::support::evaluate(
+            let selected = super::super::props_rule_choice_tests::support::evaluate(
                 &format!(
                     "(()=>{{{}return {};}})()",
                     captured,

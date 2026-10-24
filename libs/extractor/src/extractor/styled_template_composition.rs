@@ -32,7 +32,7 @@ pub(super) struct TemplateComposition<'a> {
 }
 
 #[cfg(test)]
-#[path = "w27_styled_template_coverage.rs"]
+#[path = "styled_template_mixin_tests.rs"]
 mod coverage_tests;
 
 #[cfg(test)]
