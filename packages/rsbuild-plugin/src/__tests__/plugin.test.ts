@@ -665,7 +665,7 @@ const App = () => <Box></Box>`,
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
     })
 
-    describe('W66 default regressions', () => {
+    describe('default regressions', () => {
       it.each([
         ['omitted', {}],
         ['undefined', { atomHoist: undefined }],

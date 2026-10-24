@@ -6,16 +6,17 @@ use crate::{
 };
 use css::utils::to_kebab_case;
 
+mod analysis;
 mod calls;
+mod instrument;
 mod objects;
 mod origin;
 mod strings;
 pub(crate) use origin::{evaluated_calls, map_evaluated};
 mod text;
-pub(crate) use calls::instrument;
+pub(crate) use instrument::{instrument, instrument_evaluated, instrument_located};
 pub(crate) use objects::authored_errors;
 pub(crate) use objects::{ObjectKind, evaluated_errors};
-pub(crate) const ERROR_CHANNEL: &str = "DEVUP_DEAD_DECLARATION\n";
 
 pub(crate) fn terminal_error(message: &str) -> bool {
     message

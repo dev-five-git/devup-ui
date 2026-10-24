@@ -2,7 +2,7 @@ import { expect, it } from 'bun:test'
 
 import { runAvailabilityIntegration } from '../../../next-plugin/src/__tests__/availability-harness'
 
-it('W66 availability: keeps distinct shared buckets byte-stable through Vite hooks in AB/BA/BA/AB', () => {
+it('availability: keeps distinct shared buckets byte-stable through Vite hooks in AB/BA/BA/AB', () => {
   // Given: two physical shared suppliers, both reached by two private entries.
   // When: actual built adapter callbacks run in fresh processes at one fixed root.
   const [ab, ba, baAgain, abAgain] = runAvailabilityIntegration('vite')

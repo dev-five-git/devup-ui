@@ -596,7 +596,7 @@ pub(crate) fn inline_constants<'a>(
 }
 
 fn is_style_package(option: &ExtractOption, source: &str) -> bool {
-    source.starts_with(&option.package) || source == crate::STYLEX_PACKAGE
+    crate::package_specifier::is_package(source, &option.package) || source == crate::STYLEX_PACKAGE
 }
 
 fn inline_in<'a>(
@@ -1562,7 +1562,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         self.style_imports.contains(name)
             || self.imports.get(name).is_some_and(|(source, _)| {
                 source != crate::STYLEX_PACKAGE
-                    && (source.starts_with(modules.option.package.as_str())
+                    && (crate::package_specifier::is_package(source, &modules.option.package)
                         || modules.option.import_aliases.contains_key(source))
             })
     }
@@ -1579,7 +1579,8 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         let (source, Imported::Named(export)) = self.imports.get(callee.name.as_str())? else {
             return None;
         };
-        if export != "css" || !source.starts_with(modules.option.package.as_str()) {
+        if export != "css" || !crate::package_specifier::is_package(source, &modules.option.package)
+        {
             return None;
         }
         let code = self.source?;
@@ -1661,7 +1662,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             || self.style_names.contains(name)
             || self.imports.get(name).is_some_and(|(source, _)| {
                 source == crate::STYLEX_PACKAGE
-                    || source.starts_with(option.package.as_str())
+                    || crate::package_specifier::is_package(source, &option.package)
                     || option.import_aliases.contains_key(source)
             })
     }
@@ -3072,6 +3073,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     }
 }
 
+#[cfg(test)]
+#[path = "imported_constants_package_boundary_tests.rs"]
+mod package_boundary_tests;
 #[cfg(test)]
 mod scope_tests;
 #[cfg(test)]

@@ -294,10 +294,7 @@ struct Walker<'r, 'p> {
 
 impl Walker<'_, '_> {
     fn is_package(&self, source: &str) -> bool {
-        source == self.package
-            || source
-                .strip_prefix(self.package)
-                .is_some_and(|rest| rest.starts_with('/'))
+        crate::package_specifier::is_package(source, self.package)
     }
 
     fn module(&mut self, specifier: &str, importer: &str) -> Option<Rc<Exports>> {

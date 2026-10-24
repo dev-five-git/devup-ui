@@ -223,7 +223,7 @@ describe('devupUIWebpackPlugin', () => {
     })
   })
   it.each([true, false])(
-    'W66 default regressions: should apply default options (omitted: %s)',
+    'default regressions: should apply default options (omitted: %s)',
     (omitted) => {
       const plugin = omitted
         ? new DevupUIWebpackPlugin()
@@ -675,7 +675,7 @@ describe('devupUIWebpackPlugin', () => {
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
     })
 
-    describe('W66 default regressions', () => {
+    describe('default regressions', () => {
       beforeEach(() => {
         computeFileReachSpy.mockReturnValue({
           'src/shared.tsx': [0, 1],

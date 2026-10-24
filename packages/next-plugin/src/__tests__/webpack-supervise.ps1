@@ -7,7 +7,7 @@ $clean = $false
 $script:outputClosed = $false
 function Record($Event, $Data) {
     if ($script:outputClosed) { return }
-    try { [Console]::WriteLine('W65-LIFECYCLE ' + (@{ event = $Event; data = $Data } | ConvertTo-Json -Depth 6 -Compress)) }
+    try { [Console]::WriteLine('NEXT-EVENT ' + (@{ event = $Event; data = $Data } | ConvertTo-Json -Depth 6 -Compress)) }
     catch [System.IO.IOException] { $script:outputClosed = $true }
 }
 try {

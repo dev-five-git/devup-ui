@@ -48,8 +48,8 @@ for (const fault of [
     console.info(output)
     const events = output
       .split(/\r?\n/)
-      .filter((line) => line.startsWith('W65-LIFECYCLE '))
-      .map((line) => JSON.parse(line.slice(14)))
+      .filter((line) => line.startsWith('NEXT-EVENT '))
+      .map((line) => JSON.parse(line.slice('NEXT-EVENT '.length)))
     const tree = events.find((entry) => entry.event === 'tree_exit')
     const cleanup = events.find((entry) => entry.event === 'cleanup')
     expect(tree.data.active).toEqual([])
@@ -60,16 +60,16 @@ for (const fault of [
       for (const pid of tree.data.pids) {
         expect(() => process.kill(pid, 0)).toThrow()
       }
-      for (const match of output.matchAll(/W65-FAULT-PID (\d+)/g))
+      for (const match of output.matchAll(/FAULT-PID (\d+)/g))
         expect(tree.data.pids).toContain(Number(match[1]))
     }
     if (fault) {
       expect(result.status).not.toBe(0)
       expect(output).not.toContain('webpack production proof passed')
       if (fault === 'build-timeout') {
-        expect(output.match(/W65-FAULT-PID \d+/g)?.length).toBe(2)
+        expect(output.match(/FAULT-PID \d+/g)?.length).toBe(2)
         expect(output).toContain('Next build deadline exceeded')
-      } else expect(output).toContain('W65-SERVER-PID ')
+      } else expect(output).toContain('SERVER-PID ')
       if (fault === 'post-start-timeout')
         expect(tree.data.reason).toBe('deadline')
     } else {

@@ -201,7 +201,7 @@ describe('DevupUINextPlugin', () => {
       ['ON', { atomHoist: 2 }],
       ['custom', { atomHoist: 3 }],
     ])(
-      'W66 default regressions: delegates %s atom policy to webpack',
+      'default regressions: delegates %s atom policy to webpack',
       (_label, options) => {
         // Given: the webpack path, whose constructor owns the resolved default.
         delete process.env.TURBOPACK
@@ -280,7 +280,7 @@ describe('DevupUINextPlugin', () => {
   })
   describe('turbo', () => {
     it.each([true, false])(
-      'W66 availability: reuses production setup and warns once across config reloads (singleCss %s)',
+      'availability: reuses production setup and warns once across config reloads (singleCss %s)',
       (singleCss) => {
         setNodeEnv('production')
         process.env.TURBOPACK = '1'
@@ -1216,7 +1216,7 @@ export const box = style({ color: 'red' })`
       }
     })
 
-    describe('W66 default regressions', () => {
+    describe('default regressions', () => {
       let canonicalSpy: ReturnType<typeof spyOn>
       let routesSpy: ReturnType<typeof spyOn>
       let compiledSpy: ReturnType<typeof spyOn>
@@ -1257,7 +1257,7 @@ export const box = style({ color: 'red' })`
       })
 
       it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
-        'W66 availability: keeps per-file mode for request %s',
+        'availability: keeps per-file mode for request %s',
         (atomHoist) => {
           // Given: multi-route reach and legacy whole-file hoisting are available.
           process.env.DEVUP_HOIST_V = '3'

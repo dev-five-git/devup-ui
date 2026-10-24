@@ -376,13 +376,18 @@ impl<'a> Reader<'_, 'a> {
             copied = offset;
         }
         source.push_str(transformed.get(copied..)?);
-        let (computed, replacements, dependencies) = crate::build_time_values::evaluate(
-            &source,
-            path,
-            self.option,
-            Some(self.resolver),
-            unknown,
-        )?;
+        let (computed, replacements, dependencies) =
+            match crate::build_time_values::evaluate_located(
+                &source,
+                path,
+                self.option,
+                Some(self.resolver),
+                unknown,
+            ) {
+                Ok(value) => value?,
+                // A refused evaluation leaves the definition unreadable, never executable.
+                Err(_) => return None,
+            };
         let mut result = String::new();
         let mut original = 0;
         let mut before = 0;

@@ -420,9 +420,7 @@ for (const singleCss of [true, false]) {
       })
     }
 
-    test('later argument wins across the imported W35i leaf', async ({
-      page,
-    }) => {
+    test('later argument wins across the imported leaf', async ({ page }) => {
       const emitted = artifacts(
         singleCss,
         `${api} import { base as child } from './child'; export const base = css(child, { color: 'blue', margin: 3 });`,
