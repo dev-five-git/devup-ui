@@ -88,11 +88,26 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
         } else {
             let file_num = map.len();
             map.insert(filename.to_string(), file_num);
+            crate::slot_reservation::record_insert();
             file_num
         }
     })
 }
 
+/// Give every file in `files` a number now, in path order.
+///
+/// Numbers files already hold are kept, and a file collapsed into a bucket is numbered as the bucket. The numbers files get then depend on the paths alone,
+/// not on which file a worker reaches first; files that appear later (in
+/// development) are numbered after the existing ones.
+pub fn seed_file_numbers(files: &[String]) {
+    let _reservation = crate::slot_reservation::FileSeedGuard::default();
+    let mut sorted: Vec<String> = files.iter().map(|file| canonical(file)).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    for file in sorted {
+        let _ = get_file_num_by_filename(&file);
+    }
+}
 #[must_use]
 pub fn get_filename_by_file_num(file_num: usize) -> String {
     with_file_map(|map| {
@@ -198,7 +213,49 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_seed_file_numbers_numbers_buckets_not_their_members() {
+        reset_file_map();
+        set_canonical_map(std::collections::HashMap::from([(
+            "x.tsx".to_string(),
+            "a.tsx".to_string(),
+        )]));
+        seed_file_numbers(&[
+            "x.tsx".to_string(),
+            "b.tsx".to_string(),
+            "a.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("b.tsx"), 1);
+        assert_eq!(get_file_map().len(), 2);
+        reset_canonical_map();
+        reset_file_map();
+    }
+
+    #[test]
+    #[serial]
+    fn test_seed_file_numbers_is_independent_of_order() {
+        reset_file_map();
+        seed_file_numbers(&[
+            "b.tsx".to_string(),
+            "a.tsx".to_string(),
+            "b.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("b.tsx"), 1);
+        seed_file_numbers(&[
+            "c.tsx".to_string(),
+            "0.tsx".to_string(),
+            "a.tsx".to_string(),
+        ]);
+        assert_eq!(get_file_num_by_filename("a.tsx"), 0);
+        assert_eq!(get_file_num_by_filename("0.tsx"), 2);
+        assert_eq!(get_file_num_by_filename("c.tsx"), 3);
+        reset_file_map();
+    }
+    #[test]
+    #[serial]
     fn test_set_and_get_file_map() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut test_map = BiHashMap::new();
         test_map.insert("test-key".to_string(), 42);
         set_file_map(test_map.clone());
@@ -212,6 +269,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_reset_file_map() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut test_map = BiHashMap::new();
         test_map.insert("reset-key".to_string(), 1);
         set_file_map(test_map);
@@ -223,6 +281,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_canonical_identity_when_empty() {
+        let _state = crate::test_state::TestStateGuard::new();
         reset_canonical_map();
         assert_eq!(canonical("a.tsx"), "a.tsx");
     }
@@ -230,6 +289,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_canonical_mapped_and_unmapped() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = std::collections::HashMap::new();
         m.insert("child.tsx".to_string(), "parent.tsx".to_string());
         set_canonical_map(m);
@@ -243,6 +303,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_canonical_map_roundtrip() {
+        let _state = crate::test_state::TestStateGuard::new();
         let mut m = std::collections::HashMap::new();
         m.insert("a".to_string(), "b".to_string());
         set_canonical_map(m.clone());
@@ -270,6 +331,7 @@ mod tests {
 
         const THREADS: usize = 8;
         const FILES: usize = 200;
+        let _state = crate::test_state::TestStateGuard::new();
 
         reset_file_map();
 

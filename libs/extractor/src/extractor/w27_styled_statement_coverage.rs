@@ -1,5 +1,6 @@
 use super::super::*;
 use rstest::rstest;
+use std::fmt::Write;
 
 #[rstest]
 #[case("p => p.on ? {opacity: 0.4} : p.rules")]
@@ -68,9 +69,13 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
             values: &values,
             inline_css: &inline_css,
         },
-        &[],
+        (&[], None, &[]),
         None,
-        None,
+        StyledContext {
+            filename: "statement.tsx",
+            jsx: &mut None,
+            capability: None,
+        },
     );
     // Then: opaque class callbacks legitimately reach the statement fallback.
     assert_eq!(output.errors, vec![]);
@@ -88,8 +93,19 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
         .first()
         .ok_or("expected callback class expression")?;
     let code = expression_to_code(class);
+    let mut schedule = String::new();
+    for (name, value) in &definition.bindings {
+        write!(
+            schedule,
+            "const {name} = ({});",
+            crate::css_utils::rm_last_semi_colon(&expression_to_code(value))
+        )?;
+    }
     let selected = super::super::w27_props_rule_choices_tests::support::evaluate(
-        crate::css_utils::rm_last_semi_colon(&code),
+        &format!(
+            "(()=>{{{schedule}return {};}})()",
+            crate::css_utils::rm_last_semi_colon(&code)
+        ),
         &format!("{{on: {on}, external: 'external-class'}}"),
     );
     assert_eq!(selected, if on { "external-class" } else { "" });
@@ -119,9 +135,13 @@ fn uncurried_styled_when_second_argument_is_callback_stays_object_only()
             values: &values,
             inline_css: &inline_css,
         },
-        &[],
+        (&[], None, &[]),
         None,
-        None,
+        StyledContext {
+            filename: "statement.tsx",
+            jsx: &mut None,
+            capability: None,
+        },
     );
     // Then
     assert!(output.definition.is_none());

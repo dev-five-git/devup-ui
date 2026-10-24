@@ -3,14 +3,18 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use crate::utils::{
-    get_str_by_property_key, get_string_by_literal_expression, readable_code, runtime_value_error,
-    wrap_direct_call,
+    get_key_by_literal_expression, get_str_by_property_key, get_string_by_literal_expression,
+    readable_code, runtime_value_error, wrap_direct_call,
 };
 use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
+    quoted::{
+        QuoteState, find_unquoted, rfind_unquoted, split_unquoted, string_end, trim_css,
+        unquoted_bytes,
+    },
     rm_css_comment::rm_css_comment,
-    style_selector::StyleSelector,
+    style_selector::{StyleSelector, split_selector_list},
 };
 use oxc_allocator::Allocator;
 use oxc_span::{GetSpan, SPAN};
@@ -32,6 +36,13 @@ mod layer_names;
 pub(crate) use component_layer_objects::object_layer_errors;
 pub(crate) use component_layers::{expression_layer_errors, nest_layer, template_layer_errors};
 pub(crate) use layer_names::parse as parse_layer_name;
+#[path = "implicit_props_theme.rs"]
+mod implicit_props_theme;
+
+#[path = "theme_callback.rs"]
+mod theme_callback;
+
+pub(crate) use implicit_props_theme::reads as reads_implicit_props_theme;
 
 use crate::extract_style::{
     extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
@@ -65,43 +76,57 @@ pub fn rm_last_semi_colon(code: &str) -> &str {
 /// style static; left alone the arrow would be called with the element's props,
 /// which carry no `theme`, and silently evaluate to `undefined`.
 pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
-    let Expression::ArrowFunctionExpression(arrow) = expr else {
-        return None;
-    };
-    let [param] = arrow.params.items.as_slice() else {
-        return None;
-    };
-    let root = match &param.pattern {
-        BindingPattern::BindingIdentifier(ident) => ThemeRoot::Props(ident.name.as_str()),
-        BindingPattern::ObjectPattern(pattern) => pattern
-            .properties
-            .iter()
-            .any(|p| get_str_by_property_key(&p.key).is_some_and(|key| key == "theme"))
-            .then_some(ThemeRoot::Theme)?,
+    use oxc_ast_visit::Visit;
+    struct Defaults(bool);
+    impl<'a> Visit<'a> for Defaults {
+        fn visit_assignment_pattern(&mut self, _: &oxc_ast::ast::AssignmentPattern<'a>) {
+            self.0 = true;
+        }
+    }
+    let (params, body) = match expr {
+        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+            (&arrow.params, arrow.body.as_expression()?)
+        }
+        Expression::FunctionExpression(function) if !function.r#async && !function.generator => (
+            &function.params,
+            crate::css_prop::returned(function.body.as_deref()?)?,
+        ),
         _ => return None,
     };
+    let [param] = params.items.as_slice() else {
+        return None;
+    };
+    let mut defaults = Defaults(false);
+    defaults.visit_binding_pattern(&param.pattern);
+    if params.rest.is_some() || param.initializer.is_some() || defaults.0 {
+        return None;
+    }
+    theme_leaf_reference(params, body)
+}
 
-    let mut path = Vec::new();
-    let mut cursor = arrow.body.as_expression()?;
+/// Map a leaf without erasing its enclosing callback's parameter evaluation.
+pub(crate) fn theme_leaf_reference(
+    params: &oxc_ast::ast::FormalParameters<'_>,
+    body: &Expression<'_>,
+) -> Option<String> {
+    let root = theme_root(&params.items.first()?.pattern)?;
+
+    let mut path: Vec<Cow<'_, str>> = Vec::new();
+    let mut cursor = body;
     loop {
         match cursor {
             Expression::StaticMemberExpression(member) => {
-                path.push(member.property.name.to_string());
+                path.push(Cow::Borrowed(member.property.name.as_str()));
                 cursor = &member.object;
             }
+            // `theme.space[2]` and `theme.colors['brand']` read a key the build knows
             Expression::ComputedMemberExpression(member) => {
-                path.push(match &member.expression {
-                    Expression::StringLiteral(key) => key.value.to_string(),
-                    key => {
-                        crate::utils::js_number_literal(key).map(crate::utils::js_number_string)?
-                    }
-                });
+                path.push(get_key_by_literal_expression(&member.expression)?);
                 cursor = &member.object;
             }
             Expression::Identifier(ident) => {
                 let matches_root = match root {
-                    ThemeRoot::Props(name) => ident.name.as_str() == name,
-                    ThemeRoot::Theme => ident.name.as_str() == "theme",
+                    ThemeRoot::Props(name) | ThemeRoot::Theme(name) => ident.name.as_str() == name,
                 };
                 if !matches_root {
                     return None;
@@ -121,9 +146,121 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
     Some(format!("var(--{})", path.join("-")))
 }
 
+/// Whether the style function `expr` reads the theme in a way
+/// [`theme_var_reference`] cannot turn into a CSS variable, such as
+/// `p => p.theme.brand()` or `({ theme }) => theme.space[i]`: no theme object
+/// exists at runtime, so it would read `undefined` or throw
+pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
+    use oxc_ast_visit::{Visit, walk};
+    struct ThemeReads<'n> {
+        root: ThemeRoot<'n>,
+        found: bool,
+    }
+    impl<'a> Visit<'a> for ThemeReads<'_> {
+        fn visit_static_member_expression(
+            &mut self,
+            it: &oxc_ast::ast::StaticMemberExpression<'a>,
+        ) {
+            if it.property.name == "theme"
+                && matches!(self.root, ThemeRoot::Props(name)
+                    if matches!(&it.object, Expression::Identifier(object) if object.name == name))
+            {
+                self.found = true;
+            }
+            walk::walk_static_member_expression(self, it);
+        }
+        fn visit_computed_member_expression(
+            &mut self,
+            it: &oxc_ast::ast::ComputedMemberExpression<'a>,
+        ) {
+            if get_string_by_literal_expression(&it.expression).is_some_and(|key| key == "theme")
+                && matches!(self.root, ThemeRoot::Props(name)
+                    if matches!(&it.object, Expression::Identifier(object) if object.name == name))
+            {
+                self.found = true;
+            }
+            walk::walk_computed_member_expression(self, it);
+        }
+        fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
+            if matches!(self.root, ThemeRoot::Theme(name) if it.name == name) {
+                self.found = true;
+            }
+        }
+    }
+    if reads_implicit_props_theme(expr) {
+        return true;
+    }
+    let Some(theme_callback::Callback { params, body }) = theme_callback::Callback::read(expr)
+    else {
+        return false;
+    };
+    let Some(param) = params.items.first() else {
+        return false;
+    };
+    let Some(root) = theme_root(&param.pattern) else {
+        return false;
+    };
+    if theme_var_reference(expr).is_some() {
+        return false;
+    }
+    let mut reads = ThemeReads { root, found: false };
+    reads.visit_formal_parameters(params);
+    match body {
+        theme_callback::Body::Arrow(body) => match body {
+            oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => reads.visit_function_body(body),
+            body => {
+                if let Some(expression) = body.as_expression() {
+                    reads.visit_expression(expression);
+                }
+            }
+        },
+        theme_callback::Body::Function(body) => {
+            if let Some(body) = body {
+                reads.visit_function_body(body);
+            }
+        }
+    }
+    reads.found
+}
+
+/// The build error for a theme read [`reads_unmapped_theme`] finds
+pub(crate) fn unmapped_theme_error(api: &str, expr: &Expression<'_>) -> (u32, String) {
+    (
+        expr.span().start,
+        crate::utils::build_time_error(
+            api,
+            &readable_code(expr),
+            "a theme read must be a path of names or literal keys, such as `p => p.theme.colors.brand` or `({ theme }) => theme.space[2]`, which reads the CSS variable `ThemeProvider` declares; compute other values outside the style",
+        ),
+    )
+}
+
+#[derive(Clone, Copy)]
 enum ThemeRoot<'a> {
     Props(&'a str),
-    Theme,
+    Theme(&'a str),
+}
+
+/// The props parameter or the local binding destructured from its theme.
+fn theme_root<'p>(pattern: &'p BindingPattern<'_>) -> Option<ThemeRoot<'p>> {
+    match pattern {
+        BindingPattern::BindingIdentifier(identifier) => {
+            Some(ThemeRoot::Props(identifier.name.as_str()))
+        }
+        BindingPattern::ObjectPattern(object) => object.properties.iter().find_map(|property| {
+            let mut value = &property.value;
+            while let BindingPattern::AssignmentPattern(default) = value {
+                value = &default.left;
+            }
+            let BindingPattern::BindingIdentifier(identifier) = value else {
+                return None;
+            };
+            get_str_by_property_key(&property.key)
+                .is_some_and(|key| key == "theme")
+                .then_some(ThemeRoot::Theme(identifier.name.as_str()))
+        }),
+        _ => None,
+    }
 }
 
 /// Convert a dynamic template-literal expression into identifier code,
@@ -175,18 +312,35 @@ pub(crate) enum Place {
 
 /// Where an interpolation stands, from the CSS written before and after it
 pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
-    let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
-    let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
-    let end = rest.find([';', '{', '}']);
-    if end.is_some_and(|end| rest.as_bytes()[end] == b'{') {
+    let mut quotes = QuoteState::default();
+    let mut head_start = 0;
+    let mut has_colon = false;
+    for (index, byte) in before.bytes().enumerate() {
+        if !quotes.is_syntax(byte) {
+            continue;
+        }
+        match byte {
+            b';' | b'{' | b'}' => {
+                head_start = index + 1;
+                has_colon = false;
+            }
+            b':' => has_colon = true,
+            _ => {}
+        }
+    }
+    let end = after
+        .iter()
+        .flat_map(|quasi| quasi.value.raw.bytes())
+        .find(|&byte| quotes.is_syntax(byte) && matches!(byte, b';' | b'{' | b'}'));
+    if end == Some(b'{') {
         return Place::Other;
     }
-    if head.contains(':') {
+    if has_colon {
         Place::Value
-    } else if head.trim().is_empty()
-        && rest
-            .chars()
-            .next()
+    } else if before[head_start..].trim().is_empty()
+        && after
+            .iter()
+            .find_map(|quasi| quasi.value.raw.chars().next())
             .is_none_or(|c| c.is_whitespace() || c == ';')
     {
         Place::Statement
@@ -585,7 +739,7 @@ fn collect_css_block(
             })
             .unwrap_or(rest.len());
         let body = &rest[body_start..body_end];
-        let prelude = component_layers::trim_trivia(prelude).trim_end();
+        let prelude = trim_css(component_layers::trim_trivia(prelude));
         if prelude.is_empty() || prelude == "&" {
             collect_css_block(body, level, selector, styles);
         } else if let Some(layer) = component_layers::named_layer(prelude) {
@@ -603,9 +757,9 @@ fn collect_css_block(
 }
 
 /// The selector a nested block applies to: at-rule preludes wrap `parent`,
-/// `&`-selectors substitute it, and a bare selector under a selector nests as
-/// a descendant. `None` drops the block (an unknown at-rule, or conditions
-/// that can never match together).
+/// `&`-selectors substitute it, and a bare selector is made relative to it
+/// (the component's own class at the top). `None` drops the block (an unknown
+/// at-rule, or conditions that can never match together).
 fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSelector> {
     if prelude.starts_with('@') {
         let (kind, query) = split_at_rule_key(prelude)?;
@@ -617,35 +771,25 @@ fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSe
 /// Each selector of the list `selectors` written without `&` as a descendant
 /// of it, as stylis nests one
 pub(crate) fn descendants(selectors: &str) -> String {
-    let mut depth = 0usize;
-    let mut from = 0;
-    let mut parts = Vec::new();
-    for (index, c) in selectors.char_indices() {
-        match c {
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                parts.push(&selectors[from..index]);
-                from = index + 1;
-            }
-            _ => {}
-        }
-    }
-    parts.push(&selectors[from..]);
-    parts
-        .iter()
-        .map(|part| {
-            let part = part.trim();
-            if part.contains('&') {
-                part.to_string()
-            } else if part.starts_with(':') {
-                format!("&{part}")
-            } else {
-                format!("& {part}")
-            }
-        })
+    split_selector_list(selectors)
+        .into_iter()
+        .map(relative_selector)
         .collect::<Vec<_>>()
         .join(",")
+}
+
+/// A selector of a nested rule made relative to the rule it is in, as
+/// styled-components and Emotion read it: one with `&` says where that rule
+/// goes, a pseudo-class or pseudo-element applies to that rule's element, and
+/// any other selector to its descendants (`> p` to its children)
+fn relative_selector(part: &str) -> Cow<'_, str> {
+    if find_unquoted(part, b'&').is_some() {
+        Cow::Borrowed(part)
+    } else if part.starts_with(':') {
+        Cow::Owned(format!("&{part}"))
+    } else {
+        Cow::Owned(format!("& {part}"))
+    }
 }
 
 /// Optimize a declaration's value only when its property warrants multi-value
@@ -674,16 +818,17 @@ fn css_to_style_block(
     // present.
     let cap = cleaned.bytes().filter(|&b| b == b';').count() + 1;
     let mut styles = Vec::with_capacity(cap);
-    for s in cleaned.split(';') {
-        let s = s.trim();
+    for s in split_unquoted(&cleaned, b';') {
+        let s = trim_css(s);
         if s.is_empty() {
             continue;
         }
-        let Some((property, value)) = s.split_once(':') else {
+        let Some(colon) = find_unquoted(s, b':') else {
             continue;
         };
+        let (property, value) = (&s[..colon], &s[colon + 1..]);
         let property = property.trim();
-        let value = value.trim();
+        let value = trim_css(value);
         let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,
@@ -699,10 +844,10 @@ pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<Ext
     let mut map = BTreeMap::new();
     let mut input = keyframes;
 
-    while let Some(start) = input.find('{') {
-        let key = input[..start].trim().to_string();
+    while let Some(start) = find_unquoted(input, b'{') {
+        let key = trim_css(&input[..start]).to_string();
         let rest = &input[start + 1..];
-        if let Some(end) = rest.find('}') {
+        if let Some(end) = find_unquoted(rest, b'}') {
             let block = &rest[..end];
             // css_to_style already returns styles sorted by property.
             map.insert(key, css_to_style(block, 0, &None));
@@ -734,40 +879,40 @@ pub fn optimize_css_block(css: &str) -> String {
     // brace-boundary rewrite would produce a string byte-identical to `cleaned`. In
     // that case borrow `cleaned` directly (`Cow::Borrowed`) instead of allocating and
     // filling a second whole-string buffer.
-    let bytes = cleaned.as_bytes();
-    let trimmed: Cow<str> = if bytes.iter().any(|&b| b == b'{' || b == b'}') {
+    let trimmed: Cow<str> = if unquoted_bytes(cleaned).any(|(_, b)| b == b'{' || b == b'}') {
         let mut buf = String::with_capacity(cleaned.len());
         let mut segment_start = 0;
-        for (idx, &b) in bytes.iter().enumerate() {
+        for (idx, b) in unquoted_bytes(cleaned) {
             if b == b'{' || b == b'}' {
-                buf.push_str(cleaned[segment_start..idx].trim());
+                buf.push_str(trim_css(&cleaned[segment_start..idx]));
                 buf.push(b as char);
                 segment_start = idx + 1;
             }
         }
-        buf.push_str(cleaned[segment_start..].trim());
+        buf.push_str(trim_css(&cleaned[segment_start..]));
         Cow::Owned(buf)
     } else {
         Cow::Borrowed(cleaned)
     };
 
     let mut first_segment = true;
-    for s in trimmed.split(';') {
+    for s in split_unquoted(&trimmed, b';') {
         if !first_segment {
             result.push(';');
         }
         first_segment = false;
 
-        let last_part = if let Some((prefix, last_part)) = s.rsplit_once('{') {
-            append_brace_prefix(&mut result, prefix);
-            last_part.trim()
+        let last_part = if let Some(brace) = rfind_unquoted(s, b'{') {
+            append_brace_prefix(&mut result, &s[..brace]);
+            trim_css(&s[brace + 1..])
         } else {
-            s.trim()
+            trim_css(s)
         };
 
-        if let Some((property, value)) = last_part.split_once(':') {
+        if let Some(colon) = find_unquoted(last_part, b':') {
+            let (property, value) = (&last_part[..colon], &last_part[colon + 1..]);
             let property = property.trim();
-            let value = value.trim();
+            let value = trim_css(value);
 
             let property_name = property
                 .rsplit_once('{')
@@ -790,22 +935,22 @@ pub fn optimize_css_block(css: &str) -> String {
 }
 
 fn append_brace_prefix(result: &mut String, prefix: &str) {
-    for (idx, part) in prefix.split('{').enumerate() {
+    for (idx, part) in split_unquoted(prefix, b'{').enumerate() {
         if idx > 0 {
             result.push('{');
         }
-        result.push_str(part.trim());
+        result.push_str(trim_css(part));
     }
     result.push('{');
 }
 
 fn trim_string_in_place(value: &mut String) {
+    let trimmed_len = trim_css(value).len();
     let trimmed_start = value.len() - value.trim_start().len();
     if trimmed_start > 0 {
         value.drain(..trimmed_start);
     }
 
-    let trimmed_len = value.trim_end().len();
     value.truncate(trimmed_len);
 }
 
@@ -828,6 +973,14 @@ fn remove_semicolon_before_closing_brace(value: &mut String) {
     let mut read = 0usize;
     let len = bytes.len();
     while read < len {
+        if matches!(bytes[read], b'\'' | b'"') {
+            // A quoted string is data: carry it over whole.
+            let end = string_end(bytes, read, bytes[read]);
+            bytes.copy_within(read..end, write);
+            write += end - read;
+            read = end;
+            continue;
+        }
         if bytes[read] == b';' {
             // Peek past the run of ';' to see what follows it.
             let mut peek = read;

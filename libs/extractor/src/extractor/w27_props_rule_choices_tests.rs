@@ -1,7 +1,5 @@
 use crate::extract_style::ExtractStyleProperty;
 use crate::{ExtractOption, ExtractOutput, ExtractStyleValue, extract};
-use oxc_ast::ast::{ConditionalExpression, Expression};
-use oxc_ast_visit::{Visit, walk};
 
 #[path = "w27_props_rule_choices_regressions.rs"]
 mod regressions;
@@ -9,28 +7,25 @@ mod regressions;
 #[path = "styled_choice_test_support.rs"]
 pub(super) mod support;
 
-#[derive(Default)]
-struct ClassChoices(Vec<(String, String)>);
-
-impl<'a> Visit<'a> for ClassChoices {
-    fn visit_conditional_expression(&mut self, expression: &ConditionalExpression<'a>) {
-        if let (Expression::StringLiteral(yes), Expression::StringLiteral(no)) =
-            (&expression.consequent, &expression.alternate)
-        {
-            self.0.push((yes.value.to_string(), no.value.to_string()));
-        }
-        walk::walk_conditional_expression(self, expression);
-    }
-}
-
-fn class_choices(output: &ExtractOutput) -> Vec<(String, String)> {
-    let allocator = oxc_allocator::Allocator::default();
-    let parsed =
-        oxc_parser::Parser::new(&allocator, &output.code, oxc_span::SourceType::tsx()).parse();
-    assert_eq!(parsed.diagnostics.len(), 0);
-    let mut choices = ClassChoices::default();
-    choices.visit_program(&parsed.program);
-    choices.0
+fn selected_classes(output: &ExtractOutput, on: bool) -> Vec<String> {
+    let mut classes: Vec<_> = crate::styled_source_tests::captured_render::active(
+        (
+            "w27-props-rule-choices.tsx",
+            Some("w27-props-rule-choices.tsx"),
+        ),
+        output,
+        &format!("{{on:{on},width:'24px'}}"),
+    )
+    .iter()
+    .map(|style| {
+        style
+            .extract(Some("w27-props-rule-choices.tsx"))
+            .unwrap_or_else(|| panic!("selected declaration class identity"))
+            .to_string()
+    })
+    .collect();
+    classes.sort();
+    classes
 }
 
 fn class_for(output: &ExtractOutput, property: &str, value: &str) -> String {
@@ -49,6 +44,7 @@ fn class_for(output: &ExtractOutput, property: &str, value: &str) -> String {
             | ExtractStyleValue::Css(_)
             | ExtractStyleValue::Import(_)
             | ExtractStyleValue::FontFace(_)
+            | ExtractStyleValue::LayerOrder(_)
             | ExtractStyleValue::Keyframes(_) => None,
         })
         .unwrap_or_else(|| panic!("missing {property}: {value}"));
@@ -91,13 +87,12 @@ fn base_atom_survives_when_logical_branch_is_missing() {
     assert_eq!(values(&output, "color"), ["blue", "red"]);
     assert!(output.code.contains("p.on"));
     assert!(!output.code.contains("styled("));
-    assert_eq!(
-        class_choices(&output),
-        [(
-            class_for(&output, "color", "blue"),
-            class_for(&output, "color", "red")
-        )]
-    );
+    for (on, color) in [(true, "blue"), (false, "red")] {
+        assert_eq!(
+            selected_classes(&output, on),
+            [class_for(&output, "color", color)]
+        );
+    }
     assert!(output.code.contains("style={style}"));
 }
 
@@ -108,15 +103,14 @@ fn distinct_keys_keep_base_when_ternary_branch_omits_them() {
     let output = compile(rules);
     assert_eq!(values(&output, "color"), ["blue", "red"]);
     assert_eq!(values(&output, "background-color"), ["black", "white"]);
-    let choices = class_choices(&output);
-    assert!(choices.contains(&(
-        class_for(&output, "color", "blue"),
-        class_for(&output, "color", "red")
-    )));
-    assert!(choices.contains(&(
-        class_for(&output, "background-color", "black"),
-        class_for(&output, "background-color", "white")
-    )));
+    for (on, color, background) in [(true, "blue", "black"), (false, "red", "white")] {
+        let mut expected = [
+            class_for(&output, "color", color),
+            class_for(&output, "background-color", background),
+        ];
+        expected.sort();
+        assert_eq!(selected_classes(&output, on), expected);
+    }
     assert!(output.code.contains("style={style}"));
 }
 
@@ -127,13 +121,14 @@ fn nested_selector_keeps_base_when_logical_branch_is_missing() {
     let output = compile(rules);
     assert_eq!(values(&output, "color"), ["blue", "red"]);
     assert_eq!(values(&output, "opacity"), [".5"]);
-    assert_eq!(
-        class_choices(&output),
-        [(
-            class_for(&output, "color", "blue"),
-            class_for(&output, "color", "red")
-        )]
-    );
+    for (on, color) in [(true, "blue"), (false, "red")] {
+        let mut expected = [
+            class_for(&output, "color", color),
+            class_for(&output, "opacity", ".5"),
+        ];
+        expected.sort();
+        assert_eq!(selected_classes(&output, on), expected);
+    }
     assert!(output.styles.iter().all(|value| match value {
         ExtractStyleValue::Static(style) => style.selector().is_some(),
         _ => false,
@@ -153,11 +148,19 @@ fn dynamic_leaf_uses_variable_when_rule_branch_is_selected() {
     assert!(output.code.contains("p.on"));
     assert!(output.code.contains("--"));
     assert!(!output.code.contains("styled("));
-    assert!(
-        class_choices(&output)
-            .iter()
-            .any(|(_, no)| *no == class_for(&output, "width", "12px"))
+    assert_eq!(
+        selected_classes(&output, false),
+        [class_for(&output, "width", "12px")]
     );
+    let observed = crate::styled_source_tests::captured_render::execute(
+        (
+            "w27-props-rule-choices.tsx",
+            Some("w27-props-rule-choices.tsx"),
+        ),
+        &output,
+        "const element=render({target:Choice,props:{on:true,width:'24px'}});JSON.stringify(values(element,'width'));",
+    );
+    assert_eq!(observed, serde_json::json!(["24px"]));
 }
 
 #[test]
@@ -168,13 +171,12 @@ fn missing_branches_keep_base_when_ternary_returns_no_rules() {
             "const Choice = styled('div')({{ color: 'red' }}, p => p.on ? {{ color: 'blue' }} : {absent});"
         );
         let output = compile(&rules);
-        assert_eq!(
-            class_choices(&output),
-            [(
-                class_for(&output, "color", "blue"),
-                class_for(&output, "color", "red")
-            )]
-        );
+        for (on, color) in [(true, "blue"), (false, "red")] {
+            assert_eq!(
+                selected_classes(&output, on),
+                [class_for(&output, "color", color)]
+            );
+        }
     }
 }
 
@@ -184,7 +186,12 @@ fn later_atom_wins_when_it_follows_conditional_rules() {
     let rules = "const Choice = styled('div')({ color: 'red' }, p => p.on && { color: 'blue' }, { color: 'green' });";
     let output = compile(rules);
     assert_eq!(values(&output, "color"), ["green"]);
-    assert_eq!(class_choices(&output), vec![]);
+    for on in [true, false] {
+        assert_eq!(
+            selected_classes(&output, on),
+            [class_for(&output, "color", "green")]
+        );
+    }
 }
 
 #[test]

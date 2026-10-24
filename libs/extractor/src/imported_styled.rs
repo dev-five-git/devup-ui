@@ -16,7 +16,7 @@ use oxc_parser::{Parser, ParserReturn};
 use oxc_span::{GetSpan, SourceType, Span};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::css_prop::CssProp;
+use crate::css_prop::{CssProp, CssTakers};
 use crate::extractor::extract_style_from_styled::StyledDefinition;
 use crate::import_alias_visit::{Aliased, transform_import_aliases_with_edits};
 use crate::utils::{is_vanilla_extract_file, unwrap_syntax_only};
@@ -139,7 +139,8 @@ impl ImportedComponent<'_> {
         Self {
             definition: self
                 .definition
-                .filter(|definition| readable && definition.portable()),
+                .filter(|_| readable)
+                .and_then(StyledDefinition::shared),
             ..self
         }
     }
@@ -163,6 +164,7 @@ pub(crate) fn read<'a>(
     option: &ExtractOption,
     resolver: Option<&ModuleResolver>,
     css_prop: CssProp,
+    scoping: &mut Option<Rc<oxc_semantic::Scoping>>,
 ) -> Reading<'a> {
     let Some(resolver) = resolver else {
         return Reading::default();
@@ -176,7 +178,7 @@ pub(crate) fn read<'a>(
         reading: vec![filename.to_string()],
         dependencies: BTreeSet::new(),
     };
-    let components = reader.imports(program, filename, css_prop, allocator);
+    let components = reader.imports(program, filename, css_prop, allocator, scoping);
     Reading {
         components,
         dependencies: reader.dependencies,
@@ -246,7 +248,9 @@ impl<'a> Reader<'_, 'a> {
             return None;
         }
         let ast_builder = AstBuilder::new(&sub);
-        let inlined = crate::imported_constants::inline_constants(
+        let styled_capability =
+            crate::extractor::styled_capability::StyledCapability::reserve(&program);
+        let mut inlined = crate::imported_constants::inline_constants(
             &ast_builder,
             &mut program,
             path,
@@ -256,7 +260,7 @@ impl<'a> Reader<'_, 'a> {
             &px,
         );
         self.dependencies.extend(inlined.dependencies);
-        let imports = self.imports(&program, path, css_prop, &sub);
+        let imports = self.imports(&program, path, css_prop, &sub, &mut inlined.scoping);
         let mut exports = self.reexports(&program, path);
         let (bucket, global, _) = crate::resolve_css_target(path, self.option);
         let mut visitor = DevupVisitor::new(
@@ -269,10 +273,14 @@ impl<'a> Reader<'_, 'a> {
         visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
         visitor.import_css(inlined.css_styles);
         visitor.errors.extend(inlined.errors);
+        if let Some(scoping) = inlined.scoping {
+            visitor.reuse_scoping(scoping);
+        }
         visitor.unknown_bindings(&inlined.unknown);
         visitor.changed_bindings(inlined.changed);
         visitor.takes_css_prop(css_prop);
         visitor.import_styled(imports);
+        visitor.reserve_styled(styled_capability);
         visitor.visit_program(&mut program);
         let readable = visitor.errors.is_empty()
             && visitor.unknown_parts.is_empty()
@@ -450,16 +458,23 @@ impl<'a> Reader<'_, 'a> {
         importer: &str,
         css_prop: CssProp,
         allocator: &'b Allocator,
+        scoping: &mut Option<Rc<oxc_semantic::Scoping>>,
     ) -> Components<'b> {
         let imported = imported_bindings(program, &self.option.package);
-        let scoping = oxc_semantic::SemanticBuilder::new()
-            .build(program)
-            .semantic
-            .into_scoping();
+        // Callback recovery retains original IDs; rebuilding here would reassign
+        // them on the rewritten AST while its consumers retain the original table.
+        let scoping = scoping.get_or_insert_with(|| {
+            Rc::new(
+                oxc_semantic::SemanticBuilder::new()
+                    .build(program)
+                    .semantic
+                    .into_scoping(),
+            )
+        });
         let compat = format!("{}/compat", self.option.package);
         let mut used = Used {
-            scoping: &scoping,
-            css_takers: crate::css_prop::CssTakers::new(program, css_prop, &compat),
+            scoping,
+            css_takers: CssTakers::new(program, css_prop, &compat),
             styled: imported.styled,
             css_prop: css_prop != CssProp::Off,
             names: FxHashSet::default(),
@@ -571,7 +586,7 @@ fn written_name(expression: &Expression<'_>) -> Option<String> {
 /// The bindings a program composes, takes the `css` prop of, or selects
 struct Used<'s, 'p> {
     scoping: &'s oxc_semantic::Scoping,
-    css_takers: crate::css_prop::CssTakers<'p>,
+    css_takers: CssTakers<'p>,
     styled: FxHashSet<String>,
     css_prop: bool,
     names: FxHashSet<String>,
@@ -663,14 +678,6 @@ impl Used<'_, '_> {
 
 impl<'a> Visit<'a> for Used<'_, '_> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
-        if self.css_takers.property(call, |_| false).is_some()
-            && let Some(element) = call
-                .arguments
-                .first()
-                .and_then(|argument| argument.as_expression())
-        {
-            self.select(element);
-        }
         let name = match unwrap_syntax_only(&call.callee) {
             Expression::Identifier(callee) if self.styled.contains(callee.name.as_str()) => call
                 .arguments
@@ -681,6 +688,10 @@ impl<'a> Visit<'a> for Used<'_, '_> {
             {
                 Some(&member.object)
             }
+            _ if self.css_takers.property(call, |_| true).is_some() => call
+                .arguments
+                .first()
+                .and_then(|argument| argument.as_expression()),
             _ => None,
         };
         if let Some(expression) = name {
@@ -787,6 +798,42 @@ mod tests {
     }
 
     const STYLED: &str = "import styled from '@emotion/styled';\n";
+
+    #[rstest]
+    #[case("jsx(Child, { css: { color: 'red' } });", CssProp::Elements, &["Child"])]
+    #[case("jsx(UI.Child, { css: { color: 'red' } });", CssProp::Everywhere, &["UI.Child"])]
+    #[case("jsx(UI['Child'], { css: { color: 'red' } });", CssProp::Everywhere, &["UI.Child"])]
+    #[case("(UI => jsx(UI.Child, { css: { color: 'red' } }));", CssProp::Everywhere, &[])]
+    #[case("jsx(UI[key], { css: { color: 'red' } });", CssProp::Everywhere, &[])]
+    fn imported_css_discovery_when_general_or_namespace_uses_semantic_roots(
+        #[case] body: &str,
+        #[case] css_prop: CssProp,
+        #[case] expected: &[&str],
+    ) {
+        // Given
+        let allocator = Allocator::default();
+        let source = format!(
+            "import * as UI from './base'; import {{ Child }} from './base'; import {{ jsx }} from 'react/jsx-runtime'; {body}"
+        );
+        let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+        assert_eq!(parsed.diagnostics.len(), 0);
+        let scoping = oxc_semantic::SemanticBuilder::new()
+            .build(&parsed.program)
+            .semantic
+            .into_scoping();
+        let mut used = Used {
+            scoping: &scoping,
+            css_takers: CssTakers::new(&parsed.program, css_prop, "@devup-ui/react/compat"),
+            styled: FxHashSet::default(),
+            css_prop: css_prop != CssProp::Off,
+            names: FxHashSet::default(),
+        };
+        // When
+        used.visit_program(&parsed.program);
+        // Then
+        let names: BTreeSet<_> = used.names.iter().map(String::as_str).collect();
+        assert_eq!(names, expected.iter().copied().collect());
+    }
 
     #[test]
     #[serial]
@@ -1005,6 +1052,7 @@ mod tests {
         #[case] scope: &str,
         #[case] value: &str,
     ) {
+        let _state = crate::test_state::TestStateGuard::new();
         // Given
         let base =
             format!("{STYLED}{scope} export const Rules = styled.div({{ padding: {value} }});");
@@ -1019,9 +1067,9 @@ mod tests {
         )
         .unwrap();
         // Then
-        assert!(output.code.contains("DevupAs = Rules"), "{}", output.code);
         assert_eq!(output.styles.len(), 1);
         assert_eq!(output.dependencies, ["/src/base.ts"]);
+        let _proof = crate::retained_render_assertions::opaque(scope, value);
     }
 
     #[rstest]

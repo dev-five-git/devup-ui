@@ -155,3 +155,36 @@ fn impossible_parent_when_contextualized_emits_no_atoms() -> Result<(), Box<dyn 
     assert_eq!(result.len(), 0);
     Ok(())
 }
+
+#[test]
+fn static_atom_when_nested_in_layer_keeps_its_selector_and_inner_layer()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    let atom = ExtractStaticStyle::new_with_layer(
+        "color",
+        "red",
+        1,
+        Some(StyleSelector::Selector("&:focus".into())),
+        Some("inner".into()),
+    );
+    // When
+    let result = contextualize(
+        vec![ExtractStyleProp::Static(ExtractStyleValue::Static(atom))],
+        &["@layer outer {".into(), "&:hover {".into()],
+    )
+    .map_err(|_| "readable layered selector was rejected")?;
+    // Then
+    let [ExtractStyleProp::Static(ExtractStyleValue::Static(style))] = result.as_slice() else {
+        panic!("expected one contextualized static atom")
+    };
+    assert_eq!(style.layer(), Some("outer.inner"));
+    assert_eq!(
+        style.selector().map(ToString::to_string).as_deref(),
+        Some("&:hover:focus")
+    );
+    assert_eq!(
+        (style.property(), style.value(), style.level()),
+        ("color", "red", 1)
+    );
+    Ok(())
+}

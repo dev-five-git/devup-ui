@@ -73,6 +73,16 @@ fn place<'a>(
     parent: &ExtractStaticStyle,
 ) -> Result<ExtractStyleProp<'a>, ContextError> {
     match prop {
+        ExtractStyleProp::Static(ExtractStyleValue::LayerOrder(mut order)) => {
+            if let Some(parent) = parent.layer() {
+                for layer in &mut order.layers {
+                    *layer = format!("{parent}.{layer}");
+                }
+            }
+            Ok(ExtractStyleProp::Static(ExtractStyleValue::LayerOrder(
+                order,
+            )))
+        }
         ExtractStyleProp::Static(ExtractStyleValue::Static(mut style)) => {
             style.selector = match nest(parent.selector(), style.selector()) {
                 Ok(selector) => selector,

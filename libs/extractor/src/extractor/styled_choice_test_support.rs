@@ -1,5 +1,3 @@
-use crate::extract_style::ExtractStyleProperty;
-use crate::extract_style::style_property::StyleProperty;
 use crate::{ExtractOutput, ExtractStyleValue};
 use oxc_ast::ast::{JSXAttribute, JSXAttributeValue};
 use oxc_ast_visit::Visit;
@@ -31,30 +29,7 @@ pub(crate) fn active(output: &ExtractOutput, props: &str) -> Vec<ExtractStyleVal
     let mut classes = Classes::default();
     classes.visit_program(&parsed.program);
     assert_ne!(classes.0, "", "expected generated className expression");
-    let names = evaluate(&classes.0, props);
-    output
-        .styles
-        .iter()
-        .filter(|value| {
-            let class = match value {
-                ExtractStyleValue::Static(style) => style.extract(None).to_string(),
-                ExtractStyleValue::Dynamic(style) => {
-                    let property = style.extract(None);
-                    assert!(
-                        matches!(property, StyleProperty::Variable { .. }),
-                        "dynamic atom requires a variable"
-                    );
-                    match property {
-                        StyleProperty::Variable { class_name, .. }
-                        | StyleProperty::ClassName(class_name) => class_name,
-                    }
-                }
-                other => panic!("expected static atom, got {other:?}"),
-            };
-            names.split_whitespace().any(|name| name == class)
-        })
-        .cloned()
-        .collect()
+    crate::styled_source_tests::captured_render::active(("choice.tsx", None), output, props)
 }
 
 pub(crate) fn evaluate(expression: &str, props: &str) -> String {
@@ -71,9 +46,13 @@ pub(crate) fn evaluate(expression: &str, props: &str) -> String {
 pub(crate) fn declarations(styles: &[ExtractStyleValue]) -> Vec<(String, String)> {
     let mut declarations: Vec<_> = styles
         .iter()
-        .map(|value| match value {
+        .filter_map(|value| match value {
             ExtractStyleValue::Static(style) => {
-                (style.property().to_string(), style.value().to_string())
+                Some((style.property().to_string(), style.value().to_string()))
+            }
+            ExtractStyleValue::LayerOrder(order) => {
+                assert_ne!(order.layers.len(), 0);
+                None
             }
             other => panic!("expected static atom, got {other:?}"),
         })
@@ -105,4 +84,39 @@ fn active_oracle_when_generated_class_expression_is_missing_rejects(
         "missing classes must not become empty styles"
     );
     Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn active_oracle_when_callback_selects_a_rule_executes_the_complete_renderer() {
+    // Given
+    let source = "import {styled} from '@devup-ui/react';const Choice=styled.div(p=>p.on?{color:'red'}:{color:'blue'});";
+    let output = crate::extract(
+        "choice.tsx",
+        source,
+        crate::ExtractOption {
+            single_css: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // When
+    let selected = active(&output, "{on:true}");
+    // Then
+    assert_eq!(declarations(&selected), [("color".into(), "red".into())]);
+}
+
+#[test]
+fn declarations_when_layer_metadata_is_present_keeps_only_declarations() {
+    // Given
+    let styles = vec![ExtractStyleValue::LayerOrder(
+        crate::extract_style::extract_layer_order::ExtractLayerOrder {
+            file: "layers.tsx".into(),
+            layers: vec!["base".into()],
+        },
+    )];
+    // When
+    let declarations = declarations(&styles);
+    // Then
+    assert_eq!(declarations, vec![]);
 }

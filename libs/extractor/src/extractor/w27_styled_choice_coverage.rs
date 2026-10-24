@@ -63,7 +63,7 @@ fn normalize_source<'a>(
             _ => None,
         })
         .ok_or("expected expression statement")?;
-    let values = crate::style_values::StyleValues::new(scoping);
+    let values = crate::style_values::StyleValues::new(std::rc::Rc::new(scoping));
     let imports = rustc_hash::FxHashMap::default();
     let inline_css = rustc_hash::FxHashMap::default();
     normalize(

@@ -1,111 +1,147 @@
 use std::borrow::Cow;
 
 use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
+use crate::quoted::{self, PROTECTED};
+
+/// Whether a byte makes a bare value need quotes: a parenthesis or white space
+/// (`\s` in `regex_lite` is `[ \t\n\r\x0b\x0c]`, so vertical tab and form feed
+/// MUST be included)
+const fn needs_quote_byte(b: u8) -> bool {
+    matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+}
 
 #[must_use]
 pub fn optimize_multi_css_value(value: &str) -> Cow<'_, str> {
+    // One scan for both bytes that steer the work below.
+    let (has_comma, has_quote) = value.bytes().fold((false, false), |(comma, quote), b| {
+        (comma || b == b',', quote || matches!(b, b'\'' | b'"'))
+    });
+    if has_quote {
+        return Cow::Owned(optimize_quoted_list(value));
+    }
     // Borrow fast path: a single bare segment (no comma) whose trimmed form is
     // already the exact output. This is the common `Roboto` / `sans-serif` case.
     // It qualifies only when trimming does not slice (the trimmed slice IS a
-    // suffix-and-prefix of `value` — we return that borrowed slice), the segment
-    // is NOT surrounded by strippable quotes, and it needs no re-quoting. Every
-    // other shape (comma list, quoted, requote-needed, <=1 byte) falls through to
-    // the owning builder below and stays byte-identical.
-    let has_comma = value.as_bytes().contains(&b',');
+    // suffix-and-prefix of `value` — we return that borrowed slice) and it needs no
+    // re-quoting. Every other shape (comma list, requote-needed, <=1 byte) falls
+    // through to the owning builder below and stays byte-identical.
     if !has_comma {
         let s = value.trim();
-        let quote_byte =
-            |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
         if s.len() >= 2 {
-            let quoted = (s.starts_with('\'') && s.ends_with('\''))
-                || (s.starts_with('"') && s.ends_with('"'));
-            if !quoted {
-                let needs_quotes = s.bytes().any(quote_byte);
-                if !needs_quotes || CSS_FUNCTION_RE.is_match(s) {
-                    // Output would be exactly `s` pushed bare -> borrow it.
-                    return Cow::Borrowed(s);
-                }
+            let needs_quotes = s.bytes().any(needs_quote_byte);
+            if !needs_quotes || CSS_FUNCTION_RE.is_match(s) {
+                // Output would be exactly `s` pushed bare -> borrow it.
+                return Cow::Borrowed(s);
             }
-        } else if s.len() == 1 && !quote_byte(s.as_bytes()[0]) {
-            // A single-byte bare segment cannot be a quote *pair* (a lone `'`/`"`
-            // is length 1, not two), and `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))`
-            // can never match `<2` bytes, so it is never re-quoted. When the byte
-            // is not quote-worthy the owned builder pushes it bare too — the output
-            // is exactly `s`, so borrow it and skip the `String` allocation.
-            // (A lone `'`/`"` is not a `quote_byte`, so it also borrows bare,
-            // matching the owned `unquoted.len()==1` non-quote-byte arm.)
+        } else if s.len() == 1 && !needs_quote_byte(s.as_bytes()[0]) {
+            // A single-byte bare segment can never be a quote *pair*, and
+            // `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))` can never match `<2` bytes, so it
+            // is never re-quoted. When the byte is not quote-worthy the owned
+            // builder pushes it bare too — the output is exactly `s`, so borrow it and
+            // skip the `String` allocation.
             return Cow::Borrowed(s);
         }
     }
     Cow::Owned(optimize_multi_css_value_owned(value, has_comma))
 }
 
+/// Push one comma-separated segment that holds no quoted string: wrapped in
+/// quotes when it holds a parenthesis or white space and is not a function
+fn push_segment(result: &mut String, s: &str) {
+    // Fast path for empty/single-char segments: `CSS_FUNCTION_RE` can NEVER match a
+    // string shorter than 2 bytes (it needs a name byte plus a `(`), so a single
+    // quote-worthy byte is always wrapped and everything else is pushed bare.
+    // Deciding this from the single byte skips both the `.any()` scan and the
+    // regex-engine setup while staying byte-identical.
+    if s.len() <= 1 {
+        if s.len() == 1 && needs_quote_byte(s.as_bytes()[0]) {
+            result.push('"');
+            result.push_str(s);
+            result.push('"');
+        } else {
+            result.push_str(s);
+        }
+        return;
+    }
+
+    let needs_quotes = s.bytes().any(needs_quote_byte);
+    if needs_quotes && !CSS_FUNCTION_RE.is_match(s) {
+        result.push('"');
+        result.push_str(s);
+        result.push('"');
+    } else {
+        result.push_str(s);
+    }
+}
+
 fn optimize_multi_css_value_owned(value: &str, has_comma: bool) -> String {
     // Headroom for re-wrapped segments: EACH comma-separated segment may gain a
-    // `"…"` quote pair (+2 bytes), so a multi-segment list like `'A B', 'C D', E`
+    // `"…"` quote pair (+2 bytes), so a multi-segment list like `A B, C D, E`
     // → `"A B","C D",E` can add up to one pair per segment. Budget `2` per comma
     // plus a trailing `2` so even the worst case (every segment re-wrapped) never
-    // triggers a grow-realloc. Stripping source quotes only ever shrinks, so this
-    // is a safe upper bound; output stays byte-identical.
+    // triggers a grow-realloc. Output stays byte-identical.
     // Headroom is `2` per comma, `0` when none. The caller already probed comma
-    // presence (`value.as_bytes().contains(&b',')`) to pick its borrow fast path
-    // and hands the result in via `has_comma`. On the no-comma owned path (a
-    // quote-pair strip like `'Roboto'` or a single-segment re-quote) the count is
-    // provably `0`, so we skip a second full O(n) `value.bytes()` scan entirely.
-    // Only the comma-present path pays the count. Capacity stays byte-for-byte
-    // identical to `value.len() + comma_count * 2 + 2` (a `0` headroom on the
-    // no-comma path is exactly what a full scan would have yielded).
+    // presence to pick its borrow fast path and hands the result in via
+    // `has_comma`. On the no-comma owned path the count is provably `0`, so we skip
+    // a second full O(n) `value.bytes()` scan entirely. Only the comma-present path
+    // pays the count.
     let comma_headroom = if has_comma {
         value.bytes().filter(|&b| b == b',').count() * 2
     } else {
         0
     };
     let mut result = String::with_capacity(value.len() + comma_headroom + 2);
-    // Loop-invariant predicate: captures nothing, so construct it once per call
-    // instead of once per comma-separated segment. Byte-scan equivalent of the
-    // `[()\s]` regex — `\s` in `regex_lite` matches `[ \t\n\r\x0b\x0c]`, so the
-    // vertical-tab (0x0b) and form-feed (0x0c) bytes MUST be included to stay
-    // byte-identical.
-    let quote_byte = |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
     for (idx, s) in value.split(',').enumerate() {
         if idx > 0 {
             result.push(',');
         }
+        push_segment(&mut result, s.trim());
+    }
+    result
+}
 
-        let s = s.trim();
-        let unquoted = if s.len() >= 2
-            && ((s.starts_with('\'') && s.ends_with('\''))
-                || (s.starts_with('"') && s.ends_with('"')))
-        {
-            &s[1..s.len() - 1]
-        } else {
-            s
-        };
+/// The content of a quoted string that can stand bare or in double quotes without
+/// changing what it says: no escape, and no `,` or `;` to end the item. Another
+/// kind of quote is only fine inside a function such as `url('a.woff2')`.
+fn plain_content(string: &str) -> Option<&str> {
+    let quote = string.chars().next()?;
+    let content = string.strip_prefix(quote)?.strip_suffix(quote)?;
+    if content.is_empty() || content.contains(['\\', ',', ';']) {
+        return None;
+    }
+    (CSS_FUNCTION_RE.is_match(content) || !content.contains(['\'', '"'])).then_some(content)
+}
 
-        // Fast path for empty/single-char segments (`''`/`""` strip to empty, the
-        // lone `'`/`"` cases stay one char): `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))`
-        // can NEVER match a string shorter than 2 bytes (it needs a name byte plus
-        // a `(`), so a single quote-worthy byte is always wrapped and everything
-        // else is pushed bare. Deciding this from the single byte skips both the
-        // `.any()` scan and the regex-engine setup while staying byte-identical.
-        if unquoted.len() <= 1 {
-            if unquoted.len() == 1 && quote_byte(unquoted.as_bytes()[0]) {
-                result.push('"');
-                result.push_str(unquoted);
-                result.push('"');
-            } else {
-                result.push_str(unquoted);
-            }
-            continue;
+/// `optimize_multi_css_value` for a value with quoted strings. A comma inside a
+/// string does not separate items. An item that is one string loses its quotes, or
+/// gets double ones, only when its content says the same either way; any other
+/// item holding a string stays as written. Items without strings are optimized as
+/// they are in a value without any.
+fn optimize_quoted_list(value: &str) -> String {
+    let (masked, spans) = quoted::mask(value);
+    let mut spans = spans.into_iter();
+    let mut result = String::with_capacity(value.len() + 2);
+    for (idx, segment) in masked.split(',').enumerate() {
+        if idx > 0 {
+            result.push(',');
         }
-
-        let needs_quotes = unquoted.bytes().any(quote_byte);
-        if needs_quotes && !CSS_FUNCTION_RE.is_match(unquoted) {
-            result.push('"');
-            result.push_str(unquoted);
-            result.push('"');
+        let segment = segment.trim();
+        if !segment.contains(PROTECTED) {
+            push_segment(&mut result, segment);
+        } else if segment.len() == PROTECTED.len_utf8()
+            && let Some(string) = spans.next()
+        {
+            match plain_content(string) {
+                Some(content) => push_segment(&mut result, content),
+                None => result.push_str(string),
+            }
         } else {
-            result.push_str(unquoted);
+            for (idx, part) in segment.split(PROTECTED).enumerate() {
+                if idx > 0 {
+                    result.push_str(spans.next().unwrap_or_default());
+                }
+                result.push_str(part);
+            }
         }
     }
     result
@@ -171,9 +207,41 @@ mod tests {
     }
 
     #[rstest]
+    #[case(r"'A, B', sans-serif", r"'A, B',sans-serif")]
+    #[case(r#""A,B", C"#, r#""A,B",C"#)]
+    #[case(r"'A,B'", r"'A,B'")]
+    #[case(r"',', a", r"',',a")]
+    #[case(r"'a', 'b,c', d", r"a,'b,c',d")]
+    #[case(r"'A B' , C", r#""A B",C"#)]
+    #[case(
+        r#"url("a,b.woff2") format("woff2"), local(x)"#,
+        r#"url("a,b.woff2") format("woff2"),local(x)"#
+    )]
+    #[case(r#"'say "hi"'"#, r#"'say "hi"'"#)]
+    #[case(r#""url('/fonts/a.ttf')""#, "url('/fonts/a.ttf')")]
+    #[case(r#"'local("Open Sans")'"#, r#"local("Open Sans")"#)]
+    #[case(r#""url(a), url(b)""#, r#""url(a), url(b)""#)]
+    #[case(r#"'url(\"a\")'"#, r#"'url(\"a\")'"#)]
+    #[case(r#""it's""#, r#""it's""#)]
+    #[case(r"'It\'s two', b", r"'It\'s two',b")]
+    #[case(r"'\\' , a", r"'\\',a")]
+    #[case(r#"Open "X" Sans, b"#, r#"Open "X" Sans,b"#)]
+    #[case("''", "''")]
+    #[case(r"'', a", r"'',a")]
+    #[case(r#""", a"#, r#""",a"#)]
+    #[case(r"'a, b", r"'a, b")]
+    fn test_optimize_multi_css_value_keeps_quoted_strings(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(optimize_multi_css_value(input), expected);
+        assert_eq!(optimize_multi_css_value(expected), expected);
+    }
+
+    #[rstest]
     #[case("font-family", true)]
     #[case("src", true)]
-    #[case("content", true)]
+    #[case("content", false)]
     #[case("animation-name", true)]
     #[case("background", false)]
     #[case("color", false)]

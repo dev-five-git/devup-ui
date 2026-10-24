@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
-use crate::extract_style::constant::MAINTAIN_VALUE_PROPERTIES;
+use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
-        Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-        PropertyKey, Statement, StaticMemberExpression,
+        Argument, ArrayExpressionElement, CallExpression, Expression, ExpressionStatement,
+        IdentifierName, JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind,
+        Program, PropertyKey, Statement, StaticMemberExpression,
     },
     builder::AstBuilder,
 };
@@ -29,7 +29,7 @@ pub(super) fn is_unitless_key(key: &str) -> bool {
     key.starts_with("--")
         || key.starts_with("var(")
         || key.bytes().all(|byte| byte.is_ascii_digit())
-        || MAINTAIN_VALUE_PROPERTIES.contains(to_kebab_case(key).as_ref())
+        || is_maintain_value_property(to_kebab_case(key).as_ref())
 }
 
 /// Whether a number on `key` stays bare in a library whose numbers mean pixels:
@@ -280,54 +280,44 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
         Expression::ParenthesizedExpression(parenthesized) => {
             get_number_by_literal_expression(&parenthesized.expression)
         }
-        Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        Expression::TemplateLiteral(tmp) => {
-            // `f64::from_str` succeeds only when every byte belongs to the
-            // float grammar: ASCII digits, sign/exponent punctuation, or the
-            // letters of the `inf`/`infinity`/`nan` keywords. An allocation-free
-            // scan that is STRICTLY more permissive than the parser lets us bail
-            // out (returning `None`) on the common non-numeric case — e.g. a
-            // `${x}px` template's quasis containing `p`/`x` — without collecting
-            // the quasis into a throwaway `String`. Whenever the parser would
-            // have returned `Some`, every byte passes this scan, so the result
-            // stays byte-identical.
-            let can_be_float = tmp.quasis.iter().all(|q| {
-                q.value.raw.bytes().all(|b| {
-                    b.is_ascii_digit()
-                        || matches!(
-                            b,
-                            b'.' | b'+'
-                                | b'-'
-                                | b'e'
-                                | b'E'
-                                | b'i'
-                                | b'I'
-                                | b'n'
-                                | b'N'
-                                | b'f'
-                                | b'F'
-                                | b'a'
-                                | b'A'
-                                | b't'
-                                | b'T'
-                                | b'y'
-                                | b'Y'
-                        )
-                })
-            });
-            if can_be_float {
-                tmp.quasis
-                    .iter()
-                    .map(|q| q.value.raw.as_str())
-                    .collect::<String>()
-                    .parse::<f64>()
-                    .ok()
+        Expression::StringLiteral(sl) => {
+            let text = sl.value.as_str();
+            let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+            if unsigned == "Infinity"
+                || text
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'+' | b'-' | b'.' | b'e' | b'E'))
+            {
+                text.parse::<f64>().ok()
             } else {
                 None
             }
         }
+        Expression::TemplateLiteral(_) => {
+            let text = get_key_by_literal_expression(expr)?;
+            let unsigned = text.strip_prefix(['+', '-']).unwrap_or(&text);
+            // Rust accepts infinity aliases that JavaScript Number rejects.
+            if unsigned.eq_ignore_ascii_case("inf")
+                || (unsigned.eq_ignore_ascii_case("infinity") && unsigned != "Infinity")
+            {
+                return None;
+            }
+            text.parse().ok()
+        }
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
+            .or_else(|| {
+                let Expression::StringLiteral(value) = unwrap_syntax_only(&unary.argument) else {
+                    return None;
+                };
+                let text = value
+                    .value
+                    .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+                let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+                (unsigned.eq_ignore_ascii_case("inf")
+                    || (unsigned.eq_ignore_ascii_case("infinity") && unsigned != "Infinity"))
+                    .then_some(f64::NAN)
+            })
             .and_then(|num| match unary.operator {
                 UnaryOperator::UnaryNegation => Some(-num),
                 UnaryOperator::UnaryPlus => Some(num),
@@ -371,27 +361,41 @@ pub(crate) fn js_number_string(number: f64) -> String {
     }
 }
 
+/// Property keys and template substitutions preserve text rather than CSS numeric normalization.
+pub(super) fn get_key_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match expr {
+        Expression::StringLiteral(value) => Some(Cow::Borrowed(value.value.as_str())),
+        Expression::ParenthesizedExpression(value) => {
+            get_key_by_literal_expression(&value.expression)
+        }
+        Expression::TemplateLiteral(template) => {
+            let mut text = String::new();
+            for (index, quasi) in template.quasis.iter().enumerate() {
+                text.push_str(quasi.value.cooked.as_deref()?);
+                if let Some(expression) = template.expressions.get(index) {
+                    text.push_str(&get_key_by_literal_expression(expression)?);
+                }
+            }
+            Some(Cow::Owned(text))
+        }
+        _ => get_string_by_literal_expression(expr),
+    }
+}
+
 pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
+    match expr {
+        Expression::ParenthesizedExpression(value) => {
+            return get_string_by_literal_expression(&value.expression);
+        }
+        Expression::TemplateLiteral(_) => return get_key_by_literal_expression(expr),
+        _ => {}
+    }
     get_number_by_literal_expression(expr)
         .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
-            Expression::ParenthesizedExpression(parenthesized) => {
-                get_string_by_literal_expression(&parenthesized.expression)
-            }
             Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
             Expression::BooleanLiteral(bool) => {
                 Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
-            }
-            Expression::TemplateLiteral(tmp) => {
-                let mut collect = String::new();
-                for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push_str(q.value.raw.as_str());
-                    if idx < tmp.expressions.len() {
-                        let value = get_string_by_literal_expression(&tmp.expressions[idx])?;
-                        collect.push_str(&value);
-                    }
-                }
-                Some(Cow::Owned(collect))
             }
             _ => None,
         })
@@ -854,21 +858,25 @@ pub(super) fn string_class<'a>(
     )
 }
 
+/// Code the build cannot use where it is written, with what the place takes
+/// when that is not the usual requirement
+pub(super) type Unused = (String, Option<&'static str>);
+
 /// The first value in `props` that is only known at runtime
-pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Unused> {
     let mut unreadable = Vec::new();
     unreadable_styles(props, true, &mut unreadable);
     unreadable
         .into_iter()
         .next()
-        .map(|(_, code)| code)
+        .map(|(_, code, requirement)| (code, requirement))
         .or_else(|| {
             props
                 .iter()
                 .flat_map(crate::ExtractStyleProp::extract)
                 .find_map(|value| match value {
                     crate::ExtractStyleValue::Dynamic(style) => {
-                        Some(style.identifier().to_string())
+                        Some((style.identifier().to_string(), None))
                     }
                     _ => None,
                 })
@@ -878,14 +886,14 @@ pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Str
 /// The first value in `props` only known at runtime, a runtime condition
 /// choosing between values included: what styles with no class to switch
 /// between, global styles and keyframes, cannot hold
-pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
-    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<String> {
+pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Unused> {
+    fn condition(prop: &crate::ExtractStyleProp<'_>) -> Option<Unused> {
         use crate::ExtractStyleProp;
         match prop {
             ExtractStyleProp::Conditional { condition, .. }
-            | ExtractStyleProp::Enum { condition, .. } => Some(readable_code(condition)),
+            | ExtractStyleProp::Enum { condition, .. } => Some((readable_code(condition), None)),
             ExtractStyleProp::MemberExpression { expression, .. } => {
-                Some(readable_code(expression))
+                Some((readable_code(expression), None))
             }
             ExtractStyleProp::StaticArray(props) => props.iter().find_map(condition),
             _ => None,
@@ -894,19 +902,24 @@ pub(super) fn fixed_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<Strin
     runtime_value(props).or_else(|| props.iter().find_map(condition))
 }
 
-/// Where `props` holds styles the build cannot read, with their code; with
-/// `keys`, computed keys among an element's props too
+/// Where `props` holds styles the build cannot read, with their code and what
+/// their place takes; with `keys`, computed keys among an element's props too
 pub(super) fn unreadable_styles(
     props: &[crate::ExtractStyleProp<'_>],
     keys: bool,
-    found: &mut Vec<(u32, String)>,
+    found: &mut Vec<(u32, String, Option<&'static str>)>,
 ) {
     use crate::ExtractStyleProp;
     for prop in props {
         match prop {
-            ExtractStyleProp::Unreadable { offset, code, prop } => {
+            ExtractStyleProp::Unreadable {
+                offset,
+                code,
+                prop,
+                requirement,
+            } => {
                 if keys || !prop {
-                    found.push((*offset, code.clone()));
+                    found.push((*offset, code.clone(), *requirement));
                 }
             }
             ExtractStyleProp::StaticArray(props) => unreadable_styles(props, keys, found),
@@ -952,6 +965,17 @@ pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
     build_time_error(api, value, COMPUTED_VALUE)
 }
 
+/// [`runtime_value_error`] for what [`runtime_value`] finds
+pub(super) fn unused_error(api: &str, (code, requirement): &Unused) -> String {
+    build_time_error(api, code, requirement.unwrap_or(COMPUTED_VALUE))
+}
+
+pub(super) const SELECTOR_NAME: &str = "a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`";
+
+pub(super) const RESPONSIVE_ARRAY: &str = "responsive arrays must be flat; each entry supplies one breakpoint value or selector style object, not another array";
+
+pub(super) const CSS_TEXT: &str = "a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`";
+
 pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> String {
     format!("`<{component}>` cannot use `{code}` at build time: {requirement}")
 }
@@ -978,7 +1002,7 @@ pub(super) const CLASS_NAMES_CHILD: &str =
 
 pub(super) const CLASS_NAMES_CALL: &str = "the `css` and `cx` its child function takes can only be called, as the build compiles each call";
 
-pub(super) const CLASS_NAMES_PART: &str = "`css` composes only style objects, CSS text, classes, calls of `css` and `cx`, or arrays or conditions of these, and `cx` also classes a function call gives, which stay as written";
+pub(super) const CLASS_NAMES_PART: &str = "`css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these";
 
 pub(super) const CLASS_NAMES_CLASS_MAP: &str =
     "an object `cx` takes must give each class a condition, as `{ name: condition }`";
@@ -1097,7 +1121,16 @@ fn collect_style_parts<'b, 'a>(
         match unwrap_syntax_only(expression) {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
-                    collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
+                    let expression = match element {
+                        ArrayExpressionElement::SpreadElement(spread) => {
+                            match unwrap_syntax_only(&spread.argument) {
+                                array @ Expression::ArrayExpression(_) => array,
+                                _ => return None,
+                            }
+                        }
+                        element => element.as_expression()?,
+                    };
+                    collect_style_parts(ast_builder, expression, parts, classes)?;
                 }
                 return Some(());
             }
@@ -1343,14 +1376,14 @@ fn merge_style_properties<'a>(
 ///
 /// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
 /// allocation the owned variant pays on every prop just to read its key name.
-/// The literal fallback now also borrows where possible: `get_string_by_literal_expression`
+/// The literal fallback also borrows where possible: `get_key_by_literal_expression`
 /// returns `Cow::Borrowed` for string/boolean-literal keys and only allocates
 /// (`Cow::Owned`) for numeric/template keys it must synthesize.
 pub(super) fn get_str_by_property_key<'k>(key: &PropertyKey<'k>) -> Option<Cow<'k, str>> {
     if let PropertyKey::StaticIdentifier(ident) = key {
         Some(Cow::Borrowed(ident.name.as_str()))
     } else if let Some(s) = key.as_expression() {
-        get_string_by_literal_expression(s)
+        get_key_by_literal_expression(s)
     } else {
         None
     }
@@ -1427,6 +1460,46 @@ mod tests {
         assert!(!keeps_bare_number("padding"));
         assert!(!keeps_bare_number("backgroundColor"));
         assert!(!keeps_bare_number("WebkitTextStrokeWidth"));
+    }
+
+    #[rstest::rstest]
+    #[case("msFlex")]
+    #[case("msFlexOrder")]
+    #[case("msFlexPositive")]
+    #[case("msFlexNegative")]
+    #[case("WebkitBoxFlex")]
+    #[case("WebkitBoxOrdinalGroup")]
+    #[case("msGridColumnSpan")]
+    #[case("msGridRowSpan")]
+    #[case("MozTabSize")]
+    #[case("WebkitLineClamp")]
+    fn numeric_css_08_shared_callers_keep_vendor_numbers(#[case] key: &str) {
+        let kebab = to_kebab_case(key);
+        for spelling in [key, kebab.as_ref(), &format!("-{kebab}")] {
+            assert!(is_unitless_key(spelling), "{spelling}");
+            assert!(keeps_bare_number(spelling), "{spelling}");
+        }
+    }
+
+    #[rstest::rstest]
+    #[case("flex", true, true)]
+    #[case("flexGrow", true, true)]
+    #[case("flexShrink", true, true)]
+    #[case("flexBasis", false, false)]
+    #[case("WebkitFlexBasis", false, false)]
+    #[case("WebkitTextStrokeWidth", false, false)]
+    #[case("unknown-flex", false, false)]
+    #[case("--ms-flex", true, true)]
+    #[case("p", false, true)]
+    #[case("mx", false, true)]
+    #[case("padding", false, false)]
+    fn numeric_css_08_shared_callers_preserve_existing_units(
+        #[case] key: &str,
+        #[case] unitless: bool,
+        #[case] bare: bool,
+    ) {
+        assert_eq!(is_unitless_key(key), unitless);
+        assert_eq!(keeps_bare_number(key), bare);
     }
 
     #[test]

@@ -157,3 +157,22 @@ pub(crate) fn parse(name: &str) -> Option<String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[rstest::rstest]
+    #[case("base ", Some("base"))]
+    #[case("base /* trailing */\t", Some("base"))]
+    #[case("base extra", None)]
+    #[case(r"\31 base.inner", Some(r"\31 base.inner"))]
+    #[case(r"base\.inner", Some(r"base\.inner"))]
+    fn canonical_name_when_escaped_or_followed_by_trivia_preserves_identity(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        // Given / When
+        let name = super::parse(source);
+        // Then
+        assert_eq!(name.as_deref(), expected);
+    }
+}

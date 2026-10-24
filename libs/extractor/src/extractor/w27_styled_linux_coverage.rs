@@ -14,57 +14,46 @@ fn direct_props_lowerer_when_rules_are_unsupported_rejects_without_mutation(
     // Given
     let allocator = oxc_allocator::Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let callback = Parser::new(&allocator, "p => null", SourceType::tsx())
-        .parse_expression()
-        .map_err(|error| format!("{error:?}"))?;
-    let callback = match callback {
-        Expression::ArrowFunctionExpression(callback) => Some(callback),
-        _ => None,
-    }
-    .ok_or("expected callback fixture")?;
     let mut rules = Parser::new(&allocator, source, SourceType::tsx())
         .parse_expression()
         .map_err(|error| format!("{error:?}"))?;
     let before = expression_to_code(&rules);
     // When
-    let result = props_rules(&ast, &mut rules, &callback.params);
+    let mut evaluations =
+        crate::extractor::styled_record_evaluation::Evaluations::new(&ast, before.clone());
+    let result =
+        props::lower(&mut evaluations, &mut rules, None).map_err(|error| format!("{error:?}"))?;
     // Then
-    assert_eq!(result, None);
+    assert!(result.is_none());
+    assert_eq!(evaluations.bindings.len(), 0);
     assert_eq!(expression_to_code(&rules), before);
     Ok(())
 }
 
 #[test]
+#[serial_test::serial]
 fn direct_props_lowerer_when_object_is_written_preserves_props_value()
 -> Result<(), Box<dyn std::error::Error>> {
     // Given
-    let allocator = oxc_allocator::Allocator::default();
-    let ast = AstBuilder::new(&allocator);
-    let callback = Parser::new(&allocator, "p => null", SourceType::tsx())
-        .parse_expression()
-        .map_err(|error| format!("{error:?}"))?;
-    let callback = match callback {
-        Expression::ArrowFunctionExpression(callback) => Some(callback),
-        _ => None,
-    }
-    .ok_or("expected callback fixture")?;
-    let mut rules = Parser::new(&allocator, "({opacity: p.opacity})", SourceType::tsx())
-        .parse_expression()
-        .map_err(|error| format!("{error:?}"))?;
+    let source =
+        "import {styled} from '@devup-ui/react';const Choice=styled.div(p=>({opacity:p.opacity}));";
     // When
-    let result = props_rules(&ast, &mut rules, &callback.params);
+    let output = crate::extract(
+        "opacity.tsx",
+        source,
+        crate::ExtractOption {
+            single_css: true,
+            ..crate::ExtractOption::default()
+        },
+    )?;
     // Then
-    assert_eq!(result, Some(()));
-    let code = expression_to_code(&rules);
     assert_eq!(
-        super::w27_props_rule_choices_tests::support::evaluate(
-            &format!(
-                "JSON.stringify(({}))",
-                crate::css_utils::rm_last_semi_colon(&code)
-            ),
-            "{opacity: 0.4}",
+        crate::styled_source_tests::captured_render::execute(
+            ("opacity.tsx", None),
+            &output,
+            "const element=render({target:Choice,props:{ opacity: 0.4 }});JSON.stringify({ opacity: values(element,'opacity')[0] });",
         ),
-        r#"{"opacity":0.4}"#
+        serde_json::json!({"opacity":0.4})
     );
     Ok(())
 }
@@ -96,9 +85,13 @@ fn raw_styled_spread_when_received_by_extractor_keeps_reads_or_composition_error
             values: &values,
             inline_css: &inline_css,
         },
-        &[],
+        (&[], None, &[]),
         None,
-        None,
+        StyledContext {
+            filename: "linux.tsx",
+            jsx: &mut None,
+            capability: None,
+        },
     );
     // Then
     if reads_props {
@@ -166,9 +159,13 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
             values: &values,
             inline_css: &inline_css,
         },
-        &[],
+        (&[], None, &[]),
         None,
-        None,
+        StyledContext {
+            filename: "linux.tsx",
+            jsx: &mut None,
+            capability: None,
+        },
     );
     // Then
     assert_eq!(output.errors, vec![]);

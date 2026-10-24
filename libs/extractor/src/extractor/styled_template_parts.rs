@@ -82,9 +82,10 @@ fn place(before: &str, after: &[TemplateElement<'_>]) -> crate::css_utils::Place
         .last()
         .map_or(0, |(index, _)| index + 1);
     let head = css::rm_css_comment::rm_css_comment(&before[from..]);
-    let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
+    let mut rest = before.to_string();
+    rest.extend(after.iter().map(|quasi| quasi.value.raw.as_str()));
     if blocks::boundaries(&rest)
-        .next()
+        .find(|(index, _)| *index >= before.len())
         .is_some_and(|(_, boundary)| boundary == '{')
     {
         return crate::css_utils::Place::Other;

@@ -21,6 +21,21 @@ pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 
 /// A console whose calls do nothing, as what a module logs while it runs
 /// changes no value
+/// Run before a stylesheet: what differs between builds fails the evaluation,
+/// so a stylesheet never gives different rules for the same source. `new
+/// Date(0)` and other fixed dates stay.
+pub(crate) const DETERMINISM: &str = r#"(() => {
+  const refuse = (name) => () => { throw new Error(`${name} gives a different value each build: a stylesheet cannot read it`); };
+  Math.random = refuse("Math.random");
+  const RealDate = Date;
+  globalThis.Date = new Proxy(RealDate, {
+    construct: (target, args, newTarget) => args.length === 0 ? refuse("new Date()")() : Reflect.construct(target, args, newTarget),
+    apply: refuse("Date()"),
+    get: (target, key, receiver) => key === "now" ? refuse("Date.now") : Reflect.get(target, key, receiver),
+  });
+})();
+"#;
+
 pub(crate) const CONSOLE: &str = "if (typeof console === \"undefined\") globalThis.console = new Proxy({}, { get: () => () => undefined });\n";
 
 /// Loop iterations an evaluation may run before it fails instead of hanging
@@ -36,6 +51,22 @@ thread_local! {
     /// Stylesheets being evaluated, outermost first: a stylesheet importing one
     /// that is still being evaluated is a cycle no evaluation order can satisfy
     static EVALUATING: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Moves the outer evaluation stack aside until scratch extraction ends.
+#[derive(Debug)]
+pub(crate) struct EvaluationGuard(Vec<String>);
+
+impl Default for EvaluationGuard {
+    fn default() -> Self {
+        Self(EVALUATING.with_borrow_mut(std::mem::take))
+    }
+}
+
+impl Drop for EvaluationGuard {
+    fn drop(&mut self) {
+        EVALUATING.with_borrow_mut(|stack| *stack = std::mem::take(&mut self.0));
+    }
 }
 
 /// Marks `filename` as being evaluated until dropped
@@ -185,7 +216,10 @@ impl<'r> ModuleLoader<'r> {
         } else {
             module.code
         };
-        let script = crate::vanilla_extract::strip_typescript(&code, &module.path);
+        let instrumented =
+            crate::dead_properties::instrument(&code, &module.path, &self.option.package)
+                .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+        let script = crate::vanilla_extract::strip_typescript(&instrumented.code, &module.path);
         let module_script = module_script(&script, &module.path, self, false)?;
         // Live bindings: a read before the binding is initialized fails as it
         // does in an ES module
@@ -267,7 +301,7 @@ pub(crate) fn module_script(
             }
             continue;
         }
-        let module = if source == package {
+        let module = if source == package || source == "@vanilla-extract/css" {
             PACKAGE_BINDING.to_string()
         } else {
             loader.load(source, filename, entry)?
@@ -451,7 +485,7 @@ fn export_name(name: &ModuleExportName<'_>) -> String {
     name.name().to_string()
 }
 
-fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
+pub(crate) fn declared_names(declaration: &Declaration<'_>) -> Vec<String> {
     match declaration {
         Declaration::VariableDeclaration(declaration) => declaration
             .declarations

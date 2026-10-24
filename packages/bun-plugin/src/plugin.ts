@@ -3,26 +3,39 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  beginBuild,
+  collectNumberedFiles,
   createCompatTypes,
   createModuleResolver,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  isProjectJsx,
   loadDevupConfig,
   mergeImportAliases,
   readJsxImportSource,
+  seedFileNumbers,
+  tailwindCssFiles,
+  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getCss,
   getThemeInterface,
+  hasDevupUI,
   registerShorthands,
   registerTheme,
+  reserveClassSlots,
+  resetBuildState,
+  seedFileMap,
   setDebug,
   setModuleResolver,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
+import { createTailwindWatcher } from './tailwind-watch'
 
 const libPackage = '@devup-ui/react'
 const devupFile = 'devup.json'
@@ -49,11 +62,13 @@ export interface DevupUIBunPluginOptions {
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
-async function writeDataFiles() {
+async function writeDataFiles(): Promise<string[]> {
   let theme = {}
+  let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = config.theme ?? {}
+    theme = withTailwindCss(config.theme ?? {}, config)
+    tailwindFiles = tailwindCssFiles(config)
   } catch {
     // Error reading devup.json, use empty theme
   }
@@ -70,10 +85,14 @@ async function writeDataFiles() {
     await mkdir(cssDir, { recursive: true })
   }
   await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  return tailwindFiles
 }
+
+const watchTailwindCss = createTailwindWatcher(writeDataFiles)
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
+  setPrefix(null)
   setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -82,7 +101,7 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  await writeDataFiles()
+  watchTailwindCss(await writeDataFiles())
 }
 
 const scanners = new Map<SourceLoader, Bun.Transpiler>()
@@ -118,7 +137,11 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
         : 'js'
   const contents = await Bun.file(filePath).text()
 
-  if (importsCompiledPackage(contents, loader)) {
+  if (
+    isProjectJsx(filePath, importAliases) ||
+    importsCompiledPackage(contents, loader) ||
+    hasDevupUI(filePath, contents, libPackage, importAliases)
+  ) {
     const code = codeExtract(
       filePath,
       contents,
@@ -150,8 +173,60 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
     async setup(build: PluginBuilder) {
       // `Bun.build` hands its config to plugins; the runtime has none
       const bundling = build.config !== undefined
+      // A build starts from its own options, not from what an earlier build in
+      // this process left in the engine
+      const endBuild = beginBuild({ resetBuildState })
+      build.onEnd?.(endBuild)
       await initialize(options)
-      setDebug(options.debug ?? !bundling)
+      const debug = options.debug ?? !bundling
+      setDebug(debug)
+      const slots = createSharedSlotReservation({ reserveClassSlots })
+      let reservationPending = bundling
+      const reserveFiles = () => {
+        slots.invalidate()
+        slots.reserve(
+          {
+            roots: [resolve('src'), resolve('app')],
+            entries: bundling
+              ? build.config.entrypoints.map((entry) => ({
+                  request: resolve(entry),
+                  context: process.cwd(),
+                }))
+              : [],
+            cwd: process.cwd(),
+            package: libPackage,
+            importAliases,
+            toId: (path) => path,
+          },
+          {
+            singleCss,
+            importMainCssInCode: true,
+            importMainCssInCss: false,
+            cssDir: ({ physicalPath }) =>
+              relative(dirname(physicalPath), cssDir).replaceAll('\\', '/'),
+          },
+        )
+      }
+      if (bundling)
+        build.onStart(() => {
+          reservationPending = true
+        })
+      else if (!debug) reserveFiles()
+      else {
+        try {
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots: [resolve('src')],
+              needles: compiledPackages,
+              importAliases,
+              toId: (path) => path,
+            }),
+          )
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+        }
+      }
 
       // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
       // derived from this checkout's cwd can be baked into Bun's shared,
@@ -179,7 +254,13 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         {
           filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
         },
-        ({ path }) => loadSourceFile(path, bundling),
+        ({ path }) => {
+          if (reservationPending) {
+            reserveFiles()
+            reservationPending = false
+          }
+          return loadSourceFile(path, bundling)
+        },
       )
     },
   } satisfies BunPlugin

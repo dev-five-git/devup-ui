@@ -10,7 +10,11 @@ use crate::utils::{is_pure, unwrap_syntax_only};
 #[path = "w27_styled_choice_coverage.rs"]
 mod coverage_tests;
 
-enum Choice<'a> {
+#[cfg(test)]
+#[path = "layer_choice_tests.rs"]
+mod layer_choice_tests;
+
+pub(super) enum Choice<'a> {
     Rules {
         value: Expression<'a>,
         truthy: bool,
@@ -46,7 +50,7 @@ pub(super) fn normalize<'a>(
     emit(ast, read(ast, value, bindings)?).ok_or(RuleError::Opaque)
 }
 
-fn read<'a>(
+pub(super) fn read<'a>(
     ast: &AstBuilder<'a>,
     value: &Expression<'a>,
     bindings: &StyledBindings<'_>,
@@ -55,7 +59,9 @@ fn read<'a>(
     if let Some(styles) = bindings.styles(value) {
         return Ok(Choice::Rules {
             value: value.clone_in_with_semantic_ids(ast.allocator()),
-            truthy: !styles.is_empty(),
+            truthy: styles
+                .iter()
+                .any(|style| !matches!(style, crate::ExtractStyleValue::LayerOrder(_))),
         });
     }
     match value {

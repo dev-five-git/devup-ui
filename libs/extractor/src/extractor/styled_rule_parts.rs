@@ -1,60 +1,78 @@
-use super::{ExtractResult, LiteralHandling, extract_style_from_expression};
-use crate::{
-    composition::Composition,
-    utils::{StyleArguments, style_arguments, unwrap_syntax_only},
-};
+use super::ExtractResult;
+use crate::extractor::style_order_projection::AuthoredStyles;
+#[path = "styled_rule_inputs.rs"]
+mod inputs;
+#[path = "styled_rule_part.rs"]
+mod part;
+use crate::{composition::Composition, utils::unwrap_syntax_only};
 use oxc_ast::{
     ast::{Argument, Expression},
     builder::AstBuilder,
 };
 
+pub(super) fn contains_known_rules(
+    rules: &Expression<'_>,
+    bindings: &super::StyledBindings<'_>,
+) -> bool {
+    if bindings.styles(rules).is_some() {
+        return true;
+    }
+    match unwrap_syntax_only(rules) {
+        Expression::ConditionalExpression(branch) => {
+            contains_known_rules(&branch.consequent, bindings)
+                || contains_known_rules(&branch.alternate, bindings)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
 pub(super) fn compose<'a>(
     ast: &AstBuilder<'a>,
     arguments: &[Argument<'a>],
 ) -> Option<(ExtractResult<'a>, Vec<Expression<'a>>)> {
+    compose_bound(ast, arguments, (None, "parts.tsx"))
+}
+
+pub(super) fn compose_bound<'a>(
+    ast: &AstBuilder<'a>,
+    arguments: &[Argument<'a>],
+    (bindings, filename): (Option<&super::StyledBindings<'_>>, &str),
+) -> Option<(ExtractResult<'a>, Vec<Expression<'a>>)> {
     let mut composition = Composition::default();
     let mut classes = Vec::new();
     let mut result = ExtractResult::default();
-    for argument in arguments {
-        let mut rules = match argument.as_expression() {
-            Some(rules) if written(rules) => rules.clone_in_with_semantic_ids(ast.allocator()),
-            _ => {
-                let StyleArguments {
-                    classes: own,
-                    rules,
-                } = style_arguments(ast, std::slice::from_ref(argument))?;
+    inputs::visit(ast, (arguments, bindings), |input| {
+        let mut rules = match input {
+            inputs::Input::Rules(rules) => rules.clone_in_with_semantic_ids(ast.allocator()),
+            inputs::Input::Class(class) => {
+                classes.push(class.clone_in_with_semantic_ids(ast.allocator()));
+                return;
+            }
+            inputs::Input::Prepared(crate::utils::StyleArguments {
+                classes: own,
+                rules,
+            }) => {
                 classes.extend(own);
                 rules
             }
         };
-        let part = extract_style_from_expression(
-            ast,
-            None,
-            &mut rules,
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-        );
-        composition.apply(ast, part.styles);
+        let part = part::extract(ast, &mut rules, (bindings, filename));
+        AuthoredStyles(part.styles).apply(ast, &mut composition);
         result.style_order = part.style_order.or(result.style_order);
-        result.style_vars = part.style_vars.or(result.style_vars);
-        result.props = part.props.or(result.props);
-    }
+        result.style_vars = part.style_vars.or_else(|| result.style_vars.take());
+        result.props = part.props.or_else(|| result.props.take());
+    })?;
     result.styles = composition.into_props();
     Some((result, classes))
 }
 
-fn written(rules: &Expression<'_>) -> bool {
-    match unwrap_syntax_only(rules) {
-        Expression::ObjectExpression(_)
-        | Expression::NullLiteral(_)
-        | Expression::BooleanLiteral(_) => true,
-        Expression::Identifier(identifier) => identifier.name == "undefined",
-        Expression::ConditionalExpression(branch) => {
-            written(&branch.consequent) && written(&branch.alternate)
-        }
-        _ => false,
-    }
+pub(super) fn admitted<'a>(
+    ast: &AstBuilder<'a>,
+    arguments: &[Argument<'a>],
+    bindings: Option<&super::StyledBindings<'_>>,
+) -> bool {
+    inputs::visit(ast, (arguments, bindings), |_| {}).is_some()
 }
 
 use oxc_allocator::{CloneIn, GetAllocator};

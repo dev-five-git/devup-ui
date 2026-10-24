@@ -212,3 +212,39 @@ fn later_declarations_win_only_in_the_same_layer_when_templates_compose(
         vec![(Some("base"), color), (Some("theme"), "green")]
     );
 }
+
+#[test]
+fn canonical_layer_when_css_block_is_parsed_keeps_nested_declarations() {
+    // Given
+    let source = "@layer outer { @layer inner { color:red; } }";
+    // When
+    let styles = css_to_style(source, 0, &None);
+    // Then
+    assert_eq!(styles.len(), 1);
+    assert_eq!(
+        (styles[0].property(), styles[0].value(), styles[0].layer()),
+        ("color", "red", Some("outer.inner"))
+    );
+}
+
+#[test]
+fn visitor_when_css_object_has_an_anonymous_layer_reports_its_source() {
+    use oxc_ast_visit::VisitMut;
+    // Given
+    let arena = Allocator::default();
+    let source = "import {css} from '@devup-ui/react';css({'@layer':{'':{color:'red'}}});";
+    let mut parsed = Parser::new(&arena, source, SourceType::tsx()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0);
+    let mut visitor =
+        crate::visit::DevupVisitor::new(&arena, "layer.tsx", "@devup-ui/react", vec![], None);
+    // When
+    visitor.visit_program(&mut parsed.program);
+    // Then
+    assert_ne!(visitor.errors.len(), 0);
+    assert!(
+        visitor
+            .errors
+            .iter()
+            .any(|(_, error)| error.contains("layer"))
+    );
+}

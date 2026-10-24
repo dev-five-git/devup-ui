@@ -7,11 +7,11 @@ export const metadata = {
 
 # Features
 
-Devup UI provides complete CSS-in-JS syntax coverage with zero runtime overhead. Every pattern you know from styled-components and Emotion works seamlessly — but without the performance cost.
+Devup UI compiles the CSS-in-JS patterns you know from styled-components and Emotion at build time, with zero runtime overhead.
 
-## Complete Syntax Coverage
+## Syntax Coverage
 
-Unlike other zero-runtime solutions that limit what you can do, Devup UI handles every CSS-in-JS pattern at build time.
+Everything the build can know compiles to static CSS; a runtime value on an element becomes a CSS variable, and anything else is a build error naming the file, line and code. See [Supported Syntax & Limitations](/docs/limitations) for the full list.
 
 ## How It Works
 
@@ -230,7 +230,7 @@ const cardStyles = css({
   borderRadius: '8px',
 })
 
-const example = <Box {...cardStyles} />
+const example = <Box className={cardStyles} />
 ```
 
 `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so their values must be known at build time — literals, theme tokens or constants. Constants may be objects, arrays and TypeScript enums, declared in the file or imported: `css(baseStyles)`, `{ ...baseStyles, color: 'red' }`, `_hover: hoverStyles`, `space[2]`, `Size.M`, and `<Box {...baseStyles} _hover={hoverStyles} />` all read as if written in place, a later property replacing an earlier one as in JavaScript. `Math` calls over them (`Math.max(SIZE, 20)`, `Math.round(x)`, `Math.PI`) fold like arithmetic.

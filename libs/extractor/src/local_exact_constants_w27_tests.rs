@@ -5,6 +5,9 @@ use css::{class_map::reset_class_map, file_map::reset_file_map};
 use rstest::rstest;
 use serial_test::serial;
 
+#[path = "static_member_test_support.rs"]
+mod member_paths;
+
 #[path = "local_shape_composition_w27_tests.rs"]
 mod composition;
 
@@ -282,9 +285,13 @@ fn captured_runtime_shape_when_expanded_reads_original_data_paths(
         "{}",
         output.code
     );
-    assert!(output.code.contains("inner[`color`]"), "{}", output.code);
     assert!(
-        output.code.contains("inner[`_hover`][`color`]"),
+        member_paths::contains(&output.code, &["inner", "color"]),
+        "{}",
+        output.code
+    );
+    assert!(
+        member_paths::contains(&output.code, &["inner", "_hover", "color"]),
         "{}",
         output.code
     );

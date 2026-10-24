@@ -107,37 +107,12 @@ fn selected_numeric_rules_when_callbacks_short_circuit_keep_library_units(
         },
     )?;
     // Then: evaluate the generated class selection, not just the emitted atoms.
-    let classes = output
-        .code
-        .split_once("className={")
-        .ok_or("generated className")?
-        .1
-        .split_once("} style=")
-        .ok_or("generated style attribute")?
-        .0;
-    let atoms = output
-        .styles
-        .iter()
-        .map(|style| {
-            style
-                .extract(None)
-                .ok_or("logical numeric atom has a class identity")
-                .map(|class| (class.to_string(), style))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     for input in [3, 4] {
-        let script =
-            format!("const rest={{input:{{padding:{input}}}}};const className='';({classes});");
-        let mut context = boa_engine::Context::default();
-        let names = context
-            .eval(boa_engine::Source::from_bytes(&script))?
-            .to_string(&mut context)?
-            .to_std_string_escaped();
-        let mut selected: Vec<_> = atoms
-            .iter()
-            .filter(|(class, _)| names.split_whitespace().any(|name| name == class))
-            .map(|(_, style)| (*style).clone())
-            .collect();
+        let mut selected = crate::styled_source_tests::captured_render::active(
+            ("callback-logical-units.tsx", None),
+            &output,
+            &format!("{{input:{{padding:{input}}}}}"),
+        );
         selected.sort_unstable();
         let declarations = if choice == "condition" && input == 4 {
             vec![]
@@ -224,25 +199,16 @@ fn runtime_values_and_call_inputs_stay_ordinary_when_callback_is_bound(
         format!("export const Choice=styled.div({callback});")
     };
     // When
-    let output = extract("callback-values.tsx", &format!("{import}{site}"), option())?;
-    // Then
-    let variables = output
-        .code
-        .split_once("style={")
-        .ok_or("missing style")?
-        .1
-        .split_once("} />")
-        .ok_or("missing JSX end")?
-        .0;
-    let script = format!(
-        "const seen=[]; const rest={{lineHeight:2,raw:7}};const style={{}};function consume(data,explicit){{seen.push(data,explicit);return {input};}}const variables={variables};JSON.stringify([seen,Object.values(variables)]);"
+    let source = format!(
+        "{import}const seen=[];function consume(data,explicit){{seen.push(data,explicit);return {input};}}const observe=()=>seen;{site}"
     );
-    let json = boa_engine::Context::default()
-        .eval(boa_engine::Source::from_bytes(&script))
-        .map_err(|error| format!("generated callback failed: {error}\n{script}"))?
-        .as_string()
-        .ok_or("expected JSON")?
-        .to_std_string_escaped();
+    let output = extract("callback-values.tsx", &source, option())?;
+    // Then
+    let observed = crate::styled_source_tests::captured_render::execute(
+        ("callback-values.tsx", Some("callback-values.tsx")),
+        &output,
+        "const element=render({target:Choice,props:{lineHeight:2,raw:7}});JSON.stringify([observe(),Object.values(element.props.style)]);",
+    );
     let padding = match input {
         "3" => serde_json::json!("3px"),
         "0" => serde_json::json!(0),
@@ -251,7 +217,7 @@ fn runtime_values_and_call_inputs_stay_ordinary_when_callback_is_bound(
         _ => unreachable!(),
     };
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&json)?,
+        observed,
         serde_json::json!([[{"size":3,"nested":{"size":4}},{"size":3,"nested":{"size":4}}], [padding,2,7]])
     );
     Ok(())

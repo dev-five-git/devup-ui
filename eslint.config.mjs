@@ -10,6 +10,8 @@ export default [
       'benchmark/next-panda-css/styled-system',
       'bindings/devup-ui-wasm/pkg',
       'test-results',
+      'release-results.json',
+      'release-package-build.json',
     ],
   },
   // eslint-plugin-devup
@@ -62,4 +64,11 @@ export default [
     ignores: ['**/*.md'],
   },
   ...devupUi.configs.recommended,
+  // the snippets of this page are .css.ts stylesheets, which the build runs as they are
+  {
+    files: ['apps/landing/src/app/(detail)/docs/migration/vanilla-extract/**'],
+    rules: {
+      '@devup-ui/css-utils-literal-only': 'off',
+    },
+  },
 ]

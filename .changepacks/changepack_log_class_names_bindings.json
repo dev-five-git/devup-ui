@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Resolve Emotion ClassNames components, callback css/cx APIs and theme reads by lexical binding identity across compilation, numeric preprocessing, imported constants and mutation analysis. Ordinary shadowed callbacks, components and values retain their authored behavior while genuine outer APIs still compile without styling runtime. No new build-error categories.",
+  "date": "2026-10-20T00:00:00.000Z"
+}

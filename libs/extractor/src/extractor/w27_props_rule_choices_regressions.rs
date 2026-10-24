@@ -97,7 +97,13 @@ fn bound_undefined_when_scalar_css_value_remains_a_css_variable() {
     // Then
     assert!(output.code.contains("undefined"));
     assert!(output.code.contains("--"));
-    assert!(output.styles.iter().any(|style| matches!(style, crate::ExtractStyleValue::Dynamic(value) if value.identifier().contains("undefined"))));
+    assert!(output.styles.iter().any(|style| matches!(style, crate::ExtractStyleValue::Dynamic(value) if value.property() == "color")));
+    let observed = crate::styled_source_tests::captured_render::execute(
+        ("w27-choices-active.tsx", None),
+        &output,
+        "const element=render({target:make('purple'),props:{}});JSON.stringify(values(element,'color'));",
+    );
+    assert_eq!(observed, serde_json::json!(["purple"]));
 }
 
 #[test]

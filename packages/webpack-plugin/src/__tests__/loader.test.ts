@@ -130,35 +130,40 @@ describe('devupUILoader', () => {
       wasm,
       'setModuleResolver',
     ).mockReturnValue(undefined)
-    codeExtractSpy.mockReturnValue(
-      createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
-    )
-    const callback = mock()
-    const t = createLoaderContext(
-      {
-        package: 'package',
-        cssDir: 'cssDir',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        watch: false,
-        singleCss: true,
-      },
-      callback,
-    )
-    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
-    await waitFor(() => expect(callback).toHaveBeenCalled())
-    expect(t.addDependency).toHaveBeenCalledWith(
-      nodePath.resolve('src/tokens.ts'),
-    )
-    const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
-      specifier: string,
-      importer: string,
-    ) => { path: string } | undefined
-    expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
-      nodePath.relative(process.cwd(), import.meta.path).replaceAll('\\', '/'),
-    )
-    setModuleResolverSpy.mockRestore()
+    try {
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
+      )
+      const callback = mock()
+      const t = createLoaderContext(
+        {
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          watch: false,
+          singleCss: true,
+        },
+        callback,
+      )
+      devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
+      await waitFor(() => expect(callback).toHaveBeenCalled())
+      expect(t.addDependency).toHaveBeenCalledWith(
+        nodePath.resolve('src/tokens.ts'),
+      )
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
+        nodePath
+          .relative(process.cwd(), import.meta.path)
+          .replaceAll('\\', '/'),
+      )
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
   })
   it.each(
     createTestMatrix({
@@ -191,7 +196,7 @@ describe('devupUILoader', () => {
       createCodeExtractResult({
         code: 'code',
         css: 'css',
-        map: '{}',
+        map: '{"version":3,"names":[],"sources":["index.tsx"],"mappings":"AAAA"}',
         cssFile: 'cssFile',
         updatedBaseStyle: options.updatedBaseStyle,
       }),
@@ -223,7 +228,12 @@ describe('devupUILoader', () => {
       )
     }
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {
+        version: 3,
+        names: [],
+        sources: ['index.tsx'],
+        mappings: 'AAAA',
+      })
       expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
         '/* index.tsx 0 */',
@@ -272,6 +282,74 @@ describe('devupUILoader', () => {
     })
     expect(writeFileSpy).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
+    })
+  })
+
+  it('extracts a file that reaches Devup UI only through a project module', async () => {
+    const source = `import { Box } from './ui'
+export const a = <Box bg="red" />`
+    const asyncCallback = mock()
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+      },
+      asyncCallback,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: undefined,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    devupUILoader.bind(t)(Buffer.from(source), 'index.tsx')
+
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(
+        null,
+        '<div className="a" />',
+        null,
+      )
+    })
+  })
+
+  it('extracts a file that only the Emotion css prop compiles (pragma, no Devup UI import)', async () => {
+    const source = `/** @jsxImportSource @emotion/react */
+export const a = <div css={{ color: 'red' }} />`
+    const asyncCallback = mock()
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+      },
+      asyncCallback,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div className="a" />',
+        css: undefined,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    devupUILoader.bind(t)(Buffer.from(source), 'index.tsx')
+
+    expect(codeExtractSpy.mock.calls.at(-1)?.[1]).toBe(source)
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(
+        null,
+        '<div className="a" />',
+        null,
+      )
     })
   })
 

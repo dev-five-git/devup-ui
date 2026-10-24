@@ -42,17 +42,19 @@ fn checked_declarations(output: &ExtractOutput) -> Result<Vec<(String, String)>,
     let mut styles: Vec<_> = output
         .styles
         .iter()
-        .map(|value| match value {
-            ExtractStyleValue::Static(style) => {
-                Ok((style.property().to_string(), style.value().to_string()))
-            }
+        .filter_map(|value| match value {
+            ExtractStyleValue::Static(style) => Some(Ok((
+                style.property().to_string(),
+                style.value().to_string(),
+            ))),
+            ExtractStyleValue::LayerOrder(_) => None,
             ExtractStyleValue::Typography(_)
             | ExtractStyleValue::Dynamic(_)
             | ExtractStyleValue::Css(_)
             | ExtractStyleValue::Import(_)
             | ExtractStyleValue::FontFace(_)
             | ExtractStyleValue::Keyframes(_) => {
-                Err(format!("expected static atom, got {value:?}"))
+                Some(Err(format!("expected static atom, got {value:?}")))
             }
         })
         .collect::<Result<_, _>>()?;
@@ -172,11 +174,13 @@ fn layered_metadata_keeps_later_atom_when_known_mixins_share_layer() {
     assert_eq!(visitor.errors, vec![]);
     let mut layers: Vec<_> = visitor
         .styles
+        .into_styles("w27-layers.tsx")
         .iter()
-        .map(|value| match value {
+        .filter_map(|value| match value {
             ExtractStyleValue::Static(style) => {
-                (style.layer().map(str::to_string), style.value().to_string())
+                Some((style.layer().map(str::to_string), style.value().to_string()))
             }
+            ExtractStyleValue::LayerOrder(_) => None,
             other => panic!("expected static atom, got {other:?}"),
         })
         .collect();
@@ -250,4 +254,24 @@ fn runtime_class_remains_when_known_mixin_is_composed_beside_it() {
     let choice = output.code.split("const Choice").nth(1).unwrap_or_default();
     assert!(choice.contains("runtime"));
     assert!(!choice.contains("mixin"));
+}
+
+#[test]
+#[serial_test::serial]
+fn declaration_oracle_when_mixin_registers_a_layer_preserves_its_declaration() {
+    // Given
+    let source =
+        "import {styled} from '@devup-ui/react';const Choice=styled.div`@layer base {color:red;}`;";
+    let output = crate::extract("layer-mixin.tsx", source, option())
+        .unwrap_or_else(|error| panic!("{error}"));
+    // When
+    let declarations = declarations(&output);
+    // Then
+    assert_eq!(declarations, [("color".into(), "red".into())]);
+    assert!(
+        output
+            .styles
+            .iter()
+            .any(|style| matches!(style, ExtractStyleValue::LayerOrder(_)))
+    );
 }

@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "#22C55E",
+                value: "oklch(62.3% .214 259.815)",
                 level: 0,
                 selector: None,
                 style_order: Some(
@@ -19,7 +19,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "#3B82F6",
+                value: "oklch(72.3% .219 149.579)",
                 level: 0,
                 selector: None,
                 style_order: Some(

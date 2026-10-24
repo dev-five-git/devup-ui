@@ -66,7 +66,7 @@ fn known_composition_when_argument_is_spread_rejects_before_expression_conversio
         .get_root_binding("known".into())
         .ok_or("missing known binding")?;
     let mut visitor = DevupVisitor::new(&allocator, "spread.tsx", "@devup-ui/react", vec![], None);
-    visitor.style_values = crate::style_values::StyleValues::new(scoping);
+    visitor.style_values = crate::style_values::StyleValues::new(std::rc::Rc::new(scoping));
     visitor.style_values.insert(
         symbol,
         crate::style_values::StyleValue::Class(
@@ -87,7 +87,10 @@ fn known_composition_when_argument_is_spread_rejects_before_expression_conversio
     // Then
     if spread {
         assert!(result.is_none());
-        assert_eq!(visitor.styles, FxHashSet::default());
+        assert_eq!(
+            visitor.styles.into_styles("spread.tsx"),
+            FxHashSet::default()
+        );
         assert_eq!(visitor.css_styles, None);
         assert_eq!(visitor.inline_css_styles, FxHashMap::default());
     } else {
@@ -96,7 +99,10 @@ fn known_composition_when_argument_is_spread_rejects_before_expression_conversio
             "color", "blue", 0, None,
         ))];
         assert!(matches!(result, Expression::StringLiteral(_)));
-        assert_eq!(visitor.styles, FxHashSet::from_iter(expected.clone()));
+        assert_eq!(
+            visitor.styles.into_styles("spread.tsx"),
+            FxHashSet::from_iter(expected.clone())
+        );
         assert_eq!(
             visitor.css_styles,
             Some((call.span.start, expected.clone()))
@@ -127,7 +133,7 @@ fn inline_tagged_choice_when_reused_retains_atoms_and_choice_metadata()
         .ok_or("missing known binding")?;
     let red = ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None));
     let mut visitor = DevupVisitor::new(&allocator, "inline.tsx", "@devup-ui/react", vec![], None);
-    visitor.style_values = crate::style_values::StyleValues::new(scoping);
+    visitor.style_values = crate::style_values::StyleValues::new(std::rc::Rc::new(scoping));
     visitor.style_values.insert(
         symbol,
         crate::style_values::StyleValue::Class("known".into(), Some(vec![red.clone()])),
@@ -146,7 +152,10 @@ fn inline_tagged_choice_when_reused_retains_atoms_and_choice_metadata()
     // Then
     assert!(side.is_none());
     assert_eq!(compiled.span().start, tag.span.start);
-    assert_eq!(visitor.styles, FxHashSet::from_iter([red.clone()]));
+    assert_eq!(
+        visitor.styles.into_styles("inline.tsx"),
+        FxHashSet::from_iter([red.clone()])
+    );
     assert_eq!(visitor.css_styles, None);
     let parts = visitor
         .inline_css_parts

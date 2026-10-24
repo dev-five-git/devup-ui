@@ -6,6 +6,7 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -45,6 +46,9 @@ beforeAll(() => {
   importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+})
+
+beforeEach(() => {
   setWasmForTesting(wasm)
 })
 
@@ -358,7 +362,10 @@ describe('devupUICssLoader', () => {
       } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
     })
 
-    expect(error.message).toBe('Coordinator port file not found')
+    expect(error.message).toContain(
+      'Coordinator port file not found: nonexistent.port',
+    )
+    expect(error.message).toContain('Restart the dev server or build')
   })
 
   it('should error when coordinator returns non-200 status', async () => {

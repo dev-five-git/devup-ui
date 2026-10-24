@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "primaryColor",
+                identifier: "__devupRecord0",
                 selector: None,
                 style_order: None,
             },
@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "padding",
+                identifier: "__devupRecord1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet primaryColor = \"blue\";\nlet padding = \"16px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...(({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": padding,\n\t\t\"--b\": primaryColor\n\t},\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet primaryColor = \"blue\";\nlet padding = \"16px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (__devupRecord2=>{const {__devupCss0:__devupRecord3,__devupForwarded0:__devupRecord14,...__devupRecord13}=__devupRecord2;const __devupRecord16=(void 0);const __devupRecord17=(__devupRecord3&&__devupRecord3[3])??__devupRecord16;const __devupRecord15=__devupRecord3?__devupRecord3[2]:false;const __devupRecord12=__devupRecord13.className;const __devupRecord4={...__devupRecord13,className:void 0};const __devupRecord11=(__devupRecord5)=>{const {style,className,as:__devupRecord19,forwardedAs,...rest}=__devupRecord5;let DevupAs=__devupRecord19;if(DevupAs===void 0){if(__devupRecord17){DevupAs = (0,__devupRecord17)();}else{DevupAs = \"div\";}}const __devupRecord18=DevupAs;const __devupRecord0 = (0, primaryColor);\nconst __devupRecord1 = (0, padding);\nconst __devupRecord8=[__devupRecord3?[(\"a-b\"),(\"a-a\")]:[\"a-a a-b\"],{ \"--a\": __devupRecord1, \"--b\": __devupRecord0 },(void 0),__devupRecord18,({ style, className, as: DevupAs = __devupRecord18, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className} style={style} />,rest];return __devupRecord3?(0,__devupRecord3[1])(__devupRecord5,__devupRecord8):__devupRecord8[4]({...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\")),as:__devupRecord8[3],forwardedAs:__devupRecord5.forwardedAs,className:(__devupRecord8[0].length||__devupRecord8[2]!==void 0)?[...__devupRecord8[0],__devupRecord8[2],__devupRecord5.className].filter(Boolean).join(' '):__devupRecord5.className,style:__devupRecord8[1]===void 0?__devupRecord5.style:{...__devupRecord8[1],...__devupRecord5.style}});};const __devupRecord9=__devupRecord5=>__devupRecord11({...__devupRecord5,className:__devupRecord15?([__devupRecord5.className,__devupRecord12].filter(Boolean).join(' ')||void 0):__devupRecord12});const __devupRecord10=(__devupRecord4);return __devupRecord3?(0,__devupRecord3[0])(__devupRecord10,__devupRecord9,__devupRecord15):__devupRecord9(__devupRecord10);})({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }

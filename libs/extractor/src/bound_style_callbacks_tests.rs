@@ -176,7 +176,15 @@ fn preserves_capture_across_generated_and_user_shadowing(
         "{}",
         output.code
     );
-    assert!(output.styles.iter().any(|style| matches!(style, ExtractStyleValue::Dynamic(style) if style.identifier().contains(&format!("__devup_{name}")))));
+    assert!(output.styles.iter().any(
+        |style| matches!(style, ExtractStyleValue::Dynamic(style) if style.property() == "color")
+    ));
+    let observed = crate::styled_source_tests::captured_render::execute(
+        ("callback.tsx", Some("callback.tsx")),
+        &output,
+        "const C=outer('red')('blue');const element=render({target:C,props:{color:'green'}});JSON.stringify(values(element,'color'));",
+    );
+    assert_eq!(observed, serde_json::json!(["red"]));
     Ok(())
 }
 
@@ -188,9 +196,18 @@ fn permits_deferred_outer_read_before_its_declaration() -> Result<(), Box<dyn st
     reset_file_map();
     let source = "import {styled} from '@devup-ui/react'; export function make() { const rules = p => ({ color:later}); const later = getColor(); return styled.div(rules); }";
     // When
-    let output = compile(source)?;
+    let executable = format!(
+        "let reads=0;function getColor(){{reads++;return 'red';}}const observe=()=>reads;{source}"
+    );
+    let output = compile(&executable)?;
     // Then
-    assert!(output.styles.iter().any(|style| matches!(style, ExtractStyleValue::Dynamic(style) if style.identifier().contains("__devup_later"))), "{output:?}");
+    assert!(output.styles.iter().any(|style| matches!(style, ExtractStyleValue::Dynamic(style) if style.property() == "color")), "{output:?}");
+    let observed = crate::styled_source_tests::captured_render::execute(
+        ("callback.tsx", Some("callback.tsx")),
+        &output,
+        "const C=make();const before=observe();const element=render({target:C,props:{}});JSON.stringify([before,observe(),values(element,'color')]);",
+    );
+    assert_eq!(observed, serde_json::json!([1, 1, ["red"]]));
     Ok(())
 }
 
@@ -229,7 +246,10 @@ fn leaves_ordinary_function_props_and_application_data_unchanged()
     reset_file_map();
     let source = "import {styled, Box} from '@devup-ui/react'; const rules = p => ({color:p.color}); export const data = consume(rules); export const button = <Box onClick={rules} />; export const C = styled.div({color:p => consume({width:2}, p.color)});";
     // When
-    let output = compile(source)?;
+    let executable = format!(
+        "const seen=[];function consume(value,color){{seen.push([value,color]);return arguments.length===1?value:color;}}const observe=()=>seen;{source}"
+    );
+    let output = compile(&executable)?;
     // Then
     assert!(output.code.contains("consume(rules)"), "{}", output.code);
     assert!(
@@ -237,12 +257,14 @@ fn leaves_ordinary_function_props_and_application_data_unchanged()
         "{}",
         output.code
     );
-    assert!(
-        output
-            .code
-            .contains(&format!("consume({{width:{}}},p.color)", 2)),
-        "{}",
-        output.code
+    let observed = crate::styled_source_tests::captured_render::execute(
+        ("callback.tsx", Some("callback.tsx")),
+        &output,
+        "const element=render({target:C,props:{color:'red'}});JSON.stringify([typeof data,data===button.props.onClick,data({color:'blue'}),values(element,'color'),observe().map(([value,color])=>[typeof value==='function'?value===data:value,color])]);",
+    );
+    assert_eq!(
+        observed,
+        serde_json::json!(["function", true, {"color":"blue"}, ["red"], [[true,null],[{"width":2},"red"]]])
     );
     Ok(())
 }

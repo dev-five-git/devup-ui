@@ -13,6 +13,9 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::{reference::ReferenceId, symbol::SymbolId};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+#[path = "bound_callback_properties.rs"]
+mod properties;
+
 struct Callback<'a> {
     expression: Expression<'a>,
     constant: bool,
@@ -32,6 +35,7 @@ struct Sites<'s, 'a> {
     package: &'s str,
     callbacks: FxHashMap<SymbolId, Callback<'a>>,
     reads: FxHashMap<SymbolId, Vec<(ReferenceId, u32)>>,
+    properties: FxHashMap<SymbolId, Vec<(ReferenceId, u32)>>,
 }
 
 impl<'a> Sites<'_, 'a> {
@@ -145,6 +149,7 @@ impl<'a> Visit<'a> for Sites<'_, 'a> {
                 for argument in call.arguments.iter().skip(start) {
                     if let Some(expression) = argument.as_expression() {
                         self.read(expression);
+                        self.read_properties(expression);
                     }
                 }
             }
@@ -178,6 +183,7 @@ pub(super) fn rewrite<'a>(
         namespaces: FxHashSet::default(),
         callbacks: FxHashMap::default(),
         reads: FxHashMap::default(),
+        properties: FxHashMap::default(),
     };
     sites.visit_program(program);
     let deferred = super::local_capture_reads::deferred_reads(program, scoping);
@@ -185,31 +191,35 @@ pub(super) fn rewrite<'a>(
     let mut captures = FxHashSet::default();
     let mut errors = Vec::new();
     for (symbol, callback) in &sites.callbacks {
-        let Some(reads) = sites.reads.get(symbol) else {
+        let reads = sites
+            .reads
+            .get(symbol)
+            .into_iter()
+            .flatten()
+            .chain(sites.properties.get(symbol).into_iter().flatten());
+        let count = reads.clone().count();
+        if count == 0 {
             continue;
-        };
+        }
         let references = scoping.get_resolved_reference_ids(*symbol);
         let safe = callback.constant
-            && references.len() == reads.len()
+            && references.len() == count
             && references
                 .iter()
                 .all(|id| !scoping.get_reference(*id).is_write())
-            && reads.iter().all(|(id, start)| {
+            && reads.clone().all(|(id, start)| {
                 deferred.contains(id) || *start >= callback.expression.span().end
             });
-        if !safe {
-            errors.push((
-                scoping.symbol_span(*symbol).start,
-                crate::utils::local_style_error(scoping.symbol_name(*symbol)),
-            ));
-            continue;
-        }
-        let Some(captured) = super::bound_callback_captures::collect(&callback.expression, scoping)
+        let Some(captured) = safe
+            .then(|| super::bound_callback_captures::collect(&callback.expression, scoping))
+            .flatten()
         else {
-            errors.push((
-                scoping.symbol_span(*symbol).start,
-                crate::utils::local_style_error(scoping.symbol_name(*symbol)),
-            ));
+            if sites.reads.contains_key(symbol) {
+                errors.push((
+                    scoping.symbol_span(*symbol).start,
+                    crate::utils::local_style_error(scoping.symbol_name(*symbol)),
+                ));
+            }
             continue;
         };
         captures.extend(captured);

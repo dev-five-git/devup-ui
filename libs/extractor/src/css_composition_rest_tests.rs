@@ -298,7 +298,7 @@ fn layers_stay_distinct_when_nested_spreads_override_matching_rules() {
     visitor.visit_program(&mut program);
     assert_eq!(visitor.errors, vec![]);
     let output = ExtractOutput {
-        styles: visitor.styles,
+        styles: visitor.styles.into_styles("composition.tsx"),
         code: oxc_codegen::Codegen::new().build(&program).code,
         map: None,
         css_file: None,

@@ -39,7 +39,10 @@ fn inline_tag_when_only_runtime_classes_remain_folds_without_losing_order()
         crate::utils::readable_code(&class),
         format!("`${{{first_name}}} ${{{second_name}}}`")
     );
-    assert_eq!(visitor.styles, rustc_hash::FxHashSet::default());
+    assert_eq!(
+        visitor.styles.into_styles("inline.tsx"),
+        rustc_hash::FxHashSet::default()
+    );
     assert_eq!(visitor.css_styles, None);
     let parts = visitor
         .inline_css_parts
@@ -71,7 +74,7 @@ fn template_composition_when_only_opaque_classes_remain_preserves_their_form(
         .build(&parsed.program)
         .semantic
         .into_scoping();
-    visitor.style_values = StyleValues::new(scoping);
+    visitor.style_values = StyleValues::new(std::rc::Rc::new(scoping));
     let known = visitor
         .style_values
         .root_symbol("known")
@@ -104,7 +107,7 @@ fn template_composition_when_only_opaque_classes_remain_preserves_their_form(
         crate::utils::readable_code(&result),
         if literal { "\"external\"" } else { "opaque" }
     );
-    assert_eq!(visitor.styles.len(), 0);
+    assert_eq!(visitor.styles.into_styles("coverage.tsx").len(), 0);
     Ok(())
 }
 
@@ -128,7 +131,7 @@ fn known_call_when_later_rules_replace_all_choices_records_exact_inline_metadata
         .ok_or("missing known binding")?;
     let mut visitor =
         DevupVisitor::new(&allocator, "coverage.tsx", "@devup-ui/react", vec![], None);
-    visitor.style_values = StyleValues::new(scoping);
+    visitor.style_values = StyleValues::new(std::rc::Rc::new(scoping));
     visitor.style_values.insert(
         known,
         StyleValue::Class(
@@ -190,7 +193,7 @@ fn known_array_when_it_contains_holes_skips_them_without_losing_metadata()
     let style = ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None));
     let mut visitor =
         DevupVisitor::new(&allocator, "coverage.tsx", "@devup-ui/react", vec![], None);
-    visitor.style_values = StyleValues::new(scoping);
+    visitor.style_values = StyleValues::new(std::rc::Rc::new(scoping));
     visitor.style_values.insert(
         known,
         StyleValue::Class("known".into(), Some(vec![style.clone()])),

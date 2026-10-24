@@ -1,6 +1,7 @@
 use super::*;
 use crate::extract_style::{ExtractStyleProperty, extract_static_style::ExtractStaticStyle};
 use rstest::rstest;
+use std::fmt::Write;
 
 #[rstest]
 #[case("true", "red")]
@@ -29,14 +30,23 @@ fn direct_condition_when_no_props_callback_exists_keeps_module_binding(
     .parse_expression()
     .map_err(|error| format!("failed to parse valid choice: {error:?}"))?;
     // When
-    let mut styles = mixin(&ast, &expression, &bindings)
+    let mut schedule = Schedule::new(&ast, &expression);
+    let mut styles = mixin(&mut schedule, &expression, &bindings)
         .map_err(|_| "failed to lower written choice")?
         .ok_or("written choice produced no styles")?;
     let mut context = boa_engine::Context::default();
     let class = crate::gen_class_name::gen_class_names(&ast, &mut styles, None, None)
         .ok_or("conditional classes were missing")?;
+    let mut captured = String::new();
+    for (name, value) in &schedule.bindings {
+        write!(
+            captured,
+            "const {name}=({});",
+            crate::css_utils::rm_last_semi_colon(&crate::utils::expression_to_code(value))
+        )?;
+    }
     let code = format!(
-        "const on = {on}; {}",
+        "const rest={{}};const on = {on}; {captured} {}",
         crate::utils::expression_to_code(&class)
     );
     let selected = context
@@ -67,7 +77,8 @@ fn known_class_when_empty_or_nonempty_selects_rules_before_context_lowering(
     // Given
     let allocator = oxc_allocator::Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let expression = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::tsx())
+    let source = source.replace("(known)", "('known')");
+    let expression = oxc_parser::Parser::new(&allocator, &source, oxc_span::SourceType::tsx())
         .parse_expression()
         .map_err(|error| format!("failed to parse valid choice: {error:?}"))?;
     let Expression::LogicalExpression(logical) = &expression else {
@@ -90,7 +101,8 @@ fn known_class_when_empty_or_nonempty_selects_rules_before_context_lowering(
         inline_css: &inline_css,
     };
     // When
-    let mut styles = mixin(&ast, &expression, &bindings)
+    let mut schedule = Schedule::new(&ast, &expression);
+    let mut styles = mixin(&mut schedule, &expression, &bindings)
         .map_err(|_| "failed to lower known class choice")?
         .ok_or("known class choice produced no styles")?;
     let class = crate::gen_class_name::gen_class_names(&ast, &mut styles, None, None)
@@ -99,8 +111,20 @@ fn known_class_when_empty_or_nonempty_selects_rules_before_context_lowering(
     match class {
         None => assert_eq!(expected, ""),
         Some(code) => {
+            let mut captured = String::new();
+            for (name, value) in &schedule.bindings {
+                write!(
+                    captured,
+                    "const {name}=({});",
+                    crate::css_utils::rm_last_semi_colon(&crate::utils::expression_to_code(value))
+                )?;
+            }
             let selected = super::super::w27_props_rule_choices_tests::support::evaluate(
-                crate::css_utils::rm_last_semi_colon(&code),
+                &format!(
+                    "(()=>{{{}return {};}})()",
+                    captured,
+                    crate::css_utils::rm_last_semi_colon(&code)
+                ),
                 "{}",
             );
             assert_eq!(
@@ -122,7 +146,7 @@ fn opaque_known_atom_when_nested_reports_error_instead_of_applying_global_class(
     let ast = AstBuilder::new(&allocator);
     let expression = oxc_parser::Parser::new(
         &allocator,
-        "`&:hover { ${known}; }`",
+        "`&:hover { ${'known'}; }`",
         oxc_span::SourceType::tsx(),
     )
     .parse_expression()
@@ -169,7 +193,6 @@ fn unknown_rule_when_reader_receives_it_fails_instead_of_silently_discarding_it(
     let result = MixinReader {
         ast: &ast,
         bindings: &bindings,
-        params: None,
     }
     .read(&mut rules);
     // Then

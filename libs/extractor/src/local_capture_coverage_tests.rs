@@ -118,3 +118,69 @@ fn renamed_shorthand_when_capture_alias_changes_preserves_public_key_and_value(
     );
     Ok(())
 }
+
+#[test]
+#[serial_test::serial]
+fn local_shape_when_emotion_styles_read_runtime_leaves_preserves_pixel_context() {
+    // Given
+    let source = "import styled from '@emotion/styled';function make(input){const shape={padding:2,color:input.color};return styled.div(shape);}const Choice=make({color:'red'});";
+    let option = ExtractOption {
+        single_css: true,
+        import_aliases: std::collections::HashMap::from([(
+            "@emotion/styled".into(),
+            crate::ImportAlias::DefaultToNamed("styled".into()),
+        )]),
+        ..Default::default()
+    };
+    let output =
+        crate::extract("local-shape.tsx", source, option).unwrap_or_else(|error| panic!("{error}"));
+    // When
+    let observed = crate::styled_source_tests::captured_render::execute(
+        ("local-shape.tsx", None),
+        &output,
+        "const element=render({target:Choice,props:{}});JSON.stringify([values(element,'color'),values(element,'padding')]);",
+    );
+    // Then
+    assert_eq!(observed, serde_json::json!([["red"], ["2px"]]));
+}
+
+#[rstest]
+#[case("{}", "blue")]
+#[case("{color:'green'}", "red")]
+#[serial_test::serial]
+fn imported_class_when_used_as_a_controller_selects_by_declarations_not_metadata(
+    #[case] rules: &str,
+    #[case] expected: &str,
+) {
+    // Given
+    let module = format!("import {{css}} from '@devup-ui/react';export const mixin=css({rules});");
+    let resolver = move |specifier: &str, _: &str| {
+        (specifier == "./base").then(|| crate::ResolvedModule {
+            path: "/base.tsx".into(),
+            code: module.clone(),
+        })
+    };
+    let source = "import {styled} from '@devup-ui/react';import {mixin} from './base';const Choice=styled.div(mixin?{color:'red'}:{color:'blue'});";
+    // When
+    let output = crate::extract_with_modules(
+        "/entry.tsx",
+        source,
+        ExtractOption {
+            single_css: true,
+            ..Default::default()
+        },
+        false,
+        &resolver,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // Then
+    let colors: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            ExtractStyleValue::Static(style) if style.property() == "color" => Some(style.value()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(colors, [expected]);
+}
