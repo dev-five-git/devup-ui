@@ -20,6 +20,72 @@ import type { Compiler } from 'webpack'
 import { DevupUIWebpackPlugin } from '../plugin'
 import { servedCss } from '../served-css'
 
+describe('shorthand creation boundary', () => {
+  it('registers canonical targets when the plugin is constructed', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      new DevupUIWebpackPlugin({
+        shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
+      })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before registration when runtime options bypass types', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      expect(() =>
+        Reflect.construct(DevupUIWebpackPlugin, [
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(pluginUtils.ShorthandConfigError)
+      expect(registration).not.toHaveBeenCalled()
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('reuses canonical targets when the compiler initializes', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    const compiler = createCompiler()
+    try {
+      // Given
+      const plugin = new DevupUIWebpackPlugin({
+        shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
+      })
+      registration.mockClear()
+      // When
+      plugin.apply(asCompiler(compiler))
+      // Then
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      for (const [, endBuild] of compiler.hooks.shutdown.tap.mock.calls)
+        endBuild()
+      registration.mockRestore()
+    }
+  })
+})
+
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 interface MockCompiler {
   options: {

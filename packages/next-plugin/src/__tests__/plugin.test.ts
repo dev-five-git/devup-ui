@@ -193,6 +193,60 @@ afterEach(() => {
 })
 
 describe('DevupUINextPlugin', () => {
+  it.each(['1', 'auto', undefined])(
+    'rejects typos at creation before setup in mode %s',
+    (mode) => {
+      if (mode === undefined) delete process.env.TURBOPACK
+      else process.env.TURBOPACK = mode
+      expect(() =>
+        Reflect.apply(DevupUI, undefined, [
+          {},
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(importGraphModule.ShorthandConfigError)
+      expect(writeFileSyncSpy).not.toHaveBeenCalled()
+      expect(startCoordinatorSpy).not.toHaveBeenCalled()
+      expect(devupUIWebpackPluginSpy).not.toHaveBeenCalled()
+    },
+  )
+
+  it('registers canonical targets when a Turbopack plugin is created', () => {
+    process.env.TURBOPACK = '1'
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      DevupUI({}, { shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] } })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before reading an available production handoff', () => {
+    process.env.TURBOPACK = '1'
+    setNodeEnv('production')
+    DevupUI({}, { shorthands: { bgx: ['backgroundColor'] } })
+    reloadTurboSetupModuleForTesting()
+    readFileSyncSpy.mockClear()
+    const shorthands = { bgx: ['backgroundColour'] }
+    Object.defineProperty(shorthands, 'toJSON', {
+      value: () => ({ bgx: ['background-color'] }),
+    })
+
+    expect(() =>
+      Reflect.apply(DevupUI, undefined, [{}, { shorthands }]),
+    ).toThrow(importGraphModule.ShorthandConfigError)
+    expect(readFileSyncSpy).not.toHaveBeenCalled()
+    expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+  })
+
   describe('webpack', () => {
     it.each([
       ['omitted', {}],
@@ -279,6 +333,68 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
+    it('reuses production setup across Next config module reloads', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      getDefaultThemeSpy.mockReturnValue('dark')
+      const filename = resolve('src/app/page.tsx')
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const normalizeSpy = spyOn(importGraphModule, 'normalizeShorthands')
+      const handoffFile = join('df', 'setup.bin')
+      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
+      writeFileSyncSpy.mockImplementation((path, data) => {
+        if (String(path) === handoffFile) handoff = data
+      })
+      readFileSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile && handoff !== undefined) {
+          return handoff as never
+        }
+        return '{}' as never
+      })
+      unlinkSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile) throw new Error('cleanup failed')
+      })
+
+      try {
+        const first = DevupUI(
+          {},
+          { singleCss: true, shorthands: { bgx: ['backgroundColor'] } },
+        )
+        reloadTurboSetupModuleForTesting()
+        const second = DevupUI(
+          { env: { EXISTING: 'value' } },
+          { singleCss: true, shorthands: { bgx: ['background-color'] } },
+        )
+
+        expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
+        expect(second.env).toEqual({
+          DEVUP_UI_DEFAULT_THEME: 'dark',
+          EXISTING: 'value',
+        })
+        expect(graphSpy).toHaveBeenCalledTimes(1)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
+        expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+        expect(normalizeSpy).toHaveBeenCalledTimes(2)
+        expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
+        expect(profileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('"cacheHit":true'),
+        )
+      } finally {
+        normalizeSpy.mockRestore()
+        profileSpy.mockRestore()
+        compiledSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
+    })
     it.each([true, false])(
       'W66 availability: reuses production setup and warns once across config reloads (singleCss %s)',
       (singleCss) => {

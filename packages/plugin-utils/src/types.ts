@@ -1,3 +1,5 @@
+import type { CustomShorthandTarget } from './shorthands'
+
 /**
  * Typography definition for a single breakpoint or non-responsive typography
  */
@@ -64,7 +66,7 @@ export interface DevupTheme {
 }
 
 /** Custom style prop aliases mapped to one or more CSS property names. */
-export type CustomShorthands = Record<string, readonly string[]>
+export type CustomShorthands = Record<string, readonly CustomShorthandTarget[]>
 
 /**
  * Devup configuration file structure (devup.json)

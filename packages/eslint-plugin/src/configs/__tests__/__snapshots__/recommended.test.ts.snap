@@ -133,7 +133,7 @@ exports[`recommended export recommended config 1`] = `
                 "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/style-order-range",
               },
               "messages": {
-                "styleOrderRange": "styleOrder prop must be a number greater than 0 and less than 255.",
+                "styleOrderRange": "styleOrder must be an integer from 1 to 254 or its decimal digit string, with no signs, spaces or leading zeros.",
                 "wrongType": "styleOrder prop must be a number or a string representing a number.",
               },
               "schema": [],
