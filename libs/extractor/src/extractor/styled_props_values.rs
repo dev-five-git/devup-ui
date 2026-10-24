@@ -3,10 +3,9 @@ use oxc_ast::{
     ast::{Expression, FormalParameters},
     builder::AstBuilder,
 };
-use oxc_span::{GetSpan, SPAN};
-use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
+use oxc_span::GetSpan;
 
-use super::super::{identifier, named_arrow};
+pub(super) use crate::extractor::extract_style_from_styled::scalar::zero;
 
 /// Only theme analysis uses a synthetic per-leaf arrow; emitted execution never does.
 pub(super) fn analysis<'a>(
@@ -34,55 +33,14 @@ pub(super) fn is_written_out(value: &Expression<'_>) -> bool {
         || matches!(value, Expression::NullLiteral(_))
 }
 
-pub(super) fn zero<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {
-    Expression::new_numeric_literal(
-        SPAN,
-        0.0,
-        None,
-        oxc_syntax::number::NumberBase::Decimal,
+pub(super) fn captured<'a>(
+    builder: &AstBuilder<'a>,
+    key: &str,
+    slot: Expression<'a>,
+) -> Expression<'a> {
+    crate::extractor::extract_style_from_styled::scalar::captured(
         builder,
-    )
-}
-
-/// Existing whole-rule conversion: nonzero numbers become px; zero/strings pass through.
-pub(super) fn length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) -> Expression<'a> {
-    let value = || identifier(builder, "__devupValue");
-    let is_number = Expression::new_binary_expression(
-        SPAN,
-        Expression::new_unary_expression(SPAN, UnaryOperator::Typeof, value(), builder),
-        BinaryOperator::StrictEquality,
-        Expression::new_string_literal(SPAN, "number", None, builder),
-        builder,
-    );
-    let length = Expression::new_binary_expression(
-        SPAN,
-        value(),
-        BinaryOperator::Addition,
-        Expression::new_string_literal(SPAN, "px", None, builder),
-        builder,
-    );
-    let length = Expression::new_conditional_expression(
-        SPAN,
-        Expression::new_logical_expression(
-            SPAN,
-            is_number,
-            LogicalOperator::And,
-            Expression::new_binary_expression(
-                SPAN,
-                value(),
-                BinaryOperator::StrictInequality,
-                zero(builder),
-                builder,
-            ),
-            builder,
-        ),
-        length,
-        value(),
-        builder,
-    );
-    crate::utils::wrap_direct_call(
-        builder,
-        &named_arrow(builder, "__devupValue", length),
-        &[leaf],
+        crate::extractor::extract_style_from_styled::scalar::Origin::WholeRule(key),
+        slot,
     )
 }

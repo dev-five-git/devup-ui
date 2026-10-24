@@ -6,6 +6,51 @@ use oxc_semantic::SemanticBuilder;
 use oxc_transformer::{TransformOptions, Transformer};
 use serde_json::Value;
 
+#[path = "call_choice_execution.rs"]
+mod call_choice_execution;
+
+#[path = "call_mixin_source_execution.rs"]
+mod call_mixin_source_execution;
+
+#[path = "template_binding_execution.rs"]
+mod template_binding_execution;
+
+#[path = "direct_template_execution.rs"]
+mod direct_template_execution;
+
+#[path = "callback_discarded_execution.rs"]
+mod callback_discarded_execution;
+
+#[path = "d1_projection_execution.rs"]
+mod d1_projection_execution;
+
+#[path = "d1_boundary_execution.rs"]
+mod d1_boundary_execution;
+
+#[path = "layer_transport_execution.rs"]
+mod layer_transport_execution;
+
+#[path = "callback_provenance_execution.rs"]
+mod callback_provenance_execution;
+
+#[path = "value_transport_execution.rs"]
+mod value_transport_execution;
+
+#[path = "ordinary_property_execution.rs"]
+mod ordinary_property_execution;
+
+#[path = "binding_execution.rs"]
+mod binding_execution;
+
+#[path = "scoping_execution.rs"]
+mod scoping_execution;
+
+#[path = "namespace_css_slots.rs"]
+mod namespace_css_slots;
+
+#[path = "css_boundary_forwarding.rs"]
+mod css_boundary_forwarding;
+
 pub(super) const CAPTURED: &str = "const trace=[];let selected=true;const Card=styled.article({...((trace.push('controller'),selected)?{color:(trace.push('leaf'),'red')}:{}),color:'green'});";
 
 pub(super) fn element(filename: &str, props: &str) -> String {
@@ -47,11 +92,19 @@ fn execute_in_mode(filename: &str, source: &str, observation: &str, single_css: 
         option,
     )
     .unwrap_or_else(|error| panic!("{filename}\n{source}\n{error}"));
+    execute_extracted((filename, bucket.as_deref()), &output, observation)
+}
+
+pub(super) fn execute_extracted(
+    (filename, bucket): (&str, Option<&str>),
+    output: &crate::ExtractOutput,
+    observation: &str,
+) -> Value {
     let mut rules = std::collections::BTreeMap::new();
     for style in &output.styles {
         let rule = match style {
             crate::ExtractStyleValue::Static(style) => {
-                let StyleProperty::ClassName(name) = style.extract(bucket.as_deref()) else {
+                let StyleProperty::ClassName(name) = style.extract(bucket) else {
                     panic!("static atom must have a class")
                 };
                 Some((
@@ -73,7 +126,7 @@ fn execute_in_mode(filename: &str, source: &str, observation: &str, single_css: 
                     class_name,
                     variable_name,
                     ..
-                } = style.extract(bucket.as_deref())
+                } = style.extract(bucket)
                 else {
                     panic!("dynamic atom must have a variable")
                 };
@@ -212,6 +265,9 @@ mod implicit_theme_scope;
 
 #[path = "local_member_guard.rs"]
 mod local_member_guard;
+
+#[path = "callback_choice_execution.rs"]
+mod callback_choice_execution;
 
 #[path = "integration_semantics.rs"]
 mod integration_semantics;

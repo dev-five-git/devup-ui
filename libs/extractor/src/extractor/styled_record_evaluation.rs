@@ -6,6 +6,9 @@ use oxc_ast::{
 use oxc_span::{GetSpan, SPAN};
 
 use crate::utils::is_same_expression;
+#[path = "styled_capture_statements.rs"]
+mod captures;
+pub(crate) use captures::capture_statements;
 
 /// Ordered reads shared by the class and variable expressions of one render.
 pub(crate) struct Evaluations<'b, 'a> {
@@ -160,50 +163,11 @@ pub(crate) fn bind_render_body<'a>(
     body: Expression<'a>,
 ) -> ArrowFunctionBody<'a> {
     use oxc_allocator::Vec as ArenaVec;
-    use oxc_ast::ast::{
-        BindingPattern, Statement, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
-    };
+    use oxc_ast::ast::Statement;
     if bindings.is_empty() {
         return body.into();
     }
-    // Sibling declarations preserve dependent read order without one scope per capture.
-    let mut statements = ArenaVec::with_capacity_in(bindings.len() + 1, builder);
-    for (name, value) in bindings {
-        let name = oxc_ast::ast::Ident::from_in(name.as_str(), builder.allocator());
-        // Sequence evaluation prevents declaration-name inference for anonymous definitions.
-        let value = Expression::new_sequence_expression(
-            SPAN,
-            ArenaVec::from_array_in(
-                [
-                    Expression::new_numeric_literal(
-                        SPAN,
-                        0.0,
-                        None,
-                        oxc_syntax::number::NumberBase::Decimal,
-                        builder,
-                    ),
-                    value,
-                ],
-                builder,
-            ),
-            builder,
-        );
-        let declaration = VariableDeclarator::new(
-            SPAN,
-            BindingPattern::new_binding_identifier(SPAN, name, builder),
-            None,
-            Some(value),
-            false,
-            builder,
-        );
-        statements.push(Statement::VariableDeclaration(VariableDeclaration::boxed(
-            SPAN,
-            VariableDeclarationKind::Const,
-            ArenaVec::from_array_in([declaration], builder),
-            false,
-            builder,
-        )));
-    }
+    let mut statements = capture_statements(builder, bindings);
     statements.push(Statement::new_return_statement(SPAN, Some(body), builder));
     ArrowFunctionBody::new_function_body(SPAN, ArenaVec::new_in(builder), statements, builder)
 }

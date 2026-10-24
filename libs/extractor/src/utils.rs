@@ -1998,3 +1998,7 @@ mod tests {
         assert_eq!(get_str_by_property_key(&private), None);
     }
 }
+
+#[cfg(test)]
+#[path = "style_arguments_spread_tests.rs"]
+mod style_arguments_spread_tests;

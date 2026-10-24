@@ -7,6 +7,51 @@ use rstest::rstest;
 use super::*;
 use crate::extractor::styled_record_evaluation::bind_render;
 
+#[test]
+fn callback_preparation_when_a_responsive_spread_refuses_capture_keeps_the_authored_schedule() {
+    // Given: the callback can be lowered, but its enclosing record cannot be captured.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let source = "styled({color:p=>p.color,margin:[...values]})";
+    let mut scope = Parser::new(&allocator, source, SourceType::mjs())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let mut expression = scope.clone_in(&allocator);
+    let Expression::CallExpression(call) = &mut expression else {
+        panic!("expected styled call")
+    };
+    let mut reads = Reads::default();
+    // When: argument preparation attempts and refuses the complete callback record.
+    let prepared = prepare(
+        &builder,
+        call,
+        Context {
+            filename: "arguments.tsx",
+            scope: &mut scope,
+            reads: &mut reads,
+            refused: &[],
+        },
+    );
+    // Then: no partial binding escapes; the callback runs once and the responsive spread remains intact.
+    assert_eq!(prepared.errors, vec![]);
+    assert_eq!(prepared.bindings.len(), 0);
+    let code = readable_code(call.arguments[0].to_expression());
+    let script = format!(
+        "const trace=[];const values=[1,2];const rest={{get color(){{trace.push('color');return 'red'}}}};const result={code};JSON.stringify([result.color,result.margin,trace]);"
+    );
+    let actual = BoaContext::default()
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("{error}"))
+        .as_string()
+        .unwrap_or_else(|| panic!("expected JSON observation"))
+        .to_std_string_escaped();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&actual)
+            .unwrap_or_else(|error| panic!("{error}")),
+        serde_json::json!(["red", [1, 2], ["color"]])
+    );
+}
+
 #[rstest]
 #[case::callback_spread(
     "styled(...[{color:read('spread','red')}],p=>({margin:p.m}))",
@@ -36,6 +81,7 @@ fn repair_745_styled_arguments_keep_spread_capture_order(
             &builder,
             call,
             Context {
+                filename: "arguments.tsx",
                 scope: &mut scope,
                 reads: &mut reads,
                 refused: &[],
@@ -83,6 +129,7 @@ fn repair_745_styled_arguments_keep_suspending_fallback(
             &builder,
             call,
             Context {
+                filename: "arguments.tsx",
                 scope: &mut scope,
                 reads: &mut reads,
                 refused: &[],
@@ -115,6 +162,7 @@ fn repair_745_nested_callback_keeps_unmapped_theme_error() {
             &builder,
             call,
             Context {
+                filename: "arguments.tsx",
                 scope: &mut scope,
                 reads: &mut reads,
                 refused: &[],

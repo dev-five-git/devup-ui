@@ -244,6 +244,7 @@ fn imported_metadata_is_readable_only_when_local_rules_are_style_only(
         &option,
         Some(&resolver),
         crate::css_prop::CssProp::Off,
+        &mut None,
     );
     // Then
     let card = reading

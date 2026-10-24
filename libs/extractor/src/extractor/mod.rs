@@ -10,6 +10,7 @@ pub(super) mod extract_style_from_member_expression;
 pub(super) mod extract_style_from_styled;
 pub(super) mod extract_style_from_stylex;
 pub(super) mod rule_array_evaluation;
+pub(crate) mod style_order_projection;
 pub(super) mod styled_capability;
 pub(super) mod styled_css_slot;
 pub(super) mod styled_jsx;

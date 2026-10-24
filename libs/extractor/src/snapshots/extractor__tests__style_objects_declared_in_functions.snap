@@ -25,7 +25,7 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { color: c }; return css(inner); }",
-        "Error: /src/App.tsx:2:63: `css()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+        "Error: /src/App.tsx:2:59: `css()` cannot use `inner[`color`]` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const parts = [{ color: 'red' }, { margin: 1 }]; return css(parts); }",
@@ -45,7 +45,7 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { color: c }; return styled.div(inner); }",
-        "Error: /src/App.tsx:2:70: `styled()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it",
+        "ToBTreeSet { styles: {Dynamic(ExtractDynamicStyle { property: \"color\", level: 0, identifier: \"__devupRecord0\", selector: None, style_order: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f(c) {\\n\\tconst inner = { color: c };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => (__devupRecord1=>{const {__devupCss0:__devupRecord2,__devupForwarded0:__devupRecord13,...__devupRecord12}=__devupRecord1;const __devupRecord15=(void 0);const __devupRecord16=(__devupRecord2&&__devupRecord2[3])??__devupRecord15;const __devupRecord14=__devupRecord2?__devupRecord2[2]:false;const __devupRecord11=__devupRecord12.className;const __devupRecord3={...__devupRecord12,className:void 0};const __devupRecord10=(__devupRecord4)=>{const {style,className,as:__devupRecord18,forwardedAs,...rest}=__devupRecord4;let DevupAs=__devupRecord18;if(DevupAs===void 0){if(__devupRecord16){DevupAs = (0,__devupRecord16)();}else{DevupAs = \\\"div\\\";}}const __devupRecord17=DevupAs;const __devupRecord0 = (0, inner[\\\"color\\\"]);\\nconst __devupRecord7=[__devupRecord2?[(\\\"a\\\")]:[\\\"a\\\"],{ \\\"--b\\\": __devupRecord0 },(void 0),__devupRecord17,({ style, className, as: DevupAs = __devupRecord17, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \\\"$\\\"))} as={forwardedAs} className={className} style={style} />,rest];return __devupRecord2?(0,__devupRecord2[1])(__devupRecord4,__devupRecord7):__devupRecord7[4]({...Object.fromEntries(Object.entries((({ \\\"theme\\\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \\\"$\\\")),as:__devupRecord7[3],forwardedAs:__devupRecord4.forwardedAs,className:(__devupRecord7[0].length||__devupRecord7[2]!==void 0)?[...__devupRecord7[0],__devupRecord7[2],__devupRecord4.className].filter(Boolean).join(' '):__devupRecord4.className,style:__devupRecord7[1]===void 0?__devupRecord4.style:{...__devupRecord7[1],...__devupRecord4.style}});};const __devupRecord8=__devupRecord4=>__devupRecord10({...__devupRecord4,className:__devupRecord14?([__devupRecord4.className,__devupRecord11].filter(Boolean).join(' ')||void 0):__devupRecord11});const __devupRecord9=(__devupRecord3);return __devupRecord2?(0,__devupRecord2[0])(__devupRecord9,__devupRecord8,__devupRecord14):__devupRecord8(__devupRecord9);})({\\n\\t\\t...__devupRefProps,\\n\\t\\tref: __devupRef\\n\\t}));\\n}\\n\" }",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { body: { color: 'red' } }; return globalCss(inner); }",
@@ -53,7 +53,7 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { body: { color: c } }; return globalCss(inner); }",
-        "Error: /src/App.tsx:2:79: `globalCss()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it\n/src/App.tsx:2:79: `globalCss()` cannot use `inner` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+        "Error: /src/App.tsx:2:69: `globalCss()` cannot use `inner[`body`][`color`]` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { from: { opacity: 0 }, to: { opacity: 1 } }; return keyframes(inner); }",
@@ -61,7 +61,7 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { from: { opacity: c } }; return keyframes(inner); }",
-        "Error: /src/App.tsx:2:81: `keyframes()` cannot use `inner` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it\n/src/App.tsx:2:81: `keyframes()` cannot use `inner` at build time: its values must be literals, theme tokens or constants, or be computed from them",
+        "Error: /src/App.tsx:2:46: `keyframes()` cannot use `inner[\"from\"]` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { color: 'red' }; return <Box {...inner} />; }",
@@ -77,7 +77,7 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { color: c }; return <Box {...inner} />; }",
-        "ToBTreeSet { styles: {}, code: \"export function f(c) {\\n\\tconst inner = { color: c };\\n\\treturn <div {...inner} className={inner?.className || \\\"\\\"} style={inner?.style} />;\\n}\\n\" }",
+        "ToBTreeSet { styles: {Dynamic(ExtractDynamicStyle { property: \"color\", level: 0, identifier: \"inner[`color`]\", selector: None, style_order: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f(c) {\\n\\tconst inner = { color: c };\\n\\treturn <div className=\\\"a\\\" style={{ \\\"--b\\\": inner[`color`] }} />;\\n}\\n\" }",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { color: 'red' }; const cls = 'x'; return css(inner, cls); }",

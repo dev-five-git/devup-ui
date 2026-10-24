@@ -2,6 +2,14 @@ use super::styled_capability::StyledCapability;
 use super::styled_css_slot::{StyledContext, StyledCssSlot};
 #[path = "styled_retained.rs"]
 mod retained;
+#[path = "styled_retarget.rs"]
+mod retarget;
+pub use retarget::with_component;
+#[path = "styled_residual.rs"]
+mod residual;
+#[path = "styled_stages.rs"]
+mod stages;
+use super::style_order_projection::{AuthoredStyles, extract_with_order};
 use super::styled_jsx::StyledJsx;
 use retained::Execution;
 use rustc_hash::FxHashMap;
@@ -9,21 +17,20 @@ use rustc_hash::FxHashMap;
 use crate::{
     ExtractStyleProp,
     component::ExportVariableKind,
-    css_utils::{TemplateStyles, css_to_style_template},
     extract_style::extract_style_value::ExtractStyleValue,
     extractor::{
         ExtractResult,
-        extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+        extract_style_from_expression::LiteralHandling,
         styled_record::prepare,
         styled_record_evaluation::{Evaluations, bind_render_body, visit_style_expressions},
     },
     gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
-    styled_reads::{Forward, Reads, withheld},
+    styled_reads::{Forward, Reads, withheld as props_withheld},
     utils::{
         STYLE_OBJECT, build_time_error, call_with_values, expression_to_code,
-        merge_object_expressions, readable_code, unplaced_error, unreadable_styles,
-        unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
+        merge_object_expressions, readable_code, unreadable_styles, unwrap_syntax_only,
+        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -42,6 +49,24 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 #[path = "styled_props.rs"]
 mod props;
+
+#[path = "styled_scalar.rs"]
+pub(super) mod scalar;
+
+#[path = "styled_rule_choices.rs"]
+mod rule_choices;
+
+#[path = "styled_template_composition.rs"]
+mod template_composition;
+
+#[path = "styled_rule_parts.rs"]
+mod rule_parts;
+
+#[path = "styled_rule_records.rs"]
+mod records;
+
+#[path = "styled_template_bindings.rs"]
+mod template_bindings;
 
 #[path = "styled_arguments.rs"]
 mod arguments;
@@ -79,6 +104,7 @@ pub struct StyledDefinition<'a> {
     bound: Option<Expression<'a>>,
     classes: Vec<Expression<'a>>,
     styles: Vec<ExtractStyleProp<'a>>,
+    composition_styles: Option<AuthoredStyles<'a>>,
     attrs: Vec<Expression<'a>>,
     /// The props its styles and attrs read
     reads: Reads,
@@ -111,10 +137,40 @@ pub struct Naming<'s> {
     pub markers: &'s [String],
 }
 
+/// The bindings styled factories and their CSS mixins read in this module.
+pub struct StyledBindings<'s> {
+    pub imports: Kinds<'s>,
+    pub values: &'s crate::style_values::StyleValues<'s>,
+    pub inline_css: &'s FxHashMap<u32, Vec<ExtractStyleValue>>,
+}
+
+impl StyledBindings<'_> {
+    fn styles(&self, expression: &Expression<'_>) -> Option<&[ExtractStyleValue]> {
+        self.values
+            .styles(unwrap_syntax_only(expression))
+            .or_else(|| match unwrap_syntax_only(expression) {
+                Expression::StringLiteral(literal) => {
+                    self.inline_css.get(&literal.span.start).map(Vec::as_slice)
+                }
+                _ => None,
+            })
+    }
+}
+
 /// Whether a styled component renders a tag, which takes only valid
 /// attributes, rather than a component
 fn renders_tag(name: &str, bound: Option<&Expression<'_>>) -> bool {
     bound.is_none() && name.starts_with(|c: char| c.is_ascii_lowercase()) && !name.contains('.')
+}
+
+/// The shared legacy whitelist includes `on`, but a native tag cannot take
+/// that styling flag as a boolean attribute. Explicit forwarding stays intact.
+fn withheld(reads: &Reads, renders_tag: bool, forward: Option<&Forward>) -> Vec<String> {
+    let mut names = props_withheld(reads, renders_tag, forward);
+    if renders_tag && forward.is_none() && reads.names.iter().any(|name| name == "on") {
+        names.push("on".to_string());
+    }
+    names
 }
 
 /// `own` applying after `inherited`: a prop passes only when both pass it
@@ -169,6 +225,11 @@ impl<'a> StyledDefinition<'a> {
         for style in &mut self.styles {
             visit_style_expressions(builder, style, &mut visit);
         }
+        if let Some(styles) = &mut self.composition_styles {
+            for style in &mut styles.0 {
+                visit_style_expressions(builder, style, &mut visit);
+            }
+        }
     }
 
     fn rebind(&self, builder: &AstBuilder<'a>, scope: &mut Expression<'a>) -> Self {
@@ -179,6 +240,10 @@ impl<'a> StyledDefinition<'a> {
         let mut inherited = Self {
             name: self.name.clone(),
             target: self.target.as_ref().map(|value| value.clone_in(allocator)),
+            composition_styles: self
+                .composition_styles
+                .as_ref()
+                .map(|styles| styles.clone_in(allocator)),
             bound: self.bound.as_ref().map(|value| value.clone_in(allocator)),
             classes: clone_all(builder, &self.classes).collect(),
             styles: self
@@ -231,6 +296,13 @@ impl<'a> StyledDefinition<'a> {
         }
         for style in &mut inherited.styles {
             visit_style_expressions(builder, style, &mut |value| rename.visit_expression(value));
+        }
+        if let Some(styles) = &mut inherited.composition_styles {
+            for style in &mut styles.0 {
+                visit_style_expressions(builder, style, &mut |value| {
+                    rename.visit_expression(value);
+                });
+            }
         }
         let mut reserved = vec![reservation];
         reserved.extend(inherited.bindings.iter().map(|(name, _)| {
@@ -295,7 +367,8 @@ impl<'a> StyledDefinition<'a> {
     fn with_css_slot(mut self, slot: Option<&StyledCapability>, inherited: Option<&Self>) -> Self {
         self.capability = slot
             .filter(|_| {
-                (self.fixed_native() && !self.bindings.is_empty())
+                (!self.fixed_summary() && !self.portable())
+                    || (self.fixed_native() && !self.bindings.is_empty())
                     || !self.execution.replays()
                     || (!self.native()
                         && self.fixed_summary()
@@ -327,6 +400,10 @@ impl<'a> StyledDefinition<'a> {
     pub fn clone_in<'b>(&self, allocator: &'b oxc_allocator::Allocator) -> StyledDefinition<'b> {
         StyledDefinition {
             name: self.name.clone(),
+            composition_styles: self
+                .composition_styles
+                .as_ref()
+                .map(|styles| styles.clone_in(allocator)),
             target: self
                 .target
                 .as_ref()
@@ -420,6 +497,17 @@ impl<'a> StyledDefinition<'a> {
     pub fn styles(&self) -> &[ExtractStyleProp<'a>] {
         &self.styles
     }
+
+    pub(crate) fn composition_styles(&self) -> &[ExtractStyleProp<'a>] {
+        self.composition_styles
+            .as_ref()
+            .map_or(&self.styles, |styles| &styles.0)
+    }
+
+    fn with_composition_styles(mut self, styles: Option<AuthoredStyles<'a>>) -> Self {
+        self.composition_styles = styles;
+        self
+    }
 }
 
 /// Whether `prop` holds only values the build knows
@@ -429,96 +517,6 @@ fn fixed(prop: &ExtractStyleProp<'_>) -> bool {
         ExtractStyleProp::StaticArray(props) => props.iter().all(fixed),
         _ => false,
     }
-}
-
-/// `Component.withComponent(target)`: the styles and attrs of `definition`
-/// rendering `target`, a tag name or a component JSX can name; `None` for any
-/// other target
-pub fn with_component<'a>(
-    ast_builder: &AstBuilder<'a>,
-    definition: &StyledDefinition<'a>,
-    target: &Expression<'a>,
-    naming: Naming<'_>,
-    context: StyledContext<'_>,
-) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
-    let name = match unwrap_syntax_only(target) {
-        Expression::StringLiteral(literal) => literal.value.to_string(),
-        target => jsx_name(target)?,
-    };
-    let allocator = ast_builder.allocator();
-    let base = Base {
-        target: match unwrap_syntax_only(target) {
-            Expression::StringLiteral(_) => None,
-            _ => Some(target.clone_in(allocator)),
-        },
-        ..Base::named(name)
-    };
-    let mut scope = target.clone_in(allocator);
-    let mut definition = definition.rebind(ast_builder, &mut scope);
-    match &mut definition.execution {
-        Execution::Delegated(renderer) => renderer.native = renders_tag(&base.name, None),
-        Execution::Replay | Execution::RetainedFixed { .. } => {}
-    }
-    let mut styles: Vec<ExtractStyleProp<'a>> = definition
-        .styles
-        .iter()
-        .map(|style| style.clone_in(allocator))
-        .collect();
-    let classes: Vec<Expression<'a>> = clone_all(ast_builder, &definition.classes).collect();
-    let class_name = merge_expression_for_class_name(
-        ast_builder,
-        clone_all(ast_builder, &classes).chain(gen_class_names(
-            ast_builder,
-            &mut styles,
-            None,
-            naming.split_filename,
-        )),
-    );
-    let withheld = withheld(
-        &definition.reads,
-        renders_tag(&base.name, None),
-        definition.forward.as_ref(),
-    );
-    let new_definition = base
-        .definition(
-            ast_builder,
-            classes,
-            &styles,
-            &definition.attrs,
-            (definition.reads.clone(), definition.forward.clone()),
-            &definition.bindings,
-        )
-        .with_execution(ast_builder, Some(&definition))
-        .with_css_slot(context.capability, Some(&definition))
-        .with_markers(naming.markers, Some(&definition));
-    let component = create_styled_component(
-        ast_builder,
-        &base,
-        StyledRender {
-            class_name: &class_name,
-            style_vars: &gen_styles(ast_builder, &styles, None),
-            bindings: definition
-                .bindings
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
-                .collect(),
-            withheld: &withheld,
-            capability: new_definition.capability.as_ref(),
-            execution: &new_definition.execution,
-            markers: new_definition.render_markers(ast_builder),
-        },
-        context.jsx,
-    );
-    Some((
-        new_definition.retain_bound(
-            ast_builder,
-            base.render(
-                ast_builder,
-                apply_attrs(ast_builder, component, &definition.attrs),
-            ),
-        ),
-        new_definition,
-    ))
 }
 
 /// What extracting a styled component gives
@@ -535,23 +533,43 @@ fn compose_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     inherited: Option<&StyledDefinition<'a>>,
     defaults: Option<Vec<ExtractStyleValue>>,
-    own: Vec<ExtractStyleProp<'a>>,
-) -> Vec<ExtractStyleProp<'a>> {
+    mut own: Vec<ExtractStyleProp<'a>>,
+    authored: Option<AuthoredStyles<'a>>,
+) -> (Vec<ExtractStyleProp<'a>>, Option<AuthoredStyles<'a>>) {
     let mut earlier: Vec<ExtractStyleProp<'a>> = inherited.map_or_else(Vec::new, |inherited| {
         inherited
-            .styles
+            .composition_styles()
             .iter()
             .map(|style| style.clone_in(ast_builder.allocator()))
             .collect()
     });
     earlier.extend(defaults.into_iter().flatten().map(ExtractStyleProp::Static));
     if earlier.is_empty() {
-        return own;
+        let summary = authored.map(|styles| styles.normalized(ast_builder));
+        if let Some(summary) = &summary {
+            own.splice(
+                0..0,
+                summary
+                    .0
+                    .iter()
+                    .filter(|prop| {
+                        matches!(
+                            prop,
+                            ExtractStyleProp::Static(ExtractStyleValue::LayerOrder(_))
+                        )
+                    })
+                    .map(|prop| prop.clone_in(ast_builder.allocator())),
+            );
+        }
+        return (own, summary);
     }
     let mut composition = crate::composition::Composition::default();
     composition.apply(ast_builder, earlier);
-    composition.apply(ast_builder, own);
-    composition.into_props()
+    match authored {
+        Some(authored) => authored.apply(ast_builder, &mut composition),
+        None => composition.apply(ast_builder, own),
+    }
+    (composition.into_props(), None)
 }
 
 /// The classes and attrs a component extending `inherited` starts from
@@ -626,6 +644,7 @@ impl<'a> Base<'a> {
                 .map(|target| target.clone_in(allocator)),
             bound: self.bound.as_ref().map(|bound| bound.clone_in(allocator)),
             classes,
+            composition_styles: None,
             styles: styles
                 .iter()
                 .map(|style| style.clone_in(allocator))
@@ -808,11 +827,12 @@ pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
-    imports: Kinds<'_>,
+    bindings: StyledBindings<'_>,
     modifiers: (&[Expression<'a>], Option<Forward>, &[u32]),
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
+    let imports = bindings.imports;
     let Naming {
         split_filename,
         markers,
@@ -828,19 +848,26 @@ pub fn extract_style_from_styled<'a>(
     }
     let mut composed_classes = Vec::new();
     let mut errors = Vec::new();
+    errors.extend(crate::css_utils::object_layer_errors(expression, "styled"));
     let mut captured_bindings = Vec::new();
+    let mut composed_rules = None;
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(ast_builder, &call.callee, imports).is_some()
     {
-        let prepared = arguments::prepare(
+        let prepared = arguments::prepare_with_bindings(
             ast_builder,
             call,
-            arguments::Context {
-                scope: &mut original_scope,
-                reads: &mut reads,
-                refused: refused_array_controllers,
-            },
+            (
+                arguments::Context {
+                    filename: context.filename,
+                    scope: &mut original_scope,
+                    reads: &mut reads,
+                    refused: refused_array_controllers,
+                },
+                Some(&bindings),
+            ),
         );
+        composed_rules = prepared.rules;
         composed_classes = prepared.classes;
         captured_bindings = prepared.bindings;
         errors.extend(prepared.errors);
@@ -849,6 +876,9 @@ pub fn extract_style_from_styled<'a>(
         expression
         && let Some(mut base) = extract_base_tag_and_class_name(ast_builder, &tag.tag, imports)
     {
+        errors.extend(crate::css_utils::template_layer_errors(
+            &tag.quasi, "styled",
+        ));
         // Case 1: styled.div`css` or styled("div")`css`
         // Check if tag is styled.div or styled(...)
         // Extract CSS from template literal
@@ -877,53 +907,23 @@ pub fn extract_style_from_styled<'a>(
         for interpolation in &tag.quasi.expressions {
             reads.read_in(interpolation);
         }
-        let TemplateStyles {
-            styles,
+        let template_composition::TemplateComposition {
+            styles: own,
             statements,
-            unplaced,
-        } = css_to_style_template(&tag.quasi, 0, &None);
-        for index in unplaced {
-            let expression = &tag.quasi.expressions[index];
-            errors.push((expression.span().start, unplaced_error(expression)));
-        }
-        errors.extend(
-            tag.quasi
-                .expressions
-                .iter()
-                .filter(|expression| crate::css_utils::reads_unmapped_theme(expression))
-                .map(|expression| crate::css_utils::unmapped_theme_error("styled", expression)),
+            bindings: own_bindings,
+            errors: template_errors,
+        } = template_composition::compose_in(
+            ast_builder,
+            &tag.quasi,
+            (&bindings, &original_scope, context.filename),
         );
-        let own: Vec<ExtractStyleProp<'_>> = styles
-            .into_iter()
-            .map(|ex| ExtractStyleProp::Static(ex.into()))
-            .collect();
+        errors.extend(template_errors);
         let defaults = base.styles.take();
         let base = base.extending(ast_builder, inherited);
-        let mut props_styles = compose_styles(ast_builder, inherited, defaults, own);
+        let (mut props_styles, _) = compose_styles(ast_builder, inherited, defaults, own, None);
         let (mut classes, attrs) = inherited_parts(ast_builder, inherited, attrs);
 
-        classes.extend(statements.into_iter().map(|index| {
-            let mixin = &tag.quasi.expressions[index];
-            if matches!(
-                unwrap_syntax_only(mixin),
-                Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
-            ) {
-                // A mixin returns a class, or `false` when its condition fails
-                Expression::new_logical_expression(
-                    SPAN,
-                    wrap_direct_call(
-                        ast_builder,
-                        mixin,
-                        &[Expression::new_identifier(SPAN, "rest", ast_builder)],
-                    ),
-                    LogicalOperator::Or,
-                    Expression::new_string_literal(SPAN, "", None, ast_builder),
-                    ast_builder,
-                )
-            } else {
-                mixin.clone_in(ast_builder.allocator())
-            }
-        }));
+        classes.extend(statements);
         let class_name = merge_expression_for_class_name(
             ast_builder,
             clone_all(ast_builder, &classes).chain(gen_class_names(
@@ -939,13 +939,14 @@ pub fn extract_style_from_styled<'a>(
             None,
             ast_builder,
         ));
-        let bindings = inherited.map_or_else(Vec::new, |definition| {
+        let mut bindings = inherited.map_or_else(Vec::new, |definition| {
             definition
                 .bindings
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone_in(ast_builder.allocator())))
                 .collect()
         });
+        bindings.extend(own_bindings);
         let withheld = withheld(
             &reads,
             inherited.map_or_else(
@@ -966,23 +967,42 @@ pub fn extract_style_from_styled<'a>(
             .with_execution(ast_builder, inherited)
             .with_css_slot(context.capability, inherited)
             .with_markers(markers, inherited);
-        let component = create_styled_component(
+        let staged = stages::create(
             ast_builder,
-            &base,
-            StyledRender {
-                class_name: &class_name,
-                style_vars: &gen_styles(ast_builder, &props_styles, None),
-                bindings,
-                withheld: &withheld,
-                capability: definition.capability.as_ref(),
-                execution: &definition.execution,
-                markers: definition.render_markers(ast_builder),
+            &definition,
+            stages::Context {
+                base: &base,
+                naming,
+                jsx: context.jsx,
             },
-            context.jsx,
         );
+        let has_stage = staged.is_some();
+        let component = staged.unwrap_or_else(|| {
+            create_styled_component(
+                ast_builder,
+                &base,
+                StyledRender {
+                    class_name: &class_name,
+                    style_vars: &gen_styles(ast_builder, &props_styles, None),
+                    bindings,
+                    withheld: &withheld,
+                    capability: definition.capability.as_ref(),
+                    execution: &definition.execution,
+                    markers: definition.render_markers(ast_builder),
+                },
+                context.jsx,
+            )
+        });
         let styled_component = definition.retain_bound(
             ast_builder,
-            base.render(ast_builder, apply_attrs(ast_builder, component, &attrs)),
+            base.render(
+                ast_builder,
+                if has_stage {
+                    component
+                } else {
+                    apply_attrs(ast_builder, component, &attrs)
+                },
+            ),
         );
 
         let result = ExtractResult {
@@ -1008,9 +1028,12 @@ pub fn extract_style_from_styled<'a>(
                 call.arguments[style_index].to_expression()
             },
         );
-        let prepared = call.arguments[style_index]
-            .as_expression()
-            .and_then(|rules| prepare(ast_builder, rules, &original_scope));
+        let prepared = match &composed_rules {
+            Some(_) => None,
+            None => call.arguments[style_index]
+                .as_expression()
+                .and_then(|rules| prepare(ast_builder, rules, &original_scope)),
+        };
         let mut bindings: Vec<_> = inherited.map_or_else(Vec::new, |definition| {
             definition
                 .bindings
@@ -1027,24 +1050,29 @@ pub fn extract_style_from_styled<'a>(
             None => Vec::new(),
         });
         // Extract styles from object expression
+        let mut authored = None;
         let ExtractResult {
             mut styles,
             style_order,
             style_vars,
             props,
             ..
-        } = extract_style_from_expression(
-            ast_builder,
-            None,
-            if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
-                &mut spread.argument
-            } else {
-                call.arguments[style_index].to_expression_mut()
-            },
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-        );
+        } = composed_rules.unwrap_or_else(|| {
+            let (result, projection) = extract_with_order(
+                ast_builder,
+                None,
+                if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
+                    &mut spread.argument
+                } else {
+                    call.arguments[style_index].to_expression_mut()
+                },
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+            );
+            authored = Some(projection.registered(context.filename));
+            result
+        });
         let mut unreadable = Vec::new();
         unreadable_styles(&styles, true, &mut unreadable);
         errors.extend(unreadable.into_iter().map(|(offset, code, requirement)| {
@@ -1057,10 +1085,16 @@ pub fn extract_style_from_styled<'a>(
             for style in &mut styles {
                 crate::composition::set_prop_order(style, order);
             }
+            if let Some(authored) = &mut authored {
+                for style in &mut authored.0 {
+                    crate::composition::set_prop_order(style, order);
+                }
+            }
         }
         let defaults = base.styles.take();
         let base = base.extending(ast_builder, inherited);
-        let mut styles = compose_styles(ast_builder, inherited, defaults, styles);
+        let (mut styles, composition_styles) =
+            compose_styles(ast_builder, inherited, defaults, styles, authored);
         let (mut classes, attrs) = inherited_parts(ast_builder, inherited, attrs);
         classes.extend(composed_classes);
 
@@ -1090,26 +1124,46 @@ pub fn extract_style_from_styled<'a>(
                 (reads, forward),
                 &bindings,
             )
+            .with_composition_styles(composition_styles)
             .with_execution(ast_builder, inherited)
             .with_css_slot(context.capability, inherited)
             .with_markers(markers, inherited);
-        let component = create_styled_component(
+        let staged = stages::create(
             ast_builder,
-            &base,
-            StyledRender {
-                class_name: &class_name,
-                style_vars: &gen_styles(ast_builder, &styles, None),
-                bindings,
-                withheld: &withheld,
-                capability: definition.capability.as_ref(),
-                execution: &definition.execution,
-                markers: definition.render_markers(ast_builder),
+            &definition,
+            stages::Context {
+                base: &base,
+                naming,
+                jsx: context.jsx,
             },
-            context.jsx,
         );
+        let has_stage = staged.is_some();
+        let component = staged.unwrap_or_else(|| {
+            create_styled_component(
+                ast_builder,
+                &base,
+                StyledRender {
+                    class_name: &class_name,
+                    style_vars: &gen_styles(ast_builder, &styles, None),
+                    bindings,
+                    withheld: &withheld,
+                    capability: definition.capability.as_ref(),
+                    execution: &definition.execution,
+                    markers: definition.render_markers(ast_builder),
+                },
+                context.jsx,
+            )
+        });
         let styled_component = definition.retain_bound(
             ast_builder,
-            base.render(ast_builder, apply_attrs(ast_builder, component, &attrs)),
+            base.render(
+                ast_builder,
+                if has_stage {
+                    component
+                } else {
+                    apply_attrs(ast_builder, component, &attrs)
+                },
+            ),
         );
 
         let result = ExtractResult {
@@ -1187,7 +1241,7 @@ fn style_expressions<'p, 'a>(prop: &'p ExtractStyleProp<'a>) -> Vec<&'p Expressi
 /// declare, the props, and what every module reads the same
 fn closed(code: impl Iterator<Item = String>) -> bool {
     let source = code
-        .map(|code| ["(", &code, ");\n"].concat())
+        .map(|code| ["(", crate::css_utils::rm_last_semi_colon(&code), ");\n"].concat())
         .collect::<String>();
     let allocator = oxc_allocator::Allocator::default();
     let ParserReturn {
@@ -1679,75 +1733,14 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
     )
 }
 
-/// `rest` without the props in `withheld`, as `(({ a: _0, ...p }) => p)(rest)`
+#[path = "styled_forwarding.rs"]
+pub(crate) mod forwarding;
+
 fn without_props<'a>(ast_builder: &AstBuilder<'a>, withheld: &[String]) -> Expression<'a> {
-    let rest = Expression::new_identifier(SPAN, "rest", ast_builder);
-    if withheld.is_empty() {
-        return rest;
-    }
-    let properties = withheld.iter().enumerate().map(|(index, name)| {
-        BindingProperty::new(
-            SPAN,
-            PropertyKey::StringLiteral(oxc_ast::ast::StringLiteral::boxed(
-                SPAN,
-                Str::from_in(name.as_str(), ast_builder.allocator()),
-                None,
-                ast_builder,
-            )),
-            BindingPattern::new_binding_identifier(
-                SPAN,
-                Str::from_in(
-                    format!("__devupOmit{index}").as_str(),
-                    ast_builder.allocator(),
-                ),
-                ast_builder,
-            ),
-            false,
-            false,
-            ast_builder,
-        )
-    });
-    let pattern = BindingPattern::new_object_pattern(
-        SPAN,
-        oxc_allocator::Vec::from_iter_in(properties, ast_builder),
-        Some(BindingRestElement::boxed(
-            SPAN,
-            BindingPattern::new_binding_identifier(SPAN, "__devupDom", ast_builder),
-            ast_builder,
-        )),
+    forwarding::without_props(
         ast_builder,
-    );
-    let parameter = FormalParameter::new(
-        SPAN,
-        oxc_allocator::Vec::new_in(ast_builder),
-        pattern,
-        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        None::<oxc_allocator::Box<Expression<'a>>>,
-        false,
-        None,
-        false,
-        false,
-        ast_builder,
-    );
-    let arrow = Expression::new_arrow_function_expression(
-        SPAN,
-        false,
-        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
-        FormalParameters::boxed(
-            SPAN,
-            FormalParameterKind::ArrowFormalParameters,
-            oxc_allocator::Vec::from_iter_in([parameter], ast_builder),
-            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
-            ast_builder,
-        ),
-        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        Expression::new_identifier(SPAN, "__devupDom", ast_builder).into(),
-        ast_builder,
-    );
-    wrap_direct_call(
-        ast_builder,
-        &Expression::new_parenthesized_expression(SPAN, arrow, ast_builder),
-        &[rest],
+        Expression::new_identifier(SPAN, "rest", ast_builder),
+        withheld,
     )
 }
 
@@ -1880,7 +1873,10 @@ fn create_styled_component<'a>(
     let replacement = capability.map(|slot| slot.classes.classes(ast_builder, class_name.as_ref()));
     let delegated = match execution {
         Execution::Delegated(renderer) => Some(renderer),
-        Execution::Replay | Execution::RetainedFixed { .. } => None,
+        Execution::Replay
+        | Execution::RetainedFixed { .. }
+        | Execution::RetainedDynamic { .. }
+        | Execution::Staged { .. } => None,
     };
     let own_classes = merge_expression_for_class_name(
         ast_builder,
@@ -2010,6 +2006,18 @@ fn create_styled_component<'a>(
 }
 
 #[cfg(test)]
+#[path = "props_rule_choice_tests.rs"]
+mod props_rule_choice_tests;
+
+#[cfg(test)]
+#[path = "styled_extraction_edge_tests.rs"]
+mod styled_extraction_edge_tests;
+
+#[cfg(test)]
+#[path = "known_mixin_tests.rs"]
+mod known_mixin_tests;
+
+#[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
@@ -2069,6 +2077,8 @@ mod tests {
             "((p) => p.on)(rest)"
         ]));
         assert!(closed_code(&["(p: Props) => p.x"]));
+        assert!(closed_code(&["({ id: `known` });", "((p) => p.on)(rest);"]));
+        assert!(!closed_code(&["({ onClick: handler });"]));
         assert!(!closed_code(&["(p) => scale(p.x)"]));
         assert!(!closed_code(&["(p) => p.x", "window.mode"]));
         assert!(!closed_code(&["@#$"]));

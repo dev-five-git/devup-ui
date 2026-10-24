@@ -8,8 +8,20 @@ mod class_arguments;
 mod class_names_binding_tests;
 #[cfg(test)]
 mod class_names_numeric_tests;
+#[cfg(test)]
+mod class_selection_expectations;
+#[cfg(test)]
+mod class_selection_fixtures;
+#[cfg(test)]
+mod class_selection_state;
+#[cfg(test)]
+mod class_selection_support;
+#[cfg(test)]
+mod class_selection_tests;
 mod component;
 mod composition;
+#[cfg(test)]
+mod css_composition_rest_tests;
 mod css_prop;
 #[cfg(test)]
 mod css_prop_contract_tests;
@@ -44,7 +56,13 @@ mod quoted_strings_tests;
 pub mod reservation_state;
 #[cfg(test)]
 mod responsive_selector_tests;
+#[cfg(test)]
+mod retained_render_assertions;
+#[cfg(test)]
+mod retained_render_support;
 mod scope;
+#[cfg(test)]
+mod selector_array_units_tests;
 mod source_map;
 mod style_collector;
 mod style_values;
@@ -592,7 +610,7 @@ fn extract_source(
     let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
-    let inlined = if processed_code.is_none() {
+    let mut inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
             &mut program,
@@ -620,6 +638,7 @@ fn extract_source(
             &option,
             resolver,
             css_prop,
+            &mut inlined.scoping,
         )
     } else {
         imported_styled::Reading::default()
@@ -15583,164 +15602,6 @@ const Button = styled.button({ bg: 'red' })
         }
     }
 
-    // A later part of `css(...)` replaces an earlier part's declaration of the
-    // same property, selector, breakpoint and layer, whatever the stylesheet
-    // order of their classes
-    #[rstest]
-    #[case(
-        "css(yellow, azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(azure, yellow)",
-        r#""background-0-black--255 color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css({ color: 'green' }, yellow)",
-        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css(yellow, { color: 'green' })",
-        r#""color-0-red-_a__c_hover-255 color-0-green--255""#
-    )]
-    #[case(
-        "css([yellow, azure])",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(...[yellow, azure])",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, null, undefined, false, azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, on && azure)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "background-0-black--255" : ""} ${on ? "color-0-azure--255" : "color-0-yellow--255"}`"#
-    )]
-    #[case(
-        "css(on ? yellow : azure)",
-        r#"`${on ? "color-0-red-_a__c_hover-255" : ""} ${on ? "color-0-yellow--255" : "color-0-azure--255"} ${on ? "" : "background-0-black--255"}`"#
-    )]
-    #[case(
-        "css(yellow, on ? { color: 'pink' } : null)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-yellow--255"}`"#
-    )]
-    #[case(
-        "css(yellow, { color: on ? 'pink' : 'teal' })",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-teal--255"}`"#
-    )]
-    #[case(
-        "css(yellow, ext, azure)",
-        r"`color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${ext}`"
-    )]
-    #[case(
-        "css(yellow, on ? 'plain' : azure)",
-        r#"`${on ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
-    )]
-    #[case(
-        "css(azure, wide)",
-        r#""background-0-black--255 color-0-a1--255 color-1-b1--255""#
-    )]
-    #[case(
-        "css(wide, { color: [null, 'x2'] })",
-        r#""color-0-a1--255 color-1-x2--255""#
-    )]
-    #[case(
-        "css(yellow, ordered)",
-        r#""color-0-red-_a__c_hover-255 color-0-navy--3""#
-    )]
-    #[case("css(heading, body)", r#""typo-body""#)]
-    #[case(
-        "css(chained, { color: 'gold' })",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-gold--255""#
-    )]
-    #[case(
-        "css(yellow, { color: { a: 'red', b: 'blue' }[size] })",
-        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{"
-    )]
-    #[case(
-        "css(yellow, on ? { color: { a: 'red' }[size] } : null)",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? { "a": "color-0-red--255" }[size] || "" : ""}`"#
-    )]
-    #[case(
-        "css(yellow, on || azure)",
-        r#"`${on ? typeof on === "string" ? on : "" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
-    )]
-    #[case(
-        "css(yellow, ext ?? azure)",
-        r#"`${ext != null ? typeof ext === "string" ? ext : "" : ""} ${`color-0-red-_a__c_hover-255 ${ext != null ? "" : "background-0-black--255"} ${ext != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
-    )]
-    #[case(
-        "css(yellow, null ?? azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, false ?? azure)",
-        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css(azure || yellow)",
-        r#""background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, on || 'plain')",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? typeof on === "string" ? on : "" : "plain"}`"#
-    )]
-    #[case(
-        "css(yellow, { color: on ? 'a' : 'b', m: [1, 2], styleOrder: 2 })",
-        r#"`color-0-red-_a__c_hover-255 margin-0-4px--2 margin-1-8px--2 ${on ? "color-0-a--2" : "color-0-b--2"}`"#
-    )]
-    #[case(
-        "css(yellow, { color: { a: 'x' }[size], styleOrder: 2 })",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{ "a": "color-0-x--2" }[size] || ""}`"#
-    )]
-    #[case(
-        "css(yellow, on ? { color: other ? 'a' : 'b' } : null)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? other ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`"#
-    )]
-    #[case(
-        "css(yellow, fade)",
-        r#""k-525370705245237976 color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
-        "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
-    )]
-    #[case(
-        "css(yellow, { color: 'pink' } || azure)",
-        r#""color-0-red-_a__c_hover-255 color-0-pink--255""#
-    )]
-    #[case(
-        "css(yellow, undefined ?? azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, false ?? azure)",
-        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[serial]
-    fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
-        let code = readable_code(&format!(
-            "import {{css, keyframes}} from '@devup-ui/core'
-const yellow = css({{ color: 'yellow', _hover: {{ color: 'red' }} }})
-const azure = css({{ color: 'azure', bg: 'black' }})
-const wide = css({{ color: ['a1', 'b1'] }})
-const ordered = css({{ color: 'navy', styleOrder: 3 }})
-const heading = css({{ typography: 'heading' }})
-const body = css({{ typography: 'body' }})
-const chained = css(yellow, azure)
-const fade = keyframes({{ from: {{ opacity: 0 }} }})
-export const result = {call}
-"
-        ));
-        assert!(
-            code.contains(&format!("export const result = {expected}")),
-            "{code}"
-        );
-    }
-
     #[test]
     #[serial]
     fn test_styled_extension_composes_base() {
@@ -15774,8 +15635,8 @@ const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
     #[test]
     #[serial]
     fn test_styled_with_component_and_as() {
-        let code = readable_code(
-            "import {styled} from '@devup-ui/core'
+        let _state = crate::test_state::TestStateGuard::new();
+        let source = "import {styled} from '@devup-ui/core'
 const Section = styled.section.attrs({ role: 'region' })({ color: 'red' })
 export const Aside = Section.withComponent('aside')
 export const Linked = Section.withComponent(Link)
@@ -15783,12 +15644,10 @@ export const Nested = Section.withComponent(motion.div)
 export const Again = Aside.withComponent('nav')
 export const Kept = Section.withComponent(make())
 export const Other = other.withComponent('aside')
-export const a = <Section as=\"a\" forwardedAs=\"b\" />",
-        );
+export const a = <Section as=\"a\" forwardedAs=\"b\" />";
+        let code = readable_code(source);
         for expected in [
             "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"c-0-Aside color-0-red--255\", className]",
-            "as: DevupAs = Link,",
-            "as: DevupAs = motion.div,",
             "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
@@ -15797,6 +15656,7 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
+        let _proof = crate::retained_render_assertions::retarget(source);
     }
 
     // A styled component keeps the props its styles read, `$` props and `theme`
@@ -15805,8 +15665,8 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />",
     #[test]
     #[serial]
     fn test_styled_prop_forwarding() {
-        let code = readable_code(
-            "import {styled} from '@devup-ui/core'
+        let _state = crate::test_state::TestStateGuard::new();
+        let source = "import {styled} from '@devup-ui/core'
 import isPropValid from '@emotion/is-prop-valid'
 const A = styled('h1', { shouldForwardProp: (prop) => prop !== 'tone' })({ color: 'red' })
 const B = styled.div`color: ${(p) => p.$c}; background: ${(p) => p.tone};`
@@ -15825,19 +15685,16 @@ export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
 export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
 export const j = <J junk=\"j\" />
 export const f = <F junk=\"j\" xlink:href=\"#a\" />
-export const k = <K title=\"t\" tone=\"x\" />",
-        );
+export const k = <K title=\"t\" tone=\"x\" />";
+        let code = readable_code(source);
         for expected in [
             "{...Object.fromEntries(Object.entries((({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
-            "{...Object.fromEntries(Object.entries((({ \"$c\": __devupOmit0, \"tone\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
             "{...Object.fromEntries(Object.entries((({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
-            "{...Object.fromEntries(Object.entries((({ \"$c\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
             "export const f = <F junk=\"j\" xlink:href=\"#a\" />",
             "export const k = <K title=\"t\" />",
-            "{...Object.fromEntries(Object.entries((({ \"level\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -15863,6 +15720,7 @@ const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ colo
             "{error}"
         );
         assert!(error.contains("allowed.has(prop)"), "{error}");
+        let _proof = crate::retained_render_assertions::forwarding(source);
     }
 
     #[test]
@@ -16056,7 +15914,6 @@ export const d = css(ordered, danger, called);",
         css::debug::set_debug(false);
         for expected in [
             r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
-            r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
             "export const c = `color-0-a--255-a margin-0-4px--255-a ${text} ${listed} ${spaced} ${fade}`;",
             "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
         ] {
@@ -16065,6 +15922,9 @@ export const d = css(ordered, danger, called);",
                 "{expected} in {}",
                 output.code
             );
+        }
+        for single_css in [false, true] {
+            crate::class_selection_tests::imported_b(single_css);
         }
     }
 
@@ -23045,7 +22905,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
         );
         assert_eq!(
             result.err().map(|error| error.to_string()),
-            Some("test.tsx:2:1: Cannot compose `(p) => { return p.cls; }` at build time: each style must be a rule object, a class, or a condition choosing between them".to_string()),
+            Some("test.tsx:2:12: `styled()` cannot use `(p) => { return p.cls; }` at build time: a style function of the props must give one rule object at once, with every entry written out, as `(props) => ({ color: props.color })`".to_string()),
         );
     }
 
@@ -24447,3 +24307,8 @@ export const e = classNames({ g: 1 }, { h: 8 });",
         assert_debug_snapshot!(output.code);
     }
 }
+
+#[cfg(test)]
+mod emotion_prop_join_support;
+#[cfg(test)]
+mod emotion_prop_join_tests;

@@ -1,3 +1,4 @@
+pub(crate) mod captured_render;
 mod compatibility;
 mod css_prop_captures;
 mod css_prop_execution;
@@ -13,6 +14,7 @@ mod finite_lookup;
 mod finite_selection;
 mod forward_ref_captures;
 mod lowering;
+pub(crate) mod namespace_module_execution;
 
 use crate::{ExtractOption, extract, utils::readable_code};
 use css::{class_map::reset_class_map, file_map::reset_file_map};

@@ -9,7 +9,7 @@ expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport 
     ),
     (
         "import { css } from '@emotion/react';\nconst base = css({ color: 'green', margin: 4 });\nexport const a = (cond) => css(cond && css({ color: 'red' }), base);",
-        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"green\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"4px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst base = \\\"a b\\\";\\nexport const a = (cond) => (() => {\\n\\tconst __devupRecord0 = (0, cond);\\n\\treturn \\\"b a\\\";\\n})();\\n\" }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"green\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"4px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nconst base = \\\"a b\\\";\\nexport const a = (cond) => (() => {\\n\\tconst __devupRecord0 = (0, cond);\\n\\treturn \\\"a b\\\";\\n})();\\n\" }",
     ),
     (
         "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond ? css({ color: 'red' }) : null, { color: 'blue' });",

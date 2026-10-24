@@ -25,6 +25,17 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast::{TemplateElement, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 
+mod component_layer_objects;
+#[cfg(test)]
+mod component_layer_policy_tests;
+#[cfg(test)]
+mod component_layer_tests;
+mod component_layers;
+mod layer_blocks;
+mod layer_names;
+pub(crate) use component_layer_objects::object_layer_errors;
+pub(crate) use component_layers::{expression_layer_errors, nest_layer, template_layer_errors};
+pub(crate) use layer_names::parse as parse_layer_name;
 #[path = "implicit_props_theme.rs"]
 mod implicit_props_theme;
 
@@ -575,12 +586,15 @@ pub fn css_to_style_template(
                 }
                 static_value.push_str(&value[cursor..]);
                 // Create a new static style with the evaluated value
-                styles.push(CssToStyleResult::Static(ExtractStaticStyle::new(
-                    style.property(),
-                    &static_value,
-                    style.level(),
-                    style.selector().cloned(),
-                )));
+                styles.push(CssToStyleResult::Static(
+                    ExtractStaticStyle::new_with_layer(
+                        style.property(),
+                        &static_value,
+                        style.level(),
+                        style.selector().cloned(),
+                        style.layer.clone(),
+                    ),
+                ));
             } else {
                 // Not all expressions are literals - need to create dynamic style
                 // Check if value is just a placeholder (no surrounding text)
@@ -592,12 +606,7 @@ pub fn css_to_style_template(
                     // Value is just the expression - use expression code directly
                     let identifier = dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(component_layers::dynamic_from(&style, &identifier));
                 } else {
                     // Value has surrounding text - need to create template literal
                     // Reconstruct the template literal by replacing placeholders with ${expr} syntax
@@ -666,12 +675,7 @@ pub fn css_to_style_template(
                     // Wrap in template literal backticks
                     let final_identifier = format!("`{template_literal}`");
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &final_identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(component_layers::dynamic_from(&style, &final_identifier));
                 }
             }
         }
@@ -690,7 +694,7 @@ pub fn css_to_style(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
-    collect_css_block(&rm_css_comment(css), level, selector, &mut styles);
+    collect_css_block(css, level, selector, &mut styles);
 
     // A single declaration (or none) is trivially ordered, so skip the comparison
     // sort's setup entirely for the very common single-property case. The multi-source
@@ -712,29 +716,39 @@ fn collect_css_block(
     styles: &mut Vec<ExtractStaticStyle>,
 ) {
     let mut rest = css;
-    while let Some(open) = find_unquoted(rest, b'{') {
+    while let Some((open, _)) =
+        layer_blocks::boundaries(rest).find(|(_, character)| *character == '{')
+    {
         let head = &rest[..open];
-        let (declarations, prelude) = rfind_unquoted(head, b';')
-            .map_or(("", head), |index| (&head[..index], &head[index + 1..]));
+        let (declarations, prelude) = layer_blocks::boundaries(head)
+            .filter(|(_, character)| *character == ';')
+            .last()
+            .map_or(("", head), |(at, _)| (&head[..at], &head[at + 1..]));
         styles.extend(css_to_style_block(declarations, level, selector));
 
         let body_start = open + 1;
         let mut depth = 1usize;
-        let body_end = unquoted_bytes(&rest[body_start..])
-            .find_map(|(index, byte)| {
-                match byte {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
+        let body_end = layer_blocks::boundaries(&rest[body_start..])
+            .find_map(|(index, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
                     _ => {}
                 }
                 (depth == 0).then_some(body_start + index)
             })
             .unwrap_or(rest.len());
         let body = &rest[body_start..body_end];
-        let prelude = trim_css(prelude);
+        let prelude = trim_css(component_layers::trim_trivia(prelude));
         if prelude.is_empty() || prelude == "&" {
             collect_css_block(body, level, selector, styles);
-        } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
+        } else if let Some(layer) = component_layers::named_layer(prelude) {
+            let from = styles.len();
+            collect_css_block(body, level, selector, styles);
+            for style in &mut styles[from..] {
+                nest_layer(&layer, &mut style.layer);
+            }
+        } else if let Some(nested) = nest_prelude(selector.as_ref(), &rm_css_comment(prelude)) {
             collect_css_block(body, level, &Some(nested), styles);
         }
         rest = rest.get(body_end + 1..).unwrap_or_default();
@@ -1835,9 +1849,7 @@ mod tests {
         "color: red;;invalid;display: block;",
         vec![("color", "red", None), ("display", "block", None)]
     )]
-    // Blocks that can never apply produce nothing: unknown at-rules and
-    // mutually exclusive media types.
-    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![])]
+    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![("color", "red", None)])]
     fn test_css_to_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
