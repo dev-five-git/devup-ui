@@ -51,7 +51,7 @@ pub(super) fn direct_lookup(object: &Expression<'_>, index: &Expression<'_>) -> 
     }
 }
 
-impl<'a> Preparation<'_, 'a> {
+impl<'a> Preparation<'_, '_, 'a> {
     pub(super) fn select_lookup(
         &mut self,
         member: &mut ComputedMemberExpression<'a>,

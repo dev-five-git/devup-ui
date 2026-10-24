@@ -33,10 +33,10 @@ pub(super) fn is_unitless_key(key: &str) -> bool {
 }
 
 /// Whether a number on `key` stays bare in a library whose numbers mean pixels:
-/// unitless keys, and Devup UI shorthands (`p`, `bg`, `mx`, ...), which keep
+/// order metadata, unitless keys, and Devup UI shorthands (`p`, `bg`, `mx`, ...), which keep
 /// Devup UI's spacing scale because no such library defines them.
 pub(super) fn keeps_bare_number(key: &str) -> bool {
-    if is_unitless_key(key) {
+    if key == "styleOrder" || is_unitless_key(key) {
         return true;
     }
     let mut properties = css::disassemble_property(key);
@@ -939,6 +939,14 @@ pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> St
 }
 
 pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
+
+/// A style object declared below the top level that styles read, and code
+/// elsewhere reads too
+pub(super) fn local_style_error(name: &str) -> String {
+    format!(
+        "Cannot read `{name}` as styles at build time: it is also read elsewhere, where code may change it, so use it only as styles, or declare it with `const` at the top level of the module"
+    )
+}
 
 pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
 
@@ -1952,3 +1960,7 @@ mod tests {
         assert_eq!(get_str_by_property_key(&private), None);
     }
 }
+
+#[cfg(test)]
+#[path = "style_arguments_spread_tests.rs"]
+mod style_arguments_spread_tests;

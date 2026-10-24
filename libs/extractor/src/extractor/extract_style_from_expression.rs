@@ -249,6 +249,26 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
     literal_handling: LiteralHandling,
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
+    extract_projected::<LOCATE>(
+        ast_builder,
+        name,
+        expression,
+        (level, selector),
+        literal_handling,
+        &mut super::style_order_projection::Projection::default(),
+        prepare,
+    )
+}
+
+pub(super) fn extract_projected<'a, const LOCATE: bool>(
+    ast_builder: &AstBuilder<'a>,
+    name: Option<&str>,
+    expression: &mut Expression<'a>,
+    (level, selector): (u8, &Option<StyleSelector>),
+    literal_handling: LiteralHandling,
+    projection: &mut super::style_order_projection::Projection<'a>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
+) -> ExtractResult<'a> {
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
     let offset = expression.span().start;
@@ -280,13 +300,16 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 flatten_spreads(ast_builder, obj);
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
                 let mut tag = None;
+                projection.root();
                 for idx in (0..obj.properties.len()).rev() {
                     let mut prop = obj.properties.remove(idx);
                     if !match &mut prop {
                         ObjectPropertyKind::ObjectProperty(prop)
                             if get_str_by_property_key(&prop.key).is_none() =>
                         {
-                            props_styles.push(unreadable_key(&prop.key, true));
+                            let error = unreadable_key(&prop.key, true);
+                            projection.record(ast_builder, &error);
+                            props_styles.push(error);
                             false
                         }
                         ObjectPropertyKind::ObjectProperty(prop) => {
@@ -317,12 +340,11 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                         });
                                         let ExtractResult {
                                             styles, tag: _tag, ..
-                                        } = extract_with_policy::<LOCATE>(
+                                        } = projection.extract::<LOCATE>(
                                             ast_builder,
                                             Some(disassembled),
                                             sibling.as_mut().unwrap_or(&mut prop.value),
-                                            0,
-                                            &None,
+                                            (0, &None),
                                             LiteralHandling::ExpandResponsiveThemeToken,
                                             prepare,
                                         );
@@ -338,12 +360,11 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         ObjectPropertyKind::SpreadProperty(prop) => {
                             let ExtractResult {
                                 styles, tag: _tag, ..
-                            } = extract_with_policy::<LOCATE>(
+                            } = projection.extract::<LOCATE>(
                                 ast_builder,
                                 None,
                                 &mut prop.argument,
-                                0,
-                                &None,
+                                (0, &None),
                                 LiteralHandling::ExpandResponsiveThemeToken,
                                 prepare,
                             );
@@ -354,6 +375,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     } {
                         obj.properties.insert(idx, prop);
                     }
+                    projection.end_property();
                 }
                 ExtractResult {
                     styles: props_styles,
@@ -363,39 +385,42 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     props,
                 }
             }
-            Expression::ConditionalExpression(conditional) => ExtractResult {
-                props: None,
-                styles: vec![ExtractStyleProp::Conditional {
-                    condition: conditional.test.clone_in(ast_builder.allocator()),
-                    consequent: Some(Box::new(ExtractStyleProp::StaticArray(
-                        extract_with_policy::<LOCATE>(
-                            ast_builder,
-                            None,
-                            &mut conditional.consequent,
-                            level,
-                            &None,
-                            literal_handling,
-                            prepare,
-                        )
-                        .styles,
-                    ))),
-                    alternate: Some(Box::new(ExtractStyleProp::StaticArray(
-                        extract_with_policy::<LOCATE>(
-                            ast_builder,
-                            None,
-                            &mut conditional.alternate,
-                            level,
-                            selector,
-                            literal_handling,
-                            prepare,
-                        )
-                        .styles,
-                    ))),
-                }],
-                tag: None,
-                style_order,
-                style_vars,
-            },
+            Expression::ConditionalExpression(conditional) => {
+                projection.conditional(false);
+                ExtractResult {
+                    props: None,
+                    styles: vec![ExtractStyleProp::Conditional {
+                        condition: conditional.test.clone_in(ast_builder.allocator()),
+                        consequent: Some(Box::new(ExtractStyleProp::StaticArray(
+                            projection
+                                .extract::<LOCATE>(
+                                    ast_builder,
+                                    None,
+                                    &mut conditional.consequent,
+                                    (level, &None),
+                                    literal_handling,
+                                    prepare,
+                                )
+                                .styles,
+                        ))),
+                        alternate: Some(Box::new(ExtractStyleProp::StaticArray(
+                            projection
+                                .extract::<LOCATE>(
+                                    ast_builder,
+                                    None,
+                                    &mut conditional.alternate,
+                                    (level, selector),
+                                    literal_handling,
+                                    prepare,
+                                )
+                                .styles,
+                        ))),
+                    }],
+                    tag: None,
+                    style_order,
+                    style_vars,
+                }
+            }
             Expression::TemplateLiteral(tmp) => ExtractResult {
                 styles: css_to_style_literal(tmp, level, selector)
                     .into_iter()
@@ -424,9 +449,9 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 ast_builder,
                 (part, offset),
                 &mut expression.clone_in_with_semantic_ids(ast_builder.allocator()),
-                level,
-                selector,
+                (level, selector),
                 literal_handling,
+                projection,
                 prepare,
             ));
         }
@@ -460,7 +485,9 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
             for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p {
                     let Some(key_name) = get_string_by_property_key(&o.key) else {
-                        props.push(unreadable_key(&o.key, false));
+                        let error = unreadable_key(&o.key, false);
+                        projection.record(ast_builder, &error);
+                        props.push(error);
                         continue;
                     };
                     let offset = o.key.span().start;
@@ -469,9 +496,9 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                             ast_builder,
                             (part, offset),
                             &mut o.value.clone_in_with_semantic_ids(ast_builder.allocator()),
-                            level,
-                            selector,
+                            (level, selector),
                             literal_handling,
+                            projection,
                             prepare,
                         ));
                     }
@@ -492,17 +519,19 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 if let ObjectPropertyKind::ObjectProperty(o) = p
                     && let Some(layer) = get_string_by_property_key(&o.key)
                 {
-                    let mut styles = extract_with_policy::<LOCATE>(
-                        ast_builder,
-                        None,
-                        &mut o.value,
-                        level,
-                        selector,
-                        literal_handling,
-                        prepare,
-                    )
-                    .styles;
+                    let mut styles = projection
+                        .extract::<LOCATE>(
+                            ast_builder,
+                            None,
+                            &mut o.value,
+                            (level, selector),
+                            literal_handling,
+                            prepare,
+                        )
+                        .styles;
+                    let layer = crate::css_utils::parse_layer_name(&layer).unwrap_or(layer);
                     place_in_layer(&mut styles, &layer);
+                    projection.layer(&layer);
                     props.extend(styles);
                 }
             }
@@ -523,16 +552,16 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         StyleSelector::nest_at_rule(selector.as_ref(), kind, &query)
                 {
                     props.extend(
-                        extract_with_policy::<LOCATE>(
-                            ast_builder,
-                            None,
-                            &mut o.value,
-                            level,
-                            &Some(at_selector),
-                            literal_handling,
-                            prepare,
-                        )
-                        .styles,
+                        projection
+                            .extract::<LOCATE>(
+                                ast_builder,
+                                None,
+                                &mut o.value,
+                                (level, &Some(at_selector)),
+                                literal_handling,
+                                prepare,
+                            )
+                            .styles,
                     );
                 }
             }
@@ -549,9 +578,9 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     ast_builder,
                     (name, offset),
                     expression,
-                    level,
-                    selector,
+                    (level, selector),
                     literal_handling,
+                    projection,
                     prepare,
                 ),
                 ..ExtractResult::default()
@@ -637,20 +666,21 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
             }
             // `styled.div({ color: (p) => p.theme.brand })` — the object spelling of
             // the template interpolation, resolved to the same build-time `var()`.
-            Expression::ArrowFunctionExpression(_) => match (name, theme_var_reference(expression))
-            {
-                (Some(name), Some(reference)) => ExtractResult {
-                    styles: create_static_styles(
-                        name,
-                        &reference,
-                        &[level],
-                        selector,
-                        ThemeTokenResolution::default(),
-                    ),
-                    ..ExtractResult::default()
-                },
-                _ => unreadable(expression),
-            },
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
+                match (name, theme_var_reference(expression)) {
+                    (Some(name), Some(reference)) => ExtractResult {
+                        styles: create_static_styles(
+                            name,
+                            &reference,
+                            &[level],
+                            selector,
+                            ThemeTokenResolution::default(),
+                        ),
+                        ..ExtractResult::default()
+                    },
+                    _ => unreadable(expression),
+                }
+            }
             // Each variant is kept on its own line so per-line coverage
             // tools (tarpaulin on CI) can attribute the hit to the exact
             // pattern being exercised.
@@ -825,7 +855,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
                     LogicalOperator::Coalesce => nullish,
                 };
-                extract_with_policy::<LOCATE>(
+                projection.extract::<LOCATE>(
                     ast_builder,
                     name,
                     if takes_right {
@@ -833,8 +863,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     } else {
                         &mut logical.left
                     },
-                    level,
-                    selector,
+                    (level, selector),
                     literal_handling,
                     prepare,
                 )
@@ -843,7 +872,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 if literal_truthiness(&conditional.test).is_some() =>
             {
                 let consequent = literal_truthiness(&conditional.test) == Some(true);
-                extract_with_policy::<LOCATE>(
+                projection.extract::<LOCATE>(
                     ast_builder,
                     name,
                     if consequent {
@@ -851,24 +880,24 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                     } else {
                         &mut conditional.alternate
                     },
-                    level,
-                    selector,
+                    (level, selector),
                     literal_handling,
                     prepare,
                 )
             }
             Expression::LogicalExpression(logical) => {
+                projection.conditional(logical.operator == LogicalOperator::Coalesce);
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
-                    extract_with_policy::<LOCATE>(
-                        ast_builder,
-                        name,
-                        &mut logical.right,
-                        level,
-                        selector,
-                        literal_handling,
-                        prepare,
-                    )
-                    .styles,
+                    projection
+                        .extract::<LOCATE>(
+                            ast_builder,
+                            name,
+                            &mut logical.right,
+                            (level, selector),
+                            literal_handling,
+                            prepare,
+                        )
+                        .styles,
                 )));
                 match logical.operator {
                     LogicalOperator::Or => ExtractResult {
@@ -909,16 +938,16 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                                 ast_builder,
                             ),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
-                                extract_with_policy::<LOCATE>(
-                                    ast_builder,
-                                    name,
-                                    &mut logical.left,
-                                    level,
-                                    selector,
-                                    literal_handling,
-                                    prepare,
-                                )
-                                .styles,
+                                projection
+                                    .extract::<LOCATE>(
+                                        ast_builder,
+                                        name,
+                                        &mut logical.left,
+                                        (level, selector),
+                                        literal_handling,
+                                        prepare,
+                                    )
+                                    .styles,
                             ))),
                             alternate: res,
                         }],
@@ -942,16 +971,16 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 for (idx, element) in array.elements.iter_mut().enumerate() {
                     if let Some(element) = element.as_expression_mut() {
                         props.extend(
-                            extract_with_policy::<LOCATE>(
-                                ast_builder,
-                                name,
-                                element,
-                                idx as u8,
-                                selector,
-                                LiteralHandling::KeepSingleClass,
-                                prepare,
-                            )
-                            .styles,
+                            projection
+                                .extract::<LOCATE>(
+                                    ast_builder,
+                                    name,
+                                    element,
+                                    (idx as u8, selector),
+                                    LiteralHandling::KeepSingleClass,
+                                    prepare,
+                                )
+                                .styles,
                         );
                     }
                 }
@@ -965,42 +994,42 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
             }
             Expression::ConditionalExpression(conditional) => {
                 if is_same_expression(&conditional.consequent, &conditional.alternate) {
-                    extract_with_policy::<LOCATE>(
+                    projection.extract::<LOCATE>(
                         ast_builder,
                         name,
                         &mut conditional.consequent,
-                        level,
-                        selector,
+                        (level, selector),
                         literal_handling,
                         prepare,
                     )
                 } else {
+                    projection.conditional(false);
                     ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
                             condition: conditional.test.clone_in(ast_builder.allocator()),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
-                                extract_with_policy::<LOCATE>(
-                                    ast_builder,
-                                    name,
-                                    &mut conditional.consequent,
-                                    level,
-                                    selector,
-                                    literal_handling,
-                                    prepare,
-                                )
-                                .styles,
+                                projection
+                                    .extract::<LOCATE>(
+                                        ast_builder,
+                                        name,
+                                        &mut conditional.consequent,
+                                        (level, selector),
+                                        literal_handling,
+                                        prepare,
+                                    )
+                                    .styles,
                             ))),
                             alternate: Some(Box::new(ExtractStyleProp::StaticArray(
-                                extract_with_policy::<LOCATE>(
-                                    ast_builder,
-                                    name,
-                                    &mut conditional.alternate,
-                                    level,
-                                    selector,
-                                    literal_handling,
-                                    prepare,
-                                )
-                                .styles,
+                                projection
+                                    .extract::<LOCATE>(
+                                        ast_builder,
+                                        name,
+                                        &mut conditional.alternate,
+                                        (level, selector),
+                                        literal_handling,
+                                        prepare,
+                                    )
+                                    .styles,
                             ))),
                         }],
                         ..ExtractResult::default()
@@ -1058,22 +1087,24 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         ObjectPropertyKind::ObjectProperty(o) => o,
                         ObjectPropertyKind::SpreadProperty(spread) => {
                             props.extend(
-                                extract_with_policy::<LOCATE>(
-                                    ast_builder,
-                                    None,
-                                    &mut spread.argument,
-                                    level,
-                                    &selector,
-                                    literal_handling,
-                                    prepare,
-                                )
-                                .styles,
+                                projection
+                                    .extract::<LOCATE>(
+                                        ast_builder,
+                                        None,
+                                        &mut spread.argument,
+                                        (level, &selector),
+                                        literal_handling,
+                                        prepare,
+                                    )
+                                    .styles,
                             );
                             continue;
                         }
                     };
                     let Some(key_name) = o.key.name() else {
-                        props.push(unreadable_key(&o.key, false));
+                        let error = unreadable_key(&o.key, false);
+                        projection.record(ast_builder, &error);
+                        props.push(error);
                         continue;
                     };
                     if key_name == "params" {
@@ -1083,6 +1114,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         &key_name,
                         o.key.span().start,
                     ) {
+                        projection.record(ast_builder, &error);
                         props.push(error);
                         continue;
                     }
@@ -1092,16 +1124,16 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                         let mut sibling = (properties.len() != 0)
                             .then(|| o.value.clone_in_with_semantic_ids(ast_builder.allocator()));
                         props.extend(
-                            extract_with_policy::<LOCATE>(
-                                ast_builder,
-                                Some(name),
-                                sibling.as_mut().unwrap_or(&mut o.value),
-                                level,
-                                &selector,
-                                literal_handling,
-                                prepare,
-                            )
-                            .styles,
+                            projection
+                                .extract::<LOCATE>(
+                                    ast_builder,
+                                    Some(name),
+                                    sibling.as_mut().unwrap_or(&mut o.value),
+                                    (level, &selector),
+                                    literal_handling,
+                                    prepare,
+                                )
+                                .styles,
                         );
                     }
                 }
@@ -1115,12 +1147,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
                 Some(_) if matches!(expression, Expression::NullLiteral(_)) => {
                     ExtractResult::default()
                 }
-                Some(_)
-                    if matches!(
-                        expression,
-                        Expression::FunctionExpression(_) | Expression::ClassExpression(_)
-                    ) =>
-                {
+                Some(_) if matches!(expression, Expression::ClassExpression(_)) => {
                     unreadable(expression)
                 }
                 // A sequence keeps its parentheses, as its code is written into
@@ -1179,12 +1206,7 @@ pub(super) fn locate_dynamic(style: &mut ExtractStyleProp<'_>, offset: u32) {
 /// Put every static declaration of `props` in `layer`, nesting the layer one
 /// already sits in
 pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
-    let nest = |inner: &mut Option<String>| {
-        *inner = Some(match inner.take() {
-            Some(inner) => format!("{layer}.{inner}"),
-            None => layer.to_string(),
-        });
-    };
+    let nest = |inner: &mut Option<String>| crate::css_utils::nest_layer(layer, inner);
     for prop in props {
         match prop {
             ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => nest(&mut style.layer),
@@ -1369,26 +1391,25 @@ impl From<Option<StyleSelector>> for Nested {
 
 fn extract_under_key<'a, const LOCATE: bool>(
     ast_builder: &AstBuilder<'a>,
-    located_key: (&str, u32),
+    (key, offset): (&str, u32),
     expression: &mut Expression<'a>,
-    level: u8,
-    selector: &Option<StyleSelector>,
+    (level, selector): (u8, &Option<StyleSelector>),
     literal_handling: LiteralHandling,
+    projection: &mut super::style_order_projection::Projection<'a>,
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> Vec<ExtractStyleProp<'a>> {
-    let (key, offset) = located_key;
     match nest_selectors_key(selector.as_ref(), key) {
         Nested::Under(nested) => {
-            extract_with_policy::<LOCATE>(
-                ast_builder,
-                None,
-                expression,
-                level,
-                &Some(nested),
-                literal_handling,
-                prepare,
-            )
-            .styles
+            projection
+                .extract::<LOCATE>(
+                    ast_builder,
+                    None,
+                    expression,
+                    (level, &Some(nested)),
+                    literal_handling,
+                    prepare,
+                )
+                .styles
         }
         Nested::Never => vec![],
         Nested::Unknown => vec![misplaced(offset, key.to_string(), SELECTOR_NAME)],

@@ -12,6 +12,7 @@ import * as wasm from '@devup-ui/wasm'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
 import { withModuleResolver } from '../wasm'
+import { assertImportedStyledRendering } from './imported-styled-render'
 
 const originalCwd = process.cwd()
 
@@ -64,7 +65,7 @@ describe('styled components another module defines', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('composes under the styles of the component using it', () => {
+  it('composes under the styles of the component using it', async () => {
     write(
       'src/App.tsx',
       "import styled from '@emotion/styled'\nimport { Base, Dyn } from '@/Base'\nimport { Card } from '@acme/ui'\nexport const A = styled(Base).attrs({ role: 'note' })`color: blue;`\nexport const B = styled(Dyn)`margin: 0;`\nexport const C = styled(Card)`border: 17px dotted;`\nexport const W = Base.withComponent('section')\n",
@@ -74,7 +75,6 @@ describe('styled components another module defines', () => {
     expect(app.code).not.toContain('DevupAs = Dyn')
     expect(app.code).not.toContain('DevupAs = Card')
     expect(app.code).toContain('DevupAs = "div"')
-    expect(app.code).toContain('DevupAs = "button"')
     expect(app.code).toContain('DevupAs = "section"')
     expect(app.code).toContain('role: "note"')
     expect([...app.dependencies].sort()).toEqual([
@@ -86,6 +86,12 @@ describe('styled components another module defines', () => {
     expect(css).toContain('padding:4px')
     expect(css).toContain('border:17px dotted')
     expect(css).not.toContain('border:13px solid')
+    const base = extract('src/Base.tsx')
+    const card = extract('node_modules/@acme/ui/src/index.js')
+    await assertImportedStyledRendering(
+      { app: app.code, base: base.code, card: card.code },
+      wasm.getCss(null, false),
+    )
   })
 
   it('follows the definition when its module changes', () => {
