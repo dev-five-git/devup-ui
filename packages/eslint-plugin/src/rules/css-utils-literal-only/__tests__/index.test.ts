@@ -18,6 +18,25 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
     })
     ruleTester.run('css-utils-literal-only rule', cssUtilsLiteralOnly, {
       valid: [
+        ...[
+          "const f = ({'p': n}) => n; css({w: f({p: 1})});",
+          "const k = 'p'; const f = ({[k]: n}) => n; css({w: f({p: 1})});",
+          'const L = [1]; unknown(L[0]); css({w: L[0]});',
+          'const L = [1]; unknown(L[9]); css({w: L[0]});',
+          'const L = {p: 1}; export const holder = [L]; css({w: L.p});',
+          'const L = {p: 1}; module.exports.token = L; css({w: L.p});',
+          "const L = {p: 1}; module['exports'].token = L; css({w: L.p});",
+          'const N = 4; function f() { return N } css({w: f()});',
+          'const helper = () => 4; function f() { return helper() } css({w: f()});',
+          'const helper = function() { return 4 }; function f() { return helper() } css({w: f()});',
+        ].map((use) => ({
+          code: `import { css } from "@devup-ui/react";\n${use}`,
+          filename: 'src/app/page.tsx',
+        })),
+        {
+          code: `import { 'create' as create } from '@stylexjs/stylex'; create({a: {width: 1}});`,
+          filename: 'src/app/page.tsx',
+        },
         {
           code: `import { ${code} } from "@devup-ui/react";\n${code}({w: 1})`,
           filename: 'src/app/page.tsx',
@@ -145,6 +164,26 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
         },
       ],
       invalid: [
+        ...[
+          "const f = ({'normalize': n}) => n; css({w: f({normalize: 1})});",
+          'const L = [{p: 1}]; unknown(L[0]); css({w: L[0].p});',
+          'const A = [{p: 1}]; const L = [1, ...A]; unknown(L[0]); css({w: A[0].p});',
+          'const L = {p: 1}; unknown([L]); css({w: L.p});',
+          'const L = {p: 1}; other.exports.token = L; css({w: L.p});',
+          'const helper = () => Date.now(); function f() { return helper() } css({w: f()});',
+          'class Token {} function f() { return Token } css({w: f()});',
+        ].map((use) => ({
+          code: `import { css } from "@devup-ui/react";\n${use}`,
+          filename: 'src/app/page.tsx',
+          output: null,
+          errors: [{ messageId: 'cssUtilsLiteralOnly' as const }],
+        })),
+        {
+          code: `import { 'create' as create } from '@stylexjs/stylex'; let v = 1; create({a: {width: v}});`,
+          filename: 'src/app/page.tsx',
+          output: null,
+          errors: [{ messageId: 'cssUtilsLiteralOnly' }],
+        },
         ...[
           [
             `export function C() { let fade = keyframes({ from: { opacity: 0 } }); return css({ animationName: fade }); }`,

@@ -1041,7 +1041,28 @@ mod tests {
     mod styled_transient_tests;
 
     mod exact_literal_coercion {
+        mod const_object_css_tag {
+            include!("const_object_css_tag_tests.rs");
+        }
+        mod const_object_css_tag_controls {
+            include!("const_object_css_tag_controls_tests.rs");
+        }
+        mod const_object_css_tag_policy {
+            include!("const_object_css_tag_policy_tests.rs");
+        }
         include!("stylex_exact_key_tests.rs");
+        mod ci_factory_alias {
+            include!("ci_factory_alias_tests.rs");
+        }
+        mod factory_dynamic_value {
+            include!("factory_dynamic_value_tests.rs");
+            mod controls {
+                include!("factory_dynamic_value_controls_tests.rs");
+            }
+            mod keyframes {
+                include!("factory_dynamic_value_keyframes_tests.rs");
+            }
+        }
 
         use super::*;
         use crate::extract_style::style_property::StyleProperty;

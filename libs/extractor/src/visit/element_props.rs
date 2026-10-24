@@ -1,7 +1,5 @@
 use crate::extractor::ExtractResult;
-use crate::extractor::extract_style_from_expression::{
-    LiteralHandling, extract_style_from_expression,
-};
+use crate::extractor::extract_style_from_expression::{LiteralHandling, extract_with_policy};
 use crate::utils::{get_str_by_property_key, unwrap_syntax_only};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::{disassemble_property, is_special_property::is_special_property};
@@ -119,6 +117,7 @@ pub(super) fn extract_props<'a>(
     ast: &AstBuilder<'a>,
     object: &mut ObjectExpression<'a>,
     written: &mut FxHashSet<Cow<'a, str>>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
     let mut result = ExtractResult::default();
     for index in (0..object.properties.len()).rev() {
@@ -148,13 +147,14 @@ pub(super) fn extract_props<'a>(
             oxc_allocator::Vec::from_array_in([property], ast),
             ast,
         );
-        let mut extracted = extract_style_from_expression(
+        let mut extracted = extract_with_policy::<false>(
             ast,
             None,
             &mut single,
             0,
             &None,
             LiteralHandling::ExpandResponsiveThemeToken,
+            prepare,
         );
         if partial {
             extracted

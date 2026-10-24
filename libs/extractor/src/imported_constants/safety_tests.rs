@@ -30,6 +30,7 @@ fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(
         style: &style,
         css_props: &css_props,
         css_failures: &mut Vec::new(),
+        unknown: &mut Unknown::default(),
         objects: false,
         styles: false,
         px: false,

@@ -25,6 +25,8 @@ export interface ReservationEngine {
 }
 
 export type ReservationBatchOptions = {
+  /** Synchronous metadata installation after memoization, before scratch extraction. */
+  readonly beforeReserve?: (inventory: ReservationInventory) => void
   readonly singleCss: boolean
   readonly importMainCssInCode: boolean
   readonly importMainCssInCss: boolean
@@ -32,6 +34,8 @@ export type ReservationBatchOptions = {
 }
 
 export interface SharedSlotReservation {
+  readonly dependencies: readonly string[]
+  readonly packageManifests: readonly string[]
   invalidate(): void
   reserve(
     discovery: ReservationDiscoveryOptions,
@@ -106,11 +110,18 @@ export function createSharedSlotReservation(
   let committed: Committed | undefined
   let dirty = true
   return {
+    get dependencies() {
+      return committed?.inventory.dependencies ?? []
+    },
+    get packageManifests() {
+      return committed?.inventory.packageManifests ?? []
+    },
     invalidate() {
       dirty = true
     },
     reserve(discovery, options) {
       const inventory = collectReservationInputs(discovery)
+      const manifests = committed?.inventory.packageManifests ?? []
       const rows: readonly ReservationRow[] = inventory.inputs.map(
         (input) => [input.filename, input.code, options.cssDir(input)] as const,
       )
@@ -122,6 +133,10 @@ export function createSharedSlotReservation(
         committed.importMainCssInCode === options.importMainCssInCode &&
         committed.importMainCssInCss === options.importMainCssInCss &&
         sameAliases(discovery.importAliases, committed.aliases) &&
+        inventory.packageManifests.length === manifests.length &&
+        inventory.packageManifests.every(
+          (path, index) => path === manifests[index],
+        ) &&
         sameResolutions(
           inventory.resolutions,
           committed.inventory.resolutions,
@@ -130,6 +145,7 @@ export function createSharedSlotReservation(
         sameRows(rows, committed.rows)
       )
         return false
+      options.beforeReserve?.(inventory)
       engine.reserveClassSlots(
         rows,
         discovery.package,

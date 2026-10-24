@@ -6,9 +6,7 @@ use crate::{
         extract_static_style::{ExtractStaticStyle, ThemeTokenResolution},
         extract_style_value::ExtractStyleValue,
     },
-    extractor::{
-        ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
-    },
+    extractor::{ExtractResult, extract_style_from_member_expression::extract_member},
     utils::{
         CSS_TEXT, RESPONSIVE_ARRAY, SELECTOR_NAME, expression_to_code,
         get_number_by_literal_expression, get_str_by_property_key,
@@ -234,8 +232,30 @@ pub fn extract_style_from_expression<'a>(
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
 ) -> ExtractResult<'a> {
+    extract_with_policy::<false>(
+        ast_builder,
+        name,
+        expression,
+        level,
+        selector,
+        literal_handling,
+        &mut |_| {},
+    )
+}
+
+/// Extract styles, optionally retaining authored locations of dynamic object leaves.
+pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
+    ast_builder: &AstBuilder<'a>,
+    name: Option<&str>,
+    expression: &mut Expression<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+    literal_handling: LiteralHandling,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
+) -> ExtractResult<'a> {
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
+    let offset = expression.span().start;
 
     if name.is_none() {
         let mut styles = crate::dead_properties::expression_errors(expression);
@@ -279,26 +299,37 @@ pub fn extract_style_from_expression<'a>(
                             {
                                 // The upfront authored walk already checks every root key,
                                 // including the literal spreads flattened above.
-                                for disassembled in disassemble_property(&name) {
+                                let mut properties = disassemble_property(&name);
+                                while let Some(disassembled) = properties.next() {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
                                             .map(|v| v as u8);
                                     } else if name == "styleVars" {
                                         style_vars =
-                                            Some(prop.value.clone_in(ast_builder.allocator()));
+                                            Some(prop.value.clone_in_with_semantic_ids(
+                                                ast_builder.allocator(),
+                                            ));
                                     } else if name == "props" {
-                                        props = Some(prop.value.clone_in(ast_builder.allocator()));
+                                        props =
+                                            Some(prop.value.clone_in_with_semantic_ids(
+                                                ast_builder.allocator(),
+                                            ));
                                     } else {
+                                        let mut sibling = (properties.len() != 0).then(|| {
+                                            prop.value
+                                                .clone_in_with_semantic_ids(ast_builder.allocator())
+                                        });
                                         let ExtractResult {
                                             styles, tag: _tag, ..
-                                        } = extract_style_from_expression(
+                                        } = extract_with_policy::<LOCATE>(
                                             ast_builder,
                                             Some(disassembled),
-                                            &mut prop.value,
+                                            sibling.as_mut().unwrap_or(&mut prop.value),
                                             0,
                                             &None,
                                             LiteralHandling::ExpandResponsiveThemeToken,
+                                            prepare,
                                         );
                                         props_styles.extend(styles);
                                         tag = _tag.or(tag);
@@ -312,13 +343,14 @@ pub fn extract_style_from_expression<'a>(
                         ObjectPropertyKind::SpreadProperty(prop) => {
                             let ExtractResult {
                                 styles, tag: _tag, ..
-                            } = extract_style_from_expression(
+                            } = extract_with_policy::<LOCATE>(
                                 ast_builder,
                                 None,
                                 &mut prop.argument,
                                 0,
                                 &None,
                                 LiteralHandling::ExpandResponsiveThemeToken,
+                                prepare,
                             );
                             props_styles.extend(styles);
                             tag = _tag.or(tag);
@@ -341,24 +373,26 @@ pub fn extract_style_from_expression<'a>(
                 styles: vec![ExtractStyleProp::Conditional {
                     condition: conditional.test.clone_in(ast_builder.allocator()),
                     consequent: Some(Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
+                        extract_with_policy::<LOCATE>(
                             ast_builder,
                             None,
                             &mut conditional.consequent,
                             level,
                             &None,
                             literal_handling,
+                            prepare,
                         )
                         .styles,
                     ))),
                     alternate: Some(Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
+                        extract_with_policy::<LOCATE>(
                             ast_builder,
                             None,
                             &mut conditional.alternate,
                             level,
                             selector,
                             literal_handling,
+                            prepare,
                         )
                         .styles,
                     ))),
@@ -391,14 +425,14 @@ pub fn extract_style_from_expression<'a>(
         let offset = expression.span().start;
         let mut styles = vec![];
         for part in split_selector_list(name) {
-            styles.extend(extract_under_key(
+            styles.extend(extract_under_key::<LOCATE>(
                 ast_builder,
-                part,
-                offset,
-                &mut expression.clone_in(ast_builder.allocator()),
+                (part, offset),
+                &mut expression.clone_in_with_semantic_ids(ast_builder.allocator()),
                 level,
                 selector,
                 literal_handling,
+                prepare,
             ));
         }
         return ExtractResult {
@@ -436,14 +470,14 @@ pub fn extract_style_from_expression<'a>(
                     };
                     let offset = o.key.span().start;
                     for part in split_selector_list(key_name.trim()) {
-                        props.extend(extract_under_key(
+                        props.extend(extract_under_key::<LOCATE>(
                             ast_builder,
-                            part,
-                            offset,
-                            &mut o.value.clone_in(ast_builder.allocator()),
+                            (part, offset),
+                            &mut o.value.clone_in_with_semantic_ids(ast_builder.allocator()),
                             level,
                             selector,
                             literal_handling,
+                            prepare,
                         ));
                     }
                 }
@@ -463,13 +497,14 @@ pub fn extract_style_from_expression<'a>(
                 if let ObjectPropertyKind::ObjectProperty(o) = p
                     && let Some(layer) = get_string_by_property_key(&o.key)
                 {
-                    let mut styles = extract_style_from_expression(
+                    let mut styles = extract_with_policy::<LOCATE>(
                         ast_builder,
                         None,
                         &mut o.value,
                         level,
                         selector,
                         literal_handling,
+                        prepare,
                     )
                     .styles;
                     place_in_layer(&mut styles, &layer);
@@ -493,13 +528,14 @@ pub fn extract_style_from_expression<'a>(
                         StyleSelector::nest_at_rule(selector.as_ref(), kind, &query)
                 {
                     props.extend(
-                        extract_style_from_expression(
+                        extract_with_policy::<LOCATE>(
                             ast_builder,
                             None,
                             &mut o.value,
                             level,
                             &Some(at_selector),
                             literal_handling,
+                            prepare,
                         )
                         .styles,
                     );
@@ -514,21 +550,21 @@ pub fn extract_style_from_expression<'a>(
         if name.starts_with('_') || split_at_rule_key(name).is_some() {
             let offset = expression.span().start;
             return ExtractResult {
-                styles: extract_under_key(
+                styles: extract_under_key::<LOCATE>(
                     ast_builder,
-                    name,
-                    offset,
+                    (name, offset),
                     expression,
                     level,
                     selector,
                     literal_handling,
+                    prepare,
                 ),
                 ..ExtractResult::default()
             };
         }
         typo = name == "typography";
     }
-    if let Some(value) = get_string_by_literal_expression(expression) {
+    let mut result = if let Some(value) = get_string_by_literal_expression(expression) {
         if let Some(name) = name {
             ExtractResult {
                 styles: if typo {
@@ -635,13 +671,14 @@ pub fn extract_style_from_expression<'a>(
                         expression,
                         level,
                         selector,
+                        prepare,
                     )],
                     ..ExtractResult::default()
                 },
                 None => unreadable(expression),
             },
             Expression::ComputedMemberExpression(mem) => {
-                extract_style_from_member_expression(ast_builder, name, mem, level, selector)
+                extract_member::<LOCATE>(ast_builder, name, mem, level, selector, prepare)
             }
             Expression::TemplateLiteral(_) => {
                 let Some(name) = name else {
@@ -695,6 +732,7 @@ pub fn extract_style_from_expression<'a>(
                             expression,
                             level,
                             selector,
+                            prepare,
                         )]
                     },
                     ..ExtractResult::default()
@@ -774,6 +812,7 @@ pub fn extract_style_from_expression<'a>(
                             expression,
                             level,
                             selector,
+                            prepare,
                         )],
                         ..ExtractResult::default()
                     }
@@ -791,7 +830,7 @@ pub fn extract_style_from_expression<'a>(
                     LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
                     LogicalOperator::Coalesce => nullish,
                 };
-                extract_style_from_expression(
+                extract_with_policy::<LOCATE>(
                     ast_builder,
                     name,
                     if takes_right {
@@ -802,13 +841,14 @@ pub fn extract_style_from_expression<'a>(
                     level,
                     selector,
                     literal_handling,
+                    prepare,
                 )
             }
             Expression::ConditionalExpression(conditional)
                 if literal_truthiness(&conditional.test).is_some() =>
             {
                 let consequent = literal_truthiness(&conditional.test) == Some(true);
-                extract_style_from_expression(
+                extract_with_policy::<LOCATE>(
                     ast_builder,
                     name,
                     if consequent {
@@ -819,17 +859,19 @@ pub fn extract_style_from_expression<'a>(
                     level,
                     selector,
                     literal_handling,
+                    prepare,
                 )
             }
             Expression::LogicalExpression(logical) => {
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
-                    extract_style_from_expression(
+                    extract_with_policy::<LOCATE>(
                         ast_builder,
                         name,
                         &mut logical.right,
                         level,
                         selector,
                         literal_handling,
+                        prepare,
                     )
                     .styles,
                 )));
@@ -872,13 +914,14 @@ pub fn extract_style_from_expression<'a>(
                                 ast_builder,
                             ),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
-                                extract_style_from_expression(
+                                extract_with_policy::<LOCATE>(
                                     ast_builder,
                                     name,
                                     &mut logical.left,
                                     level,
                                     selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             ))),
@@ -904,13 +947,14 @@ pub fn extract_style_from_expression<'a>(
                 for (idx, element) in array.elements.iter_mut().enumerate() {
                     if let Some(element) = element.as_expression_mut() {
                         props.extend(
-                            extract_style_from_expression(
+                            extract_with_policy::<LOCATE>(
                                 ast_builder,
                                 name,
                                 element,
                                 idx as u8,
                                 selector,
                                 LiteralHandling::KeepSingleClass,
+                                prepare,
                             )
                             .styles,
                         );
@@ -926,37 +970,40 @@ pub fn extract_style_from_expression<'a>(
             }
             Expression::ConditionalExpression(conditional) => {
                 if is_same_expression(&conditional.consequent, &conditional.alternate) {
-                    extract_style_from_expression(
+                    extract_with_policy::<LOCATE>(
                         ast_builder,
                         name,
                         &mut conditional.consequent,
                         level,
                         selector,
                         literal_handling,
+                        prepare,
                     )
                 } else {
                     ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
                             condition: conditional.test.clone_in(ast_builder.allocator()),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
-                                extract_style_from_expression(
+                                extract_with_policy::<LOCATE>(
                                     ast_builder,
                                     name,
                                     &mut conditional.consequent,
                                     level,
                                     selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             ))),
                             alternate: Some(Box::new(ExtractStyleProp::StaticArray(
-                                extract_style_from_expression(
+                                extract_with_policy::<LOCATE>(
                                     ast_builder,
                                     name,
                                     &mut conditional.alternate,
                                     level,
                                     selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             ))),
@@ -1016,13 +1063,14 @@ pub fn extract_style_from_expression<'a>(
                         ObjectPropertyKind::ObjectProperty(o) => o,
                         ObjectPropertyKind::SpreadProperty(spread) => {
                             props.extend(
-                                extract_style_from_expression(
+                                extract_with_policy::<LOCATE>(
                                     ast_builder,
                                     None,
                                     &mut spread.argument,
                                     level,
                                     &selector,
                                     literal_handling,
+                                    prepare,
                                 )
                                 .styles,
                             );
@@ -1043,16 +1091,20 @@ pub fn extract_style_from_expression<'a>(
                         props.push(error);
                         continue;
                     }
-                    for name in disassemble_property(&key_name) {
+                    let mut properties = disassemble_property(&key_name);
+                    while let Some(name) = properties.next() {
                         let name: &str = &name;
+                        let mut sibling = (properties.len() != 0)
+                            .then(|| o.value.clone_in_with_semantic_ids(ast_builder.allocator()));
                         props.extend(
-                            extract_style_from_expression(
+                            extract_with_policy::<LOCATE>(
                                 ast_builder,
                                 Some(name),
-                                &mut o.value,
+                                sibling.as_mut().unwrap_or(&mut o.value),
                                 level,
                                 &selector,
                                 literal_handling,
+                                prepare,
                             )
                             .styles,
                         );
@@ -1079,6 +1131,7 @@ pub fn extract_style_from_expression<'a>(
                 // A sequence keeps its parentheses, as its code is written into
                 // the element's style object, where a comma ends the property
                 Some(name) if matches!(expression, Expression::SequenceExpression(_)) => {
+                    prepare(expression);
                     let code = expression_to_code(expression);
                     ExtractResult {
                         styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
@@ -1101,11 +1154,30 @@ pub fn extract_style_from_expression<'a>(
                         expression,
                         level,
                         selector,
+                        prepare,
                     )],
                     ..ExtractResult::default()
                 },
             },
         }
+    };
+    if LOCATE {
+        for style in &mut result.styles {
+            locate_dynamic(style, offset);
+        }
+    }
+    result
+}
+
+/// Locate only an immediate normalized dynamic leaf; recursive extraction owns children.
+pub(super) fn locate_dynamic(style: &mut ExtractStyleProp<'_>, offset: u32) {
+    if let ExtractStyleProp::Static(ExtractStyleValue::Dynamic(value)) = style {
+        *style = ExtractStyleProp::Unreadable {
+            offset,
+            code: std::mem::take(value.identifier_mut()),
+            prop: false,
+            requirement: None,
+        };
     }
 }
 
@@ -1300,24 +1372,26 @@ impl From<Option<StyleSelector>> for Nested {
     }
 }
 
-fn extract_under_key<'a>(
+fn extract_under_key<'a, const LOCATE: bool>(
     ast_builder: &AstBuilder<'a>,
-    key: &str,
-    offset: u32,
+    located_key: (&str, u32),
     expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> Vec<ExtractStyleProp<'a>> {
+    let (key, offset) = located_key;
     match nest_selectors_key(selector.as_ref(), key) {
         Nested::Under(nested) => {
-            extract_style_from_expression(
+            extract_with_policy::<LOCATE>(
                 ast_builder,
                 None,
                 expression,
                 level,
                 &Some(nested),
                 literal_handling,
+                prepare,
             )
             .styles
         }
@@ -1432,9 +1506,10 @@ fn conditional_typography<'a>(
 pub fn dynamic_style<'a>(
     ast_builder: &AstBuilder<'a>,
     name: &str,
-    expression: &Expression<'a>,
+    expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractStyleProp<'a> {
     if let Some(map) = get_enum_property_map(name) {
         ExtractStyleProp::Enum {
@@ -1456,6 +1531,7 @@ pub fn dynamic_style<'a>(
                 .collect(),
         }
     } else {
+        prepare(expression);
         ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
             name,
             level,

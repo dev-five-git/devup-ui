@@ -34,6 +34,9 @@ use crate::{ExtractOption, ExtractStyleValue, ModuleResolver};
 mod initialization;
 mod lexical;
 #[cfg(test)]
+#[path = "imported_constants_px_tests.rs"]
+mod px_tests;
+#[cfg(test)]
 mod require_tests;
 #[cfg(test)]
 mod safety_tests;
@@ -477,6 +480,9 @@ fn inline_in<'a>(
                     style.roots.insert(local);
                     match specifier {
                         ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                            if !stylex && specifier.imported.name() == "css" {
+                                style.css.insert(local);
+                            }
                             if takes_style_objects(stylex, &specifier.imported.name()) {
                                 style.functions.insert(local);
                             }
@@ -680,6 +686,7 @@ fn inline_in<'a>(
             style: &style,
             css_props: &css_props,
             css_failures: &mut inlined.css_failures,
+            unknown: &mut inlined.unknown,
             objects: false,
             styles: false,
             px: false,
@@ -766,6 +773,7 @@ fn inline_in<'a>(
             style: &style,
             css_props: &css_props,
             css_failures: &mut inlined.css_failures,
+            unknown: &mut inlined.unknown,
             objects: false,
             styles: false,
             px: false,
@@ -859,6 +867,7 @@ struct StyleSymbols<'s> {
     roots: FxHashSet<SymbolId>,
     /// The style APIs that read style objects at build time
     functions: FxHashSet<SymbolId>,
+    css: FxHashSet<SymbolId>,
     /// Namespace and default imports, `true` for `StyleX`
     namespaces: FxHashMap<SymbolId, bool>,
 }
@@ -881,6 +890,7 @@ impl<'s> StyleSymbols<'s> {
             scoping,
             roots: FxHashSet::default(),
             functions: FxHashSet::default(),
+            css: FxHashSet::default(),
             namespaces: FxHashMap::default(),
         }
     }
@@ -897,6 +907,19 @@ impl<'s> StyleSymbols<'s> {
             Expression::Identifier(identifier) => self.has(identifier),
             Expression::StaticMemberExpression(member) => self.is_root(&member.object),
             Expression::CallExpression(call) => self.is_root(&call.callee),
+            _ => false,
+        }
+    }
+
+    fn is_css(&self, expression: &Expression<'_>) -> bool {
+        match expression {
+            Expression::Identifier(identifier) => binding_of(self.scoping, identifier)
+                .is_some_and(|symbol| self.css.contains(&symbol)),
+            Expression::StaticMemberExpression(member) if member.property.name == "css" => {
+                matches!(&member.object, Expression::Identifier(identifier)
+                    if binding_of(self.scoping, identifier)
+                        .and_then(|symbol| self.namespaces.get(&symbol)) == Some(&false))
+            }
             _ => false,
         }
     }
@@ -2253,6 +2276,7 @@ struct Inline<'s, 'a> {
     style: &'s StyleSymbols<'s>,
     css_props: &'s CssTakers<'s>,
     css_failures: &'s mut Vec<String>,
+    unknown: &'s mut Unknown,
     /// Inside what the build reads as style objects
     objects: bool,
     /// Inside the arguments of a style API or a style prop
@@ -2620,8 +2644,62 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             return;
         }
         let styles = self.style.is_root(&tagged.tag);
+        let css = self.style.is_css(&tagged.tag);
+        if !css {
+            self.reading_styles(styles, |inline| {
+                inline.visit_template_literal(&mut tagged.quasi);
+            });
+            return;
+        }
         self.reading_styles(styles, |inline| {
-            inline.visit_template_literal(&mut tagged.quasi);
+            let mut before = None::<String>;
+            for index in 0..tagged.quasi.expressions.len() {
+                let (prior, rest) = tagged.quasi.expressions.split_at_mut(index);
+                let expression = &mut rest[0];
+                let value = inline.constant(expression);
+                let candidate =
+                    matches!(
+                        crate::utils::unwrap_syntax_only(expression),
+                        Expression::ObjectExpression(_)
+                    ) || matches!(value, Some(Constant::Object(_) | Constant::Record(_)));
+                if candidate && before.is_none() {
+                    let mut text = String::new();
+                    for (quasi, expression) in tagged.quasi.quasis.iter().zip(prior) {
+                        text.push_str(&quasi.value.raw);
+                        if let Some(value) =
+                            crate::utils::get_string_by_literal_expression(expression)
+                        {
+                            text.push_str(&value);
+                        }
+                    }
+                    before = Some(text);
+                }
+                if let Some(before) = &mut before {
+                    before.push_str(&tagged.quasi.quasis[index].value.raw);
+                }
+                let objects = candidate
+                    && before.as_ref().is_some_and(|before| {
+                        matches!(
+                            crate::css_utils::interpolation_place(
+                                before,
+                                &tagged.quasi.quasis[index + 1..]
+                            ),
+                            crate::css_utils::Place::Statement
+                        )
+                    });
+                inline.reading_objects(objects, |inline| inline.visit_expression(expression));
+                if objects
+                    && value.is_some()
+                    && let Some(name) = crate::utils::binding_root(expression)
+                {
+                    inline.unknown.names.insert(name.to_string());
+                }
+                if let Some(before) = &mut before
+                    && let Some(text) = crate::utils::get_string_by_literal_expression(expression)
+                {
+                    before.push_str(&text);
+                }
+            }
         });
     }
 
