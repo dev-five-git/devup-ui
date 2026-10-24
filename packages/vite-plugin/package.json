@@ -41,10 +41,12 @@
   ],
   "dependencies": {
     "@devup-ui/plugin-utils": "workspace:^",
-    "@devup-ui/wasm": "workspace:^"
+    "@devup-ui/wasm": "workspace:^",
+    "parse5": "^8.0.1"
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
   },
   "peerDependencies": {
     "@devup-ui/wasm": "*",

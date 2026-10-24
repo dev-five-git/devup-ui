@@ -273,14 +273,12 @@ impl<'a> Reader<'_, 'a> {
         visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
         visitor.import_css(inlined.css_styles);
         visitor.errors.extend(inlined.errors);
-        if let Some(scoping) = inlined.scoping {
-            visitor.reuse_scoping(scoping);
-        }
         visitor.unknown_bindings(&inlined.unknown);
         visitor.changed_bindings(inlined.changed);
         visitor.takes_css_prop(css_prop);
         visitor.import_styled(imports);
         visitor.reserve_styled(styled_capability);
+        visitor.reuse_scoping(inlined.scoping);
         visitor.visit_program(&mut program);
         let readable = visitor.errors.is_empty()
             && visitor.unknown_parts.is_empty()
@@ -474,7 +472,7 @@ impl<'a> Reader<'_, 'a> {
         let compat = format!("{}/compat", self.option.package);
         let mut used = Used {
             scoping,
-            css_takers: CssTakers::new(program, css_prop, &compat),
+            css_takers: CssTakers::new(program, scoping, css_prop, &compat),
             styled: imported.styled,
             css_prop: css_prop != CssProp::Off,
             names: FxHashSet::default(),
@@ -823,7 +821,12 @@ mod tests {
             .into_scoping();
         let mut used = Used {
             scoping: &scoping,
-            css_takers: CssTakers::new(&parsed.program, css_prop, "@devup-ui/react/compat"),
+            css_takers: CssTakers::new(
+                &parsed.program,
+                &scoping,
+                css_prop,
+                "@devup-ui/react/compat",
+            ),
             styled: FxHashSet::default(),
             css_prop: css_prop != CssProp::Off,
             names: FxHashSet::default(),

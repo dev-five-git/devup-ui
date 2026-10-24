@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Reserve short shared class and CSS-variable slots before Vite extraction across build, serve, and shared environments. Enable atom hoisting by default at two distinct physical module boundaries plus reachable dynamic targets, with zero opting out and singleCss unchanged. Install the closed-inventory canonical and reach plan before scratch and freeze it for the build lifetime, including watch updates. Discover static physical HTML inputs with a Vite-only build-time parse5 parser, keeping it outside non-Vite plugin and loader graphs, and refresh only dirty revisions without styling runtime or new intended source build-error categories.",
+  "date": "2026-10-18T00:00:00.000Z"
+}

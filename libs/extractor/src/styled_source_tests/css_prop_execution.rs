@@ -268,3 +268,9 @@ mod local_member_guard;
 
 #[path = "callback_choice_execution.rs"]
 mod callback_choice_execution;
+
+#[path = "integration_semantics.rs"]
+mod integration_semantics;
+
+#[path = "integration_execution.rs"]
+mod integration_execution;

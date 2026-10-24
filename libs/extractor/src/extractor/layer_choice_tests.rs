@@ -9,7 +9,6 @@ fn known_class_is_falsy_when_metadata_is_its_only_entry() {
     let ast = AstBuilder::new(&arena);
     let value = Expression::new_string_literal(SPAN, "", None, &ast);
     let values = crate::style_values::StyleValues::default();
-    let imports = rustc_hash::FxHashMap::default();
     let inline_css = rustc_hash::FxHashMap::from_iter([(
         SPAN.start,
         vec![ExtractStyleValue::LayerOrder(ExtractLayerOrder {
@@ -18,7 +17,7 @@ fn known_class_is_falsy_when_metadata_is_its_only_entry() {
         })],
     )]);
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };

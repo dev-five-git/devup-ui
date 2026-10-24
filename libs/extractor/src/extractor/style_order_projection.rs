@@ -81,22 +81,28 @@ impl<'a> Projection<'a> {
         }
     }
 
-    pub(super) fn extract(
+    pub(super) fn extract<const LOCATE: bool>(
         &mut self,
         ast: &AstBuilder<'a>,
         name: Option<&str>,
         expression: &mut Expression<'a>,
-        level: u8,
-        selector: &Option<StyleSelector>,
+        coordinates: (u8, &Option<StyleSelector>),
         handling: LiteralHandling,
+        prepare: &mut impl FnMut(&mut Expression<'a>),
     ) -> ExtractResult<'a> {
         let mut child = if self.children.is_some() {
             Self::enabled()
         } else {
             Self::default()
         };
-        let result = extract_style_from_expression::extract_projected(
-            ast, name, expression, level, selector, handling, &mut child,
+        let result = extract_style_from_expression::extract_projected::<LOCATE>(
+            ast,
+            name,
+            expression,
+            coordinates,
+            handling,
+            &mut child,
+            prepare,
         );
         if let Some(children) = &mut self.children {
             children.push(child.finish(ast, &result.styles));
@@ -195,15 +201,36 @@ pub(crate) fn extract_with_order<'a>(
     selector: &Option<StyleSelector>,
     handling: LiteralHandling,
 ) -> (ExtractResult<'a>, AuthoredStyles<'a>) {
-    let mut projection = Projection::enabled();
-    let result = extract_style_from_expression::extract_projected(
+    extract_with_order_policy::<false>(
         ast,
         name,
         expression,
         level,
         selector,
         handling,
+        &mut |_| {},
+    )
+}
+
+/// Retain authored chunks with the caller's dynamic-leaf location and preparation policy.
+pub(crate) fn extract_with_order_policy<'a, const LOCATE: bool>(
+    ast: &AstBuilder<'a>,
+    name: Option<&str>,
+    expression: &mut Expression<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+    handling: LiteralHandling,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
+) -> (ExtractResult<'a>, AuthoredStyles<'a>) {
+    let mut projection = Projection::enabled();
+    let result = extract_style_from_expression::extract_projected::<LOCATE>(
+        ast,
+        name,
+        expression,
+        (level, selector),
+        handling,
         &mut projection,
+        prepare,
     );
     let authored = projection.finish(ast, &result.styles);
     (result, authored)

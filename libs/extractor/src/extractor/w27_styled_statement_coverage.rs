@@ -56,7 +56,6 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
     let mut expression = Parser::new(&allocator, &source, SourceType::tsx())
         .parse_expression()
         .map_err(|error| format!("{error:?}"))?;
-    let imports = FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = FxHashMap::default();
     // When
@@ -65,7 +64,7 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
         &mut expression,
         Naming::default(),
         StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },
@@ -122,7 +121,6 @@ fn uncurried_styled_when_second_argument_is_callback_stays_object_only()
     let mut expression = Parser::new(&allocator, source, SourceType::tsx())
         .parse_expression()
         .map_err(|error| format!("{error:?}"))?;
-    let imports = FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = FxHashMap::default();
     // When
@@ -131,7 +129,7 @@ fn uncurried_styled_when_second_argument_is_callback_stays_object_only()
         &mut expression,
         Naming::default(),
         StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },

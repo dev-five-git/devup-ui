@@ -72,7 +72,6 @@ fn raw_styled_spread_when_received_by_extractor_keeps_reads_or_composition_error
     let mut expression = Parser::new(&allocator, source, SourceType::tsx())
         .parse_expression()
         .map_err(|error| format!("{error:?}"))?;
-    let imports = FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = FxHashMap::default();
     // When
@@ -81,7 +80,7 @@ fn raw_styled_spread_when_received_by_extractor_keeps_reads_or_composition_error
         &mut expression,
         Naming::default(),
         StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },
@@ -146,7 +145,6 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
     )
     .parse_expression()
     .map_err(|error| format!("{error:?}"))?;
-    let imports = FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = FxHashMap::default();
     // When
@@ -155,7 +153,7 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
         &mut expression,
         Naming::default(),
         StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },

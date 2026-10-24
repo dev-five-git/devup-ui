@@ -14,11 +14,10 @@ fn direct_condition_when_no_props_callback_exists_keeps_module_binding(
     // Given
     let allocator = oxc_allocator::Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let imports = rustc_hash::FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = rustc_hash::FxHashMap::default();
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };
@@ -91,12 +90,11 @@ fn known_class_when_empty_or_nonempty_selects_rules_before_context_lowering(
     } else {
         vec![]
     };
-    let imports = rustc_hash::FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css =
         rustc_hash::FxHashMap::from_iter([(unwrap_syntax_only(&logical.left).span().start, known)]);
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };
@@ -154,14 +152,13 @@ fn opaque_known_atom_when_nested_reports_error_instead_of_applying_global_class(
     let Expression::TemplateLiteral(template) = expression else {
         panic!("expected template")
     };
-    let imports = rustc_hash::FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = rustc_hash::FxHashMap::from_iter([(
         template.expressions[0].span().start,
         vec![crate::ExtractStyleValue::Typography("body".into())],
     )]);
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };
@@ -180,11 +177,10 @@ fn unknown_rule_when_reader_receives_it_fails_instead_of_silently_discarding_it(
     // Given
     let allocator = oxc_allocator::Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let imports = rustc_hash::FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = rustc_hash::FxHashMap::default();
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };

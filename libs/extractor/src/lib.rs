@@ -60,6 +60,7 @@ mod responsive_selector_tests;
 mod retained_render_assertions;
 #[cfg(test)]
 mod retained_render_support;
+mod scope;
 #[cfg(test)]
 mod selector_array_units_tests;
 mod source_map;
@@ -656,12 +657,10 @@ fn extract_source(
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.import_css(inlined.css_styles);
     visitor.errors.extend(inlined.errors);
-    if let Some(scoping) = inlined.scoping {
-        visitor.reuse_scoping(scoping);
-    }
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.reuse_scoping(inlined.scoping);
     visitor.import_styled(imported.components);
     visitor.reserve_styled(styled_capability);
     visitor.visit_program(&mut program);
@@ -1051,7 +1050,28 @@ mod tests {
     mod styled_transient_tests;
 
     mod exact_literal_coercion {
+        mod const_object_css_tag {
+            include!("const_object_css_tag_tests.rs");
+        }
+        mod const_object_css_tag_controls {
+            include!("const_object_css_tag_controls_tests.rs");
+        }
+        mod const_object_css_tag_policy {
+            include!("const_object_css_tag_policy_tests.rs");
+        }
         include!("stylex_exact_key_tests.rs");
+        mod ci_factory_alias {
+            include!("ci_factory_alias_tests.rs");
+        }
+        mod factory_dynamic_value {
+            include!("factory_dynamic_value_tests.rs");
+            mod controls {
+                include!("factory_dynamic_value_controls_tests.rs");
+            }
+            mod keyframes {
+                include!("factory_dynamic_value_keyframes_tests.rs");
+            }
+        }
 
         use super::*;
         use crate::extract_style::style_property::StyleProperty;
@@ -15791,7 +15811,7 @@ export const a = {element}"
     )]
     #[case(
         "stylex.props(on && s.red, on && s.red)",
-        "{ className: on ? \"color-0-red--255\" : on ? \"color-0-red--255\" : \"\" }"
+        "(_s0 = !!on, { className: on ? \"color-0-red--255\" : _s0 ? \"color-0-red--255\" : \"\" })"
     )]
     #[case(
         "stylex.props(s['blue'], s.hover)",

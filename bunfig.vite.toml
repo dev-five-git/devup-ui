@@ -1,0 +1,8 @@
+[test]
+root = "packages/vite-plugin"
+preload = ["./bun.matrix.ts"]
+coverageReporter = ["text", "lcov"]
+coverageThreshold = { lines = 1.0, functions = 1.0, statements = 1.0 }
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["**/pkg/**", "**/dist/**"]
+coverageDir = "coverage/vite"

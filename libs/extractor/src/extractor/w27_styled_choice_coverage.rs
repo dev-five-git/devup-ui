@@ -11,14 +11,13 @@ fn undefined_when_reference_has_no_semantic_identity_is_opaque()
         .parse_expression()
         .map_err(|error| format!("{error:?}"))?;
     let values = crate::style_values::StyleValues::default();
-    let imports = rustc_hash::FxHashMap::default();
     let inline_css = rustc_hash::FxHashMap::default();
     // When
     let result = normalize(
         &ast,
         &expression,
         &StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },
@@ -64,13 +63,12 @@ fn normalize_source<'a>(
         })
         .ok_or("expected expression statement")?;
     let values = crate::style_values::StyleValues::new(std::rc::Rc::new(scoping));
-    let imports = rustc_hash::FxHashMap::default();
     let inline_css = rustc_hash::FxHashMap::default();
     normalize(
         ast,
         &statement.expression,
         &StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },
@@ -219,13 +217,12 @@ fn numeric_nan_when_short_circuited_does_not_read_unknown_rules()
     );
     // When
     let values = crate::style_values::StyleValues::default();
-    let imports = rustc_hash::FxHashMap::default();
     let inline_css = rustc_hash::FxHashMap::default();
     let normalized = normalize(
         &ast,
         &expression,
         &StyledBindings {
-            imports: &imports,
+            imports: &|_| None,
             values: &values,
             inline_css: &inline_css,
         },

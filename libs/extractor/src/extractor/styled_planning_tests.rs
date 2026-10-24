@@ -15,11 +15,10 @@ fn direct_schedule_when_controller_is_unreadable_returns_the_original_error(
         .parse_expression()
         .unwrap_or_else(|error| panic!("{error:?}"));
     let scope = expression.clone_in_with_semantic_ids(&arena);
-    let imports = rustc_hash::FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = rustc_hash::FxHashMap::default();
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };

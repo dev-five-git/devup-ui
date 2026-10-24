@@ -15,11 +15,10 @@ fn template_when_opaque_callback_reads_unmapped_theme_retains_the_located_error(
     let Expression::TemplateLiteral(template) = expression else {
         panic!("template")
     };
-    let imports = rustc_hash::FxHashMap::default();
     let values = crate::style_values::StyleValues::default();
     let inline_css = rustc_hash::FxHashMap::default();
     let bindings = StyledBindings {
-        imports: &imports,
+        imports: &|_| None,
         values: &values,
         inline_css: &inline_css,
     };
