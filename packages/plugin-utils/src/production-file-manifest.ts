@@ -196,6 +196,28 @@ export async function collectProductionFileManifest(
         request({ path, realPath: realpathSync.native(path), kind: 'package' })
       }
     }
+    const expand = {
+      file: async (job, request) => {
+        for (const file of await targets(job.path))
+          request({ ...file, kind: 'file' })
+        if (!entryClosure) distributions(dirname(job.path), request)
+      },
+      package: async (job, request) => {
+        const files =
+          inventories.get(job.path) ??
+          enumerateProductionSourceFiles({
+            roots: [job.path],
+            cwd,
+            ...(exclude === undefined ? {} : { exclude }),
+            ...(includeMdx === undefined ? {} : { includeMdx }),
+          })
+        inventories.set(job.path, files)
+        for (const file of files) request({ ...file, kind: 'file' })
+      },
+    } satisfies Record<
+      ManifestJob['kind'],
+      (job: ManifestJob, request: (job: ManifestJob) => void) => Promise<void>
+    >
     const worklist = new ManifestWorklist({
       admit: (file) => !excluded(file.path) && !excluded(file.realPath),
       record: (file) => {
@@ -207,31 +229,7 @@ export async function collectProductionFileManifest(
         const membership = [record.context, record.path, record.id]
         memberships.set(JSON.stringify(membership), record)
       },
-      expand: async (job, request) => {
-        switch (job.kind) {
-          case 'file': {
-            for (const file of await targets(job.path))
-              request({ ...file, kind: 'file' })
-            if (!entryClosure) distributions(dirname(job.path), request)
-            break
-          }
-          case 'package': {
-            const files =
-              inventories.get(job.path) ??
-              enumerateProductionSourceFiles({
-                roots: [job.path],
-                cwd,
-                ...(exclude === undefined ? {} : { exclude }),
-                ...(includeMdx === undefined ? {} : { includeMdx }),
-              })
-            inventories.set(job.path, files)
-            for (const file of files) request({ ...file, kind: 'file' })
-            break
-          }
-          default:
-            job.kind satisfies never
-        }
-      },
+      expand: (job, request) => expand[job.kind](job, request),
     })
     for (const file of context.files.toSorted((a, b) =>
       compareCodePoints(a.path, b.path),

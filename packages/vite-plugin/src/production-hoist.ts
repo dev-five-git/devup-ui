@@ -18,6 +18,17 @@ import type { ResolvedConfig } from 'vite'
 import type { ProductionOptions } from './production-manifest'
 
 type ImportObserver = NonNullable<ProductionManifestContext['onImports']>
+type ImportKind = Parameters<ImportObserver>[1][number]['kind']
+const importTopology = {
+  static: { forward: 'staticImports', reverse: 'staticImporters' },
+  dynamic: { forward: 'dynamicImports', reverse: null },
+} as const satisfies Record<
+  ImportKind,
+  {
+    readonly forward: 'staticImports' | 'dynamicImports'
+    readonly reverse: 'staticImporters' | null
+  }
+>
 export class ProductionImports {
   readonly imports = new Map<string, Parameters<ImportObserver>[1]>()
   readonly observe: ImportObserver = (path, targets) => {
@@ -80,18 +91,10 @@ export async function productionHoist(
       for (const reference of imports) {
         const target = resolve(reference.path)
         if (!graph.fileSet.has(target)) continue
-        switch (reference.kind) {
-          case 'static':
-            graph.staticImports.get(file)?.add(target)
-            graph.staticImporters.get(target)?.add(file)
-            break
-          case 'dynamic':
-            graph.dynamicImports.get(file)?.add(target)
-            graph.dynamicTargets.add(target)
-            break
-          default:
-            reference.kind satisfies never
-        }
+        const topology = importTopology[reference.kind]
+        graph[topology.forward].get(file)?.add(target)
+        if (topology.reverse === null) graph.dynamicTargets.add(target)
+        else graph[topology.reverse].get(target)?.add(file)
       }
     }
   }

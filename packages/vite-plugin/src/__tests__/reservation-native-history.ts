@@ -47,45 +47,37 @@ export function captureHistory(root: string): NumberingHistory {
 export function restoreHistory(root: string, history: NumberingHistory): void {
   const directory = join(root, 'df/numbering')
   const current = captureHistory(root)
-  switch (current.kind) {
-    case 'present':
-      rmSync(directory, { recursive: true })
-      break
-    case 'absent':
-      break
-    default:
-      current satisfies never
-  }
+  if (historyFiles(current) !== null) rmSync(directory, { recursive: true })
+  const files = historyFiles(history)
+  if (files === null) return
+  mkdirSync(directory, { recursive: true })
+  for (const { name, bytes } of files)
+    writeFileSync(join(directory, name), bytes)
+}
+
+function historyFiles(
+  history: NumberingHistory,
+): Extract<NumberingHistory, { readonly kind: 'present' }>['files'] | null {
   switch (history.kind) {
     case 'absent':
-      return
+      return null
     case 'present':
-      mkdirSync(directory, { recursive: true })
-      for (const { name, bytes } of history.files)
-        writeFileSync(join(directory, name), bytes)
-      return
-    default:
-      history satisfies never
+      return history.files
   }
 }
 
 function storedIds(
   history: NumberingHistory,
 ): ReadonlyMap<string, readonly string[]> {
-  switch (history.kind) {
-    case 'absent':
-      return new Map()
-    case 'present':
-      return new Map(
-        history.files.map(({ name, bytes }) => {
-          const parsed = parseNonphysicalIdList(bytes.toString('utf8'))
-          assert.equal(parsed.kind, 'loaded')
-          return [name, parsed.ids]
-        }),
-      )
-    default:
-      return history satisfies never
-  }
+  const files = historyFiles(history)
+  if (files === null) return new Map()
+  return new Map(
+    files.map(({ name, bytes }) => {
+      const parsed = parseNonphysicalIdList(bytes.toString('utf8'))
+      assert.equal(parsed.kind, 'loaded')
+      return [name, parsed.ids]
+    }),
+  )
 }
 
 export function assertRetained(

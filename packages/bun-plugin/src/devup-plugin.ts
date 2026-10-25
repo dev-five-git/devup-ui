@@ -15,7 +15,6 @@ import {
   loadDevupConfig,
   mdxSourceFilter,
   normalizeMdxExtensions,
-  type PreparedSource,
   resolveProjectPaths,
   resolveSourceDirs,
   seedFileNumbers,
@@ -39,7 +38,7 @@ import {
 import { type BunPlugin, type PluginBuilder } from 'bun'
 
 import { cssNamespace, resolveCssId } from './css-id'
-import { createMdxPreparation } from './mdx'
+import { createMdxPreparation, type PreparedMdx } from './mdx'
 import { createMdxOwnership } from './mdx-ownership'
 import {
   compiledPackages,
@@ -143,7 +142,7 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
         ...(bundling ? ['module'] : []),
         ...customConditions,
       ]
-      const prepared = new Map<string, Exclude<PreparedSource, undefined>>()
+      const prepared = new Map<string, PreparedMdx>()
       const mdx = createMdxPreparation({
         root,
         extensions: mdxExtensions,
@@ -254,10 +253,8 @@ export function DevupUI(options: DevupUIBunPluginOptions = {}) {
             prepared: [...prepared].map(([physicalPath, source]) => ({
               physicalPath,
               filename: physicalPath,
-              code: typeof source === 'string' ? source : source.code,
-              ...(typeof source === 'string' || source.sourceType === undefined
-                ? {}
-                : { sourceType: source.sourceType }),
+              code: source.code,
+              sourceType: source.sourceType,
             })),
           },
           {

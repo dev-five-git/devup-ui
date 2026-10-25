@@ -157,8 +157,6 @@ export class ProductionNumbering {
         return true
       case 'failed':
         throw phase.error
-      default:
-        return phase satisfies never
     }
   }
 

@@ -8,6 +8,11 @@ import { isMdxSource, type PreparedSource } from '@devup-ui/plugin-utils'
 import { mentionsCompiledPackage } from './source'
 
 type CompiledMdx = { readonly value: string; readonly map?: unknown }
+export type PreparedMdx = {
+  readonly code: string
+  readonly map?: unknown
+  readonly sourceType: 'compiled-mdx'
+}
 type Compiler = {
   readonly compile: (
     input: { readonly value: string; readonly path: string },
@@ -100,7 +105,7 @@ export function createMdxPreparation(options: {
             code: compiled.value,
             map: compiled.map,
             sourceType: 'compiled-mdx',
-          })
+          } satisfies PreparedMdx)
           revision += 1
         }
         return compiled

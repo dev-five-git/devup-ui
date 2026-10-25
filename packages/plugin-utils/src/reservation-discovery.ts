@@ -108,7 +108,6 @@ export function collectReservationInputs(
   const resolverOptions = {
     cwd,
     includeMdx: true,
-    toId: (path: string) => path,
     onPackageManifest: (path: string) =>
       packageManifests.add(physicalKey(path)),
     ...(options.tsconfigPath === undefined

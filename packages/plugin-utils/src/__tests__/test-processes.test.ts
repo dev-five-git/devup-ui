@@ -1,163 +1,88 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { expect, it } from 'bun:test'
+
+import { nativeFixture } from '../../../../test-harness/native-fixture'
+import { nativeProcess } from '../../../../test-harness/native-process'
+import { nativePublicationFixture } from '../../../../test-harness/native-publication-fixture'
 import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+  acceptPublication,
+  beginPublication,
+  digest,
+  recordRoot,
+  recordVite,
+} from '../../../../test-harness/publication'
 
-import { afterEach, beforeEach, expect, it, spyOn } from 'bun:test'
-
-import { CoverageError, parseLcov } from '../../../../test-harness/lcov'
-import { prepareTests } from '../../../../test-harness/preload'
-import {
-  parseTestResult,
-  runTestGroups,
-  TestProcessError,
-} from '../../../../test-harness/run'
-
-let restore: () => void
-beforeEach(() => {
-  const output = spyOn(console, 'info').mockImplementation(() => undefined)
-  const errors = spyOn(console, 'error').mockImplementation(() => undefined)
-  restore = () => {
-    output.mockRestore()
-    errors.mockRestore()
-  }
-})
-afterEach(() => restore())
-
-function fixture(assertion = "expect(value()).toBe('runtime')") {
-  const root = mkdtempSync(join(tmpdir(), 'devup-test-harness-'))
-  mkdirSync(join(root, 'tests'))
-  const config = join(root, 'bunfig.toml')
-  writeFileSync(
-    config,
-    '[test]\ncoverage=true\ncoverageReporter=["lcov"]\ncoverageThreshold=0.0\ncoverageSkipTestFiles=true\n',
-  )
-  writeFileSync(
-    join(root, 'source.ts'),
-    'export function value() {return process.env.DEVUP_TEST_GROUP}\n',
-  )
-  writeFileSync(
-    join(root, 'tests/a.test.ts'),
-    "import {expect,it} from 'bun:test';import {value} from '../source';it('isolated',()=>expect(value()).toBe('isolated'))",
-  )
-  writeFileSync(
-    join(root, 'tests/b.test.ts'),
-    `import {expect,it} from 'bun:test';import {value} from '../source';it('runtime',()=>{${assertion}})`,
-  )
-  return {
-    root,
-    config,
-    groups: { isolated: ['tests/a.test.ts'], runtime: ['tests/b.test.ts'] },
-    required: ['source.ts'],
-  }
-}
-
-it('runs both real groups separately when the root harness is invoked', async () => {
-  const run = fixture()
+it('accepts two independent complete native reports without changing either raw byte', async () => {
+  const fixture = nativePublicationFixture()
   try {
-    const summary = await runTestGroups(run)
-    expect(parseTestResult(summary)).toEqual({ pass: 2, fail: 0 })
-    const files = parseLcov(
-      readFileSync(join(run.root, 'coverage/lcov.info'), 'utf8'),
-    ).map((source) => source.file)
-    expect(files).toContain('source.ts')
-    expect(
-      files.some((file) => file.endsWith('test-harness/producer-preload.ts')),
-    ).toBe(true)
-    expect(
-      files.map((file) => resolve(run.root, file).replaceAll('\\', '/')).sort(),
-    ).toEqual(
-      [
-        join(run.root, 'source.ts'),
-        resolve(
-          import.meta.dir,
-          '../../../../test-harness/producer-preload.ts',
-        ),
-        resolve(
-          import.meta.dir,
-          '../../../../test-harness/producer-timeout.ts',
-        ),
-      ]
-        .map((file) => file.replaceAll('\\', '/'))
-        .sort(),
+    beginPublication(fixture.root)
+    expect((await fixture.lane('root')).code).toBe(0)
+    recordRoot(fixture.root, ['source.ts'])
+    expect(existsSync(join(fixture.root, 'coverage/accepted.json'))).toBe(false)
+    expect((await fixture.lane('vite')).code).toBe(0)
+    recordVite(fixture.root, ['source.ts'])
+    const paths = ['root', 'vite'].map((lane) =>
+      join(fixture.root, 'coverage', lane, 'lcov.info'),
     )
-    expect(files.length).toBe(3)
+    const before = paths.map((path) => digest(readFileSync(path)))
+    acceptPublication(fixture.root, {
+      root: ['source.ts'],
+      vite: ['source.ts'],
+    })
+    expect(paths.map((path) => digest(readFileSync(path)))).toEqual(before)
+    expect(existsSync(join(fixture.root, 'coverage/accepted.json'))).toBe(true)
   } finally {
-    rmSync(run.root, { recursive: true, force: true })
+    fixture.dispose()
   }
-})
+}, 120000)
 
-it('propagates a real second-process assertion failure when the first group succeeds', async () => {
-  const run = fixture("expect(value()).toBe('isolated')")
+it('retains a real failed second lane after the first succeeds and never retries it', async () => {
+  const fixture = nativePublicationFixture('expect(value()).toBe(0)')
   try {
-    await expect(runTestGroups(run)).rejects.toThrow(TestProcessError)
-  } finally {
-    rmSync(run.root, { recursive: true, force: true })
-  }
-})
-
-it('rejects missing source coverage when both processes pass', async () => {
-  const run = fixture()
-  try {
-    await expect(
-      runTestGroups({ ...run, required: ['missing.ts'] }),
-    ).rejects.toThrow(CoverageError)
-  } finally {
-    rmSync(run.root, { recursive: true, force: true })
-  }
-})
-
-it('refuses an empty configured group when the harness would omit its tests', async () => {
-  const run = fixture()
-  try {
-    await expect(
-      runTestGroups({
-        ...run,
-        groups: { isolated: [], runtime: run.groups.runtime },
+    beginPublication(fixture.root)
+    expect((await fixture.lane('root')).code).toBe(0)
+    recordRoot(fixture.root, ['source.ts'])
+    const result = await fixture.lane('vite')
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('1 fail')
+    expect(() =>
+      acceptPublication(fixture.root, {
+        root: ['source.ts'],
+        vite: ['source.ts'],
       }),
-    ).rejects.toThrow(CoverageError)
+    ).toThrow()
+    expect(existsSync(join(fixture.root, 'coverage/accepted.json'))).toBe(false)
   } finally {
-    rmSync(run.root, { recursive: true, force: true })
+    fixture.dispose()
+  }
+}, 120000)
+
+it('rejects an empty required native selection before launch', async () => {
+  const fixture = nativeFixture({})
+  try {
+    await expect(fixture.run([])).rejects.toThrow('empty native lane')
+  } finally {
+    fixture.dispose()
   }
 })
 
-it('propagates the launch error when the test executable is absent', async () => {
-  const run = fixture()
+it('distinguishes watchdog cleanup from a natural child exit and drains the streams', async () => {
+  const fixture = nativeFixture({})
   try {
-    await expect(
-      runTestGroups(run, join(run.root, 'missing-executable')),
-    ).rejects.toThrow(Error)
+    writeFileSync(join(fixture.root, 'wait.ts'), 'setInterval(()=>{},1000)')
+    const result = await nativeProcess({
+      root: fixture.root,
+      executable: process.execPath,
+      args: ['wait.ts'],
+      timeout: 100,
+    })
+    expect(result.cleanupRequested).toBe(true)
+    expect(result.naturalExit).toBeNull()
+    expect(result.drained).toBe(true)
+    expect(result.code !== 0 || result.signal !== null).toBe(true)
   } finally {
-    rmSync(run.root, { recursive: true, force: true })
-  }
-})
-
-it.each(['', '1 pass', '0 fail'])(
-  'refuses incomplete child totals when output is %s',
-  (output) => {
-    expect(() => parseTestResult(output)).toThrow(CoverageError)
-  },
-)
-
-it('returns success exactly once when root preload finishes the real synthetic groups', async () => {
-  const run = fixture()
-  try {
-    expect(await prepareTests(undefined, run)).toBe(0)
-  } finally {
-    rmSync(run.root, { recursive: true, force: true })
-  }
-})
-
-it('returns failure instead of retrying discovery when root preload sees a failed child', async () => {
-  const run = fixture("expect(value()).toBe('isolated')")
-  try {
-    expect(await prepareTests(undefined, run)).toBe(1)
-  } finally {
-    rmSync(run.root, { recursive: true, force: true })
+    fixture.dispose()
   }
 })

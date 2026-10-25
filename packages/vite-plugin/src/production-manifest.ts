@@ -225,11 +225,7 @@ async function prepareManifest(
     const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
     const files = [...memberships.values()]
       .sort(
-        (a, b) =>
-          compare(a.realPath, b.realPath) ||
-          compare(a.path, b.path) ||
-          compare(a.context, b.context) ||
-          compare(a.id, b.id),
+        (a, b) => compare(a.realPath, b.realPath) || compare(a.path, b.path),
       )
       .filter((file) => {
         if (!gate.selected(file.path) || /\.d\.[mc]?ts$/i.test(file.path))

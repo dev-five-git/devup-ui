@@ -12,6 +12,8 @@ import {
   scanImports,
 } from '@devup-ui/plugin-utils'
 
+import { resolutionPayload } from './nonphysical-modules'
+
 class RootSourceError extends Error {
   readonly name = 'RootSourceError'
   constructor(
@@ -108,20 +110,14 @@ export function productionRootClosure(
     )) {
       const resolution = resolver(reference.specifier, path)
       if (!resolution) continue
-      switch (resolution.ignored) {
-        case true:
-          break
-        case undefined:
-          reached.add(resolution.path)
-          result.push({
-            path: resolution.path,
-            realPath: realpathSync.native(resolution.path),
-          })
-          resolvedImports.push({ kind: reference.kind, path: resolution.path })
-          break
-        default:
-          resolution satisfies never
-      }
+      const source = resolutionPayload(resolution)
+      if (source === null) continue
+      reached.add(source.path)
+      result.push({
+        path: source.path,
+        realPath: realpathSync.native(source.path),
+      })
+      resolvedImports.push({ kind: reference.kind, path: source.path })
     }
     adjacency.set(path, result)
     context.onImports?.(path, resolvedImports)

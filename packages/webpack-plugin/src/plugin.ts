@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 
 import {
@@ -691,10 +690,7 @@ export class DevupUIWebpackPlugin {
 
     const exclude = this.excludeModules
     // CJS bundles must resolve from their installed module, not a baked source URL.
-    const resolveLoader =
-      typeof require === 'function'
-        ? require.resolve
-        : createRequire(import.meta.url).resolve
+    const resolveLoader = require.resolve
     const configurationFiles = () => [
       ...(existsDevup ? [resolve(options.devupFile)] : []),
       ...tailwindFiles.map((file) => resolve(file)),

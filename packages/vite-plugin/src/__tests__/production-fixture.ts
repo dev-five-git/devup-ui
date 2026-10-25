@@ -16,6 +16,7 @@ import { build, type Plugin, resolveConfig, type UserConfig } from 'vite'
 import { DevupUI } from '../plugin'
 import { productionEngine } from '../production-engine'
 import { ProductionActivation } from '../production-numbering'
+import { nativeWatcher } from './native-watcher'
 
 export function extractOwned(color: string, id = 'owned.tsx') {
   wasm.registerTheme({})
@@ -198,7 +199,7 @@ export async function productionFixture() {
       readonly code: string
       readonly css: string
     }[] = []
-    const watcher = await build({
+    const result = await build({
       root,
       configFile: false,
       logLevel: 'silent',
@@ -227,8 +228,7 @@ export async function productionFixture() {
         },
       ],
     })
-    if (Array.isArray(watcher) || !('on' in watcher))
-      throw new TypeError('Expected native watcher')
+    const watcher = nativeWatcher(result)
     const next = nativeCompletions(watcher)
     try {
       await next()

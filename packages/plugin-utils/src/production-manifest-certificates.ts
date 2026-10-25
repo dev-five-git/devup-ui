@@ -31,14 +31,34 @@ export interface ManifestObligation {
   state: ManifestState
 }
 
+const namespaces = {
+  file: 'files',
+  package: 'packages',
+} as const satisfies Record<ManifestKind, keyof ManifestAncestry>
 export function manifestNamespace(kind: ManifestKind) {
-  switch (kind) {
-    case 'file':
-      return 'files'
-    case 'package':
-      return 'packages'
-    default:
-      return kind satisfies never
+  return namespaces[kind]
+}
+export function manifestNode(
+  evidence: ManifestEvidence,
+): ManifestObligation | null {
+  switch (evidence.kind) {
+    case 'node':
+      return evidence.node
+    case 'cut':
+    case 'closed':
+      return null
+  }
+}
+export function manifestEdges(
+  state: ManifestState,
+): readonly ManifestEdge[] | null {
+  switch (state.phase) {
+    case 'expanded':
+      return state.edges
+    case 'pending':
+    case 'expanding':
+    case 'completed':
+      return null
   }
 }
 export function manifestJobKey(job: ManifestJob): string {
@@ -140,12 +160,8 @@ export class ManifestCertificates {
           case 'expanded':
             if (conditional) return evidence.node.ancestry
             throw new ManifestClosureError('dependency-open')
-          default:
-            return state satisfies never
         }
       }
-      default:
-        return evidence satisfies never
     }
   }
 
@@ -162,23 +178,16 @@ export class ManifestCertificates {
       }
     >()
     for (const node of component) {
-      const state = node.state
-      switch (state.phase) {
-        case 'expanded':
-          internal.set(node, {
-            files: new Set(),
-            packages: new Set(),
-            edges: state.edges,
-          })
-          break
-        case 'pending':
-        case 'expanding':
-        case 'completed':
-          if (!conditional) throw new ManifestClosureError('member-open')
-          break
-        default:
-          state satisfies never
+      const edges = manifestEdges(node.state)
+      if (edges === null) {
+        if (!conditional) throw new ManifestClosureError('member-open')
+        continue
       }
+      internal.set(node, {
+        files: new Set(),
+        packages: new Set(),
+        edges,
+      })
     }
     // Calculation sets are private until every outside proof and the least fixed point succeeds.
     let changed = true

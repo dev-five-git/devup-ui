@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 
 import type {
+  IgnoredModule,
   ModuleResolution,
   PreparedSource,
   ProductionManifestFile,
@@ -45,6 +46,17 @@ async function exists(path: string): Promise<boolean> {
     )
       return false
     throw error
+  }
+}
+
+export function resolutionPayload<
+  Resolved extends { readonly ignored?: never },
+>(resolution: Resolved | IgnoredModule): Resolved | null {
+  switch (resolution.ignored) {
+    case true:
+      return null
+    case undefined:
+      return resolution
   }
 }
 
@@ -129,25 +141,18 @@ export class NonphysicalModules {
     classify?: ExtractionRoot['classify'],
   ): void {
     if (result === undefined) return
-    switch (result.ignored) {
-      case true:
-        return
-      case undefined: {
-        const path = barePhysicalPath(result.path)
-        if (path !== undefined) this.paths.set(result.path, path)
-        const code = result.code
-        this.observe(result.path, classify?.(result.path, code))
-        this.pending.get(nativeId)?.set(result.path, {
-          code,
-          ...(result.sourceType === undefined
-            ? {}
-            : { sourceType: result.sourceType }),
-        })
-        return
-      }
-      default:
-        return result satisfies never
-    }
+    const source = resolutionPayload(result)
+    if (source === null) return
+    const path = barePhysicalPath(source.path)
+    if (path !== undefined) this.paths.set(source.path, path)
+    const code = source.code
+    this.observe(source.path, classify?.(source.path, code))
+    this.pending.get(nativeId)?.set(source.path, {
+      code,
+      ...(source.sourceType === undefined
+        ? {}
+        : { sourceType: source.sourceType }),
+    })
   }
 
   source(path: string): PreparedSource {

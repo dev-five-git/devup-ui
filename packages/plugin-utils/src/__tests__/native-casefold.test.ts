@@ -12,8 +12,6 @@ import { dirname, join } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
-import { discoverTests } from '../../../../test-harness/groups'
-
 it('preserves original paths when native discovery casefolds suffixes, extensions and directory boundaries', () => {
   // Given: independently named upper/mixed witnesses for every native suffix and extension.
   const root = realpathSync.native(
@@ -71,7 +69,6 @@ it('preserves original paths when native discovery casefolds suffixes, extension
     // Then: actual native witnesses and the discoverer agree, retaining original spelling.
     expect(native.status).toBe(0)
     expect(executed).toEqual(expected)
-    expect(discoverTests(root)).toEqual(executed)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

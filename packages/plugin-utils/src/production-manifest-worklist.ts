@@ -3,10 +3,12 @@ import {
   ManifestCertificates,
   manifestCovers,
   type ManifestEdge,
+  manifestEdges,
   type ManifestEvidence,
   type ManifestJob,
   manifestJobKey,
   manifestNamespace,
+  manifestNode,
   type ManifestObligation,
 } from './production-manifest-certificates'
 import type { ProductionSourceFile } from './production-source-files'
@@ -62,17 +64,10 @@ export class ManifestWorklist {
     root?: ManifestObligation[],
   ): ManifestEvidence | undefined {
     if (!this.owner.admit(job)) return undefined
-    switch (job.kind) {
-      case 'file':
-        this.owner.record({ path: job.path, realPath: job.realPath })
-        break
-      case 'package':
-        break
-      default:
-        job.kind satisfies never
-    }
-    if (ancestry[manifestNamespace(job.kind)].has(job.realPath))
-      return { kind: 'cut', job }
+    const namespace = manifestNamespace(job.kind)
+    if (namespace === 'files')
+      this.owner.record({ path: job.path, realPath: job.realPath })
+    if (ancestry[namespace].has(job.realPath)) return { kind: 'cut', job }
     const witness = this.#certificates.lookup(job, ancestry)
     if (witness) return { kind: 'closed', witness }
     const key = manifestJobKey(job)
@@ -84,17 +79,7 @@ export class ManifestWorklist {
     const candidates = new Set(
       root?.filter((node) => {
         if (manifestJobKey(node.job) !== key) return false
-        const state = node.state
-        switch (state.phase) {
-          case 'expanded':
-            return true
-          case 'pending':
-          case 'expanding':
-          case 'completed':
-            return false
-          default:
-            return state satisfies never
-        }
+        return manifestEdges(node.state) !== null
       }),
     )
     if (root && candidates.size) {
@@ -127,16 +112,8 @@ export class ManifestWorklist {
       packages: new Set(),
     })
     if (!evidence) return
-    switch (evidence.kind) {
-      case 'node':
-        this.#origins.push(evidence.node)
-        break
-      case 'cut':
-      case 'closed':
-        break
-      default:
-        evidence satisfies never
-    }
+    const node = manifestNode(evidence)
+    if (node) this.#origins.push(node)
   }
 
   async #enter(node: ManifestObligation): Promise<Frame | undefined> {
@@ -182,30 +159,22 @@ export class ManifestWorklist {
         }
         const edge = frame.edges[frame.cursor++]
         if (edge) {
-          const evidence = edge.evidence
-          switch (evidence.kind) {
-            case 'node': {
-              const previous = this.#visits.get(evidence.node)
-              if (previous) {
-                if (previous.active)
-                  frame.visit.lowlink = Math.min(
-                    frame.visit.lowlink,
-                    previous.index,
-                  )
-              } else {
-                const child = await this.#enter(evidence.node)
-                if (child) {
-                  frame.child = child.visit
-                  frames.push(child)
-                }
+          const node = manifestNode(edge.evidence)
+          if (node) {
+            const previous = this.#visits.get(node)
+            if (previous) {
+              if (previous.active)
+                frame.visit.lowlink = Math.min(
+                  frame.visit.lowlink,
+                  previous.index,
+                )
+            } else {
+              const child = await this.#enter(node)
+              if (child) {
+                frame.child = child.visit
+                frames.push(child)
               }
-              break
             }
-            case 'cut':
-            case 'closed':
-              break
-            default:
-              evidence satisfies never
           }
           continue
         }

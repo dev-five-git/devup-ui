@@ -108,6 +108,14 @@ export function environment(
   }
 }
 
+export function lifecycleHook(hook: unknown): unknown {
+  return typeof hook === 'function'
+    ? hook
+    : typeof hook === 'object' && hook !== null && 'handler' in hook
+      ? hook.handler
+      : undefined
+}
+
 export async function lifecycle(options: Parameters<typeof DevupUI>[0] = {}) {
   const project = fixture()
   project.write('devup.json', '{}')
@@ -126,22 +134,8 @@ export async function lifecycle(options: Parameters<typeof DevupUI>[0] = {}) {
   const buildApp: unknown = Reflect.get(raw, 'buildApp')
   const plugin: unknown = {
     ...raw,
-    transform:
-      typeof transform === 'function'
-        ? transform
-        : typeof transform === 'object' &&
-            transform !== null &&
-            'handler' in transform
-          ? transform.handler
-          : undefined,
-    buildApp:
-      typeof buildApp === 'function'
-        ? buildApp
-        : typeof buildApp === 'object' &&
-            buildApp !== null &&
-            'handler' in buildApp
-          ? buildApp.handler
-          : undefined,
+    transform: lifecycleHook(transform),
+    buildApp: lifecycleHook(buildApp),
   }
   assert(isLifecyclePlugin(plugin))
   const config = { root: project.root, command: 'serve' as const }

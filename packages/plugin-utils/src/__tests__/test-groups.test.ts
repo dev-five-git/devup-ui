@@ -1,78 +1,89 @@
-import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
-import {
-  discoverTests,
-  groupRules,
-  parseTestGroup,
-  partitionTests,
-  TestGroupingError,
-} from '../../../../test-harness/groups'
-import { rootTestRun } from '../../../../test-harness/run'
-
-const root = fileURLToPath(new URL('../../../../', import.meta.url))
-
-it('assigns every actual test exactly once when the full root is discovered', () => {
-  const files = discoverTests(root)
-  const groups = rootTestRun(root).groups
-  const assigned = [...groups.isolated, ...groups.runtime].sort()
-  expect(assigned).toEqual(files)
-  expect(new Set(assigned).size).toBe(files.length)
-  expect(
-    groups.runtime.every((file) =>
-      /packages\/(bun-plugin|components|react|rsbuild-plugin|vite-plugin)\//.test(
-        file,
-      ),
-    ),
-  ).toBe(true)
-  expect(
-    groups.isolated.some((file) => file.endsWith('mixed-admission.test.ts')),
-  ).toBe(true)
-})
-
-it.each([
-  { files: ['packages/unknown/src/x.test.ts'], rules: groupRules },
-  {
-    files: [
-      'packages/plugin-utils/src/x.test.ts',
-      'packages/plugin-utils/src/x.test.ts',
-    ],
-    rules: groupRules,
-  },
-  {
-    files: ['packages/components/src/x.test.ts'],
-    rules: [
-      ...groupRules,
-      { directory: 'packages/components/src/', group: 'isolated' as const },
-    ],
-  },
-  {
-    files: ['packages/components/src/x.test.ts'],
-    rules: [...groupRules, groupRules[1]].filter((rule) => rule !== undefined),
-  },
-])(
-  'refuses omitted or contradictory discovery when grouping is $files',
-  ({ files, rules }) => {
-    expect(() => partitionTests(files, rules)).toThrow(TestGroupingError)
-  },
-)
-
-it('sorts the explicit groups when discovery arrives in reverse order', () => {
+it('discovers every surviving test exactly once in the two actual native config partitions', () => {
+  const repository = resolve(import.meta.dir, '../../../..')
+  const root = mkdtempSync(join(tmpdir(), 'devup-native-partition-'))
   const files = [
-    'packages/webpack-plugin/z.test.ts',
-    'packages/webpack-plugin/a.test.ts',
+    ...new Bun.Glob('packages/**/*').scanSync({
+      cwd: repository,
+      onlyFiles: true,
+    }),
   ]
-  expect(partitionTests(files).isolated).toEqual([...files].reverse())
-})
-
-it.each([undefined, 'runtime', 'isolated'] as const)(
-  'accepts the known preload role when it is %s',
-  (group) => {
-    expect(parseTestGroup(group)).toBe(group)
-  },
-)
-
-it('fails closed when the child role is unknown', () => {
-  expect(() => parseTestGroup('unknown')).toThrow(TestGroupingError)
-})
+    .map((file) => file.replaceAll('\\', '/'))
+    .filter(
+      (file) =>
+        !file
+          .split('/')
+          .some(
+            (part) =>
+              part.startsWith('.') || part.toLowerCase() === 'node_modules',
+          ),
+    )
+    .filter((file) =>
+      /(?:\.|_)(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|cjs|mts|cts)$/i.test(file),
+    )
+    .sort()
+  try {
+    for (const file of files) {
+      mkdirSync(dirname(join(root, file)), { recursive: true })
+      writeFileSync(
+        join(root, file),
+        `import {it} from 'bun:test';import {appendFileSync} from 'node:fs';it('witness',()=>appendFileSync(process.env.NATIVE_RECEIPT,${JSON.stringify(file + '\n')}))`,
+      )
+    }
+    const witnessed: string[] = []
+    for (const [name, lane] of [
+      ['bunfig.toml', 'root'],
+      ['bunfig.vite.toml', 'vite'],
+    ] as const) {
+      const config = readFileSync(join(repository, name), 'utf8').replace(
+        /^preload = .*$/gm,
+        '',
+      )
+      writeFileSync(join(root, name), config)
+      const receipt = join(root, `${lane}.txt`)
+      const result = spawnSync(
+        process.execPath,
+        [
+          `--config=${join(root, name)}`,
+          'test',
+          ...(lane === 'root' ? ['--isolate'] : []),
+        ],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: { ...process.env, NATIVE_RECEIPT: receipt },
+        },
+      )
+      if (result.error) throw result.error
+      expect(result.status).toBe(0)
+      const executed = readFileSync(receipt, 'utf8')
+        .trim()
+        .split(/\r?\n/)
+        .sort()
+      expect(executed.length).toBeGreaterThan(0)
+      expect(executed).toEqual(
+        files.filter(
+          (file) =>
+            file.startsWith('packages/vite-plugin/') === (lane === 'vite'),
+        ),
+      )
+      witnessed.push(...executed)
+    }
+    expect(witnessed.sort()).toEqual(files)
+    expect(new Set(witnessed).size).toBe(files.length)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 120000)
