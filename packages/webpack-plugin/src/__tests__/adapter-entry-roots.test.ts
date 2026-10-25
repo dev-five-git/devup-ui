@@ -17,12 +17,16 @@ const bundled: { webpack(config: Configuration): Compiler } = landing(
 )
 
 it.each([
-  { closed: true, include: [], scansEntry: false },
+  { closed: true, include: [], singleCss: true, scansEntry: false },
+  { closed: false, include: [], singleCss: true, scansEntry: true },
+  { closed: true, include: ['framework'], singleCss: true, scansEntry: true },
+  { closed: true, include: [], scansEntry: true },
+  { closed: true, include: [], atomHoist: 0, scansEntry: true },
   { closed: false, include: [], scansEntry: true },
   { closed: true, include: ['framework'], scansEntry: true },
 ])(
-  'keeps entry eligibility when closed=$closed include=$include',
-  async ({ closed, include, scansEntry }) => {
+  'keeps entry eligibility when closed=$closed include=$include singleCss=$singleCss atomHoist=$atomHoist',
+  async ({ closed, include, scansEntry, ...options }) => {
     const root = await mkdtemp(join(tmpdir(), 'webpack-adapter-roots-'))
     const source = join(root, 'src', 'main.js')
     const library = join(root, 'node_modules', 'framework')
@@ -40,7 +44,8 @@ it.each([
         entry: join(library, 'entry.js'),
         plugins: [
           new DevupUIWebpackPlugin({
-            include,
+            ...options,
+            include: [...include],
             productionPrewarmFiles: closed ? [source] : undefined,
           }),
         ],

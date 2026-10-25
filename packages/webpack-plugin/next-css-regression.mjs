@@ -21,6 +21,10 @@ import {
   pluginUtilsFixtureManifest,
   webpackFixtureManifest,
 } from './native-fixture-bundle.mjs'
+import {
+  assertClientIdentities,
+  writeClientFixture,
+} from './next-css-client-assertions.mjs'
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const installed = createRequire(join(workspace, 'apps/landing/package.json'))
@@ -99,8 +103,9 @@ try {
   )
   write(
     'app/page.jsx',
-    `import {Box} from '@devup-ui/react'; export default function Page(){return <Box as="section" bg="red">${marker}</Box>}`,
+    `import {Box} from '@devup-ui/react';import Client from './client'; export default function Page(){return <><Box as="section" bg="red">${marker}</Box><Client tone="rebeccapurple"/></>}`,
   )
+  writeClientFixture(write)
   write(
     'next.config.mjs',
     `import {DevupUI} from '@devup-ui/next-plugin';
@@ -218,6 +223,7 @@ if(typeof config.webpack!=='function'||config.experimental.webpackBuildWorker!==
     ),
     'HTML-linked native class CSS missing; disk CSS is not acceptance',
   )
+  assertClientIdentities(html, css)
 } finally {
   clearTimeout(timer)
   const evidence = {

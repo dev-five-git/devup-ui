@@ -365,6 +365,7 @@ export class DevupUIWebpackPlugin {
             (directory) =>
               directory !== resolve(cwd) &&
               (this.options.productionPrewarmFiles === undefined ||
+                !this.options.singleCss ||
                 !this.excludeModules.test(directory)),
           ),
       ]),
