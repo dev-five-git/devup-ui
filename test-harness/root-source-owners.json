@@ -5,6 +5,7 @@
   "packages/bun-plugin/src/__tests__/captured-hooks.test-support.ts",
   "packages/next-plugin/src/__tests__/atom-hoist-harness.ts",
   "packages/next-plugin/src/__tests__/availability-harness.ts",
+  "packages/next-plugin/src/__tests__/imported-styled-render.ts",
   "packages/plugin-utils/src/__tests__/alias-array-fixture.ts",
   "packages/plugin-utils/src/__tests__/import-type-fixtures.ts",
   "packages/plugin-utils/src/__tests__/jsx-boundary-fixtures.ts",

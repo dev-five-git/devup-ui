@@ -8,8 +8,20 @@ mod class_arguments;
 mod class_names_binding_tests;
 #[cfg(test)]
 mod class_names_numeric_tests;
+#[cfg(test)]
+mod class_selection_expectations;
+#[cfg(test)]
+mod class_selection_fixtures;
+#[cfg(test)]
+mod class_selection_state;
+#[cfg(test)]
+mod class_selection_support;
+#[cfg(test)]
+mod class_selection_tests;
 mod component;
 mod composition;
+#[cfg(test)]
+mod css_composition_rest_tests;
 mod css_prop;
 #[cfg(test)]
 mod css_prop_contract_tests;
@@ -46,7 +58,13 @@ mod quoted_strings_tests;
 pub mod reservation_state;
 #[cfg(test)]
 mod responsive_selector_tests;
+#[cfg(test)]
+mod retained_render_assertions;
+#[cfg(test)]
+mod retained_render_support;
 mod scope;
+#[cfg(test)]
+mod selector_array_units_tests;
 mod source_map;
 mod style_collector;
 mod style_values;
@@ -758,7 +776,7 @@ fn extract_source(
         })?;
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
-    let inlined = if processed_code.is_none() {
+    let mut inlined = if processed_code.is_none() {
         imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
             &mut program,
@@ -786,6 +804,7 @@ fn extract_source(
             &option,
             resolver,
             css_prop,
+            &mut inlined.scoping,
         )
     } else {
         imported_styled::Reading::default()
@@ -803,6 +822,7 @@ fn extract_source(
     );
     visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.import_css(inlined.css_styles);
+    visitor.errors.extend(inlined.errors);
     visitor.unknown_bindings(&inlined.unknown);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
@@ -15907,164 +15927,6 @@ const Button = styled.button({ bg: 'red' })
         }
     }
 
-    // A later part of `css(...)` replaces an earlier part's declaration of the
-    // same property, selector, breakpoint and layer, whatever the stylesheet
-    // order of their classes
-    #[rstest]
-    #[case(
-        "css(yellow, azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(azure, yellow)",
-        r#""background-0-black--255 color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css({ color: 'green' }, yellow)",
-        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css(yellow, { color: 'green' })",
-        r#""color-0-red-_a__c_hover-255 color-0-green--255""#
-    )]
-    #[case(
-        "css([yellow, azure])",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(...[yellow, azure])",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, null, undefined, false, azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, on && azure)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "background-0-black--255" : ""} ${on ? "color-0-azure--255" : "color-0-yellow--255"}`"#
-    )]
-    #[case(
-        "css(on ? yellow : azure)",
-        r#"`${on ? "color-0-red-_a__c_hover-255" : ""} ${on ? "color-0-yellow--255" : "color-0-azure--255"} ${on ? "" : "background-0-black--255"}`"#
-    )]
-    #[case(
-        "css(yellow, on ? { color: 'pink' } : null)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-yellow--255"}`"#
-    )]
-    #[case(
-        "css(yellow, { color: on ? 'pink' : 'teal' })",
-        r#"`color-0-red-_a__c_hover-255 ${on ? "color-0-pink--255" : "color-0-teal--255"}`"#
-    )]
-    #[case(
-        "css(yellow, ext, azure)",
-        r"`color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255 ${ext}`"
-    )]
-    #[case(
-        "css(yellow, on ? 'plain' : azure)",
-        r#"`${on ? "plain" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
-    )]
-    #[case(
-        "css(azure, wide)",
-        r#""background-0-black--255 color-0-a1--255 color-1-b1--255""#
-    )]
-    #[case(
-        "css(wide, { color: [null, 'x2'] })",
-        r#""color-0-a1--255 color-1-x2--255""#
-    )]
-    #[case(
-        "css(yellow, ordered)",
-        r#""color-0-red-_a__c_hover-255 color-0-navy--3""#
-    )]
-    #[case("css(heading, body)", r#""typo-body""#)]
-    #[case(
-        "css(chained, { color: 'gold' })",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-gold--255""#
-    )]
-    #[case(
-        "css(yellow, { color: { a: 'red', b: 'blue' }[size] })",
-        r"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{"
-    )]
-    #[case(
-        "css(yellow, on ? { color: { a: 'red' }[size] } : null)",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? { "a": "color-0-red--255" }[size] || "" : ""}`"#
-    )]
-    #[case(
-        "css(yellow, on || azure)",
-        r#"`${on ? typeof on === "string" ? on : "" : ""} ${`color-0-red-_a__c_hover-255 ${on ? "" : "background-0-black--255"} ${on ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
-    )]
-    #[case(
-        "css(yellow, ext ?? azure)",
-        r#"`${ext != null ? typeof ext === "string" ? ext : "" : ""} ${`color-0-red-_a__c_hover-255 ${ext != null ? "" : "background-0-black--255"} ${ext != null ? "color-0-yellow--255" : "color-0-azure--255"}`}`"#
-    )]
-    #[case(
-        "css(yellow, null ?? azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, false ?? azure)",
-        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css(azure || yellow)",
-        r#""background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, on || 'plain')",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${on ? typeof on === "string" ? on : "" : "plain"}`"#
-    )]
-    #[case(
-        "css(yellow, { color: on ? 'a' : 'b', m: [1, 2], styleOrder: 2 })",
-        r#"`color-0-red-_a__c_hover-255 margin-0-4px--2 margin-1-8px--2 ${on ? "color-0-a--2" : "color-0-b--2"}`"#
-    )]
-    #[case(
-        "css(yellow, { color: { a: 'x' }[size], styleOrder: 2 })",
-        r#"`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{ "a": "color-0-x--2" }[size] || ""}`"#
-    )]
-    #[case(
-        "css(yellow, on ? { color: other ? 'a' : 'b' } : null)",
-        r#"`color-0-red-_a__c_hover-255 ${on ? other ? "color-0-a--255" : "color-0-b--255" : "color-0-yellow--255"}`"#
-    )]
-    #[case(
-        "css(yellow, fade)",
-        r#""k-525370705245237976 color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[case(
-        "css(yellow, { color: ['x', 'y'][idx], styleOrder: 2 })",
-        "`color-0-red-_a__c_hover-255 color-0-yellow--255 ${{\n\t\"0\": \"color-0-x--2\",\n\t\"1\": \"color-0-y--2\"\n}[idx] || \"\"}`"
-    )]
-    #[case(
-        "css(yellow, { color: 'pink' } || azure)",
-        r#""color-0-red-_a__c_hover-255 color-0-pink--255""#
-    )]
-    #[case(
-        "css(yellow, undefined ?? azure)",
-        r#""color-0-red-_a__c_hover-255 background-0-black--255 color-0-azure--255""#
-    )]
-    #[case(
-        "css(yellow, false ?? azure)",
-        r#""color-0-red-_a__c_hover-255 color-0-yellow--255""#
-    )]
-    #[serial]
-    fn test_css_composes_known_classes(#[case] call: &str, #[case] expected: &str) {
-        let code = readable_code(&format!(
-            "import {{css, keyframes}} from '@devup-ui/core'
-const yellow = css({{ color: 'yellow', _hover: {{ color: 'red' }} }})
-const azure = css({{ color: 'azure', bg: 'black' }})
-const wide = css({{ color: ['a1', 'b1'] }})
-const ordered = css({{ color: 'navy', styleOrder: 3 }})
-const heading = css({{ typography: 'heading' }})
-const body = css({{ typography: 'body' }})
-const chained = css(yellow, azure)
-const fade = keyframes({{ from: {{ opacity: 0 }} }})
-export const result = {call}
-"
-        ));
-        assert!(
-            code.contains(&format!("export const result = {expected}")),
-            "{code}"
-        );
-    }
-
     #[test]
     #[serial]
     fn test_styled_extension_composes_base() {
@@ -16098,8 +15960,8 @@ const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
     #[test]
     #[serial]
     fn test_styled_with_component_and_as() {
-        let code = readable_code(
-            "import {styled} from '@devup-ui/core'
+        let _state = crate::test_state::TestStateGuard::new();
+        let source = "import {styled} from '@devup-ui/core'
 const Section = styled.section.attrs({ role: 'region' })({ color: 'red' })
 export const Aside = Section.withComponent('aside')
 export const Linked = Section.withComponent(Link)
@@ -16107,12 +15969,10 @@ export const Nested = Section.withComponent(motion.div)
 export const Again = Aside.withComponent('nav')
 export const Kept = Section.withComponent(make())
 export const Other = other.withComponent('aside')
-export const a = <Section as=\"a\" forwardedAs=\"b\" />",
-        );
+export const a = <Section as=\"a\" forwardedAs=\"b\" />";
+        let code = readable_code(source);
         for expected in [
             "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"c-0-Aside color-0-red--255\", className]",
-            "as: DevupAs = Link,",
-            "as: DevupAs = motion.div,",
             "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
@@ -16121,6 +15981,7 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
+        let _proof = crate::retained_render_assertions::retarget(source);
     }
 
     // A styled component keeps the props its styles read, `$` props and `theme`
@@ -16129,8 +15990,8 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />",
     #[test]
     #[serial]
     fn test_styled_prop_forwarding() {
-        let code = readable_code(
-            "import {styled} from '@devup-ui/core'
+        let _state = crate::test_state::TestStateGuard::new();
+        let source = "import {styled} from '@devup-ui/core'
 import isPropValid from '@emotion/is-prop-valid'
 const A = styled('h1', { shouldForwardProp: (prop) => prop !== 'tone' })({ color: 'red' })
 const B = styled.div`color: ${(p) => p.$c}; background: ${(p) => p.tone};`
@@ -16149,19 +16010,16 @@ export const a = <A tone=\"loud\" invalidThing=\"x\" data-ok=\"yes\" />
 export const b = <B tone=\"x\" $c=\"red\" theme={{}} aria-label=\"ok\" junk=\"j\" {...rest} />
 export const j = <J junk=\"j\" />
 export const f = <F junk=\"j\" xlink:href=\"#a\" />
-export const k = <K title=\"t\" tone=\"x\" />",
-        );
+export const k = <K title=\"t\" tone=\"x\" />";
+        let code = readable_code(source);
         for expected in [
             "{...Object.fromEntries(Object.entries((({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
-            "{...Object.fromEntries(Object.entries((({ \"$c\": __devupOmit0, \"tone\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
             "{...Object.fromEntries(Object.entries((({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
-            "{...Object.fromEntries(Object.entries((({ \"$c\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
             "export const f = <F junk=\"j\" xlink:href=\"#a\" />",
             "export const k = <K title=\"t\" />",
-            "{...Object.fromEntries(Object.entries((({ \"level\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
         }
@@ -16187,6 +16045,7 @@ const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ colo
             "{error}"
         );
         assert!(error.contains("allowed.has(prop)"), "{error}");
+        let _proof = crate::retained_render_assertions::forwarding(source);
     }
 
     #[test]
@@ -16380,7 +16239,6 @@ export const d = css(ordered, danger, called);",
         css::debug::set_debug(false);
         for expected in [
             r#"export const a = "color-0-red-_a__c_hover-255-a color-0-crimson--255-a";"#,
-            r#"export const b = "color-0-red-_a__c_hover-255-a color-0-teal--255-a margin-0-4px--255-a";"#,
             "export const c = `color-0-a--255-a margin-0-4px--255-a ${text} ${listed} ${spaced} ${fade}`;",
             "export const d = `margin-0-8px--2-a color-0-crimson--255-a ${called}`;",
         ] {
@@ -16389,6 +16247,9 @@ export const d = css(ordered, danger, called);",
                 "{expected} in {}",
                 output.code
             );
+        }
+        for single_css in [false, true] {
+            crate::class_selection_tests::imported_b(single_css);
         }
     }
 
@@ -20581,16 +20442,14 @@ const Themed = styled('div')({ color: (p) => p.theme.brand });"
         )));
         reset_class_map();
         reset_file_map();
-        assert_eq!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 "import { styled } from '@devup-ui/react';\nconst Plain = styled('span')({ color: (p) => p.color });",
                 ExtractOption::default(),
             )
-            .unwrap_err()
-            .to_string(),
-            "test.tsx:2:39: `styled()` cannot use `(p) => p.color` at build time: its styles must be an object literal or a constant object, or be computed from constants"
-        );
+            .unwrap()
+        ));
     }
 
     #[test]
@@ -23374,7 +23233,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
         );
         assert_eq!(
             result.err().map(|error| error.to_string()),
-            Some("test.tsx:2:1: Cannot compose `(p) => { return p.cls; }` at build time: each style must be a rule object, a class, or a condition choosing between them".to_string()),
+            Some("test.tsx:2:12: `styled()` cannot use `(p) => { return p.cls; }` at build time: a style function of the props must give one rule object at once, with every entry written out, as `(props) => ({ color: props.color })`".to_string()),
         );
     }
 
@@ -24227,7 +24086,9 @@ injectGlobal`body { margin: 0; }`;",
             "export const App = () => <ClassNames>{({ theme }) => <a title={theme.name} />}</ClassNames>;",
             "export const App = () => <ClassNames>{({ css, theme }) => <a className={css({ margin: theme.space(2) })} />}</ClassNames>;",
             "export const App = () => <ClassNames>{({ css }) => <a ref={css} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ css }) => <a className={css(getClass())} />}</ClassNames>;",
             "export const App = () => <ClassNames>{({ cx }) => <a className={cx(getClass())} />}</ClassNames>;",
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx(new Klass())} />}</ClassNames>;",
             "export const App = ({ s }) => <ClassNames>{({ cx }) => <a className={cx({ ...s })} />}</ClassNames>;",
             "export const App = () => <ClassNames>{({ cx }) => <a className={cx({ get a() { return true; } })} />}</ClassNames>;",
             "export const App = ({ s }) => <ClassNames>{({ css }) => <a className={css(...s)} />}</ClassNames>;",
@@ -24556,6 +24417,197 @@ export const k = (cls) => merge([cls]);"
 
     #[test]
     #[serial]
+    fn test_style_objects_declared_in_functions() {
+        let devup = "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\n";
+        let cases: Vec<String> = [
+            "export function f() { const inner = { color: 'red' }; return css(inner); }",
+            "export function f() { const a = { color: 'red' }; const b = { color: 'blue', margin: 1 }; return css(a, b); }",
+            "export function f(on) { const a = { color: 'red' }; return css(on && a, { margin: 1 }); }",
+            "export function f() { const inner = { color: 'red' }; console.log(inner); return css(inner); }",
+            "export function f() { const inner = { color: 'red' }; inner.color = 'blue'; return css(inner); }",
+            "export function f(c) { const inner = { color: c }; return css(inner); }",
+            "export function f() { const parts = [{ color: 'red' }, { margin: 1 }]; return css(parts); }",
+            "export function f() { const inner = { color: 'red' }; return css(...[inner]); }",
+            "export function f() { const inner = { color: 'red' }; return styled.div(inner); }",
+            "export function f() { const inner = { color: 'red' }; return styled('div')(inner); }",
+            "export function f(c) { const inner = { color: c }; return styled.div(inner); }",
+            "export function f() { const inner = { body: { color: 'red' } }; return globalCss(inner); }",
+            "export function f(c) { const inner = { body: { color: c } }; return globalCss(inner); }",
+            "export function f() { const inner = { from: { opacity: 0 }, to: { opacity: 1 } }; return keyframes(inner); }",
+            "export function f(c) { const inner = { from: { opacity: c } }; return keyframes(inner); }",
+            "export function f() { const inner = { color: 'red' }; return <Box {...inner} />; }",
+            "export function f() { const inner = { color: 'red' }; return <Box _hover={inner} />; }",
+            "export function f() { const inner = { color: 'red' }; return <Box _hover={inner} {...inner} />; }",
+            "export function f(c) { const inner = { color: c }; return <Box {...inner} />; }",
+            "export function f() { const inner = { color: 'red' }; const cls = 'x'; return css(inner, cls); }",
+            "export function f() { const inner = ({ color: ('red') }); return css(inner); }",
+        ]
+        .iter()
+        .map(|case| format!("{devup}{case}"))
+        .collect();
+        let borrowed: Vec<&str> = cases.iter().map(String::as_str).collect();
+        assert_debug_snapshot!(library_outputs(&borrowed, SIZE_MODULES));
+    }
+
+    #[test]
+    #[serial]
+    fn test_style_objects_declared_in_functions_of_other_libraries() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import { css } from '@emotion/react';\nexport function f() { const inner = { color: 'red', padding: 8 }; return css(inner); }",
+                "import { css } from '@emotion/react';\nexport function f(c) { const inner = { color: c }; return css(inner); }",
+                "import styled from '@emotion/styled';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
+                "import styled from '@emotion/styled';\nexport function f(c) { const inner = { color: c }; return styled.div(inner); }",
+                "import styled, { css } from 'styled-components';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
+                "import styled, { css } from 'styled-components';\nexport function f() { const inner = { color: 'red' }; return css(inner); }",
+                "import { style } from '@vanilla-extract/css';\nexport function f() { const inner = { color: 'red' }; return style(inner); }",
+                "import { style } from '@vanilla-extract/css';\nexport function f(c) { const inner = { color: c }; return style(inner); }",
+                "import { Global } from '@emotion/react';\nexport function f() { const inner = { body: { margin: 8 } }; return <Global styles={inner} />; }",
+                "import { ClassNames } from '@emotion/react';\nexport function f() { const inner = { color: 'red' }; return <ClassNames>{({ css }) => <a className={css(inner)} />}</ClassNames>; }",
+                "import { css } from '@emotion/react';\nexport function f() { const inner = { color: 'red' }; return <div css={inner} />; }",
+            ],
+            SIZE_MODULES
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_class_names_keeps_calls_as_classes() {
+        let import = "import { ClassNames } from '@emotion/react';\n";
+        let cases = [
+            "export const App = () => <ClassNames>{({ cx }) => <a className={cx(getClass())} />}</ClassNames>;",
+            "export const App = ({ on }) => <ClassNames>{({ css, cx }) => <a className={cx(css({ color: 'red' }), on && getClass(), css({ color: 'blue' }))} />}</ClassNames>;",
+            "export const App = ({ o }) => <ClassNames>{({ cx }) => <a className={cx(o.getClass(), [make(1)], 'x')} />}</ClassNames>;",
+        ];
+        let outputs: Vec<String> = cases
+            .iter()
+            .map(|code| {
+                reset_class_map();
+                reset_file_map();
+                let error =
+                    extract("test.tsx", &format!("{import}{code}"), emotion_option()).unwrap_err();
+                format!("Error: {error}")
+            })
+            .collect();
+        assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_functions_of_the_props_and_arrays_under_conditions() {
+        assert_debug_snapshot!(library_outputs(
+            &[
+                "import styled from '@emotion/styled';\nexport const A = styled.div(function (p) { return { margin: 8, color: p.c }; });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div(({ theme }) => ({ color: theme['colors'].primary, margin: theme.space[2], padding: theme.space[0] }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div((p) => ({ color: () => 'x', margin: p.m }));",
+                "import styled, { css } from 'styled-components';\nexport const A = styled.div((p) => ({ color: p.color, padding: 8, lineHeight: p.lh, '&:hover': { margin: p.m } }));\nexport const B = styled('div')({ width: (p) => p.w });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div((p) => { const x = p.x; return { color: x }; });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div((p) => ({ ...p.rules, color: 'red' }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div((p) => ({ [p.key]: 1 }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div(async (p) => ({ color: p.color }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div`color: red;`.attrs({ id: 'x' });\nexport const B = styled.div.attrs({ id: 'x' })({ color: 'red' });\nexport const C = styled('div').attrs({ id: 'x' })({ color: 'red' });",
+                "import styled from '@emotion/styled';\nexport const B = (on, off) => styled.div(on ? [{ color: 'red' }, { margin: 1 }] : [{ color: 'blue' }], off && [{ width: 2 }]);",
+                "import styled from '@emotion/styled';\nexport const B = (on) => styled.div(on ? [{ color: 'red' }] : null, [on && [{ margin: 1 }]]);",
+                "import styled from '@emotion/styled';\nexport const B = (get) => styled.div(get() && [{ color: 'red' }]);",
+                "import { css } from '@emotion/react';\nexport const a = (on) => css(on ? [{ color: 'red' }] : [{ color: 'blue' }, { margin: 1 }], [on || [{ width: 2 }]]);",
+                "import styled from '@emotion/styled';\nexport const A = styled.div({ color: (p) => p.color, padding: 8, '&:hover': { color: (p) => p.h } });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div({ color: ({ theme }) => theme.colors.primary, margin: ({ theme }) => theme.space[2] });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div({ color: (p) => p.on ? 'red' : 'blue' });",
+                "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond && [{ color: 'red' }, { margin: 1 }], { color: 'blue' });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div(({ on }) => on && [{ color: 'red' }]);\nexport const B = (on) => styled.div(on && [{ color: 'red' }, { margin: 1 }]);",
+                "import styled from '@emotion/styled';\nexport const A = styled.div({ color: 'red' }).attrs({ id: 'x' });",
+                "import styled from '@emotion/styled';\nexport const A = styled.div((props) => ({ color: props.color, padding: 8 }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div({ margin: 1 }, (props) => ({ color: props.color, width: props.w }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div`color: ${(p) => p.color}; padding: ${(p) => p.pad}px; background: ${({ theme }) => theme.bg}`;",
+                "import styled from '@emotion/styled';\nexport const A = styled.div((p) => ({ color: p.on ? 'red' : 'blue', margin: p.m, '&:hover': { color: p.h } }));",
+                "import styled from '@emotion/styled';\nexport const A = styled.div(({ theme }) => ({ color: theme.colors.primary, margin: theme.space[2] }));",
+            ],
+            SIZE_MODULES
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_props_rules_keep_unmapped_theme_guards() {
+        for rules in [
+            "(p) => ({ color: p.theme.colors[key] })",
+            "({ theme }) => ({ color: theme.colors[key] })",
+            "(p) => ({ margin: p.theme.space(2) })",
+            "{ color: (p) => p.theme.colors[key] }",
+            "{ margin: ({ theme }) => theme.space(2) }",
+            "function (p) { return { color: p.theme.colors[key] }; }",
+            "{ color: function (p) { return p.theme.colors[key]; } }",
+            "{ margin: function ({ theme }) { return theme.space(2); } }",
+            "{ color: function (p) { const color = p.theme.colors.primary; return color; } }",
+            "{ color: async function (p) { return p.theme.colors.primary; } }",
+            "{ color: function* (p) { return p.theme.colors.primary; } }",
+            "{ color: async (p) => p.theme.colors.primary }",
+            "(p) => ({ color: p['theme'].colors[key] })",
+            "{ color: (p) => p['theme'].colors[key] }",
+            "({ theme: themeValue }) => ({ color: themeValue.colors[key] })",
+            "{ color: ({ theme: themeValue }) => themeValue.colors[key] }",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let code = format!(
+                "import styled from '@emotion/styled';\nexport const A = styled.div({rules});"
+            );
+            let error = extract("test.tsx", &code, emotion_option())
+                .unwrap_err()
+                .to_string();
+            assert!(error.starts_with("test.tsx:2:"), "{error}");
+            assert!(error.contains("a theme read must be a path"), "{error}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_renamed_theme_roots_keep_located_errors() {
+        for rules in [
+            "({ theme: themeValue }) => ({ color: themeValue.colors[key] })",
+            "{ color: ({ theme: themeValue }) => themeValue.colors[key] }",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let source = format!(
+                "import styled from '@emotion/styled';\nexport const A = styled.div({rules});"
+            );
+            let error = extract("test.tsx", &source, emotion_option())
+                .unwrap_err()
+                .to_string();
+            assert!(error.starts_with("test.tsx:2:"), "{error}");
+            assert!(error.contains("a theme read must be a path"), "{error}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_function_leaves_map_literal_theme_paths() {
+        for rules in [
+            "{ color: function (p) { return p.theme.colors.primary; }, margin: function (p) { return p.theme.space[2]; } }",
+            "{ color: function ({ theme }) { return theme['colors'].primary; }, margin: function ({ theme }) { return theme.space[2]; } }",
+            "{ color: function (p) { return p['theme'].colors.primary; }, margin: function (p) { return p['theme'].space[2]; } }",
+            "{ color: ({ theme: themeValue }) => themeValue.colors.primary, margin: ({ theme: themeValue }) => themeValue.space[2] }",
+            "{ color: function ({ theme: themeValue }) { return themeValue.colors.primary; }, margin: function ({ theme: themeValue }) { return themeValue.space[2]; } }",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let source = format!(
+                "import styled from '@emotion/styled';\nexport const A = styled.div({rules});"
+            );
+            let output = extract("test.tsx", &source, emotion_option()).unwrap();
+            for expected in ["var(--colors-primary)", "var(--space-2)"] {
+                assert!(output.styles.iter().any(|style| {
+                    matches!(style, crate::ExtractStyleValue::Static(style) if style.value() == expected)
+                }));
+            }
+            assert!(!output.code.contains("p.theme"));
+            assert!(!output.code.contains("theme.space"));
+        }
+    }
+
+    #[test]
+    #[serial]
     fn test_emotion_class_calls_follow_the_package_namespace_and_aliases() {
         reset_class_map();
         reset_file_map();
@@ -24583,3 +24635,8 @@ export const e = classNames({ g: 1 }, { h: 8 });",
         assert_debug_snapshot!(output.code);
     }
 }
+
+#[cfg(test)]
+mod emotion_prop_join_support;
+#[cfg(test)]
+mod emotion_prop_join_tests;

@@ -174,17 +174,18 @@ fn direct_css_uses_real_custom_descendant_pair_when_base_is_binding_free(
 }
 
 #[rstest]
-#[case(("const Mid=styled(Target)({color:'green',padding:'2px'});", "2px", None, false))]
-#[case(("const Retarget=Base.withComponent(Target);const Mid=styled(Retarget).attrs(p=>({id:p.source}))({});", "2px", Some("source"), false))]
-#[case(("const Retarget=Base.withComponent(Target);const Mid=styled(Retarget)`padding:${p=>p.space};`;", "4px", None, false))]
-#[case(("const Retarget=Base.withComponent(Target);const Mid=styled(Retarget)('opaque',{});", "2px", None, true))]
+#[case(("const Mid=styled(Target)({color:'green',padding:'2px'});", "2px", None, false), false)]
+#[case(("const Retarget=Base.withComponent(Target);const Mid=styled(Retarget).attrs(p=>({id:p.source}))({});", "2px", Some("source"), false), true)]
+#[case(("const Retarget=Base.withComponent(Target);const Mid=styled(Retarget)`padding:${p=>p.space};`;", "4px", None, false), true)]
+#[case(("const Retarget=Base.withComponent(Target);const Mid=styled(Retarget)('opaque',{});", "2px", None, true), true)]
 #[serial]
 fn excluded_custom_definitions_keep_existing_behavior_without_descendant_capability(
     #[case] fixture: (&str, &str, Option<&str>, bool),
+    #[case] staged: bool,
     #[values(false, true)] readable: bool,
 ) {
     let (definition, padding, id, opaque) = fixture;
-    // Given: arbitrary custom roots, attrs, non-fixed styles and opaque classes stay excluded.
+    // Given: these definitions stay excluded from fixed complete-replacement pairs.
     let base = if readable {
         "import {Base} from './base';"
     } else {
@@ -201,10 +202,10 @@ fn excluded_custom_definitions_keep_existing_behavior_without_descendant_capabil
             ("/src/mid.ts", &middle),
             ("/src/app.ts", app),
         ],
-        "const final=render(jsx(modules['/src/app.ts'].Card,{source:'source',space:'4px',ref:7,children:'child'}));JSON.stringify([slots(frames[0]).length,final.target,values(final,'color'),values(final,'padding'),values(final,'margin'),final.props.id??null,final.props.ref,final.props.children,slots(final),final.props.className.split(' ').includes('opaque')]);",
+        "const final=render(jsx(modules['/src/app.ts'].Card,{source:'source',space:'4px',ref:7,children:'child'}));const incoming=frames[0];const controls=slots(incoming);const stages=controls.filter(k=>Array.isArray(incoming.props[k]));JSON.stringify([controls.filter(k=>!Array.isArray(incoming.props[k])).length,final.target,values(final,'color'),values(final,'padding'),values(final,'margin'),final.props.id??null,final.props.ref,final.props.children,slots(final),final.props.className.split(' ').includes('opaque'),stages.map(k=>[incoming.props[k].length,...incoming.props[k].map(value=>typeof value)])]);",
         readable,
     );
-    // Then: no real pair is invented or transported, and each existing behavior survives.
+    // Then: only approved residual stages cross the boundary, never a fixed pair or leaked control.
     assert_eq!(
         result,
         serde_json::json!([
@@ -217,7 +218,12 @@ fn excluded_custom_definitions_keep_existing_behavior_without_descendant_capabil
             7,
             "child",
             [],
-            opaque
+            opaque,
+            if readable && staged {
+                serde_json::json!([[4, "function", "function", "boolean", "undefined"]])
+            } else {
+                serde_json::json!([])
+            }
         ])
     );
 }

@@ -20,6 +20,7 @@ use super::styled_jsx::StyledJsx;
 use crate::utils::unwrap_syntax_only;
 
 pub(crate) struct StyledContext<'s> {
+    pub filename: &'s str,
     pub jsx: &'s mut Option<StyledJsx>,
     pub capability: Option<&'s StyledCapability>,
 }

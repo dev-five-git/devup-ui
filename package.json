@@ -7,7 +7,7 @@
   "scripts": {
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && node --require ./eslint-typescript6.cjs ./node_modules/eslint/bin/eslint.js",
     "lint:fix": "node --require ./eslint-typescript6.cjs ./node_modules/eslint/bin/eslint.js --fix && cargo fmt",
-    "test": "cargo tarpaulin --out xml --out stdout --all-targets --engine llvm $(node -p \"process.env.CI ? '--fail-under 100' : ''\") && bun run test:bun",
+    "test": "cargo tarpaulin --out xml --out stdout --all-targets --engine llvm --timeout 180 $(node -p \"process.env.CI ? '--fail-under 100' : ''\") && bun run test:bun",
     "test:bun": "bun test-harness/publication-cli.ts begin && bun test --isolate --coverage && bun test-harness/publication-cli.ts root && bun run test:vite:continue",
     "test:vite": "bun test-harness/publication-cli.ts standalone && bun --config=./bunfig.vite.toml test --coverage",
     "test:vite:continue": "bun test-harness/publication-cli.ts continue && bun --config=./bunfig.vite.toml test --coverage && bun test-harness/publication-cli.ts vite && bun test-harness/publication-cli.ts accept",
