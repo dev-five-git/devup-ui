@@ -414,7 +414,12 @@ impl<'a> Reader<'_, 'a> {
         for statement in &program.body {
             match statement {
                 Statement::ExportFromDeclaration(export) if !export.export_kind.is_type() => {
-                    if let Some(module) = self.module(&export.source.value, path) {
+                    if let Some(module) = export
+                        .source
+                        .value
+                        .as_str()
+                        .and_then(|source| self.module(source, path))
+                    {
                         for specifier in export
                             .specifiers
                             .iter()
@@ -432,7 +437,12 @@ impl<'a> Reader<'_, 'a> {
                 Statement::ExportAllDeclaration(export)
                     if export.exported.is_none() && !export.export_kind.is_type() =>
                 {
-                    if let Some(module) = self.module(&export.source.value, path) {
+                    if let Some(module) = export
+                        .source
+                        .value
+                        .as_str()
+                        .and_then(|source| self.module(source, path))
+                    {
                         for (name, component) in
                             module.iter().filter(|(name, _)| *name != "default")
                         {
@@ -535,7 +545,9 @@ fn imported_bindings(program: &Program<'_>, package: &str) -> Imported {
         if import.import_kind.is_type() {
             continue;
         }
-        let source = import.source.value.as_str();
+        let Some(source) = import.source.value.as_str() else {
+            continue;
+        };
         let from_package = source.starts_with(package);
         for specifier in import.specifiers.iter().flatten() {
             let (local, export) = match specifier {

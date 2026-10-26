@@ -151,7 +151,7 @@ pub(crate) fn validate_attribute(
             }
         }
         JSXAttributeValue::StringLiteral(literal) => {
-            if string_order(literal.value.as_str()).is_none() {
+            if literal.value.as_str().and_then(string_order).is_none() {
                 let code = literal
                     .raw
                     .as_ref()

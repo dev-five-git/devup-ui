@@ -28,12 +28,12 @@ pub(crate) fn string_order(value: &str) -> Option<u8> {
 pub(crate) fn static_order(value: &Expression<'_>) -> Option<u8> {
     let value = unwrap_syntax_only(value);
     match value {
-        Expression::StringLiteral(literal) => string_order(literal.value.as_str()),
+        Expression::StringLiteral(literal) => string_order(literal.value.as_str()?),
         Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
             .quasis
             .first()
             .and_then(|quasi| quasi.value.cooked.as_ref())
-            .and_then(|cooked| string_order(cooked.as_str())),
+            .and_then(|cooked| string_order(cooked.as_str()?)),
         Expression::NumericLiteral(_) | Expression::UnaryExpression(_) => number_value(value)
             .and_then(|number| number.to_string().parse::<u8>().ok())
             .filter(|order| (1..=254).contains(order)),
@@ -46,7 +46,7 @@ fn number_value(value: &Expression<'_>) -> Option<f64> {
     match unwrap_syntax_only(value) {
         Expression::NumericLiteral(literal) => Some(literal.value),
         Expression::StringLiteral(literal) => {
-            Some(JsString::from(literal.value.as_str()).to_number())
+            Some(JsString::from(literal.value.as_str()?).to_number())
         }
         Expression::BooleanLiteral(literal) => Some(f64::from(u8::from(literal.value))),
         Expression::NullLiteral(_) => Some(0.0),
@@ -54,7 +54,7 @@ fn number_value(value: &Expression<'_>) -> Option<f64> {
             .quasis
             .first()
             .and_then(|quasi| quasi.value.cooked.as_ref())
-            .map(|cooked| JsString::from(cooked.as_str()).to_number()),
+            .and_then(|cooked| Some(JsString::from(cooked.as_str()?).to_number())),
         Expression::UnaryExpression(unary) => match unary.operator {
             UnaryOperator::UnaryNegation => number_value(&unary.argument).map(|number| -number),
             UnaryOperator::UnaryPlus => number_value(&unary.argument),
@@ -96,7 +96,10 @@ pub(crate) fn attribute_order<'a>(
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
     match value {
-        JSXAttributeValue::StringLiteral(literal) => string_order(literal.value.as_str())
+        JSXAttributeValue::StringLiteral(literal) => literal
+            .value
+            .as_str()
+            .and_then(string_order)
             .map_or(ParsedStyleOrder::None, ParsedStyleOrder::Static),
         JSXAttributeValue::ExpressionContainer(container) => container
             .expression
@@ -115,4 +118,27 @@ pub(crate) fn invalid_order(code: &str) -> String {
         code,
         "an explicit styleOrder must be an integer from 1 to 254; a string must be canonical decimal digits without a sign, spaces or leading zeros: use a numeric literal such as 1 or a canonical decimal string such as \"1\"",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+
+    #[test]
+    fn unpaired_surrogates_never_become_orders() -> Result<(), Box<dyn std::error::Error>> {
+        // Given strings that Oxc preserves as UTF-16, including unary coercions.
+        let allocator = Allocator::default();
+        for source in ["'1\\uD800'", "`1\\uDC00`", "+'1\\uD800'", "+`1\\uDC00`"] {
+            let value = Parser::new(&allocator, source, SourceType::ts())
+                .parse_expression()
+                .map_err(|error| format!("{error:?}"))?;
+            // When the reserved order is parsed at its numeric/string boundary.
+            let order = static_order(&value);
+            // Then no lossy conversion can manufacture a valid layer.
+            assert_eq!(order, None, "{source}");
+        }
+        Ok(())
+    }
 }

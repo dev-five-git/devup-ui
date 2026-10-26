@@ -156,8 +156,13 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                             .unwrap_or_else(|error| panic!("{error}"));
                                     }
                                 } else if import.source.value.starts_with("./") {
-                                    let module = resolver(&import.source.value, filename)
-                                        .unwrap_or_else(|| panic!("fixture module must resolve"));
+                                    let module = resolver(
+                                        import.source.value.as_str().unwrap_or_else(|| {
+                                            panic!("fixture module must be UTF-8")
+                                        }),
+                                        filename,
+                                    )
+                                    .unwrap_or_else(|| panic!("fixture module must resolve"));
                                     write!(
                                         imports,
                                         "const {local}=modules[{:?}].{imported};",
@@ -167,7 +172,13 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                 }
                             }
                             ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
-                                let module = resolver(&import.source.value, filename)
+                                let module =
+                                    resolver(
+                                        import.source.value.as_str().unwrap_or_else(|| {
+                                            panic!("fixture module must be UTF-8")
+                                        }),
+                                        filename,
+                                    )
                                     .unwrap_or_else(|| panic!("fixture module must resolve"));
                                 write!(
                                     imports,

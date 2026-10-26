@@ -273,6 +273,17 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
     let expression = unwrap_syntax_only_mut(expression);
     let offset = expression.span().start;
 
+    if name != Some("as") && crate::utils::unrepresentable_literal(expression) {
+        return ExtractResult {
+            styles: vec![misplaced(
+                offset,
+                readable_code(expression),
+                "CSS text and values must contain no unpaired UTF-16 surrogate",
+            )],
+            ..ExtractResult::default()
+        };
+    }
+
     if name.is_none() {
         let mut styles = crate::dead_properties::expression_errors(expression);
         styles.extend(
@@ -428,9 +439,13 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     .collect(),
                 ..ExtractResult::default()
             },
+            // Unrepresentable literals were rejected above, before any CSS scanning.
             Expression::StringLiteral(text) => ExtractResult {
-                styles: css_to_style(&text.value, level, selector)
+                styles: text
+                    .value
+                    .as_str()
                     .into_iter()
+                    .flat_map(|text| css_to_style(text, level, selector))
                     .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
                     .collect(),
                 ..ExtractResult::default()
@@ -725,7 +740,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                                             SPAN,
                                             TemplateElementValue {
                                                 raw: Str::from("typo-"),
-                                                cooked: None,
+                                                cooked: Some("typo-".into()),
                                             },
                                             false,
                                             ast_builder,
@@ -734,7 +749,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                                             SPAN,
                                             TemplateElementValue {
                                                 raw: Str::from(""),
-                                                cooked: None,
+                                                cooked: Some("".into()),
                                             },
                                             true,
                                             ast_builder,
@@ -799,7 +814,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                                                 SPAN,
                                                 TemplateElementValue {
                                                     raw: Str::from("typo-"),
-                                                    cooked: None,
+                                                    cooked: Some("typo-".into()),
                                                 },
                                                 false,
                                                 ast_builder,
@@ -808,7 +823,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                                                 SPAN,
                                                 TemplateElementValue {
                                                     raw: Str::from(""),
-                                                    cooked: None,
+                                                    cooked: Some("".into()),
                                                 },
                                                 true,
                                                 ast_builder,
@@ -1101,7 +1116,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             continue;
                         }
                     };
-                    let Some(key_name) = o.key.name() else {
+                    let Some(key_name) = o
+                        .key
+                        .name()
+                        .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+                    else {
                         let error = unreadable_key(&o.key, false);
                         projection.record(ast_builder, &error);
                         props.push(error);
