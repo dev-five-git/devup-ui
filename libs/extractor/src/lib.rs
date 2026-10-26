@@ -80,6 +80,8 @@ mod tailwind_motion;
 mod tailwind_theme;
 #[doc(hidden)]
 pub mod test_state;
+#[cfg(test)]
+mod utf16_boundary_tests;
 mod util_type;
 mod utils;
 mod vanilla_extract;

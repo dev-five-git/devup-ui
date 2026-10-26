@@ -409,4 +409,42 @@ mod tests {
         assert!(code.contains("enabledColor"));
         assert!(code.contains("disabledBackground"));
     }
+
+    #[test]
+    fn property_sort_keys_preserve_numeric_and_utf16_identity_when_spreads_are_present() {
+        // Given numeric, surrogate and replacement keys mixed with opaque properties.
+        let allocator = Allocator::default();
+        let expression = oxc_parser::Parser::new(
+            &allocator,
+            r"({2: second, '\uDC00': low, ...rest, [key]: dynamic, 1: first, '\uD800': high, '\uFFFD': replacement})",
+            oxc_span::SourceType::mjs(),
+        ).parse_expression().unwrap();
+        let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(&expression)
+        else {
+            panic!("object fixture")
+        };
+        // When generated property ordering caches the actual property identity.
+        let mut properties: Vec<_> = object.properties.iter().collect();
+        properties.sort_by_cached_key(|property| std::cmp::Reverse(object_property_key(property)));
+        let values: Vec<_> = properties
+            .into_iter()
+            .map(|property| match property {
+                ObjectPropertyKind::ObjectProperty(property) => expression_to_code(&property.value),
+                ObjectPropertyKind::SpreadProperty(spread) => expression_to_code(&spread.argument),
+            })
+            .collect();
+        // Then distinct UTF-16 keys sort independently; opaque keys retain their order.
+        assert_eq!(
+            values,
+            vec![
+                "replacement;",
+                "low;",
+                "high;",
+                "second;",
+                "first;",
+                "rest;",
+                "dynamic;"
+            ]
+        );
+    }
 }

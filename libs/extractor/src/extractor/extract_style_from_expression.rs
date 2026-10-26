@@ -441,15 +441,16 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     .collect(),
                 ..ExtractResult::default()
             },
-            Expression::StringLiteral(text) => match text.value.as_str() {
-                Some(text) => ExtractResult {
-                    styles: css_to_style(text, level, selector)
-                        .into_iter()
-                        .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
-                        .collect(),
-                    ..ExtractResult::default()
-                },
-                None => unreadable(expression),
+            // Unrepresentable literals were rejected above, before any CSS scanning.
+            Expression::StringLiteral(text) => ExtractResult {
+                styles: text
+                    .value
+                    .as_str()
+                    .into_iter()
+                    .flat_map(|text| css_to_style(text, level, selector))
+                    .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
+                    .collect(),
+                ..ExtractResult::default()
             },
             _ => unreadable(expression),
         };

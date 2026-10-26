@@ -1994,6 +1994,7 @@ mod tests {
     #[case(r"a\nb", Some("a\nb"))]
     #[case(r"\uD83D\uDE00", Some("😀"))]
     #[case(r"\uD800", None)]
+    #[case("` + value + `", None)]
     fn synthesized_quasi_decodes_raw_text_without_loss(
         #[case] raw: &str,
         #[case] expected: Option<&str>,
