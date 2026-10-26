@@ -4,6 +4,14 @@ import type { ResponsiveValue } from '../../responsive-value'
 import type { DevupTheme } from '../../theme'
 import type { DevupProps } from '../index'
 
+type Range<
+  N extends number,
+  Acc extends number[] = [],
+> = Acc['length'] extends N ? Acc[number] : Range<N, [...Acc, Acc['length']]>
+
+/** The cascade layer orders the build places a style in: 1 to 254, written as a number or as its digits. Any other value is ignored by the build. */
+export type StyleOrder = Exclude<Range<255>, 0>
+
 export type CamelCase<S extends string> =
   S extends Lowercase<S>
     ? S extends `${infer F}-${infer RF}${infer R}`
@@ -108,5 +116,5 @@ export interface DevupSelectorProps
 
   selectors?: Selectors
 
-  styleOrder?: number
+  styleOrder?: StyleOrder | `${StyleOrder}`
 }

@@ -30,11 +30,21 @@ impl Reads {
     pub fn read_in(&mut self, expression: &Expression<'_>) {
         match unwrap_syntax_only(expression) {
             Expression::ArrowFunctionExpression(arrow) => self.function(&arrow.params, |v| {
+                v.visit_formal_parameters(&arrow.params);
                 v.visit_arrow_function_body(arrow);
             }),
-            Expression::FunctionExpression(function) => self.function(&function.params, |v| {
-                v.visit_function_body_of(function);
-            }),
+            Expression::FunctionExpression(function) => {
+                let mut arguments = ArgumentsUse(false);
+                arguments.visit_formal_parameters(&function.params);
+                if let Some(body) = &function.body {
+                    arguments.visit_function_body(body);
+                }
+                self.whole |= arguments.0;
+                self.function(&function.params, |v| {
+                    v.visit_formal_parameters(&function.params);
+                    v.visit_function_body_of(function);
+                });
+            }
             Expression::ObjectExpression(object) => {
                 for property in &object.properties {
                     match property {
@@ -60,6 +70,7 @@ impl Reads {
 
     fn function(&mut self, params: &FormalParameters<'_>, body: impl FnOnce(&mut PropsUse<'_>)) {
         let Some(first) = params.items.first() else {
+            self.whole |= params.rest.is_some();
             return;
         };
         match &first.pattern {
@@ -73,7 +84,10 @@ impl Reads {
             BindingPattern::ObjectPattern(object) => {
                 for property in &object.properties {
                     match property.key.static_name() {
-                        Some(name) if !property.computed => self.push(&name),
+                        Some(name) if !property.computed => match name.as_str() {
+                            Some(name) => self.push(name),
+                            None => self.whole = true,
+                        },
                         _ => self.whole = true,
                     }
                 }
@@ -84,6 +98,16 @@ impl Reads {
             _ => self.whole = true,
         }
     }
+}
+
+struct ArgumentsUse(bool);
+
+impl<'a> Visit<'a> for ArgumentsUse {
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.0 |= it.name == "arguments";
+    }
+
+    fn visit_function(&mut self, _: &Function<'a>, _: oxc_syntax::scope::ScopeFlags) {}
 }
 
 struct PropsUse<'r> {
@@ -213,7 +237,7 @@ fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Opt
     use oxc_ast::ast::{BinaryOperator, LogicalOperator, UnaryOperator};
     let is_prop = |e: &Expression<'_>| matches!(unwrap_syntax_only(e), Expression::Identifier(i) if i.name == prop);
     let string = |e: &Expression<'_>| match unwrap_syntax_only(e) {
-        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
         _ => None,
     };
     Some(match unwrap_syntax_only(expression) {

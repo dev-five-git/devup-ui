@@ -169,6 +169,43 @@ it('overlays owned compiled MDX records without reading raw MDX or deduplicating
   ).toBe(false)
 })
 
+it('uses an explicit relative tsconfig instead of the default alias target', () => {
+  using fs = fixture()
+  fs.write(
+    'tsconfig.json',
+    JSON.stringify({
+      compilerOptions: { baseUrl: '.', paths: { '@token': ['wrong.ts'] } },
+    }),
+  )
+  fs.write(
+    'tsconfig.build.json',
+    JSON.stringify({
+      compilerOptions: { baseUrl: '.', paths: { '@token': ['right.ts'] } },
+    }),
+  )
+  fs.write(
+    'src/A.tsx',
+    "import {Box} from '@devup-ui/react'; import {n} from '@token'; export const A=()=> <Box p={n} />",
+  )
+  fs.write('wrong.ts', 'export const n=1')
+  fs.write('right.ts', 'export const n=4')
+
+  const inventory = collectReservationInputs({
+    roots: ['src'],
+    cwd: fs.root,
+    package: '@devup-ui/react',
+    importAliases: {},
+    tsconfigPath: 'tsconfig.build.json',
+    toId: (path) => relative(fs.root, path).replaceAll('\\', '/'),
+  })
+
+  expect(inventory.inputs.map(({ filename }) => filename)).toEqual([
+    'right.ts',
+    'src/A.tsx',
+  ])
+  expect(inventory.inputs[0].code).toBe('export const n=4')
+})
+
 it('rejects conflicting prepared bytes for one physical path before producing an inventory', () => {
   // Given
   using fs = fixture()

@@ -1,10 +1,10 @@
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import { beginBuild } from '../build-session'
 import { createStateWriter, writeFileAtomically } from '../state-writer'
 
 describe('createStateWriter', () => {
@@ -84,23 +84,13 @@ describe('writeFileAtomically', () => {
 
 describe('beginBuild', () => {
   it('resets the engine only when no other build is running', () => {
-    let resets = 0
-    const engine = {
-      resetBuildState: () => {
-        resets += 1
-      },
-    }
-    const first = beginBuild(engine)
-    expect(resets).toBeLessThanOrEqual(1)
-    const before = resets
-    const second = beginBuild(engine)
-    expect(resets).toBe(before)
-    second()
-    second()
-    first()
-    beginBuild({})()
-    const third = beginBuild(engine)
-    expect(resets).toBe(before + 1)
-    third()
+    // Given / When: no Bun preload owns the engine in this fresh process.
+    const result = spawnSync(
+      'node',
+      [join(import.meta.dir, 'build-session-ownership.cjs')],
+      { encoding: 'utf8', timeout: 30000 },
+    )
+    // Then
+    expect(result.status, result.stdout + result.stderr).toBe(0)
   })
 })

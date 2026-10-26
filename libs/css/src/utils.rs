@@ -2,6 +2,8 @@ use std::borrow::Cow;
 
 use regex_lite::Regex;
 
+use crate::quoted;
+
 /// Compile a built-in regex pattern, panicking with a descriptive message.
 ///
 /// The pattern strings are compile-time constants, so a failure here is a
@@ -89,6 +91,9 @@ pub(crate) fn collapse_whitespace(value: &str) -> Cow<'_, str> {
     let mut prev_ws = true; // treat start-of-string as preceding whitespace so a leading run is caught
     let mut prev_comma = false;
     for &b in bytes {
+        if matches!(b, b'\'' | b'"') {
+            return collapse_around_strings(value);
+        }
         let is_ws = b.is_ascii_whitespace();
         if is_ws && (prev_ws || prev_comma) {
             // leading run, doubled whitespace, or a space right after a comma
@@ -105,6 +110,9 @@ pub(crate) fn collapse_whitespace(value: &str) -> Cow<'_, str> {
     if !needs_collapse {
         return Cow::Borrowed(value);
     }
+    if bytes.iter().any(|&b| matches!(b, b'\'' | b'"')) {
+        return collapse_around_strings(value);
+    }
 
     let mut result = String::with_capacity(value.len());
     for part in value.split_whitespace() {
@@ -117,6 +125,15 @@ pub(crate) fn collapse_whitespace(value: &str) -> Cow<'_, str> {
         result.push_str(part);
     }
     Cow::Owned(result)
+}
+
+/// `collapse_whitespace` for a value with quoted strings, which keep every byte
+fn collapse_around_strings(value: &str) -> Cow<'_, str> {
+    let (masked, spans) = quoted::mask(value);
+    match collapse_whitespace(&masked) {
+        Cow::Borrowed(_) => Cow::Borrowed(value),
+        Cow::Owned(collapsed) => Cow::Owned(quoted::unmask(&collapsed, &spans)),
+    }
 }
 
 #[cfg(test)]
@@ -150,6 +167,18 @@ mod tests {
     #[case("a , b", "a ,b")]
     #[case("a,  b   c", "a,b c")]
     fn test_collapse_whitespace(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(collapse_whitespace(input), expected);
+    }
+
+    #[rstest]
+    #[case(r"'a,  b'", r"'a,  b'")]
+    #[case(r#"[title="a,  b"]"#, r#"[title="a,  b"]"#)]
+    #[case(r"content:  'a   b' ,  'c'", r"content: 'a   b' ,'c'")]
+    #[case(r"  'x'  ", "'x'")]
+    #[case(r#"a   "x   y"   b"#, r#"a "x   y" b"#)]
+    #[case(r"'it\'s   x'  y", r"'it\'s   x' y")]
+    #[case("'open   string", "'open   string")]
+    fn test_collapse_whitespace_keeps_quoted_strings(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(collapse_whitespace(input), expected);
     }
 }

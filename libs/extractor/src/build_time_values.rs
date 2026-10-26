@@ -77,6 +77,7 @@ pub(crate) fn has_build_time_values(
         option,
         resolver,
         aliased.css_prop,
+        &aliased.px,
     );
     let changes = crate::imported_constants::ChangeCheck::new(&program, filename, option, resolver);
     !find(
@@ -231,7 +232,9 @@ impl<'s, 'a> Finder<'s, 'a> {
         };
         let declaration = match node {
             Statement::ImportDeclaration(import) => {
-                let source = import.source.value.as_str();
+                let Some(source) = import.source.value.as_str() else {
+                    return;
+                };
                 let stylex = source == crate::STYLEX_PACKAGE;
                 let style = stylex || is_style(source);
                 for specifier in import.specifiers.iter().flatten() {
@@ -348,7 +351,10 @@ impl<'s, 'a> Finder<'s, 'a> {
 
     fn is_css(&self, callee: &Expression<'_>) -> bool {
         if let Expression::StaticMemberExpression(member) = callee {
-            return member.property.name == "css";
+            return member.property.name == "css"
+                && self
+                    .symbol(&member.object)
+                    .is_some_and(|symbol| self.namespaces.contains(&symbol));
         }
         self.symbol(callee)
             .is_some_and(|symbol| self.css.contains(&symbol))
@@ -440,7 +446,7 @@ impl<'s, 'a> Finder<'s, 'a> {
                             if property
                                 .key
                                 .static_name()
-                                .is_some_and(|key| key.starts_with('_'))
+                                .is_some_and(|key| key.as_js_str().starts_with('_'))
                             {
                                 self.parts(&property.value, false);
                             }
@@ -498,7 +504,9 @@ impl<'s, 'a> Finder<'s, 'a> {
                             let key = property.key.static_name();
                             self.values(
                                 &property.value,
-                                key.as_deref().filter(|_| property.shorthand),
+                                key.as_ref()
+                                    .and_then(|key| key.as_str())
+                                    .filter(|_| property.shorthand),
                             );
                         }
                         ObjectPropertyKind::SpreadProperty(spread) => {
@@ -833,7 +841,7 @@ impl<'a> Visit<'a> for Reads<'_> {
         self.impure |= property
             .key
             .static_name()
-            .is_some_and(|key| UNCERTAIN_MEMBERS.contains(&key.as_ref()));
+            .is_some_and(|key| UNCERTAIN_MEMBERS.iter().any(|name| key == *name));
         walk::walk_binding_property(self, property);
     }
 
@@ -1096,3 +1104,6 @@ fn compute(
     }
     (!computed.is_empty()).then_some((computed, changes.dependencies()))
 }
+
+#[cfg(test)]
+mod scope_tests;

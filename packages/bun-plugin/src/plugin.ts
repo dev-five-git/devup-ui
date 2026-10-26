@@ -22,6 +22,7 @@ import {
   codeExtract,
   getCss,
   getThemeInterface,
+  hasDevupUI,
   registerShorthands,
   registerTheme,
   reserveClassSlots,
@@ -138,7 +139,8 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
 
   if (
     isProjectJsx(filePath, importAliases) ||
-    importsCompiledPackage(contents, loader)
+    importsCompiledPackage(contents, loader) ||
+    hasDevupUI(filePath, contents, libPackage, importAliases)
   ) {
     const code = codeExtract(
       filePath,

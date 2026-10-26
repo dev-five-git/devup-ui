@@ -12,7 +12,7 @@ use oxc_syntax::number::NumberBase;
 /// Keys outside this exact literal subset retain native whole-member evaluation.
 fn literal_key(source: &Expression<'_>) -> Option<String> {
     match unwrap_syntax_only(source) {
-        Expression::StringLiteral(value) => Some(value.value.to_string()),
+        Expression::StringLiteral(value) => value.value.as_str().map(str::to_string),
         Expression::BooleanLiteral(value) => Some(value.value.to_string()),
         Expression::NumericLiteral(value)
             if value.value.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&value.value) =>
@@ -51,7 +51,7 @@ pub(super) fn direct_lookup(object: &Expression<'_>, index: &Expression<'_>) -> 
     }
 }
 
-impl<'a> Preparation<'_, 'a> {
+impl<'a> Preparation<'_, '_, 'a> {
     pub(super) fn select_lookup(
         &mut self,
         member: &mut ComputedMemberExpression<'a>,
