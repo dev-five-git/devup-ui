@@ -155,7 +155,7 @@ fn property_stays(property: &ObjectProperty<'_>) -> bool {
     property
         .key
         .static_name()
-        .is_some_and(|name| stays_attribute(&name))
+        .is_some_and(|name| name.as_str().is_some_and(stays_attribute))
 }
 
 /// The value of a JSX attribute that stays an attribute of the element built
@@ -1015,7 +1015,11 @@ impl<'a> DevupVisitor<'a> {
         let code = || expression.clone_in_with_semantic_ids(self.ast.allocator());
         match expression {
             Expression::StringLiteral(literal)
-                if text == Text::Rules && literal.value.trim().is_empty() =>
+                if text == Text::Rules
+                    && literal
+                        .value
+                        .as_str()
+                        .is_some_and(|value| value.trim().is_empty()) =>
             {
                 Some(KnownSide::Empty)
             }
@@ -1388,7 +1392,7 @@ impl<'a> DevupVisitor<'a> {
         self.scoping.take().or_else(|| {
             let imports_api = program.body.iter().any(|statement| {
                 matches!(statement, Statement::ImportDeclaration(import)
-                    if import.source.value == self.package
+                    if import.source.value == self.package.as_str()
                         || import.source.value == self.compat_package.as_str()
                         || import.source.value == "@stylexjs/stylex")
             });
@@ -1855,7 +1859,7 @@ impl<'a> DevupVisitor<'a> {
             return None;
         }
         let name = match unwrap_syntax_only(element) {
-            Expression::StringLiteral(literal) => literal.value.to_string(),
+            Expression::StringLiteral(literal) => literal.value.display().to_string(),
             element => readable_code(element),
         };
         let (lookup, symbol) = match crate::style_values::component_member(element) {
@@ -2143,13 +2147,11 @@ impl<'a> ClassNamesCalls<'_, 'a> {
             {
                 key.take_in(self.ast)
             } else {
-                let name = property.key.static_name().unwrap_or_default();
-                Expression::new_string_literal(
-                    SPAN,
-                    Str::from_in(name.as_ref(), self.ast.allocator()),
-                    None,
-                    self.ast,
-                )
+                let name = property
+                    .key
+                    .static_name()
+                    .map_or_else(|| "".into(), |name| name.into_js_str_in(self.ast));
+                Expression::new_string_literal(SPAN, name, None, self.ast)
             };
             let condition = property.value.take_in(self.ast);
             classes.push(
@@ -3249,7 +3251,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         for i in (0..it.body.len()).rev() {
             if let Statement::ImportDeclaration(decl) = &it.body[i]
-                && (decl.source.value == self.package
+                && (decl.source.value == self.package.as_str()
                     || decl.source.value == self.compat_package.as_str())
                 && decl.specifiers.iter().all(|s| s.is_empty())
             {
@@ -3519,7 +3521,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         );
                         offset += count;
                         let class = match class {
-                            Some(Expression::StringLiteral(class)) => class.value.to_string(),
+                            Some(Expression::StringLiteral(class))
+                                if class.value.as_str().is_some() =>
+                            {
+                                class
+                                    .value
+                                    .as_str()
+                                    .map_or_else(String::new, str::to_string)
+                            }
                             _ => String::new(),
                         };
                         keys.push((key, class));
@@ -3532,7 +3541,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 // Extract className string for props() resolution
                 let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
                     if let Expression::StringLiteral(s) = expr {
-                        s.value.to_string()
+                        s.value.as_str().map_or_else(String::new, str::to_string)
                     } else {
                         String::new()
                     }
@@ -4661,13 +4670,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.pending_marker = Some((*start, markers.clone()));
         }
         let class_text = match &it.init {
-            Some(Expression::StringLiteral(text)) => Some(text.value.to_string()),
+            Some(Expression::StringLiteral(text)) => text.value.as_str().map(str::to_string),
             Some(Expression::TemplateLiteral(template)) if template.expressions.is_empty() => {
                 template
                     .quasis
                     .first()
-                    .and_then(|quasi| quasi.value.cooked.as_ref())
-                    .map(ToString::to_string)
+                    .and_then(|quasi| quasi.value.cooked?.as_str())
+                    .map(str::to_string)
             }
             _ => None,
         }
@@ -4700,8 +4709,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         if let Some((util, symbol)) = style_result
             && let Some(Expression::StringLiteral(value)) = &it.init
+            && let Some(value) = value.value.as_str()
         {
-            let value = value.value.to_string();
+            let value = value.to_string();
             let styles = self
                 .css_styles
                 .take()
@@ -4778,10 +4788,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {
-        if it.source.value != self.package
+        if it.source.value != self.package.as_str()
             && matches!(
                 it.source.value.as_str(),
-                "react/jsx-runtime" | "react/jsx-dev-runtime"
+                Some("react/jsx-runtime" | "react/jsx-dev-runtime")
             )
             && let Some(specifiers) = &it.specifiers
         {
@@ -4797,7 +4807,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
                 }
             }
-        } else if (it.source.value == self.package
+        } else if (it.source.value == self.package.as_str()
             || it.source.value == self.compat_package.as_str())
             && let Some(specifiers) = &mut it.specifiers
         {

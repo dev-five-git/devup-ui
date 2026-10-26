@@ -36,7 +36,7 @@ impl<'s, 'a> Demand<'s, 'a> {
                 };
                 matches!(
                     import.source.value.as_str(),
-                    "react/jsx-runtime" | "react/jsx-dev-runtime" | "react"
+                    Some("react/jsx-runtime" | "react/jsx-dev-runtime" | "react")
                 )
                 .then_some(import)
             })

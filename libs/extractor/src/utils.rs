@@ -266,7 +266,7 @@ pub(super) fn expression_to_style_order<'a>(
 
 pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     match expr {
-        JSXAttributeValue::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
+        JSXAttributeValue::StringLiteral(sl) => sl.value.as_str()?.parse::<f64>().ok(),
         JSXAttributeValue::ExpressionContainer(ec) => ec
             .expression
             .as_expression()
@@ -281,7 +281,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             get_number_by_literal_expression(&parenthesized.expression)
         }
         Expression::StringLiteral(sl) => {
-            let text = sl.value.as_str();
+            let text = sl.value.as_str()?;
             let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
             if unsigned == "Infinity"
                 || text
@@ -312,6 +312,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
                 };
                 let text = value
                     .value
+                    .as_str()?
                     .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
                 let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
                 (unsigned.eq_ignore_ascii_case("inf")
@@ -364,19 +365,27 @@ pub(crate) fn js_number_string(number: f64) -> String {
 /// Property keys and template substitutions preserve text rather than CSS numeric normalization.
 pub(super) fn get_key_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     match expr {
-        Expression::StringLiteral(value) => Some(Cow::Borrowed(value.value.as_str())),
+        Expression::StringLiteral(value) => value.value.as_str().map(Cow::Borrowed),
         Expression::ParenthesizedExpression(value) => {
             get_key_by_literal_expression(&value.expression)
         }
         Expression::TemplateLiteral(template) => {
-            let mut text = String::new();
-            for (index, quasi) in template.quasis.iter().enumerate() {
-                text.push_str(quasi.value.cooked.as_deref()?);
-                if let Some(expression) = template.expressions.get(index) {
-                    text.push_str(&get_key_by_literal_expression(expression)?);
-                }
-            }
-            Some(Cow::Owned(text))
+            let utf8 = template.quasis.iter().enumerate().try_fold(
+                String::new(),
+                |mut text, (index, quasi)| {
+                    text.push_str(quasi.value.cooked?.as_str()?);
+                    if let Some(expression) = template.expressions.get(index) {
+                        text.push_str(&get_key_by_literal_expression(expression)?);
+                    }
+                    Some(text)
+                },
+            );
+            utf8.or_else(|| {
+                let mut text = Vec::new();
+                append_literal_utf16(expr, &mut text)?;
+                String::from_utf16(&text).ok()
+            })
+            .map(Cow::Owned)
         }
         _ => get_string_by_literal_expression(expr),
     }
@@ -393,12 +402,72 @@ pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Opt
     get_number_by_literal_expression(expr)
         .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
-            Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
+            Expression::StringLiteral(str) => str.value.as_str().map(Cow::Borrowed),
             Expression::BooleanLiteral(bool) => {
                 Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
             }
             _ => None,
         })
+}
+
+/// Assemble JavaScript text before checking whether its complete UTF-16 is UTF-8.
+fn append_literal_utf16(expr: &Expression<'_>, text: &mut Vec<u16>) -> Option<()> {
+    match expr {
+        Expression::StringLiteral(literal) => text.extend(literal.value.encode_utf16()),
+        Expression::ParenthesizedExpression(parenthesized) => {
+            append_literal_utf16(&parenthesized.expression, text)?;
+        }
+        Expression::TemplateLiteral(template) => {
+            for (index, quasi) in template.quasis.iter().enumerate() {
+                text.extend(quasi.value.cooked?.encode_utf16());
+                if let Some(expression) = template.expressions.get(index) {
+                    append_literal_utf16(expression, text)?;
+                }
+            }
+        }
+        _ => text.extend(get_key_by_literal_expression(expr)?.encode_utf16()),
+    }
+    Some(())
+}
+
+pub(super) fn unrepresentable_literal(expr: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(expr) {
+        Expression::StringLiteral(literal) => literal.value.as_str().is_none(),
+        Expression::TemplateLiteral(template) => {
+            if !template.quasis.iter().any(|quasi| {
+                quasi
+                    .value
+                    .cooked
+                    .is_some_and(|text| text.as_str().is_none())
+            }) && !template.expressions.iter().any(unrepresentable_literal)
+            {
+                return false;
+            }
+            let mut text = Vec::new();
+            append_literal_utf16(expr, &mut text).is_some() && String::from_utf16(&text).is_err()
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn template_element_value<'a>(
+    raw: &str,
+    builder: &AstBuilder<'a>,
+) -> oxc_ast::ast::TemplateElementValue<'a> {
+    let raw = oxc_ast::ast::Str::from_str_in(raw, builder);
+    let cooked = if raw.contains(['\\', '`']) || raw.contains("${") {
+        let source = builder.allocator().alloc_str(&format!("`{raw}`"));
+        oxc_parser::Parser::new(builder.allocator(), source, oxc_span::SourceType::mjs())
+            .parse_expression()
+            .ok()
+            .and_then(|expression| match expression {
+                Expression::TemplateLiteral(template) => template.single_quasi(),
+                _ => None,
+            })
+    } else {
+        Some(raw.into())
+    };
+    oxc_ast::ast::TemplateElementValue { raw, cooked }
 }
 
 pub(super) fn wrap_array_filter<'a>(
@@ -1832,7 +1901,7 @@ mod tests {
                 vec![TemplateElement::new(
                     SPAN,
                     oxc_ast::ast::TemplateElementValue {
-                        cooked: Some(Str::from("template")),
+                        cooked: Some(Str::from("template").into()),
                         raw: Str::from("template"),
                     },
                     true,
@@ -1855,7 +1924,7 @@ mod tests {
                     TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some(Str::from("a")),
+                            cooked: Some(Str::from("a").into()),
                             raw: Str::from("a"),
                         },
                         false,
@@ -1864,7 +1933,7 @@ mod tests {
                     TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some(Str::from("b")),
+                            cooked: Some(Str::from("b").into()),
                             raw: Str::from("b"),
                         },
                         true,
@@ -1884,6 +1953,59 @@ mod tests {
         // Identifier 등 기타 타입 - None 반환
         let expr = Expression::new_identifier(SPAN, "foo", &builder);
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
+    }
+
+    #[rstest::rstest]
+    #[case("''", Some(""))]
+    #[case("'ascii'", Some("ascii"))]
+    #[case("'한글'", Some("한글"))]
+    #[case(r"'\uD83D\uDE00'", Some("😀"))]
+    #[case(r"`\uD83D${'\uDE00'}`", Some("😀"))]
+    #[case(r"`${'\uD83D'}\uDE00`", Some("😀"))]
+    #[case(r"'\uD800'", None)]
+    #[case(r"'\uDC00'", None)]
+    #[case("'05'", Some("05"))]
+    fn literal_key_preserves_utf16_when_fragments_are_complete(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let allocator = Allocator::default();
+        let expression = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::mjs())
+            .parse_expression()
+            .unwrap();
+        assert_eq!(
+            get_key_by_literal_expression(&expression).as_deref(),
+            expected
+        );
+    }
+
+    #[test]
+    fn surrogate_is_not_a_number_when_numeric_probe_is_optional() {
+        let allocator = Allocator::default();
+        let expression =
+            oxc_parser::Parser::new(&allocator, r"'\uD800'", oxc_span::SourceType::mjs())
+                .parse_expression()
+                .unwrap();
+        assert_eq!(get_number_by_literal_expression(&expression), None);
+    }
+
+    #[rstest::rstest]
+    #[case("plain", Some("plain"))]
+    #[case(r"a\nb", Some("a\nb"))]
+    #[case(r"\uD83D\uDE00", Some("😀"))]
+    #[case(r"\uD800", None)]
+    #[case("` + value + `", None)]
+    fn synthesized_quasi_decodes_raw_text_without_loss(
+        #[case] raw: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let allocator = Allocator::default();
+        let value = template_element_value(raw, &AstBuilder::new(&allocator));
+        assert_eq!(
+            value.cooked.as_ref().and_then(|cooked| cooked.as_str()),
+            expected
+        );
+        assert_eq!(value.raw.as_str(), raw);
     }
 
     #[test]

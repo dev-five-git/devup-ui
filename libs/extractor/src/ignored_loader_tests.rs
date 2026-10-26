@@ -20,9 +20,13 @@ fn ignored_loader_when_imported_or_reexported_has_empty_namespace() -> Result<()
     };
     let option = ExtractOption::default();
     let mut loader = ModuleLoader::new(Some(&resolver), &option);
+    let code = "import def, {missing, __exports__ as hidden} from 'empty'; import * as ns from 'empty'; import * as barrel from 'barrel'; import cjs from 'cjs'; const ok = missing === undefined && hidden === undefined && Object.keys(def).length === 0 && Object.keys(ns).length === 0 && barrel.value === undefined && barrel.hidden === undefined && Object.keys(barrel.ns).length === 0 && Object.keys(barrel.def).length === 0 && Object.keys(barrel).length === 4 && cjs.ok; ok;";
     let script = module_script(
-        "import def, {missing, __exports__ as hidden} from 'empty'; import * as ns from 'empty'; import * as barrel from 'barrel'; import cjs from 'cjs'; const ok = missing === undefined && hidden === undefined && Object.keys(def).length === 0 && Object.keys(ns).length === 0 && barrel.value === undefined && barrel.hidden === undefined && Object.keys(barrel.ns).length === 0 && Object.keys(barrel.def).length === 0 && Object.keys(barrel).length === 4 && cjs.ok; ok;",
-        "/src/entry.js",
+        ModuleSource {
+            script: code,
+            original: code,
+            filename: "/src/entry.js",
+        },
         &mut loader,
         true,
     )?;
@@ -48,9 +52,14 @@ fn ignored_named_when_key_is_inherited_is_undefined() -> Result<(), String> {
     let option = ExtractOption::default();
     for key in ["constructor", "toString", "__proto__", "hasOwnProperty"] {
         let mut loader = ModuleLoader::new(Some(&resolver), &option);
+        let code =
+            format!("import {{ {key} as value }} from 'empty'; typeof value === 'undefined';");
         let script = module_script(
-            &format!("import {{ {key} as value }} from 'empty'; typeof value === 'undefined';"),
-            "/src/entry.js",
+            ModuleSource {
+                script: &code,
+                original: &code,
+                filename: "/src/entry.js",
+            },
             &mut loader,
             true,
         )?;

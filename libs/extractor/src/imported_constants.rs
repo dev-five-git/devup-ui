@@ -276,7 +276,10 @@ struct LocalConstants {
 /// out as a literal
 fn written_out(expression: &Expression<'_>) -> Option<Constant> {
     match expression {
-        Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+        Expression::StringLiteral(literal) => literal
+            .value
+            .as_str()
+            .map(|text| Constant::String(text.to_string())),
         Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
         Expression::NullLiteral(_) => Some(Constant::Null),
         Expression::ParenthesizedExpression(inner) => written_out(&inner.expression),
@@ -586,7 +589,7 @@ pub(crate) fn inline_constants<'a>(
 ) -> Inlined {
     let imports_style_package = program.body.iter().any(|statement| {
         matches!(statement, Statement::ImportDeclaration(import)
-            if is_style_package(option, &import.source.value))
+            if import.source.value.as_str().is_some_and(|source| is_style_package(option, source)))
     });
     if !imports_style_package && css_prop == CssProp::Off {
         return Inlined::default();
@@ -629,7 +632,11 @@ fn inline_in<'a>(
     let mut style = StyleSymbols::new(scoping);
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
-            && is_style_package(option, &import.source.value)
+            && import
+                .source
+                .value
+                .as_str()
+                .is_some_and(|source| is_style_package(option, source))
         {
             let stylex = import.source.value == crate::STYLEX_PACKAGE;
             for specifier in import.specifiers.iter().flatten() {
@@ -698,7 +705,12 @@ fn inline_in<'a>(
         for statement in &program.body {
             let declaration = match statement {
                 Statement::ImportDeclaration(import) => {
-                    if !is_style_package(option, &import.source.value) {
+                    if !import
+                        .source
+                        .value
+                        .as_str()
+                        .is_some_and(|source| is_style_package(option, source))
+                    {
                         scope.import(import);
                         for specifier in import.specifiers.iter().flatten() {
                             let local = specifier.local();
@@ -1324,7 +1336,14 @@ impl Modules<'_> {
                     }
                 }
                 Statement::ExportFromDeclaration(export) => {
-                    let from = self.resolve_exports(&export.source.value, path);
+                    let from = export
+                        .source
+                        .value
+                        .as_str()
+                        .ok_or_else(|| {
+                            ChainReason::Module(export.source.value.display().to_string())
+                        })
+                        .and_then(|source| self.resolve_exports(source, path));
                     for specifier in &export.specifiers {
                         let name = specifier.local.name();
                         let constant = match &from {
@@ -1337,7 +1356,12 @@ impl Modules<'_> {
                     }
                 }
                 Statement::ExportAllDeclaration(export) => {
-                    if let Some(from) = self.exports(&export.source.value, path) {
+                    if let Some(from) = export
+                        .source
+                        .value
+                        .as_str()
+                        .and_then(|source| self.exports(source, path))
+                    {
                         match &export.exported {
                             Some(exported) => {
                                 exports.insert(exported.name().to_string(), from.namespace());
@@ -1510,7 +1534,9 @@ fn commonjs_target(member: &oxc_ast::ast::MemberExpression<'_>) -> Option<String
         }
         _ => false,
     };
-    is_exports.then(|| key.to_string())
+    is_exports
+        .then(|| key.as_str().map(str::to_string))
+        .flatten()
 }
 
 /// `Object.defineProperty(exports, '__esModule', ...)`
@@ -1798,9 +1824,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         for member in &declaration.body.members {
             let value = match &member.initializer {
                 None => next.map(Constant::Number),
-                Some(Expression::StringLiteral(literal)) => {
-                    Some(Constant::String(literal.value.to_string()))
-                }
+                Some(Expression::StringLiteral(literal)) => literal
+                    .value
+                    .as_str()
+                    .map(|text| Constant::String(text.to_string())),
                 Some(initializer) => {
                     crate::utils::js_number_literal(initializer).map(Constant::Number)
                 }
@@ -1812,7 +1839,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 Constant::Number(number) => Some(number + 1.0),
                 _ => None,
             };
-            members.insert(member.id.static_name().to_string(), value);
+            let Some(key) = member.id.static_name().as_str() else {
+                break;
+            };
+            members.insert(key.to_string(), value);
         }
         self.locals
             .insert(name.clone(), Constant::Object(Rc::new(members)));
@@ -1820,6 +1850,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
     }
 
     fn import(&mut self, import: &oxc_ast::ast::ImportDeclaration<'_>) {
+        let Some(source) = import.source.value.as_str() else {
+            return;
+        };
         for specifier in import.specifiers.iter().flatten() {
             let imported = match specifier {
                 ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
@@ -1832,7 +1865,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             };
             self.imports.insert(
                 specifier.local().name.to_string(),
-                (import.source.value.to_string(), imported),
+                (source.to_string(), imported),
             );
         }
     }
@@ -1850,7 +1883,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             if callee.name != "require" {
                 continue;
             }
-            let source = source.value.to_string();
+            let Some(source) = source.value.as_str().map(str::to_string) else {
+                continue;
+            };
             match &declarator.id {
                 oxc_ast::ast::BindingPattern::BindingIdentifier(identifier) => {
                     self.imports
@@ -1858,7 +1893,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                 }
                 oxc_ast::ast::BindingPattern::ObjectPattern(pattern) => {
                     for property in &pattern.properties {
-                        if let Some(key) = property.key.static_name()
+                        if let Some(key) = property
+                            .key
+                            .static_name()
+                            .and_then(oxc_ast::StaticPropertyName::into_cow_str)
                             && let Some(local) = property.value.get_identifier_name()
                         {
                             self.imports.insert(
@@ -2090,7 +2128,10 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         expression: &Expression<'_>,
     ) -> Option<Constant> {
         match expression {
-            Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+            Expression::StringLiteral(literal) => literal
+                .value
+                .as_str()
+                .map(|text| Constant::String(text.to_string())),
             Expression::NumericLiteral(literal) => Some(Constant::Number(literal.value)),
             Expression::UnaryExpression(unary)
                 if unary.operator == oxc_syntax::operator::UnaryOperator::UnaryNegation =>
@@ -2165,7 +2206,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     };
                     Some(
                         modules
-                            .exports(source.value.as_str(), self.path)?
+                            .exports(source.value.as_str()?, self.path)?
                             .namespace(),
                     )
                 }
@@ -2349,14 +2390,32 @@ fn fold_template(
     template: &oxc_ast::ast::TemplateLiteral<'_>,
     values: &[Constant],
 ) -> Option<Constant> {
-    let mut text = String::new();
+    if !template.quasis.iter().any(|quasi| {
+        quasi
+            .value
+            .cooked
+            .is_some_and(|text| text.as_str().is_none())
+    }) {
+        let mut text = String::new();
+        for (index, quasi) in template.quasis.iter().enumerate() {
+            text.push_str(quasi.value.cooked?.as_str()?);
+            if let Some(value) = values.get(index) {
+                match value {
+                    Constant::String(value) => text.push_str(value),
+                    value => text.push_str(&js_string(value)?),
+                }
+            }
+        }
+        return Some(Constant::String(text));
+    }
+    let mut text = Vec::new();
     for (index, quasi) in template.quasis.iter().enumerate() {
-        text.push_str(quasi.value.cooked.as_deref()?);
+        text.extend(quasi.value.cooked?.encode_utf16());
         if let Some(value) = values.get(index) {
-            text.push_str(&js_string(value)?);
+            text.extend(js_string(value)?.encode_utf16());
         }
     }
-    Some(Constant::String(text))
+    String::from_utf16(&text).ok().map(Constant::String)
 }
 
 fn math_constant(name: &str) -> Option<Constant> {
@@ -2576,7 +2635,10 @@ impl<'a> Inline<'_, 'a> {
     /// A constant read or a literal
     fn operand(&self, expression: &Expression<'a>) -> Option<Constant> {
         self.constant(expression).or_else(|| match expression {
-            Expression::StringLiteral(literal) => Some(Constant::String(literal.value.to_string())),
+            Expression::StringLiteral(literal) => literal
+                .value
+                .as_str()
+                .map(|text| Constant::String(text.to_string())),
             Expression::BooleanLiteral(literal) => Some(Constant::Bool(literal.value)),
             Expression::NullLiteral(_) => Some(Constant::Null),
             _ => crate::utils::js_number_literal(expression).map(Constant::Number),
@@ -2702,7 +2764,10 @@ fn px_number<'a>(ast_builder: &AstBuilder<'a>, value: &mut Expression<'a>) {
 
 /// `property` holding a number as the `px` length Emotion reads it as
 fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
-    if let Some(key) = property.key.static_name()
+    if let Some(key) = property
+        .key
+        .static_name()
+        .and_then(oxc_ast::StaticPropertyName::into_cow_str)
         && let Expression::ArrayExpression(array) = &property.value
         && let Some(value) = crate::import_alias_visit::fallback_value(&key, array)
     {
@@ -2716,6 +2781,7 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
     if property
         .key
         .static_name()
+        .and_then(oxc_ast::StaticPropertyName::into_cow_str)
         .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
     {
         px_number(ast_builder, &mut property.value);
@@ -3130,6 +3196,7 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 && property
                     .key
                     .static_name()
+                    .and_then(oxc_ast::StaticPropertyName::into_cow_str)
                     .is_some_and(|key| !crate::utils::keeps_bare_number(&key))
                 && !matches!(
                     property.value,

@@ -20,7 +20,7 @@ impl Bindings {
         }
         let from_package = if matches!(
             source.value.as_str(),
-            "react/jsx-runtime" | "react/jsx-dev-runtime"
+            Some("react/jsx-runtime" | "react/jsx-dev-runtime")
         ) {
             false
         } else if source.value == package {

@@ -3,7 +3,9 @@
 //! This module uses `boa_engine` to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
-use crate::module_loader::{Evaluating, ModuleLoader, PACKAGE_BINDING, module_script};
+use crate::module_loader::{
+    Evaluating, ModuleLoader, ModuleSource, PACKAGE_BINDING, module_script,
+};
 use crate::utils::keeps_bare_number;
 use boa_engine::{
     Context, JsArgs, JsObject, JsResult, JsString, JsValue, NativeFunction, Source, js_string,
@@ -268,8 +270,11 @@ pub(crate) fn execute_stylesheet_with_type(
     )
     .code;
     let script = module_script(
-        &strip_typescript_with_type(&instrumented, filename, mode)?,
-        filename,
+        ModuleSource {
+            script: &strip_typescript_with_type(&instrumented, filename, mode)?,
+            original: code,
+            filename,
+        },
         &mut loader,
         true,
     )?;

@@ -224,7 +224,7 @@ pub(super) fn expand<'a>(
                 {
                     let key = Expression::new_string_literal(
                         property.key.span(),
-                        builder.allocator().alloc_str(&name),
+                        name.clone().into_js_str_in(builder),
                         None,
                         builder,
                     );
@@ -235,8 +235,10 @@ pub(super) fn expand<'a>(
                         false,
                         builder,
                     );
-                    property.value = if css::is_special_property::is_special_property(&name)
-                        || matches!(name.as_ref(), "as" | "props" | "styleVars")
+                    property.value = if name
+                        .as_str()
+                        .is_some_and(css::is_special_property::is_special_property)
+                        || matches!(name.as_str(), Some("as" | "props" | "styleVars"))
                     {
                         member
                     } else {

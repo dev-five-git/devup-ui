@@ -702,7 +702,7 @@ impl TailwindClassName<'_> {
     ) -> Option<Expression<'a>> {
         match expression {
             Expression::StringLiteral(literal) => {
-                let compiled = self.compile_text(&literal.value, false, false)?;
+                let compiled = self.compile_text(literal.value.as_str()?, false, false)?;
                 Some(Expression::new_string_literal(
                     SPAN,
                     Str::from_in(&compiled, ast_builder.allocator()),
@@ -777,7 +777,11 @@ impl TailwindClassName<'_> {
                     if property.computed {
                         continue;
                     }
-                    if let Some(text) = self.compile_text(&key.value, false, false) {
+                    if let Some(text) = key
+                        .value
+                        .as_str()
+                        .and_then(|text| self.compile_text(text, false, false))
+                    {
                         property.key = PropertyKey::from(Expression::new_string_literal(
                             SPAN,
                             Str::from_in(&text, ast_builder.allocator()),
@@ -860,7 +864,7 @@ impl TailwindClassName<'_> {
             .enumerate()
             .map(|(index, quasi)| {
                 // The text on each side of an interpolation runs into it
-                self.compile_text(quasi.value.cooked.as_ref()?, index > 0, index < last)
+                self.compile_text(quasi.value.cooked?.as_str()?, index > 0, index < last)
             })
             .collect();
         let expressions: Vec<Option<Expression<'a>>> = template
@@ -880,7 +884,7 @@ impl TailwindClassName<'_> {
                     quasi.span,
                     TemplateElementValue {
                         raw: Str::from_in(&template_raw(&cooked), ast_builder.allocator()),
-                        cooked: Some(Str::from_in(&cooked, ast_builder.allocator())),
+                        cooked: Some(Str::from_in(&cooked, ast_builder.allocator()).into()),
                     },
                     quasi.tail,
                     ast_builder,
@@ -905,14 +909,14 @@ impl TailwindClassName<'_> {
 /// interpolation and arrays of them
 fn static_classes(expression: &Expression<'_>) -> Option<String> {
     match expression {
-        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
         Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
             .quasis
             .first()?
             .value
-            .cooked
-            .as_ref()
-            .map(ToString::to_string),
+            .cooked?
+            .as_str()
+            .map(str::to_string),
         Expression::ParenthesizedExpression(parenthesized) => {
             static_classes(&parenthesized.expression)
         }
@@ -1116,20 +1120,35 @@ fn merge_string_expressions<'a>(
     for expression in expressions {
         match expression {
             Expression::StringLiteral(literal) => {
-                let classes = literal.value.trim();
+                let Some(text) = literal.value.as_str() else {
+                    list.separate();
+                    list.interpolate(
+                        expression.clone_in_with_semantic_ids(ast_builder.allocator()),
+                    );
+                    continue;
+                };
+                let classes = text.trim();
                 if !classes.is_empty() {
                     list.separate();
                     list.text().push_str(classes);
                 }
             }
             Expression::TemplateLiteral(template) => {
-                let last = template.quasis.len() - 1;
-                for (index, quasi) in template.quasis.iter().enumerate() {
-                    let text = quasi
+                if template.quasis.iter().any(|quasi| {
+                    quasi
                         .value
                         .cooked
-                        .as_ref()
-                        .map_or(quasi.value.raw.as_str(), |cooked| cooked.as_str());
+                        .is_none_or(|text| text.as_str().is_none())
+                }) {
+                    list.separate();
+                    list.interpolate(
+                        expression.clone_in_with_semantic_ids(ast_builder.allocator()),
+                    );
+                    continue;
+                }
+                let last = template.quasis.len() - 1;
+                for (index, quasi) in template.quasis.iter().enumerate() {
+                    let text = quasi.value.cooked?.as_str()?;
                     let classes = text.trim();
                     if index == 0 {
                         if !classes.is_empty() || last > 0 {
@@ -1177,7 +1196,7 @@ fn merge_string_expressions<'a>(
                 SPAN,
                 TemplateElementValue {
                     raw: Str::from_in(&template_raw(text), ast_builder.allocator()),
-                    cooked: Some(Str::from_in(text, ast_builder.allocator())),
+                    cooked: Some(Str::from_in(text, ast_builder.allocator()).into()),
                 },
                 index == last,
                 ast_builder,

@@ -220,3 +220,113 @@ fn keyframes_keep_quoted_strings() {
         ]
     );
 }
+
+#[rstest]
+#[case::ascii(r#"content={"'hello'"}"#, "'hello'")]
+#[case::empty(r#"content={"''"}"#, "''")]
+#[case::unicode(r#"content={"'한글'"}"#, "'한글'")]
+#[case::astral(r#"content={"'\uD83D\uDE00'"}"#, "'😀'")]
+#[case::split_pair(r"content={`'\uD83D${'\uDE00'}'`}", "'😀'")]
+#[serial]
+fn utf16_styles_preserve_complete_strings(
+    #[case] props: &str,
+    #[case] expected: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source = boxed(props);
+    let values = static_values(&source)?;
+    assert_eq!(
+        values,
+        BTreeSet::from([("content".to_string(), expected.to_string())])
+    );
+    Ok(())
+}
+
+#[rstest]
+#[case::value_high(
+    r"import { Box } from '@devup-ui/react';
+const view = <Box color={'\uD800'} />;"
+)]
+#[case::value_low(
+    r"import { Box } from '@devup-ui/react';
+const view = <Box color={'\uDC00'} />;"
+)]
+#[case::key_high(
+    r"import { css } from '@devup-ui/react';
+const view = css({ '\uD800': 'red' });"
+)]
+#[case::key_low(
+    r"import { css } from '@devup-ui/react';
+const view = css({ '\uDC00': 'red' });"
+)]
+#[case::text_high(
+    r"import { css } from '@devup-ui/react';
+const view = css('color:\uD800');"
+)]
+#[case::text_low(
+    r"import { css } from '@devup-ui/react';
+const view = css('color:\uDC00');"
+)]
+#[case::responsive(
+    r"import { styled } from '@devup-ui/react';
+const View = styled('div', { color: ['red', '\uD800'] });"
+)]
+#[case::template(
+    r"import { Box } from '@devup-ui/react';
+const view = <Box content={`'\uD800'`} />;"
+)]
+#[serial]
+fn consumed_unpaired_surrogates_are_located_errors(#[case] source: &str) {
+    reset_class_map();
+    reset_file_map();
+    let error = extract("surrogate.tsx", source, ExtractOption::default())
+        .err()
+        .unwrap_or_else(|| panic!("unpaired surrogate must fail at build time"));
+    let error = error.to_string();
+    assert!(error.starts_with("surrogate.tsx:2:"), "{error}");
+    assert!(
+        error.contains("cannot use") && error.contains("at build time"),
+        "{error}"
+    );
+}
+
+#[test]
+#[serial]
+fn admitted_static_utf16_intermediate_keeps_javascript_length()
+-> Result<(), Box<dyn std::error::Error>> {
+    let values = static_values(
+        r"import { css } from '@devup-ui/react'; const view = css({ p: ('\uD800').length });",
+    )?;
+    assert_eq!(
+        values,
+        BTreeSet::from([("padding".to_string(), "4px".to_string())])
+    );
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn non_style_surrogate_identity_survives_codegen() -> Result<(), Box<dyn std::error::Error>> {
+    use oxc_ast_visit::Visit;
+    struct Strings(Vec<Vec<u16>>);
+    impl<'a> Visit<'a> for Strings {
+        fn visit_string_literal(&mut self, literal: &oxc_ast::ast::StringLiteral<'a>) {
+            self.0.push(literal.value.encode_utf16().collect());
+        }
+    }
+    let source = boxed(r#"color="red" data-values={['\uD800', '\uFFFD', '\\uD800']}"#);
+    let output = extract("identity.tsx", &source, ExtractOption::default())?;
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed =
+        oxc_parser::Parser::new(&allocator, &output.code, oxc_span::SourceType::tsx()).parse();
+    let mut strings = Strings(Vec::new());
+    strings.visit_program(&parsed.program);
+    assert_eq!(parsed.diagnostics.len(), 0);
+    for expected in [
+        vec![0xD800],
+        vec![0xFFFD],
+        r"\uD800".encode_utf16().collect(),
+    ] {
+        assert!(strings.0.contains(&expected), "{:?}", strings.0);
+    }
+    Ok(())
+}

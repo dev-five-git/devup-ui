@@ -5,7 +5,7 @@ use std::fmt::Write;
 use oxc_allocator::Allocator;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    Argument, Declaration, ExportDefaultDeclarationKind, ImportDeclarationSpecifier,
+    Argument, Declaration, ExportDefaultDeclarationKind, Expression, ImportDeclarationSpecifier,
     ModuleExportName, Statement,
 };
 use oxc_parser::Parser;
@@ -258,7 +258,15 @@ impl<'r> ModuleLoader<'r> {
             &module.path,
             module.source_type,
         )?;
-        let module_script = module_script(&script, &module.path, self, false)?;
+        let module_script = module_script(
+            ModuleSource {
+                script: &script,
+                original: &code,
+                filename: &module.path,
+            },
+            self,
+            false,
+        )?;
         // Live bindings: a read before the binding is initialized fails as it
         // does in an ES module
         let getters: Vec<String> = module_script
@@ -328,12 +336,95 @@ pub(crate) struct ModuleScript {
     commonjs: bool,
 }
 
+pub(crate) struct ModuleSource<'s> {
+    pub script: &'s str,
+    pub original: &'s str,
+    pub filename: &'s str,
+}
+
+impl ModuleSource<'_> {
+    fn specifier_error(&self, api: &str, failed: &oxc_ast::ast::StringLiteral<'_>) -> String {
+        let allocator = Allocator::default();
+        let program = Parser::new(
+            &allocator,
+            self.original,
+            SourceType::from_path(self.filename).unwrap_or_else(|_| SourceType::ts()),
+        )
+        .parse()
+        .program;
+        let semantic = SemanticBuilder::new()
+            .with_build_nodes(true)
+            .build(&program)
+            .semantic;
+        let errors = semantic
+            .nodes()
+            .iter()
+            .filter_map(|node| {
+                let (specifier, candidate_api) = match node.kind() {
+                    AstKind::ImportDeclaration(import)
+                        if !import.import_kind.is_type()
+                            && import.specifiers.as_ref().is_none_or(|specifiers| {
+                                specifiers.is_empty() || specifiers.iter().any(|specifier| {
+                                    !matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(named) if named.import_kind.is_type())
+                                })
+                            }) => (&import.source, "module"),
+                    AstKind::ExportFromDeclaration(export)
+                        if !export.export_kind.is_type()
+                            && (export.specifiers.is_empty()
+                                || export.specifiers.iter().any(|specifier| !specifier.export_kind.is_type())) =>
+                    {
+                        (&export.source, "module")
+                    }
+                    AstKind::ExportAllDeclaration(export) if !export.export_kind.is_type() => {
+                        (&export.source, "module")
+                    }
+                    AstKind::CallExpression(call) if api == "require" => {
+                        let Expression::Identifier(callee) = &call.callee else {
+                            return None;
+                        };
+                        if callee.name != "require"
+                            || semantic
+                                .scoping()
+                                .get_reference(callee.reference_id.get()?)
+                                .symbol_id()
+                                .is_some()
+                        {
+                            return None;
+                        }
+                        let [Argument::StringLiteral(specifier)] = call.arguments.as_slice() else {
+                            return None;
+                        };
+                        (specifier.as_ref(), "require")
+                    }
+                    _ => return None,
+                };
+                let offset = usize::try_from(specifier.span.start).ok()?;
+                (candidate_api == api && specifier.value == failed.value).then(|| {
+                    format!(
+                        "{}: {}",
+                        crate::locate(self.filename, self.original, offset),
+                        crate::utils::build_time_error(
+                            api,
+                            specifier.span.source_text(self.original),
+                            "module specifiers must contain no unpaired UTF-16 surrogate"
+                        ),
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{}{errors}", crate::dead_properties::ERROR_CHANNEL)
+    }
+}
+
 pub(crate) fn module_script(
-    script: &str,
-    filename: &str,
+    source: ModuleSource<'_>,
     loader: &mut ModuleLoader<'_>,
     entry: bool,
 ) -> Result<ModuleScript, String> {
+    let ModuleSource {
+        script, filename, ..
+    } = source;
     let allocator = Allocator::default();
     let program = Parser::new(&allocator, script, SourceType::mjs())
         .parse()
@@ -353,7 +444,11 @@ pub(crate) fn module_script(
         let Statement::ImportDeclaration(import) = statement else {
             continue;
         };
-        let source = import.source.value.as_str();
+        let source = import
+            .source
+            .value
+            .as_str()
+            .ok_or_else(|| source.specifier_error("module", &import.source))?;
         let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
         if specifiers.is_empty() {
             if entry && !source.starts_with(package.as_str()) {
@@ -361,7 +456,7 @@ pub(crate) fn module_script(
             }
             continue;
         }
-        let module = if source == package || source == "@vanilla-extract/css" {
+        let module = if source == package.as_str() || source == "@vanilla-extract/css" {
             PACKAGE_BINDING.to_string()
         } else {
             loader.load(source, filename, entry)?
@@ -423,7 +518,11 @@ pub(crate) fn module_script(
             if let AstKind::CallExpression(call) = semantic.nodes().parent_kind(node)
                 && let [Argument::StringLiteral(specifier)] = call.arguments.as_slice()
             {
-                let module = loader.load(specifier.value.as_str(), filename, entry)?;
+                let source = specifier
+                    .value
+                    .as_str()
+                    .ok_or_else(|| source.specifier_error("require", specifier))?;
+                let module = loader.load(source, filename, entry)?;
                 replacements.push((
                     call.span.start,
                     call.span.end,
@@ -512,7 +611,12 @@ pub(crate) fn module_script(
                 }
             }
             Statement::ExportFromDeclaration(export) => {
-                let module = loader.load(export.source.value.as_str(), filename, entry)?;
+                let source = export
+                    .source
+                    .value
+                    .as_str()
+                    .ok_or_else(|| source.specifier_error("module", &export.source))?;
+                let module = loader.load(source, filename, entry)?;
                 for specifier in &export.specifiers {
                     exports.push((
                         export_name(&specifier.exported),
@@ -540,7 +644,12 @@ pub(crate) fn module_script(
                 exports.push(("default".to_string(), local));
             }
             Statement::ExportAllDeclaration(export) => {
-                let module = loader.load(export.source.value.as_str(), filename, entry)?;
+                let source = export
+                    .source
+                    .value
+                    .as_str()
+                    .ok_or_else(|| source.specifier_error("module", &export.source))?;
+                let module = loader.load(source, filename, entry)?;
                 match &export.exported {
                     Some(exported) => {
                         exports.push((export_name(exported), loader.namespace(&module)));

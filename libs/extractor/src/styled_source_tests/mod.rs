@@ -99,12 +99,12 @@ impl<'a> Visit<'a> for Renders {
                 .iter()
                 .filter_map(|property| property.key.static_name())
                 .collect();
-            if keys.iter().any(|key| key.as_ref() == "style")
-                && keys.iter().any(|key| key.as_ref() == "className")
-            {
+            if keys.iter().any(|key| key == "style") && keys.iter().any(|key| key == "className") {
                 assert_eq!(
                     keys.iter()
-                        .map(std::convert::AsRef::as_ref)
+                        .map(|key| key
+                            .as_str()
+                            .unwrap_or_else(|| panic!("expected UTF-8 render key")))
                         .collect::<Vec<_>>(),
                     ["style", "className", "as", "forwardedAs"]
                 );
@@ -118,7 +118,12 @@ impl<'a> Visit<'a> for Renders {
                     .collect();
                 assert_eq!(targets.len(), 1);
                 self.1.push(match targets[0] {
-                    Expression::StringLiteral(tag) => Target::Tag(tag.value.to_string()),
+                    Expression::StringLiteral(tag) => Target::Tag(
+                        tag.value
+                            .as_str()
+                            .unwrap_or_else(|| panic!("expected UTF-8 tag"))
+                            .to_string(),
+                    ),
                     Expression::Identifier(component) => {
                         Target::Component(component.name.to_string())
                     }
@@ -155,10 +160,11 @@ impl<'a> Visit<'a> for Renders {
             .iter()
             .map(|property| match property {
                 ObjectPropertyKind::ObjectProperty(property) => (
-                    property
-                        .key
-                        .static_name()
-                        .map_or_else(String::new, |name| name.to_string()),
+                    property.key.static_name().map_or_else(String::new, |name| {
+                        name.into_cow_str()
+                            .unwrap_or_else(|| panic!("expected UTF-8 prop"))
+                            .into_owned()
+                    }),
                     readable_code(&property.value),
                 ),
                 ObjectPropertyKind::SpreadProperty(spread) => {

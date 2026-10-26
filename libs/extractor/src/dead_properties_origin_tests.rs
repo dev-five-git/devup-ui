@@ -219,6 +219,215 @@ fn computed_object_reports_its_authored_css_call() {
 }
 
 #[rstest]
+#[case("import { rules } from ", "; export { rules };", 26)]
+#[case("const { rules } = require(", "); module.exports = { rules };", 30)]
+#[case("export { rules } from ", ";", 26)]
+#[case("export * from ", ";", 18)]
+#[serial]
+fn required_module_specifiers_keep_authored_locations(
+    #[case] before: &str,
+    #[case] after: &str,
+    #[case] column: usize,
+    #[values("\\uD800", "\\uDC00")] specifier: &str,
+) {
+    // Given: styles read the required module after TypeScript and instrumentation edits.
+    reset_class_map();
+    reset_file_map();
+    let source = "import { style } from '@vanilla-extract/css';\nimport { rules } from './required';\nexport const result = style(rules);";
+    let required = format!(
+        "// Authored module, not generated JavaScript.\nconst unused: number = 1; const notModule = '{specifier}'; Math.max(1, 2); Number(0); function ignored(require: (x: string) => void) {{ require('{specifier}'); }} function optional() {{ require(0); }}\n   {before}'{specifier}'{after}"
+    );
+    let resolver = move |specifier: &str, _: &str| match specifier {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
+            path: "required.ts".to_string(),
+            code: required.clone(),
+            source_type: None,
+        })),
+        _ => None,
+    };
+
+    // When: the public module-aware extraction must load the rules.
+    let error = failure(extract_with_modules(
+        "required-origin.css.ts",
+        source,
+        options(),
+        false,
+        &resolver,
+    ));
+
+    // Then: the offending literal owns the error, not the entry's style() call.
+    assert!(
+        error.starts_with(&format!("required.ts:3:{column}:")),
+        "{error}"
+    );
+    assert!(error.contains(specifier), "{error}");
+}
+
+#[rstest]
+#[case("import { rules } from ", "; export { rules };")]
+#[case("const { rules } = require(", "); module.exports = { rules };")]
+#[case("export { rules } from ", ";")]
+#[case("export * from ", ";")]
+#[serial]
+fn required_module_specifiers_accept_complete_surrogate_pairs(
+    #[case] before: &str,
+    #[case] after: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: the same required reads name a representable astral module.
+    reset_class_map();
+    reset_file_map();
+    let required = format!("\nconst unused: number = 1;\n   {before}'\\uD83D\\uDE00'{after}");
+    let resolver = move |specifier: &str, _: &str| match specifier {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
+            path: "required.ts".to_string(),
+            code: required.clone(),
+            source_type: None,
+        })),
+        "😀" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
+            path: "rules.ts".to_string(),
+            code: "export const rules = { color: 'red' };".to_string(),
+            source_type: None,
+        })),
+        _ => None,
+    };
+
+    // When: the evaluator consumes the required rules.
+    let output = extract_with_modules(
+        "required-control.css.ts",
+        "import { style } from '@vanilla-extract/css';\nimport { rules } from './required';\nexport const result = style(rules);",
+        options(),
+        false,
+        &resolver,
+    )?;
+
+    // Then: real rules, not an unused-function fixture, were extracted.
+    let values: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::Static(style) => Some((style.property(), style.value())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(values, vec![("color", "red")]);
+    Ok(())
+}
+
+#[rstest]
+#[serial]
+fn required_module_specifiers_in_entry_refuse_plain_extraction_fallback(
+    #[values("\\uD800", "\\uDC00")] specifier: &str,
+) {
+    // Given: a required import follows a styling call that instrumentation expands.
+    reset_class_map();
+    reset_file_map();
+    let source = format!(
+        "import {{ style }} from '@vanilla-extract/css';\nexport const first = style({{ color: 'blue' }});\n   import {{ rules }} from '{specifier}';\nexport const result = style(rules);"
+    );
+
+    // When: evaluation cannot represent that module name.
+    let error = failure(extract("entry.css.ts", &source, options()));
+
+    // Then: the original literal wins over a fallback style-value diagnostic.
+    assert!(error.starts_with("entry.css.ts:3:26:"), "{error}");
+    assert!(error.contains(specifier), "{error}");
+}
+
+#[rstest]
+#[case("import type { Gone } from ")]
+#[case("import { type Gone } from ")]
+#[case("export type { Gone } from ")]
+#[case("export { type Gone } from ")]
+#[case("export type * from ")]
+#[serial]
+fn type_only_module_refusal_reports_required_site(
+    #[case] erased: &str,
+    #[values("\\uD800", "\\uDC00")] specifier: &str,
+) {
+    // Given: an erased declaration and a required ESM import share the same name.
+    reset_class_map();
+    reset_file_map();
+    let required = format!(
+        "// Original helper source.\n{erased}'{specifier}';\nconst unused: number = 1;\n   import {{ rules }} from '{specifier}';\nexport {{ rules }};"
+    );
+    let resolver = move |specifier: &str, _: &str| match specifier {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
+            path: "required-types.ts".to_string(),
+            code: required.clone(),
+            source_type: None,
+        })),
+        _ => None,
+    };
+
+    // When: stylesheet extraction actually needs the imported rules.
+    let error = failure(extract_with_modules(
+        "type-only-origin.css.ts",
+        "import { style } from '@vanilla-extract/css';\nimport { rules } from './required';\nexport const result = style(rules);",
+        options(),
+        false,
+        &resolver,
+    ));
+
+    // Then: only the actual read's opening quote is reported, never the erased site.
+    assert!(error.starts_with("required-types.ts:4:26:"), "{error}");
+    assert_eq!(error.lines().count(), 1, "{error}");
+    assert!(!error.contains("required-types.ts:2:"), "{error}");
+}
+
+#[rstest]
+#[case("import type { Gone } from ")]
+#[case("import { type Gone } from ")]
+#[case("export type { Gone } from ")]
+#[case("export { type Gone } from ")]
+#[case("export type * from ")]
+#[serial]
+fn type_only_module_declarations_allow_required_rules(
+    #[case] erased: &str,
+    #[values("\\uD800", "\\uDC00")] specifier: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: the same ESM shape has a representable required module name.
+    reset_class_map();
+    reset_file_map();
+    let required = format!(
+        "// Original helper source.\n{erased}'{specifier}';\nconst unused: number = 1;\n   import {{ rules }} from '\\uD83D\\uDE00';\nexport {{ rules }};"
+    );
+    let resolver = move |specifier: &str, _: &str| match specifier {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
+            path: "required-types.ts".to_string(),
+            code: required.clone(),
+            source_type: None,
+        })),
+        "😀" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
+            path: "rules.ts".to_string(),
+            code: "export const rules = { color: 'red' };".to_string(),
+            source_type: None,
+        })),
+        _ => None,
+    };
+
+    // When: the public evaluator consumes the helper's real runtime export.
+    let output = extract_with_modules(
+        "type-only-control.css.ts",
+        "import { style } from '@vanilla-extract/css';\nimport { rules } from './required';\nexport const result = style(rules);",
+        options(),
+        false,
+        &resolver,
+    )?;
+
+    // Then: the required value produced actual static styles, not an unused fixture.
+    let values: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            crate::ExtractStyleValue::Static(style) => Some((style.property(), style.value())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(values, vec![("color", "red")]);
+    Ok(())
+}
+
+#[rstest]
 #[case(
     "import { style as make } from '@devup-ui/react';",
     "const c = make(rules);",
