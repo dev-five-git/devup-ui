@@ -1,14 +1,12 @@
 use super::{
-    RENDERED, STYLED_BASE, StyledCapability, StyledDefinition, call_with_values, fixed, identifier,
-    jsx_name, marker_class, merge_expression_for_class_name, renders_tag, with_property,
-    without_props,
+    STYLED_BASE, StyledCapability, StyledDefinition, call_with_values, fixed, identifier, jsx_name,
+    marker_class, merge_expression_for_class_name, renders_tag,
 };
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
-use oxc_ast::{
-    ast::{Expression, ObjectPropertyKind},
-    builder::AstBuilder,
-};
-use oxc_span::SPAN;
+use oxc_ast::{ast::Expression, builder::AstBuilder};
+#[path = "styled_retained_transport.rs"]
+mod scalar_transport;
+pub(super) use scalar_transport::{Transport, transport};
 
 pub(super) enum Execution<'a> {
     Replay,
@@ -16,7 +14,17 @@ pub(super) enum Execution<'a> {
         native: bool,
         capability: StyledCapability,
     },
+    RetainedDynamic {
+        native: bool,
+        capability: StyledCapability,
+        shape: super::residual::Shape,
+    },
     Delegated(Renderer<'a>),
+    Staged {
+        renderer: Renderer<'a>,
+        shape: super::residual::Shape,
+        retarget: Option<Expression<'a>>,
+    },
 }
 
 pub(super) struct Renderer<'a> {
@@ -28,11 +36,27 @@ pub(super) struct Renderer<'a> {
     pub identities: Vec<String>,
 }
 
+impl Renderer<'_> {
+    fn clone_in<'b>(&self, allocator: &'b Allocator) -> Renderer<'b> {
+        Renderer {
+            name: self.name.clone(),
+            target: self.target.clone_in(allocator),
+            bound: self.bound.as_ref().map(|value| value.clone_in(allocator)),
+            capability: self.capability.clone(),
+            native: self.native,
+            identities: self.identities.clone(),
+        }
+    }
+}
+
 impl Execution<'_> {
     pub(super) const fn replays(&self) -> bool {
         match self {
             Self::Replay => true,
-            Self::RetainedFixed { .. } | Self::Delegated(_) => false,
+            Self::RetainedFixed { .. }
+            | Self::RetainedDynamic { .. }
+            | Self::Delegated(_)
+            | Self::Staged { .. } => false,
         }
     }
 
@@ -43,17 +67,25 @@ impl Execution<'_> {
                 native: *native,
                 capability: capability.clone(),
             },
-            Self::Delegated(renderer) => Execution::Delegated(Renderer {
-                name: renderer.name.clone(),
-                target: renderer.target.clone_in(allocator),
-                bound: renderer
-                    .bound
-                    .as_ref()
-                    .map(|value| value.clone_in(allocator)),
-                capability: renderer.capability.clone(),
-                native: renderer.native,
-                identities: renderer.identities.clone(),
-            }),
+            Self::RetainedDynamic {
+                native,
+                capability,
+                shape,
+            } => Execution::RetainedDynamic {
+                native: *native,
+                capability: capability.clone(),
+                shape: shape.clone(),
+            },
+            Self::Staged {
+                renderer,
+                shape,
+                retarget,
+            } => Execution::Staged {
+                renderer: renderer.clone_in(allocator),
+                shape: shape.clone(),
+                retarget: retarget.as_ref().map(|value| value.clone_in(allocator)),
+            },
+            Self::Delegated(renderer) => Execution::Delegated(renderer.clone_in(allocator)),
         }
     }
 }
@@ -61,6 +93,26 @@ impl Execution<'_> {
 impl<'a> StyledDefinition<'a> {
     pub(crate) fn shared(mut self) -> Option<Self> {
         if self.portable() {
+            return Some(self);
+        }
+        if !self.fixed_summary()
+            && let Some(capability) = self.capability.clone()
+        {
+            let shape = self.residual_shape();
+            let native = self.native();
+            self.name = String::new();
+            self.target = None;
+            self.bound = None;
+            self.bindings.clear();
+            self.attrs.clear();
+            self.classes.clear();
+            self.styles.clear();
+            self.composition_styles = None;
+            self.execution = Execution::RetainedDynamic {
+                native,
+                capability,
+                shape,
+            };
             return Some(self);
         }
         if self.fixed_summary()
@@ -104,20 +156,51 @@ impl<'a> StyledDefinition<'a> {
                 });
                 definition.target = Some(identifier(ast, "undefined"));
             }
-            Execution::Replay | Execution::Delegated(_) => {}
+            Execution::RetainedDynamic {
+                native,
+                capability,
+                shape,
+            } => {
+                definition.execution = Execution::Staged {
+                    renderer: Renderer {
+                        name: jsx_name(target).unwrap_or_else(|| STYLED_BASE.to_string()),
+                        target: target.clone_in(ast.allocator()),
+                        bound: None,
+                        capability: capability.clone(),
+                        native: *native,
+                        identities: self
+                            .markers
+                            .iter()
+                            .chain(&self.inherited_markers)
+                            .cloned()
+                            .collect(),
+                    },
+                    shape: shape.clone(),
+                    retarget: None,
+                };
+                definition.target = Some(identifier(ast, "undefined"));
+            }
+            Execution::Replay | Execution::Delegated(_) | Execution::Staged { .. } => {}
         }
         definition
     }
 
     pub(super) fn fixed_summary(&self) -> bool {
-        self.attrs.is_empty() && self.classes.is_empty() && self.styles.iter().all(fixed)
+        !matches!(
+            self.execution,
+            Execution::RetainedDynamic { .. } | Execution::Staged { .. }
+        ) && self.attrs.is_empty()
+            && self.classes.is_empty()
+            && self.styles.iter().all(fixed)
     }
 
     pub(super) fn native(&self) -> bool {
         match &self.execution {
             Execution::Replay => renders_tag(&self.name, self.bound.as_ref()),
-            Execution::RetainedFixed { native, .. } => *native,
-            Execution::Delegated(renderer) => renderer.native,
+            Execution::RetainedFixed { native, .. } | Execution::RetainedDynamic { native, .. } => {
+                *native
+            }
+            Execution::Delegated(renderer) | Execution::Staged { renderer, .. } => renderer.native,
         }
     }
 
@@ -130,8 +213,12 @@ impl<'a> StyledDefinition<'a> {
 
     pub(super) fn render_markers(&self, ast: &AstBuilder<'a>) -> Option<Expression<'a>> {
         let inherited = match &self.execution {
-            Execution::Delegated(renderer) => renderer.identities.as_slice(),
-            Execution::Replay | Execution::RetainedFixed { .. } => &[],
+            Execution::Delegated(renderer) | Execution::Staged { renderer, .. } => {
+                renderer.identities.as_slice()
+            }
+            Execution::Replay
+            | Execution::RetainedFixed { .. }
+            | Execution::RetainedDynamic { .. } => &[],
         };
         merge_expression_for_class_name(
             ast,
@@ -149,72 +236,19 @@ impl<'a> StyledDefinition<'a> {
         component: Expression<'a>,
     ) -> Expression<'a> {
         match &self.execution {
-            Execution::Delegated(renderer) => match &renderer.bound {
-                Some(bound) => call_with_values(
-                    ast,
-                    vec![(STYLED_BASE.to_string(), bound.clone_in(ast.allocator()))],
-                    component,
-                ),
-                None => component,
-            },
-            Execution::Replay | Execution::RetainedFixed { .. } => component,
-        }
-    }
-}
-
-pub(super) struct Transport<'b, 'a> {
-    pub capability: Option<&'b StyledCapability>,
-    pub replacement: Option<&'b Expression<'a>>,
-    pub forwarded: Expression<'a>,
-}
-
-pub(super) fn transport<'a>(
-    ast: &AstBuilder<'a>,
-    renderer: Option<&Renderer<'a>>,
-    transport: Transport<'_, 'a>,
-) -> (Expression<'a>, Expression<'a>, Expression<'a>) {
-    match renderer {
-        None => (
-            identifier(ast, RENDERED),
-            transport.forwarded,
-            identifier(ast, "forwardedAs"),
-        ),
-        Some(renderer) => {
-            let mut controls = Vec::new();
-            if let Some(capability) = transport.capability {
-                capability.omit(&mut controls);
+            Execution::Delegated(renderer) | Execution::Staged { renderer, .. } => {
+                match &renderer.bound {
+                    Some(bound) => call_with_values(
+                        ast,
+                        vec![(STYLED_BASE.to_string(), bound.clone_in(ast.allocator()))],
+                        component,
+                    ),
+                    None => component,
+                }
             }
-            let raw = with_property(
-                ast,
-                without_props(ast, &controls),
-                "forwardedAs",
-                identifier(ast, "forwardedAs"),
-            );
-            let raw = Expression::new_object_expression(
-                SPAN,
-                oxc_allocator::Vec::from_array_in(
-                    [
-                        ObjectPropertyKind::new_spread_property(SPAN, raw, ast),
-                        renderer.capability.classes.property(
-                            ast,
-                            transport
-                                .replacement
-                                .map(|value| value.clone_in(ast.allocator())),
-                        ),
-                        renderer
-                            .capability
-                            .forwarded
-                            .property(ast, Some(transport.forwarded)),
-                    ],
-                    ast,
-                ),
-                ast,
-            );
-            (
-                renderer.target.clone_in(ast.allocator()),
-                raw,
-                identifier(ast, RENDERED),
-            )
+            Execution::Replay
+            | Execution::RetainedFixed { .. }
+            | Execution::RetainedDynamic { .. } => component,
         }
     }
 }

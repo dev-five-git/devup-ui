@@ -3,7 +3,7 @@ use crate::{
     extractor::{
         ExtractResult,
         extract_style_from_expression::{
-            LiteralHandling, dynamic_style, extract_style_from_expression,
+            LiteralHandling, dynamic_style, extract_with_policy, locate_dynamic,
         },
     },
     utils::{
@@ -20,24 +20,30 @@ use oxc_ast::{
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 
-pub(super) fn extract_style_from_member_expression<'a>(
+pub(super) fn extract_member<'a, const LOCATE: bool>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
-    let mem_expression = &mem.expression.clone_in(ast_builder.allocator());
+    let mem_expression = &mem
+        .expression
+        .clone_in_with_semantic_ids(ast_builder.allocator());
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
     // Unwrap type assertions and parenthesized expressions (e.g., `({...} as const)[key]`)
     while let Some(inner) = match &mem.object {
-        Expression::TSAsExpression(ts_as) => {
-            Some(ts_as.expression.clone_in(ast_builder.allocator()))
-        }
-        Expression::ParenthesizedExpression(p) => {
-            Some(p.expression.clone_in(ast_builder.allocator()))
-        }
+        Expression::TSAsExpression(ts_as) => Some(
+            ts_as
+                .expression
+                .clone_in_with_semantic_ids(ast_builder.allocator()),
+        ),
+        Expression::ParenthesizedExpression(p) => Some(
+            p.expression
+                .clone_in_with_semantic_ids(ast_builder.allocator()),
+        ),
         _ => None,
     } {
         mem.object = inner;
@@ -56,16 +62,26 @@ pub(super) fn extract_style_from_member_expression<'a>(
             .any(|property| matches!(property, ObjectPropertyKind::SpreadProperty(_))),
         _ => false,
     }
-    .then(|| mem.object.clone_in(ast_builder.allocator()));
-    let runtime = |whole: &Expression<'a>, offset: u32| {
-        runtime_member(
+    .then(|| {
+        mem.object
+            .clone_in_with_semantic_ids(ast_builder.allocator())
+    });
+    let runtime = |whole: &Expression<'a>, offset: u32, prepare: &mut _| {
+        let mut member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+            SPAN,
+            whole.clone_in_with_semantic_ids(ast_builder.allocator()),
+            mem_expression.clone_in_with_semantic_ids(ast_builder.allocator()),
+            false,
+            ast_builder,
+        ));
+        runtime_member::<LOCATE>(
             ast_builder,
             name,
-            whole.clone_in(ast_builder.allocator()),
-            mem_expression,
+            &mut member,
             offset,
             level,
             selector,
+            prepare,
         )
     };
 
@@ -85,20 +101,21 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 if Some(idx) == selected_index
                     && let Some(p) = p.as_expression_mut()
                 {
-                    return extract_style_from_expression(
+                    return extract_with_policy::<LOCATE>(
                         ast_builder,
                         name,
                         p,
                         level,
                         selector,
                         LiteralHandling::ExpandResponsiveThemeToken,
+                        prepare,
                     );
                 }
             }
             return ExtractResult {
                 styles: spread
                     .iter()
-                    .map(|whole| runtime(whole, mem.span.start))
+                    .map(|whole| runtime(whole, mem.span.start, prepare))
                     .collect(),
                 ..ExtractResult::default()
             };
@@ -109,18 +126,22 @@ pub(super) fn extract_style_from_member_expression<'a>(
             if let ArrayExpressionElement::SpreadElement(sp) = p
                 && let Some(whole) = &spread
             {
-                map.insert(idx.to_string(), Box::new(runtime(whole, sp.span.start)));
+                map.insert(
+                    idx.to_string(),
+                    Box::new(runtime(whole, sp.span.start, prepare)),
+                );
             } else if let Some(p) = p.as_expression_mut() {
                 map.insert(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
+                        extract_with_policy::<LOCATE>(
                             ast_builder,
                             name,
                             p,
                             level,
                             selector,
                             LiteralHandling::ExpandResponsiveThemeToken,
+                            prepare,
                         )
                         .styles,
                     )),
@@ -129,7 +150,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
         }
 
         ret.push(ExtractStyleProp::MemberExpression {
-            expression: mem_expression.clone_in(ast_builder.allocator()),
+            expression: mem_expression.clone_in_with_semantic_ids(ast_builder.allocator()),
             map,
         });
     } else if let Expression::ObjectExpression(obj) = &mut mem.object
@@ -148,7 +169,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 .any(|p| matches!(p, ObjectPropertyKind::SpreadProperty(_)));
             if replaced && let Some(whole) = &spread {
                 return ExtractResult {
-                    styles: vec![runtime(whole, mem.span.start)],
+                    styles: vec![runtime(whole, mem.span.start, prepare)],
                     ..ExtractResult::default()
                 };
             }
@@ -157,13 +178,14 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     && get_str_by_property_key(&o.key).as_deref() == Some(k.as_ref())
                 {
                     return ExtractResult {
-                        styles: extract_style_from_expression(
+                        styles: extract_with_policy::<LOCATE>(
                             ast_builder,
                             name,
                             &mut o.value,
                             level,
                             selector,
                             LiteralHandling::ExpandResponsiveThemeToken,
+                            prepare,
                         )
                         .styles,
                         ..ExtractResult::default()
@@ -180,13 +202,14 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map.insert(
                     property_name,
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
+                        extract_with_policy::<LOCATE>(
                             ast_builder,
                             name,
                             &mut o.value,
                             level,
                             selector,
                             LiteralHandling::ExpandResponsiveThemeToken,
+                            prepare,
                         )
                         .styles,
                     )),
@@ -194,22 +217,14 @@ pub(super) fn extract_style_from_member_expression<'a>(
             }
         }
         ret.push(ExtractStyleProp::MemberExpression {
-            expression: mem_expression.clone_in(ast_builder.allocator()),
+            expression: mem_expression.clone_in_with_semantic_ids(ast_builder.allocator()),
             map,
         });
     } else if !matches!(
         &mem.object,
         Expression::ArrayExpression(_) | Expression::ObjectExpression(_)
     ) {
-        ret.push(runtime_member(
-            ast_builder,
-            name,
-            mem.object.clone_in(ast_builder.allocator()),
-            mem_expression,
-            mem.span.start,
-            level,
-            selector,
-        ));
+        ret.push(runtime(&mem.object, mem.span.start, prepare));
     }
 
     ExtractResult {
@@ -220,29 +235,26 @@ pub(super) fn extract_style_from_member_expression<'a>(
 
 /// `object[key]` known only at runtime: a CSS variable for a property, and
 /// under a selector, which takes styles, what the build cannot read
-fn runtime_member<'a>(
+fn runtime_member<'a, const LOCATE: bool>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
-    object: Expression<'a>,
-    key: &Expression<'a>,
+    member: &mut Expression<'a>,
     offset: u32,
     level: u8,
     selector: &Option<StyleSelector>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractStyleProp<'a> {
-    let member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-        SPAN,
-        object,
-        key.clone_in(ast_builder.allocator()),
-        false,
-        ast_builder,
-    ));
-    match name {
-        Some(name) => dynamic_style(ast_builder, name, &member, level, selector),
+    let mut style = match name {
+        Some(name) => dynamic_style(ast_builder, name, member, level, selector, prepare),
         None => ExtractStyleProp::Unreadable {
             offset,
-            code: readable_code(&member),
+            code: readable_code(member),
             prop: false,
             requirement: None,
         },
+    };
+    if LOCATE {
+        locate_dynamic(&mut style, offset);
     }
+    style
 }

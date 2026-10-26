@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict'
+
 export const pkg = '@devup-ui/react',
   file = 'src/identity.tsx'
 export const box = (props) =>
@@ -63,8 +65,19 @@ add('custom-shorthands-object-map', (h) => {
   }
 })
 add('styled-emotion-stylex-ve-static-resolver', (h) => {
+  const barrel =
+    "import { Box } from './barrel'; export const view=<Box p={2}/>;"
+  const withoutResolver = h.call('hasDevupUI', file, barrel, pkg, {})
+  assert.deepEqual(withoutResolver, {
+    tag: 'return',
+    value: { tag: 'boolean', value: false },
+  })
   const modules = {
     './tokens': resolved,
+    './barrel': {
+      path: 'src/barrel.ts',
+      code: `export { Box } from '${pkg}';`,
+    },
     './styles.css': {
       path: 'src/styles.css.ts',
       code: `import { style } from '@vanilla-extract/css'; export const card = style({color:'red',padding:8});`,
@@ -75,6 +88,11 @@ add('styled-emotion-stylex-ve-static-resolver', (h) => {
     calls.push([specifier, importer])
     return modules[specifier]
   })
+  const withResolver = h.call('hasDevupUI', file, barrel, pkg, {})
+  assert.deepEqual(withResolver, {
+    tag: 'return',
+    value: { tag: 'boolean', value: true },
+  })
   for (const code of [
     `import { styled } from '${pkg}'; export const Card = styled('div',{bg:'red',p:2});`,
     `import { css } from '@emotion/react'; export const view = <div css={css({color:'red'})} />;`,
@@ -84,8 +102,35 @@ add('styled-emotion-stylex-ve-static-resolver', (h) => {
   ])
     h.extract(code)
   h.note('resolver-calls', calls)
+  h.call('setModuleResolver', undefined)
+  const clearedResolver = h.call('hasDevupUI', file, barrel, pkg, {})
+  assert.deepEqual(clearedResolver, {
+    tag: 'return',
+    value: { tag: 'boolean', value: false },
+  })
 })
 add('aliases-object-map-null-invalid', (h) => {
+  const defaultImport =
+    "import Box from '@alias'; export const view=<Box p={2}/>;"
+  const namedImport =
+    "import { Box } from '@alias'; export const view=<Box p={2}/>;"
+  for (const [code, aliases, expected] of [
+    [defaultImport, { '@alias': 'Box' }, true],
+    [defaultImport, new Map([['@alias', 'Box']]), true],
+    [namedImport, { '@alias': null }, true],
+    [namedImport, new Map([['@alias', null]]), true],
+    [namedImport, { '@alias': undefined }, true],
+    [defaultImport, { '@alias': 7 }, false],
+    [defaultImport, { '@alias': 'Box', '@invalid': 7 }, false],
+    [defaultImport, null, false],
+    [defaultImport, undefined, false],
+  ]) {
+    const result = h.call('hasDevupUI', file, code, pkg, aliases)
+    assert.deepEqual(result, {
+      tag: 'return',
+      value: { tag: 'boolean', value: expected },
+    })
+  }
   for (const aliases of [
     { '@alias': 'Box' },
     new Map([['@alias', 'Box']]),

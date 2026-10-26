@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Numbers in rules written against Emotion, styled-components or vanilla-extract now read as px lengths when a constant stands in for the literal, as they do for a literal written in place: css({ padding: gap }) with const gap = 8, styled.div({ margin: SIZE }), <Global styles={{ body: { margin: GAP } }} /> and the same with imported constants and constant style objects give 8px, while unitless properties keep bare numbers, 0 stays 0 and Devup shorthands such as p keep the spacing scale. css`${mixin}; color: red;` outside the css prop composes the mixin by styles, so a later declaration replaces the mixin's, and a css`...` template is a known style a later css() composes. Inline css() calls inside css() arguments (css(css({ ... }), { ... }), css(cond && css({ ... }), base)) are composed with the other parts, the later winning, instead of being compiled to a class of their own. No new build errors",
+  "date": "2026-10-01T00:00:00.000Z"
+}

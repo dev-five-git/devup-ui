@@ -102,6 +102,23 @@ fn aliases<'env>(
         })
         .collect())
 }
+/// Check extraction eligibility with forgiving aliases and this environment's resolver.
+///
+/// # Errors
+/// Returns an error if the private request or environment cannot be read.
+#[napi]
+pub fn has_devup_ui<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Result<bool> {
+    let filename: String = arg(&request, 0)?;
+    let code: String = arg(&request, 1)?;
+    let package: String = arg(&request, 2)?;
+    // Only preflight defaults malformed aliases; extraction and reservation still reject them.
+    let aliases = aliases(arg(&request, 3)?, &access).unwrap_or_default();
+    with_resolver(env, |resolver| {
+        Ok(core::has_devup_ui_with(
+            &filename, &code, &package, &aliases, resolver,
+        ))
+    })
+}
 /// Private positional request retains both public eight-argument extraction signatures.
 #[napi]
 pub fn extract<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Result<NativeOutput> {

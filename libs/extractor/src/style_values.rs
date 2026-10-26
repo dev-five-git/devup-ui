@@ -2,6 +2,8 @@
 //! `const fadeIn = keyframes({ ... })`: the build gives it a name, so styles
 //! reading the binding read that name
 
+use std::rc::Rc;
+
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{Argument, BindingPattern, Expression, Str, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
@@ -12,6 +14,9 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ExtractStyleValue;
+
+#[path = "style_values_styled.rs"]
+mod styled;
 
 /// The name a style API call gives
 #[derive(Clone)]
@@ -30,8 +35,9 @@ pub enum StyleValue {
 
 #[derive(Default)]
 pub struct StyleValues<'a> {
-    scoping: Option<std::rc::Rc<Scoping>>,
+    scoping: Option<Rc<Scoping>>,
     values: FxHashMap<SymbolId, StyleValue>,
+    members: FxHashMap<SymbolId, FxHashMap<String, StyleValue>>,
     /// Known imported styles, including top-level constant aliases, by binding
     imported: FxHashMap<String, Vec<ExtractStyleValue>>,
     /// The `const`s the file binds to a string, which a `className` reads as
@@ -42,10 +48,13 @@ pub struct StyleValues<'a> {
 }
 
 impl<'a> StyleValues<'a> {
-    pub fn new(scoping: std::rc::Rc<Scoping>) -> Self {
+    /// The values of the bindings `scoping`, which the other readers of the
+    /// program share, tells
+    pub fn new(scoping: Rc<Scoping>) -> Self {
         Self {
             scoping: Some(scoping),
             values: FxHashMap::default(),
+            members: FxHashMap::default(),
             imported: FxHashMap::default(),
             texts: FxHashMap::default(),
             rules: FxHashMap::default(),
@@ -55,14 +64,6 @@ impl<'a> StyleValues<'a> {
 
     pub const fn has_scoping(&self) -> bool {
         self.scoping.is_some()
-    }
-
-    pub fn reads_root_binding(&self, identifier: &oxc_ast::ast::IdentifierReference<'_>) -> bool {
-        self.scoping.as_ref().is_none_or(|scoping| {
-            scoping
-                .get_root_binding(identifier.name.as_str().into())
-                .is_none_or(|root| self.reference_symbol(identifier) == Some(root))
-        })
     }
 
     pub fn import(&mut self, imported: FxHashMap<String, Vec<ExtractStyleValue>>) {
@@ -103,6 +104,30 @@ impl<'a> StyleValues<'a> {
 
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
         self.values.insert(symbol, value);
+    }
+
+    /// The selector of a member of an imported namespace, keyed by its binding.
+    pub fn insert_member(&mut self, symbol: SymbolId, member: &str, selector: String) {
+        self.members
+            .entry(symbol)
+            .or_default()
+            .insert(member.to_string(), StyleValue::Component(selector));
+    }
+
+    /// The binding at the root of a JSX element's name.
+    pub fn jsx_symbol(&self, name: &oxc_ast::ast::JSXElementName<'_>) -> Option<SymbolId> {
+        match name {
+            oxc_ast::ast::JSXElementName::IdentifierReference(reference) => {
+                self.reference_symbol(reference)
+            }
+            oxc_ast::ast::JSXElementName::MemberExpression(member) => match &member.object {
+                oxc_ast::ast::JSXMemberExpressionObject::IdentifierReference(reference) => {
+                    self.reference_symbol(reference)
+                }
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     pub fn remove(&mut self, symbol: SymbolId) {
@@ -278,21 +303,24 @@ impl<'a> StyleValues<'a> {
 
     fn reads<'s>(&'s self, ast: &'s AstBuilder<'a>, in_rules: bool) -> Option<Reads<'s, 'a>> {
         let scoping = self.scoping.as_ref()?;
-        (!self.values.is_empty() || !self.calls.is_empty()).then_some(Reads {
-            ast,
-            scoping,
-            values: &self.values,
-            in_key: false,
-            context: if in_rules {
-                ReadContext::Rules
-            } else {
-                ReadContext::Value
+        (!self.values.is_empty() || !self.members.is_empty() || !self.calls.is_empty()).then_some(
+            Reads {
+                ast,
+                scoping,
+                values: &self.values,
+                members: &self.members,
+                in_key: false,
+                context: if in_rules {
+                    ReadContext::Rules
+                } else {
+                    ReadContext::Value
+                },
+                rules: &self.rules,
+                calls: &self.calls,
+                source: false,
+                nested_rules: !in_rules,
             },
-            rules: &self.rules,
-            calls: &self.calls,
-            source: false,
-            nested_rules: !in_rules,
-        })
+        )
     }
 }
 
@@ -339,13 +367,11 @@ impl<'a> oxc_ast_visit::Visit<'a> for Selected<'_, 'a> {
         if it.computed
             && let Some(key) = it.key.as_expression()
         {
-            match key {
-                Expression::TemplateLiteral(template) => {
-                    for expression in &template.expressions {
-                        (self.found)(expression);
-                    }
+            (self.found)(key);
+            if let Expression::TemplateLiteral(template) = crate::utils::unwrap_syntax_only(key) {
+                for expression in &template.expressions {
+                    (self.found)(expression);
                 }
-                key => (self.found)(key),
             }
         }
         oxc_ast_visit::walk::walk_object_property(self, it);
@@ -395,6 +421,7 @@ struct Reads<'s, 'a> {
     ast: &'s AstBuilder<'a>,
     scoping: &'s Scoping,
     values: &'s FxHashMap<SymbolId, StyleValue>,
+    members: &'s FxHashMap<SymbolId, FxHashMap<String, StyleValue>>,
     /// Inside the key of a rule, which a component is read in as its selector
     in_key: bool,
     context: ReadContext,
@@ -404,15 +431,54 @@ struct Reads<'s, 'a> {
     nested_rules: bool,
 }
 
+/// A namespace member whose property name is written as an exact string.
+pub fn component_member<'e, 'a>(
+    expression: &'e Expression<'a>,
+) -> Option<(&'e Expression<'a>, &'e str)> {
+    match crate::utils::unwrap_syntax_only(expression) {
+        Expression::StaticMemberExpression(member) => {
+            Some((&member.object, member.property.name.as_str()))
+        }
+        Expression::ComputedMemberExpression(member) => {
+            match crate::utils::unwrap_syntax_only(&member.expression) {
+                Expression::StringLiteral(property) => {
+                    Some((&member.object, property.value.as_str()?))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+impl Reads<'_, '_> {
+    fn value(&self, expression: &Expression<'_>) -> Option<&StyleValue> {
+        let (identifier, member) = match crate::utils::unwrap_syntax_only(expression) {
+            Expression::Identifier(identifier) => (identifier, None),
+            expression => {
+                let (object, member) = component_member(expression)?;
+                match crate::utils::unwrap_syntax_only(object) {
+                    Expression::Identifier(identifier) => (identifier, Some(member)),
+                    _ => return None,
+                }
+            }
+        };
+        let symbol = self
+            .scoping
+            .get_reference(identifier.reference_id.get()?)
+            .symbol_id()?;
+        match member {
+            Some(member) => self.members.get(&symbol)?.get(member),
+            None => self.values.get(&symbol),
+        }
+    }
+}
+
 impl<'a> VisitMut<'a> for Reads<'_, 'a> {
     fn visit_property_key(&mut self, it: &mut oxc_ast::ast::PropertyKey<'a>) {
         // A component standing for the whole key selects it within the rule
-        if let Some(Expression::Identifier(identifier)) = it.as_expression()
-            && let Some(StyleValue::Component(selector)) = identifier
-                .reference_id
-                .get()
-                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| self.values.get(&symbol))
+        if let Some(expression) = it.as_expression()
+            && let Some(StyleValue::Component(selector)) = self.value(expression)
         {
             *it = oxc_ast::ast::PropertyKey::StringLiteral(oxc_ast::ast::StringLiteral::boxed(
                 SPAN,
@@ -446,13 +512,7 @@ impl<'a> VisitMut<'a> for Reads<'_, 'a> {
             *it = rules.clone_in_with_semantic_ids(self.ast.allocator());
             return;
         }
-        if let Expression::Identifier(identifier) = it
-            && let Some(value) = identifier
-                .reference_id
-                .get()
-                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| self.values.get(&symbol))
-        {
+        if let Some(value) = self.value(it) {
             let value = match value {
                 StyleValue::Class(..) if self.context == ReadContext::CssText => return,
                 // Elsewhere it is the component itself
@@ -569,5 +629,89 @@ impl<'a> VisitMut<'a> for ClassReads<'_, 'a> {
             return;
         }
         walk_mut::walk_expression(self, it);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::{ObjectPropertyKind, Statement};
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+    use rstest::rstest;
+    use std::rc::Rc;
+
+    #[rstest]
+    #[case("UI.Child")]
+    #[case("UI['Child']")]
+    fn namespace_selectors_when_nested_source_is_recovered_keep_both_rules(
+        #[case] member: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Given
+        let allocator = Allocator::default();
+        let ast = AstBuilder::new(&allocator);
+        let source = format!(
+            "import * as UI from './base'; const mixin = {{ color: 'red' }}; ({{ _hover: mixin, [{member}]: {{ color: 'blue' }} }});"
+        );
+        let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+        assert_eq!(parsed.diagnostics.len(), 0);
+        let scoping = Rc::new(
+            oxc_semantic::SemanticBuilder::new()
+                .build(&parsed.program)
+                .semantic
+                .into_scoping(),
+        );
+        let namespace = scoping
+            .get_root_binding("UI".into())
+            .ok_or("missing namespace")?;
+        let mixin = scoping
+            .get_root_binding("mixin".into())
+            .ok_or("missing mixin")?;
+        let Statement::VariableDeclaration(declaration) = &parsed.program.body[1] else {
+            panic!("expected mixin declaration");
+        };
+        let rules = declaration.declarations[0]
+            .init
+            .as_ref()
+            .ok_or("missing rules")?;
+        let Statement::ExpressionStatement(statement) = &parsed.program.body[2] else {
+            panic!("expected rules expression");
+        };
+        let mut expression = statement.expression.clone_in_with_semantic_ids(&allocator);
+        let mut values = StyleValues::new(scoping);
+        values.insert_member(namespace, "Child", ".child".to_string());
+        values.insert(mixin, StyleValue::Class("generated".to_string(), None));
+        values
+            .rules
+            .insert(mixin, rules.clone_in_with_semantic_ids(&allocator));
+        // When
+        values.read_in(&ast, &mut expression);
+        // Then
+        let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(&expression)
+        else {
+            panic!("expected rule object");
+        };
+        let ObjectPropertyKind::ObjectProperty(hover) = &object.properties[0] else {
+            panic!("expected hover rule");
+        };
+        let Expression::ObjectExpression(recovered) = &hover.value else {
+            panic!("expected recovered source, not generated class text");
+        };
+        let ObjectPropertyKind::ObjectProperty(color) = &recovered.properties[0] else {
+            panic!("expected recovered declaration");
+        };
+        let Expression::StringLiteral(red) = &color.value else {
+            panic!("expected literal color");
+        };
+        assert_eq!(red.value, "red");
+        let ObjectPropertyKind::ObjectProperty(selected) = &object.properties[1] else {
+            panic!("expected component selector");
+        };
+        assert_eq!(
+            crate::utils::get_str_by_property_key(&selected.key).as_deref(),
+            Some("& .child")
+        );
+        Ok(())
     }
 }

@@ -62,7 +62,7 @@ export function RadioGroup<T extends RadioValue>({
   name,
   label,
 }: RadioGroupProps<T>) {
-  const generatedName = useId()
+  const generatedId = useId()
   const [innerValue, setInnerValue] = useState<T | undefined>(defaultValue)
   const resultValue = value !== undefined ? value : innerValue
 
@@ -86,7 +86,7 @@ export function RadioGroup<T extends RadioValue>({
         const props = {
           checked: resultValue === optionValue,
           disabled,
-          name: name ?? generatedName,
+          name: name ?? generatedId,
           value: stringValue,
           onChange: () => !disabled && handleChange(optionValue),
           className,

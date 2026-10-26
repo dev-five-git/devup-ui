@@ -5,7 +5,7 @@ mod host;
 mod output;
 mod value;
 
-pub use host::{Resolved, extract, init, reserve, reset, set_resolver};
+pub use host::{Resolved, extract, has_devup_ui, init, reserve, reset, set_resolver};
 pub use output::NativeOutput;
 
 use devup_ui_binding_core as core;
@@ -128,11 +128,6 @@ pub fn seed_file_map(files: Vec<String>) {
 pub fn get_unreserved_class_slot_count() -> u32 {
     let [a, b, c, d, ..] = core::get_unreserved_class_slot_count().to_le_bytes();
     u32::from_le_bytes([a, b, c, d])
-}
-/// Check the existing extractor's import detection.
-#[napi]
-pub fn has_devup_ui(filename: String, code: String, package: String) -> bool {
-    core::has_devup_ui(&filename, &code, &package)
 }
 /// Generate declarations with the existing five interface-name slots.
 #[napi]

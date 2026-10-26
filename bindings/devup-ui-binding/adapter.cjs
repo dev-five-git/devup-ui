@@ -121,8 +121,8 @@ exports.createBinding = function createBinding(raw) {
         string(theme),
       ]),
     getUnreservedClassSlotCount: raw.getUnreservedClassSlotCount,
-    hasDevupUI: (file, code, pkg) =>
-      raw.hasDevupUi(string(file), string(code), string(pkg)),
+    hasDevupUI: (file, code, pkg, aliases) =>
+      call(raw.hasDevupUi, [string(file), string(code), string(pkg), aliases]),
     importCanonicalMap: (value) => call(raw.importCanonicalMap, value),
     importClassMap: (value) => call(raw.importClassMap, value),
     importFileMap: (value) => call(raw.importFileMap, value),

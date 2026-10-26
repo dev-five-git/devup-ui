@@ -60,15 +60,15 @@ const names =
 const abi = {
   names: Object.keys(w).sort(),
   types: names.map((name) => [name, typeof w[name]]),
-  arities: ['codeExtract', 'codeExtractWithoutSourceMap'].map((name) => [
-    name,
-    w[name]?.length,
-  ]),
+  arities: ['codeExtract', 'codeExtractWithoutSourceMap', 'hasDevupUI'].map(
+    (name) => [name, w[name]?.length],
+  ),
 }
 abi.result = capture(() => {
   assert.deepEqual(abi.names, [...names].sort())
   for (const name of names) assert.equal(typeof w[name], 'function', name)
-  for (const [, arity] of abi.arities) assert.equal(arity, 8)
+  for (const [name, arity] of abi.arities)
+    assert.equal(arity, name === 'hasDevupUI' ? 4 : 8)
   assert.equal(typeof w.Output.prototype.free, 'function')
 })
 save('abi.json', abi)

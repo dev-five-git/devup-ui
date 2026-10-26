@@ -132,6 +132,20 @@ describe('WASM loading', () => {
     ).toEqual({ isolated: true })
   })
 
+  it('resolves from the project manifest without an installed or workspace plugin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'devup-ui-next-root-'))
+    tempRoots.push(root)
+    writeFileSync(join(root, 'package.json'), '{"name":"root-fallback"}')
+    writeFileSync(
+      join(root, 'dependency.cjs'),
+      'module.exports = { root: true }',
+    )
+
+    expect(
+      requireFromPlugin<{ root: boolean }>('./dependency.cjs', root),
+    ).toEqual({ root: true })
+  })
+
   it('loads or injects the Webpack plugin without a static dependency', () => {
     expect(typeof loadWebpackPlugin().DevupUIWebpackPlugin).toBe('function')
     setWebpackPluginForTesting(webpackPlugin)

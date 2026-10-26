@@ -80,7 +80,9 @@ export function Select({
   const ref = useRef<HTMLDivElement>(null)
   const generatedId = useId()
   const listboxId = `${props.id ?? generatedId}-listbox`
-  const [triggerId, setTriggerId] = useState(`-trigger`)
+  const [triggerId, setTriggerId] = useState(
+    `${props.id ?? generatedId}-trigger`,
+  )
   const [open, setOpen] = useState(defaultOpen ?? false)
   const isOpen = openProp ?? open
   const [value, setValue] = useState<SelectValue<typeof type>>(
