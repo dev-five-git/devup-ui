@@ -9,6 +9,49 @@ use serial_test::serial;
 
 mod classes;
 
+#[test]
+#[serial]
+fn imported_constant_when_unused_require_sources_are_surrogates_still_extracts() {
+    // Given an imported literal export alongside unused, unrepresentable requires.
+    reset_class_map();
+    reset_file_map();
+    let resolver = |source: &str, _: &str| {
+        assert!(
+            !source.contains('\u{FFFD}'),
+            "lossy module source: {source:?}"
+        );
+        (source == "./tokens").then(|| crate::ResolvedModule {
+            path: "/tokens.js".to_string(),
+            code: r"const high = require('\uD800');
+const low = require('\uDC00');
+export const spacing = 3;"
+                .to_string(),
+        })
+    };
+    // When constant collection reads the imported module, not just the root scope.
+    let output = extract_with_modules(
+        "/app.tsx",
+        "import { css } from '@devup-ui/react'; import { spacing } from './tokens'; export const result = css({ p: spacing });",
+        ExtractOption::default(),
+        false,
+        &resolver,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // Then optional opaque sources do not prevent exact static constant consumption.
+    assert_eq!(output.dependencies, vec!["/tokens.js"]);
+    let styles: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            ExtractStyleValue::Static(style) => Some((style.property(), style.value())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(styles, vec![("padding", "12px")]);
+    assert!(!output.code.contains("css("), "{}", output.code);
+    assert!(!output.code.contains("var(--"), "{}", output.code);
+}
+
 #[rstest]
 #[case(r"'\uD800'")]
 #[case(r"'\uDC00'")]
