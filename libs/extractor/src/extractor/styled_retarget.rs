@@ -14,7 +14,7 @@ pub fn with_component<'a>(
     context: StyledContext<'_>,
 ) -> Option<(Expression<'a>, StyledDefinition<'a>)> {
     let name = match unwrap_syntax_only(target) {
-        Expression::StringLiteral(literal) => literal.value.to_string(),
+        Expression::StringLiteral(literal) => literal.value.as_str()?.to_string(),
         target => jsx_name(target)?,
     };
     let allocator = ast_builder.allocator();

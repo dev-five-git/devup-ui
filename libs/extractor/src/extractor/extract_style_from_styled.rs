@@ -737,7 +737,9 @@ fn tag_from_argument<'a>(
 ) -> Option<Base<'a>> {
     let argument = unwrap_syntax_only(argument.as_expression()?);
     match argument {
-        Expression::StringLiteral(lit) => return Some(Base::named(lit.value.to_string())),
+        Expression::StringLiteral(lit) => {
+            return Some(Base::named(lit.value.as_str()?.to_string()));
+        }
         // Never a component
         Expression::NullLiteral(_)
         | Expression::BooleanLiteral(_)
@@ -1327,9 +1329,7 @@ pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u3
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 continue;
             };
-            if property.computed
-                || property.key.static_name().as_deref() != Some("shouldForwardProp")
-            {
+            if property.computed || !property.key.is_specific_static_name("shouldForwardProp") {
                 continue;
             }
             match Forward::read(&property.value) {

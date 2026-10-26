@@ -142,9 +142,9 @@ fn gen_style<'a>(
             // instead of the old O(C*A) nested `iter().any(..)` key comparisons. The map
             // stores each key's FIRST index in `collect_a` (only inserting on the first
             // sight of a key), exactly reproducing the previous "first matching q wins"
-            // ternary. `key.name()` is a borrowed `Cow<str>` for the common static-ident
+            // ternary. `key.name()` is a borrowed `StaticPropertyName` for static-ident
             // props, so keys are cheap to hash and don't allocate.
-            let mut a_by_key: FxHashMap<std::borrow::Cow<str>, usize> =
+            let mut a_by_key: FxHashMap<oxc_ast::StaticPropertyName<'_>, usize> =
                 FxHashMap::with_capacity_and_hasher(collect_a.len(), FxBuildHasher);
             for (j, q) in collect_a.iter().enumerate() {
                 if let ObjectPropertyKind::ObjectProperty(q) = q
@@ -156,7 +156,7 @@ fn gen_style<'a>(
             // Set of consequent keys: an alternate entry is emitted alone (a-side pass
             // below) iff NO consequent shares its key — identical to the old
             // `collect_c.iter().any(..)` probe, now a single O(1) set lookup.
-            let mut c_keys: FxHashSet<std::borrow::Cow<str>> =
+            let mut c_keys: FxHashSet<oxc_ast::StaticPropertyName<'_>> =
                 FxHashSet::with_capacity_and_hasher(collect_c.len(), FxBuildHasher);
 
             for p in &collect_c {
@@ -316,9 +316,16 @@ fn gen_style<'a>(
     properties
 }
 
-fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Cow<'k, str>> {
+fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Cow<'k, [u8]>> {
     if let ObjectPropertyKind::ObjectProperty(p) = p {
-        p.key.name()
+        p.key.name().map(|name| match name {
+            oxc_ast::StaticPropertyName::Borrowed(name) => {
+                std::borrow::Cow::Borrowed(name.as_bytes())
+            }
+            oxc_ast::StaticPropertyName::Owned(name) => {
+                std::borrow::Cow::Owned(name.into_string().into_bytes())
+            }
+        })
     } else {
         None
     }

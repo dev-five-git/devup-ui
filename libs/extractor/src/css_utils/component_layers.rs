@@ -44,9 +44,17 @@ pub(crate) fn expression_layer_errors(
 ) -> Vec<(u32, String)> {
     match crate::utils::unwrap_syntax_only(expression) {
         Expression::TemplateLiteral(template) => template_layer_errors(template, api),
-        Expression::StringLiteral(literal) => {
-            statement_errors(&literal.value, api, |_| literal.span.start)
-        }
+        Expression::StringLiteral(literal) => match literal.value.as_str() {
+            Some(text) => statement_errors(text, api, |_| literal.span.start),
+            None => vec![(
+                literal.span.start,
+                crate::utils::build_time_error(
+                    api,
+                    &crate::utils::readable_code(expression),
+                    "CSS text must contain no unpaired UTF-16 surrogate",
+                ),
+            )],
+        },
         Expression::ArrayExpression(array) => array
             .elements
             .iter()

@@ -99,6 +99,7 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
     for statement in &program.body {
         if let Statement::ImportDeclaration(import) = statement
             && !import.import_kind.is_type()
+            && let Some(source) = import.source.value.as_str()
         {
             for specifier in import.specifiers.iter().flatten() {
                 let (local, imported) = match specifier {
@@ -119,7 +120,7 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                     (
                         symbol,
                         Link::From {
-                            source: import.source.value.to_string(),
+                            source: source.to_string(),
                             imported,
                         },
                     )
@@ -130,6 +131,9 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
     for statement in &program.body {
         match statement {
             Statement::ExportFromDeclaration(export) if !export.export_kind.is_type() => {
+                let Some(source) = export.source.value.as_str() else {
+                    continue;
+                };
                 for specifier in export
                     .specifiers
                     .iter()
@@ -138,14 +142,16 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
                     exports.named.insert(
                         specifier.exported.name().to_string(),
                         Link::From {
-                            source: export.source.value.to_string(),
+                            source: source.to_string(),
                             imported: Some(specifier.local.name().to_string()),
                         },
                     );
                 }
             }
             Statement::ExportAllDeclaration(export) if !export.export_kind.is_type() => {
-                let source = export.source.value.to_string();
+                let Some(source) = export.source.value.as_str().map(str::to_string) else {
+                    continue;
+                };
                 match &export.exported {
                     Some(name) => {
                         exports.named.insert(
@@ -520,9 +526,9 @@ fn unfollowable(code: &str, specifier: &str, reason: &str) -> String {
 /// The member a computed key names, when it is a literal
 fn literal_key(key: &Expression<'_>) -> Option<String> {
     match key {
-        Expression::StringLiteral(text) => Some(text.value.to_string()),
+        Expression::StringLiteral(text) => text.value.as_str().map(str::to_string),
         Expression::TemplateLiteral(template) => match template.quasis.as_slice() {
-            [only] => only.value.cooked.as_ref().map(ToString::to_string),
+            [only] => Some(only.value.cooked?.as_str()?.to_string()),
             _ => None,
         },
         _ => None,
@@ -588,7 +594,7 @@ fn redirect_import<'p, 'a>(
     import: &'p oxc_ast::ast::ImportDeclaration<'a>,
     found: &mut Found<'p, 'a>,
 ) -> Option<String> {
-    let source = import.source.value.as_str();
+    let source = import.source.value.as_str()?;
     let after = import.span.end as usize;
     let mut redirected: Vec<(Option<String>, &str, String)> = Vec::new();
     let mut kept = Kept::default();
@@ -862,7 +868,10 @@ impl Rewriter<'_, '_, '_, '_> {
         for property in &pattern.properties {
             match (&property.value, property.key.static_name()) {
                 (BindingPattern::BindingIdentifier(binding), Some(name)) if !property.computed => {
-                    members.push((name.to_string(), binding));
+                    let Some(name) = name.into_cow_str() else {
+                        return whole(self);
+                    };
+                    members.push((name.into_owned(), binding));
                 }
                 _ => return whole(self),
             }
@@ -983,7 +992,10 @@ pub(crate) fn rewrite(
         if import.import_kind.is_type() || import.with_clause.is_some() {
             continue;
         }
-        if walker.is_package(import.source.value.as_str()) {
+        let Some(source) = import.source.value.as_str() else {
+            continue;
+        };
+        if walker.is_package(source) {
             for specifier in import.specifiers.iter().flatten() {
                 let binding = match specifier {
                     ImportDeclarationSpecifier::ImportDefaultSpecifier(default) => &default.local,
@@ -996,8 +1008,8 @@ pub(crate) fn rewrite(
                             found.bound.push(Bound {
                                 binding: &named.local,
                                 after: import.span.end as usize,
-                                source: import.source.value.to_string(),
-                                devup: (import.source.value.to_string(), Some(imported.clone())),
+                                source: source.to_string(),
+                                devup: (source.to_string(), Some(imported.clone())),
                                 imported,
                             });
                         }
@@ -1008,7 +1020,7 @@ pub(crate) fn rewrite(
                     binding,
                     after: import.span.end as usize,
                     module: None,
-                    source: import.source.value.to_string(),
+                    source: source.to_string(),
                 });
             }
         } else if let Some(statements) =
