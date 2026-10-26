@@ -16,7 +16,7 @@ pub(super) fn contains(code: &str, path: &[&str]) -> bool {
                 &member.object,
                 member
                     .static_property_name()
-                    .map(|key| key.to_string())
+                    .and_then(|key| key.as_str().map(str::to_string))
                     .or_else(|| {
                         crate::utils::get_string_by_literal_expression(&member.expression)
                             .map(std::borrow::Cow::into_owned)

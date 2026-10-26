@@ -27,7 +27,11 @@ fn compile(body: &str) -> ExtractOutput {
 fn result_styles(output: &ExtractOutput, condition: bool) -> Vec<ExtractStaticStyle> {
     fn classes(expression: &Expression<'_>, condition: bool) -> String {
         match expression {
-            Expression::StringLiteral(literal) => literal.value.to_string(),
+            Expression::StringLiteral(literal) => literal
+                .value
+                .as_str()
+                .unwrap_or_else(|| panic!("expected UTF-8 classes"))
+                .to_string(),
             Expression::ConditionalExpression(choice) => classes(
                 if condition {
                     &choice.consequent

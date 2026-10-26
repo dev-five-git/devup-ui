@@ -299,7 +299,7 @@ pub(crate) fn fallback_value(key: &str, array: &oxc_ast::ast::ArrayExpression) -
                 });
             }
             match element {
-                Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+                Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
                 _ => None,
             }
         })
@@ -521,13 +521,13 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
         .filter_map(|statement| match statement {
             Statement::ImportDeclaration(import)
                 if !import.import_kind.is_type()
-                    && VANILLA_EXTRACT_COMPANIONS.contains(&import.source.value.as_str()) =>
+                    && VANILLA_EXTRACT_COMPANIONS.iter().any(|name| import.source.value == *name) =>
             {
                 Some((
                     import.span.start,
                     format!(
                         "`{}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin",
-                        import.source.value
+                        import.source.value.display()
                     ),
                 ))
             }
@@ -615,7 +615,9 @@ pub fn transform_import_aliases_with_edits<'a>(
             if import_decl.import_kind.is_type() {
                 continue;
             }
-            let source_value = import_decl.source.value.as_str();
+            let Some(source_value) = import_decl.source.value.as_str() else {
+                continue;
+            };
             uses_emotion |= is_emotion(source_value)
                 && import_decl.specifiers.as_ref().is_none_or(|specifiers| {
                     specifiers.iter().any(|specifier| {
@@ -654,8 +656,13 @@ pub fn transform_import_aliases_with_edits<'a>(
                 && !import_decl.import_kind.is_type()
             {
                 let span = import_decl.span;
-                let new_import =
-                    generate_transformed_import(import_decl, alias, package, redirect_every_name);
+                let new_import = generate_transformed_import(
+                    import_decl,
+                    source_value,
+                    alias,
+                    package,
+                    redirect_every_name,
+                );
                 transformations.push((span.start as usize, span.end as usize, new_import));
                 if !redirect_every_name {
                     for specifier in import_decl.specifiers.iter().flatten() {
@@ -898,11 +905,7 @@ fn push_specifier(parts: &mut String, imported: &str, local: &str) {
 /// The logical exported name: `import { 'css' as c }` and `import { css as c }` both
 /// export `css`, so the mapping tables match on this.
 fn imported_name<'a>(imported: &'a ModuleExportName) -> &'a str {
-    match imported {
-        ModuleExportName::IdentifierName(id) => id.name.as_str(),
-        ModuleExportName::IdentifierReference(id) => id.name.as_str(),
-        ModuleExportName::StringLiteral(literal) => literal.value.as_str(),
-    }
+    imported.name().as_str()
 }
 
 /// The exported name as it must be written back into an import clause; only the
@@ -910,7 +913,17 @@ fn imported_name<'a>(imported: &'a ModuleExportName) -> &'a str {
 /// `String`.
 fn exported_text<'a>(imported: &'a ModuleExportName) -> Cow<'a, str> {
     match imported {
-        ModuleExportName::StringLiteral(_) => Cow::Owned(imported.to_string()),
+        ModuleExportName::StringLiteral(literal) => {
+            let allocator = Allocator::default();
+            let mut codegen = oxc_codegen::Codegen::new();
+            codegen.print_expression(&Expression::new_string_literal(
+                literal.span,
+                literal.value,
+                None,
+                &oxc_ast::builder::AstBuilder::new(&allocator),
+            ));
+            Cow::Owned(codegen.into_source_text())
+        }
         ModuleExportName::IdentifierName(_) | ModuleExportName::IdentifierReference(_) => {
             Cow::Borrowed(imported_name(imported))
         }
@@ -920,11 +933,11 @@ fn exported_text<'a>(imported: &'a ModuleExportName) -> Cow<'a, str> {
 /// Generate the transformed import statement
 fn generate_transformed_import(
     import_decl: &oxc_ast::ast::ImportDeclaration,
+    source: &str,
     alias: &ImportAlias,
     package: &str,
     redirect_every_name: bool,
 ) -> String {
-    let source = import_decl.source.value.as_str();
     let specifiers = match &import_decl.specifiers {
         Some(specs) => specs,
         None => return format!("import '{package}';"),
@@ -1670,6 +1683,7 @@ const x = 1;",
             assert_eq!(
                 generate_transformed_import(
                     import_decl,
+                    "source",
                     &ImportAlias::NamedToNamed,
                     "@devup-ui/react",
                     true
@@ -1714,6 +1728,7 @@ const x = 1;",
             assert_eq!(
                 generate_transformed_import(
                     import_decl,
+                    "source",
                     &ImportAlias::NamedToNamed,
                     "@devup-ui/react",
                     true
@@ -1721,6 +1736,43 @@ const x = 1;",
                 expected
             );
         }
+    }
+
+    #[test]
+    fn quoted_import_name_roundtrips_when_alias_rewrites_it() {
+        let source = r#"import { "a\"b\\c" as local } from 'source';"#;
+        let aliases = HashMap::from([("source".to_string(), ImportAlias::NamedToNamed)]);
+        let output = transform_import_aliases_with_edits(
+            source,
+            "styles.css.ts",
+            "@devup-ui/react",
+            &aliases,
+        );
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, &output.code, SourceType::ts()).parse();
+        assert_eq!(parsed.diagnostics.len(), 0);
+        let Statement::ImportDeclaration(import) = &parsed.program.body[0] else {
+            panic!("expected rewritten import");
+        };
+        let ImportDeclarationSpecifier::ImportSpecifier(specifier) = &import
+            .specifiers
+            .as_ref()
+            .unwrap_or_else(|| panic!("expected specifiers"))[0]
+        else {
+            panic!("expected named import");
+        };
+        assert_eq!(import.source.value, "@devup-ui/react");
+        assert_eq!(specifier.imported.name().as_str(), "a\"b\\c");
+    }
+
+    #[test]
+    fn unmatched_surrogate_source_keeps_original_import() {
+        let source = r"import { css } from '\uD800'; // source";
+        let aliases = HashMap::from([("source".to_string(), ImportAlias::NamedToNamed)]);
+        let output =
+            transform_import_aliases_with_edits(source, "view.ts", "@devup-ui/react", &aliases);
+        assert_eq!(output.code, source);
+        assert_eq!(output.edits.len(), 0);
     }
 
     #[test]

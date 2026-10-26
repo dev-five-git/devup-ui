@@ -159,7 +159,12 @@ impl<'a> DevupVisitor<'a> {
                     .properties
                     .iter()
                     .filter_map(ObjectPropertyKind::as_property)
-                    .filter_map(|property| property.key.static_name());
+                    .filter_map(|property| {
+                        property
+                            .key
+                            .static_name()
+                            .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+                    });
                 let denied = forwarding::denied(definition, names, forwarding::Site::Renderer);
                 filter_object(&self.ast, props, &denied);
             }

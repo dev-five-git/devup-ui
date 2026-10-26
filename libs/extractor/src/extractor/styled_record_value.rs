@@ -82,7 +82,9 @@ impl<'a> Preparation<'_, '_, 'a> {
     ) -> Option<Expression<'a>> {
         let source = unwrap_syntax_only(source);
         let builder = self.reads.builder;
-        if get_string_by_literal_expression(source).is_some() {
+        if get_string_by_literal_expression(source).is_some()
+            || crate::utils::unrepresentable_literal(source)
+        {
             return Some(source.clone_in(builder.allocator()));
         }
         match source {

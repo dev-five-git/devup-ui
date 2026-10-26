@@ -442,7 +442,7 @@ pub fn component_member<'e, 'a>(
         Expression::ComputedMemberExpression(member) => {
             match crate::utils::unwrap_syntax_only(&member.expression) {
                 Expression::StringLiteral(property) => {
-                    Some((&member.object, property.value.as_str()))
+                    Some((&member.object, property.value.as_str()?))
                 }
                 _ => None,
             }

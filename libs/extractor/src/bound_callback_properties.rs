@@ -17,10 +17,12 @@ impl<'a> Sites<'_, 'a> {
             };
             if property.method
                 || property.kind != PropertyKind::Init
-                || css::is_special_property::is_special_property(&key)
+                || key
+                    .as_str()
+                    .is_some_and(css::is_special_property::is_special_property)
                 || matches!(
-                    key.as_ref(),
-                    "styleOrder" | "styleVars" | "props" | "params" | "as"
+                    key.as_str(),
+                    Some("styleOrder" | "styleVars" | "props" | "params" | "as")
                 )
             {
                 continue;
