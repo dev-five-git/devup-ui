@@ -8,10 +8,12 @@ describe('export index', () => {
       rules: expect.any(Object),
       configs: {
         recommended: expect.any(Object),
+        recommendedTypeChecked: expect.any(Array),
       },
       default: {
         configs: {
           recommended: expect.any(Object),
+          recommendedTypeChecked: expect.any(Array),
         },
       },
     })
