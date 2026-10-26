@@ -306,7 +306,11 @@ pub struct ExtractOutput {
 
     /// Files read through the module resolver, for the bundler to watch
     pub dependencies: Vec<String>,
+    /// Deferred semantic reads awaiting native resolution and pipeline proof.
+    pub deferred_defaults: Vec<DeferredDefault>,
 }
+
+pub use barrel::deferred::{DeferredDefault, RenderDemand};
 
 /// A module the bundler resolved an import to
 pub struct ResolvedModule {
@@ -422,6 +426,27 @@ pub fn extract_with_source_type(
     resolver: Option<&ModuleResolver>,
     source_type: Option<ExtractSourceType>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    extract_with_source_policy(
+        filename,
+        code,
+        option,
+        source_map,
+        resolver,
+        source_type,
+        &[],
+    )
+}
+
+/// Defer only render-only Markdown defaults whose compiler validates their own provenance.
+pub fn extract_with_source_policy(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+    source_map: bool,
+    resolver: Option<&ModuleResolver>,
+    source_type: Option<ExtractSourceType>,
+    opaque_mdx_defaults: &[String],
+) -> Result<ExtractOutput, Box<dyn Error>> {
     let grammar = source_type::parser_type(filename, source_type)?;
     if source_type.is_some()
         || is_compiled_mdx(filename)
@@ -461,10 +486,15 @@ pub fn extract_with_source_type(
         }
         Some(module)
     };
+    let deferred = std::cell::RefCell::new(Vec::new());
     let output = extract_source(
         filename,
         code,
-        SourceEdits::default(),
+        SourceEdits {
+            opaque_mdx_defaults,
+            deferred: Some(&deferred),
+            ..SourceEdits::default()
+        },
         option,
         source_map,
         resolver.map(|_| &validated as &ModuleResolver),
@@ -472,12 +502,17 @@ pub fn extract_with_source_type(
     );
     match fault.into_inner() {
         Some(error) => Err(error.into()),
-        None => output,
+        None => output.map(|mut output| {
+            output.deferred_defaults = deferred.into_inner();
+            output
+        }),
     }
 }
 
 #[derive(Default)]
 struct SourceEdits<'a> {
+    opaque_mdx_defaults: &'a [String],
+    deferred: Option<&'a std::cell::RefCell<Vec<DeferredDefault>>>,
     /// Original source and edit layers, last made first, mapping code back to it.
     evaluated: Option<(&'a str, &'a [&'a [import_alias_visit::Edit]])>,
     /// Authored styling-call ranges only after build-time value evaluation.
@@ -515,6 +550,8 @@ fn extract_source(
     filename: &str,
     code: &str,
     SourceEdits {
+        opaque_mdx_defaults,
+        deferred,
         evaluated,
         values_run,
     }: SourceEdits<'_>,
@@ -532,7 +569,18 @@ fn extract_source(
         }
     }
     if evaluated.is_none() {
-        match barrel::rewrite(code, filename, &option.package, resolver, source_type) {
+        let discarded = std::cell::RefCell::new(Vec::new());
+        match barrel::rewrite_with_obligations(
+            code,
+            filename,
+            &option.package,
+            resolver,
+            source_type,
+            barrel::deferred::DeferredPolicy {
+                extensions: opaque_mdx_defaults,
+                records: deferred.unwrap_or(&discarded),
+            },
+        ) {
             barrel::Barreled::Unchanged => {}
             barrel::Barreled::Failed(errors) => {
                 return Err(located_errors(filename, code, &[], errors, source_type).into());
@@ -542,6 +590,8 @@ fn extract_source(
                     filename,
                     &barreled.code,
                     SourceEdits {
+                        opaque_mdx_defaults,
+                        deferred,
                         evaluated: Some((code, &[barreled.edits.as_slice()])),
                         values_run: None,
                     },
@@ -593,6 +643,7 @@ fn extract_source(
         map: None,
         css_file: None,
         dependencies: Vec::new(),
+        deferred_defaults: Vec::new(),
     };
 
     let pragma_rewritten = alias_edits
@@ -624,6 +675,7 @@ fn extract_source(
                 map: None,
                 css_file: None,
                 dependencies: Vec::new(),
+                deferred_defaults: Vec::new(),
             });
         }
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
@@ -743,6 +795,7 @@ fn extract_source(
             map: None,
             css_file: None,
             dependencies: dependencies.into_iter().collect(),
+            deferred_defaults: Vec::new(),
         });
     }
 
@@ -891,6 +944,8 @@ fn extract_source(
             filename,
             &computed,
             SourceEdits {
+                opaque_mdx_defaults,
+                deferred,
                 evaluated: Some((source, &layers)),
                 values_run: Some(&calls),
             },
@@ -950,6 +1005,7 @@ fn extract_source(
         map,
         css_file: Some(css_file),
         dependencies: dependencies.into_iter().collect(),
+        deferred_defaults: Vec::new(),
     })
 }
 

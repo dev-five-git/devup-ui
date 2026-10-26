@@ -2,6 +2,7 @@ import {
   compiledFacts,
   createCompileTimeClassifier,
   type GuardFacts,
+  type GuardObservation,
   isCompileTimeAlias,
   isSelectedSource,
   UntransformedSourceError,
@@ -9,11 +10,14 @@ import {
 } from '@devup-ui/plugin-utils'
 import type { Plugin } from 'vite'
 
+import type { DeferredDefaults } from './deferred-defaults'
+
 export function createCompiledGuard(options: {
   readonly package: string
   readonly mdxExtensions: readonly string[]
   readonly importAliases: WasmImportAliases
   readonly extractCss: boolean
+  readonly deferred?: DeferredDefaults
 }): Plugin {
   type Module = {
     readonly facts: GuardFacts
@@ -40,10 +44,24 @@ export function createCompiledGuard(options: {
     apply: 'build',
     buildStart() {
       environmentModules(this.environment ?? plugin).clear()
+      options.deferred?.start(this.environment ?? options.deferred.fallback)
     },
     async moduleParsed(info) {
       if (!options.extractCss || !info.code) return
-      const facts = compiledFacts(this.parse(info.code))
+      let observation: GuardObservation | undefined
+      const facts = compiledFacts(
+        this.parse(info.code),
+        options.deferred
+          ? (value) => {
+              observation = value
+            }
+          : undefined,
+      )
+      if (options.deferred && observation)
+        options.deferred.observe(
+          this.environment ?? options.deferred.fallback,
+          { id: info.id, importedIds: info.importedIds, facts, observation },
+        )
       const requests = new Map<
         string,
         { readonly request: string; readonly kind?: 'require-call' }
@@ -58,6 +76,9 @@ export function createCompiledGuard(options: {
       for (const [key, ref] of requests) {
         const target = await this.resolve(ref.request, info.id, {
           kind: ref.kind ?? 'import-statement',
+          ...(options.deferred
+            ? { custom: { 'devup-ui:compiled-guard': true } }
+            : {}),
         })
         if (target && info.importedIds.includes(target.id))
           targets.set(key, target.id)

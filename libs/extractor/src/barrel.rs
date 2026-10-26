@@ -292,9 +292,22 @@ struct Walker<'r, 'p> {
     package: &'p str,
     modules: FxHashMap<crate::source_type::ModuleCacheKey, Rc<Exports>>,
     dependencies: BTreeSet<String>,
+    opaque_mdx_defaults: &'p [String],
+    render_default: bool,
+    root_read: Option<deferred::RootRead>,
+    deferred: Vec<deferred::DeferredDefault>,
+    extraction: &'p str,
+    source: &'p str,
 }
 
 impl Walker<'_, '_> {
+    fn defer(&mut self, importer: &str, request: &str) {
+        if let Some(root) = &self.root_read {
+            self.deferred
+                .push(root.defer((self.extraction, self.source), (importer, request)));
+        }
+    }
+
     fn is_package(&self, source: &str) -> bool {
         source == self.package
             || source
@@ -330,6 +343,13 @@ impl Walker<'_, '_> {
 
     /// Where `imported` of `source`, imported by `importer`, leads
     fn import_origin(&mut self, source: &str, importer: &str, imported: &str) -> Origin {
+        if self.render_default
+            && imported == "default"
+            && demand::selected(source, self.opaque_mdx_defaults)
+        {
+            self.defer(importer, source);
+            return Origin::Other;
+        }
         match self.module(source, importer) {
             None => Origin::Other,
             Some(module) => match self.origin(&module, imported, &mut Vec::new()) {
@@ -374,6 +394,13 @@ impl Walker<'_, '_> {
                 source: source.to_string(),
                 imported: imported.map(str::to_string),
             };
+        }
+        if self.render_default
+            && imported == Some("default")
+            && demand::selected(source, self.opaque_mdx_defaults)
+        {
+            self.defer(&module.path, source);
+            return Origin::Other;
         }
         let Some(next) = self.module(source, &module.path) else {
             return if module.mentions_package {
@@ -519,6 +546,8 @@ impl Generated {
 }
 
 mod aliases;
+pub(crate) mod deferred;
+mod demand;
 mod gate;
 use aliases::{Reach, declarator_removal, export_edits, is_assigned_from};
 
@@ -604,6 +633,7 @@ fn redirect_import<'p, 'a>(
     filename: &str,
     import: &'p oxc_ast::ast::ImportDeclaration<'a>,
     found: &mut Found<'p, 'a>,
+    demand: Option<&demand::Demand<'_, 'a>>,
 ) -> Option<String> {
     let source = import.source.value.as_str();
     let after = import.span.end as usize;
@@ -624,6 +654,11 @@ fn redirect_import<'p, 'a>(
             }
             ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
                 kept.namespace = Some(namespace.local.name.as_str());
+                if demand::selected(source, walker.opaque_mdx_defaults)
+                    && demand.is_some_and(|demand| demand.unused(&namespace.local))
+                {
+                    continue;
+                }
                 if let Some(module) = namespace_of(walker, source, filename) {
                     found.namespaces.push(NsDecl {
                         binding: &namespace.local,
@@ -635,6 +670,26 @@ fn redirect_import<'p, 'a>(
                 continue;
             }
         };
+        if demand.is_some_and(|demand| demand.unused(local))
+            && demand::selected(source, walker.opaque_mdx_defaults)
+        {
+            if is_default {
+                kept.default = Some(local.name.as_str());
+            } else {
+                let span = specifier.span();
+                kept.named
+                    .push(&code[span.start as usize..span.end as usize]);
+            }
+            continue;
+        }
+        walker.render_default =
+            demand.is_some_and(|demand| !demand.unused(local) && demand.render_only(local));
+        walker.root_read = walker.render_default.then(|| deferred::RootRead {
+            request: source.to_string(),
+            exports: vec![imported.clone()],
+            position: usize::try_from(local.span.start).unwrap_or_default(),
+            attributes: import.with_clause.is_some(),
+        });
         match walker.import_origin(source, filename, &imported) {
             Origin::Devup {
                 source: from,
@@ -666,6 +721,8 @@ fn redirect_import<'p, 'a>(
                 }
             }
         }
+        walker.render_default = false;
+        walker.root_read = None;
     }
     if redirected.is_empty() {
         return None;
@@ -972,6 +1029,40 @@ pub(crate) fn rewrite(
     resolver: Option<&ModuleResolver>,
     source_type: SourceType,
 ) -> Barreled {
+    rewrite_with_mdx_defaults(code, filename, package, resolver, source_type, &[])
+}
+
+pub(crate) fn rewrite_with_mdx_defaults(
+    code: &str,
+    filename: &str,
+    package: &str,
+    resolver: Option<&ModuleResolver>,
+    source_type: SourceType,
+    opaque_mdx_defaults: &[String],
+) -> Barreled {
+    let records = std::cell::RefCell::new(Vec::new());
+    rewrite_with_obligations(
+        code,
+        filename,
+        package,
+        resolver,
+        source_type,
+        deferred::DeferredPolicy {
+            extensions: opaque_mdx_defaults,
+            records: &records,
+        },
+    )
+}
+
+pub(crate) fn rewrite_with_obligations(
+    code: &str,
+    filename: &str,
+    package: &str,
+    resolver: Option<&ModuleResolver>,
+    source_type: SourceType,
+    policy: deferred::DeferredPolicy<'_>,
+) -> Barreled {
+    let opaque_mdx_defaults = policy.extensions;
     if is_vanilla_extract_file(filename) || (resolver.is_none() && !code.contains(package)) {
         return Barreled::Unchanged;
     }
@@ -990,14 +1081,39 @@ pub(crate) fn rewrite(
         package,
         modules: FxHashMap::default(),
         dependencies: BTreeSet::new(),
+        opaque_mdx_defaults,
+        render_default: false,
+        root_read: None,
+        deferred: Vec::new(),
+        extraction: filename,
+        source: code,
     };
+    let demand_semantic = (!opaque_mdx_defaults.is_empty() && program.body.iter().any(|statement| {
+        matches!(statement, Statement::ImportDeclaration(import) if !import.import_kind.is_type() && !walker.is_package(import.source.value.as_str()))
+    })).then(|| SemanticBuilder::new().with_build_nodes(true).build(&program).semantic);
+    let demand = demand_semantic
+        .as_ref()
+        .map(|semantic| demand::Demand::new(semantic, &program));
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut found = Found::default();
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else {
             continue;
         };
-        if import.import_kind.is_type() || import.with_clause.is_some() {
+        if import.import_kind.is_type() {
+            continue;
+        }
+        if import.with_clause.is_some() {
+            if !opaque_mdx_defaults.is_empty() {
+                redirect_import(
+                    &mut walker,
+                    code,
+                    filename,
+                    import,
+                    &mut Found::default(),
+                    demand.as_ref(),
+                );
+            }
             continue;
         }
         if walker.is_package(import.source.value.as_str()) {
@@ -1028,9 +1144,14 @@ pub(crate) fn rewrite(
                     source: import.source.value.to_string(),
                 });
             }
-        } else if let Some(statements) =
-            redirect_import(&mut walker, code, filename, import, &mut found)
-        {
+        } else if let Some(statements) = redirect_import(
+            &mut walker,
+            code,
+            filename,
+            import,
+            &mut found,
+            demand.as_ref(),
+        ) {
             edits.push((
                 import.span.start as usize,
                 import.span.end as usize,
@@ -1052,10 +1173,12 @@ pub(crate) fn rewrite(
                         && is_assigned_from(code, bound.binding.name.as_str())
                 })));
     let (mut edits, errors) = if wants_semantic {
-        let semantic = SemanticBuilder::new()
-            .with_build_nodes(true)
-            .build(&program)
-            .semantic;
+        let semantic = demand_semantic.unwrap_or_else(|| {
+            SemanticBuilder::new()
+                .with_build_nodes(true)
+                .build(&program)
+                .semantic
+        });
         let locals: FxHashMap<SymbolId, Reach> = found
             .bound
             .iter()
@@ -1115,6 +1238,7 @@ pub(crate) fn rewrite(
     if !errors.is_empty() {
         return Barreled::Failed(errors);
     }
+    policy.records.borrow_mut().extend(walker.deferred);
     if edits.is_empty() {
         return Barreled::Unchanged;
     }
@@ -1137,6 +1261,11 @@ pub(crate) fn rewrite(
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests;
+
+#[cfg(test)]
+mod deferred_tests;
+#[cfg(test)]
+mod mdx_demand_tests;
 
 #[cfg(test)]
 mod scope_tests;

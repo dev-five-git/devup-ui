@@ -1,3 +1,4 @@
+import { callableLocals, callableWrites, localCallable } from './guard-callable'
 import {
   bindingScope,
   createScopes,
@@ -10,20 +11,50 @@ import {
 } from './guard-nodes'
 import { origin, patternExpressions } from './guard-origins'
 
+export interface GuardObservation {
+  readonly defaultCallable: boolean
+  readonly unsupportedRequests: ReadonlySet<string>
+  readonly importOnlyRequests?: ReadonlySet<string>
+}
+
 export interface GuardFacts {
   readonly references: readonly (GuardOrigin & { readonly pos: number })[]
   readonly exports: ReadonlyMap<string, GuardOrigin | undefined>
   readonly stars: readonly string[]
 }
 
-export function compiledFacts(ast: unknown): GuardFacts {
-  const root = guardNode(ast)
+export function compiledFacts(
+  ast: unknown,
+  observe?: (value: GuardObservation) => void,
+): GuardFacts {
+  const root = guardNode(ast, observe !== undefined)
   const references: (GuardOrigin & { readonly pos: number })[] = []
   const exports = new Map<string, GuardOrigin | undefined>()
   const stars: string[] = []
+  const locals = observe ? new Map<string, GuardNode>() : undefined
+  const unsupportedRequests = observe ? new Set<string>() : undefined
+  let callableDefault: GuardNode | undefined
   if (!root) return { references, exports, stars }
+  let importOnlyRequests =
+    observe &&
+    root.kind === 'Program' &&
+    root.bodyComplete &&
+    root.fields.get('body')?.length
+      ? new Set<string>()
+      : undefined
   const { scopes, moduleScope } = createScopes(root)
   for (const statement of root.fields.get('body') ?? []) {
+    if (locals) callableLocals(statement, locals)
+    if (importOnlyRequests) {
+      if (statement.sideEffectImport)
+        importOnlyRequests.add(nodeName(field(statement, 'source')))
+      else importOnlyRequests = undefined
+    }
+    if (
+      (statement.fields.get('attributes')?.length ?? 0) > 0 ||
+      (statement.fields.get('assertions')?.length ?? 0) > 0
+    )
+      unsupportedRequests?.add(nodeName(field(statement, 'source')))
     if (statement.kind !== 'ImportDeclaration') continue
     const request = nodeName(field(statement, 'source'))
     for (const specifier of statement.fields.get('specifiers') ?? []) {
@@ -70,6 +101,8 @@ export function compiledFacts(ast: unknown): GuardFacts {
           name,
           request ? { request, ids: [nodeName(local)] } : origin(local, scope),
         )
+        if (locals && name === 'default')
+          callableDefault = request ? undefined : local
       }
       const declaration = field(node, 'declaration')
       if (declaration) {
@@ -83,8 +116,10 @@ export function compiledFacts(ast: unknown): GuardFacts {
         for (const name of ids) exports.set(name, undefined)
       }
     }
-    if (node.kind === 'ExportDefaultDeclaration')
+    if (node.kind === 'ExportDefaultDeclaration') {
       exports.set('default', origin(field(node, 'declaration'), scope))
+      if (locals) callableDefault = field(node, 'declaration')
+    }
     if (['VariableDeclarator', 'AssignmentExpression'].includes(node.kind)) {
       const pattern = field(
         node,
@@ -153,5 +188,13 @@ export function compiledFacts(ast: unknown): GuardFacts {
       for (const child of children) visit(child, name)
   }
   visit(root)
+  if (locals)
+    for (const [node, scope] of scopes) callableWrites(node, scope, locals)
+  if (observe && unsupportedRequests && locals)
+    observe({
+      defaultCallable: localCallable(callableDefault, locals),
+      unsupportedRequests,
+      ...(importOnlyRequests ? { importOnlyRequests } : {}),
+    })
   return { references, exports, stars }
 }

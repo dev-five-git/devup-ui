@@ -112,6 +112,7 @@ export class NonphysicalModules {
         cssFile: output.cssFile,
         updatedBaseStyle: output.updatedBaseStyle,
         dependencies: output.dependencies,
+        deferredDefaults: output.deferredDefaults,
       }
     } finally {
       output.free()

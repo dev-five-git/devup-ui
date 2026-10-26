@@ -46,6 +46,7 @@ function createCodeExtractResult(
     events.push('free')
   })
   return {
+    deferredDefaults: '[]',
     get code() {
       expect(live).toBe(true)
       events.push('code')

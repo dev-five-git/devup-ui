@@ -19,7 +19,11 @@ export {
   type DependencyGuardOptions,
   type GuardModule,
 } from './dependency-guard'
-export { compiledFacts, type GuardFacts } from './guard-facts'
+export {
+  compiledFacts,
+  type GuardFacts,
+  type GuardObservation,
+} from './guard-facts'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,

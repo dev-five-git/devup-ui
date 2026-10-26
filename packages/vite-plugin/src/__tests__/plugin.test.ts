@@ -244,6 +244,7 @@ function createCodeExtractResult(
     map: undefined,
     updatedBaseStyle: false,
     dependencies: [],
+    deferredDefaults: '[]',
     ...overrides,
   }
   let live = true
@@ -253,6 +254,7 @@ function createCodeExtractResult(
     events.push('free')
   })
   return {
+    deferredDefaults: values.deferredDefaults,
     get code() {
       expect(live).toBe(true)
       events.push('code')

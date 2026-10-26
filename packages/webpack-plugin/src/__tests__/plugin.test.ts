@@ -60,6 +60,7 @@ function createCodeExtractResult(
     map: undefined,
     updatedBaseStyle: false,
     dependencies: [],
+    deferredDefaults: '[]',
     ...overrides,
     free,
     [Symbol.dispose]: free,

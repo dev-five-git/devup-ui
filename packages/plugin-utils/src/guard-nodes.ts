@@ -5,9 +5,15 @@ export interface GuardNode {
   readonly pos: number
   readonly fields: ReadonlyMap<string, readonly GuardNode[]>
   readonly computed: boolean
+  readonly optional?: boolean
+  readonly bodyComplete?: boolean
+  readonly sideEffectImport?: boolean
 }
 
-export function guardNode(value: unknown): GuardNode | undefined {
+export function guardNode(
+  value: unknown,
+  observe = false,
+): GuardNode | undefined {
   if (
     !value ||
     typeof value !== 'object' ||
@@ -16,21 +22,31 @@ export function guardNode(value: unknown): GuardNode | undefined {
   )
     return
   const fields = new Map<string, readonly GuardNode[]>()
+  let bodyComplete = false
   for (const [key, child] of Object.entries(value)) {
     if (Array.isArray(child)) {
       let children: GuardNode[] | undefined
+      let complete = true
       const length = child.length
       for (let index = 0; index < length; index++) {
-        if (!(index in child)) continue
-        const node = guardNode(child[index])
+        if (!(index in child)) {
+          complete = false
+          continue
+        }
+        const node = guardNode(child[index], observe)
         if (node) {
           if (children) children.push(node)
           else children = [node]
-        }
+        } else complete = false
       }
+      if (observe && value.type === 'Program' && key === 'body')
+        bodyComplete =
+          complete &&
+          (!('directives' in value) ||
+            (Array.isArray(value.directives) && value.directives.length === 0))
       if (children) fields.set(key, children)
     } else {
-      const node = guardNode(child)
+      const node = guardNode(child, observe)
       if (node) fields.set(key, [node])
     }
   }
@@ -45,7 +61,33 @@ export function guardNode(value: unknown): GuardNode | undefined {
           : '',
     pos: 'start' in value && typeof value.start === 'number' ? value.start : 0,
     computed: 'computed' in value && value.computed === true,
+    ...('optional' in value && value.optional === true
+      ? { optional: true }
+      : {}),
     fields,
+    ...(observe && value.type === 'Program' ? { bodyComplete } : {}),
+    ...(observe && value.type === 'ImportDeclaration'
+      ? {
+          sideEffectImport:
+            'specifiers' in value &&
+            Array.isArray(value.specifiers) &&
+            value.specifiers.length === 0 &&
+            'source' in value &&
+            value.source !== null &&
+            typeof value.source === 'object' &&
+            'type' in value.source &&
+            value.source.type === 'Literal' &&
+            'value' in value.source &&
+            typeof value.source.value === 'string' &&
+            (!('importKind' in value) || value.importKind === 'value') &&
+            (!('attributes' in value) ||
+              (Array.isArray(value.attributes) &&
+                value.attributes.length === 0)) &&
+            (!('assertions' in value) ||
+              (Array.isArray(value.assertions) &&
+                value.assertions.length === 0)),
+        }
+      : {}),
   }
 }
 
@@ -134,7 +176,8 @@ export function createScopes(root: GuardNode) {
     if (id && ['FunctionDeclaration', 'ClassDeclaration'].includes(node.kind))
       parent.bindings.set(id.name, undefined)
     if (functionScope || classScope) {
-      if (id) scope.bindings.set(id.name, undefined)
+      if (id && node.kind !== 'FunctionDeclaration')
+        scope.bindings.set(id.name, undefined)
       for (const parameter of node.fields.get('params') ?? [])
         for (const name of patternNames(parameter))
           scope.bindings.set(name, undefined)

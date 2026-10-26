@@ -47,6 +47,7 @@ beforeAll(() => {
       live = false
     })
     return {
+      deferredDefaults: '[]',
       code: '<div></div>',
       css: '',
       cssFile: 'devup-ui-0.css',

@@ -57,6 +57,8 @@ import { createAggregateCssPreparation } from './aggregate-css'
 import { createCompiledDependencies } from './compiled-dependencies'
 import { createCompiledGuard } from './compiled-guard'
 import { ConfigRefresh, watchConfigFiles } from './config-refresh'
+import { DeferredDefaults } from './deferred-defaults'
+import { validateMdxDefault } from './mdx-default'
 import { createExtractionGate } from './production-manifest'
 import { ProductionActivation } from './production-numbering'
 import { createViteReservation } from './reservation'
@@ -326,6 +328,7 @@ export function DevupUI({
   mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
+  const deferred = new DeferredDefaults()
   let projectRoot = process.cwd()
   let initialized = false
   let releaseLegacy: (() => void) | undefined
@@ -479,8 +482,13 @@ export function DevupUI({
       ...(context === undefined
         ? {}
         : {
-            prepareSource: (path: string) =>
-              production.modules(context).source(path),
+            prepareSource: (path: string) => {
+              if (isMdxSource(path, mdxExtensions))
+                throw new TypeError(
+                  'Markdown values have no synchronous compiler input; move the imported value into JS/TS',
+                )
+              return production.modules(context).source(path)
+            },
           }),
     })
   }
@@ -676,6 +684,17 @@ export function DevupUI({
       extracted.add(fileName)
       const output = (() => {
         try {
+          const sourceType = isMdxSource(fileName, mdxExtensions)
+            ? 'compiled-mdx'
+            : undefined
+          const sourcePolicy: [
+            sourceType?: 'compiled-mdx',
+            deferredExtensions?: readonly string[],
+          ] = production.active
+            ? [sourceType, mdxExtensions]
+            : sourceType === undefined
+              ? []
+              : [sourceType]
           const extract = () =>
             codeExtract(
               fileName,
@@ -686,9 +705,7 @@ export function DevupUI({
               true,
               false,
               importAliases,
-              ...(isMdxSource(fileName, mdxExtensions)
-                ? (['compiled-mdx'] as const)
-                : ([] as const)),
+              ...sourcePolicy,
             )
           if (!production.active) return extract()
           const key = context ?? production.context
@@ -728,6 +745,7 @@ export function DevupUI({
         cssFile,
         updatedBaseStyle,
         dependencies = [],
+        deferredDefaults: deferredMetadata,
       } = (() => {
         try {
           return {
@@ -737,6 +755,7 @@ export function DevupUI({
             cssFile: output.cssFile,
             updatedBaseStyle: output.updatedBaseStyle,
             dependencies: output.dependencies,
+            deferredDefaults: output.deferredDefaults,
           }
         } finally {
           if ('free' in output) output.free()
@@ -757,10 +776,27 @@ export function DevupUI({
         if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
         if (css) promises.push(writeCssFile(basename(cssFile), css))
       }
-      const result = { code: extractedCode, map }
+      const result = {
+        code: extractedCode,
+        map,
+        ...(production.active
+          ? { meta: { devupDeferredDefaults: deferredMetadata } }
+          : {}),
+      }
       if (!eligible) {
         await Promise.all(promises)
         await configState.ready()
+        if (production.active)
+          deferred.extracted(
+            this.environment ?? deferred.fallback,
+            id,
+            deferredMetadata,
+            isMdxSource(fileName, mdxExtensions)
+              ? (prefix) =>
+                  remapMdxError(prefix, fileName, this.getCombinedSourcemap())
+                    .message
+              : undefined,
+          )
         return result
       }
       const flight: ExtractionFlight = {
@@ -1105,6 +1141,19 @@ export function DevupUI({
     buildEnd: {
       order: 'post',
       async handler(error) {
+        if (production.active && !error) {
+          try {
+            deferred.verify(this.environment ?? deferred.fallback, this)
+          } catch (cause) {
+            if (cause instanceof Error)
+              await production.finish(
+                this.environment?.name ?? production.context,
+                this,
+                cause,
+              )
+            throw cause
+          }
+        }
         if (production.active)
           await production.finish(
             this.environment?.name ?? production.context,
@@ -1305,9 +1354,14 @@ export function DevupUI({
     name: 'devup-ui:mdx',
     enforce: 'post',
     sharedDuringBuild: true,
+    ...deferred.resolution.companion(),
     async transform(code, id) {
       if (!isMdxSource(id, mdxExtensions)) return
-      return sourceTransform.transform.call(this, code, id)
+      if (production.active) validateMdxDefault(this.parse(code), code, id)
+      const result = await sourceTransform.transform.call(this, code, id)
+      if (production.active && extractCss && result)
+        deferred.resolution.succeeded(this.environment ?? deferred.fallback, id)
+      return result
     },
   } satisfies Plugin
   const aggregateGuard = {
@@ -1330,6 +1384,7 @@ export function DevupUI({
     mdxExtensions,
     importAliases,
     extractCss,
+    deferred,
   })
   const plugins: [
     typeof plugin,

@@ -22,6 +22,8 @@ use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 #[cfg(test)]
+mod deferred_default_tests;
+#[cfg(test)]
 mod source_type_tests;
 
 mod state;
@@ -123,6 +125,7 @@ pub struct Output {
     updated_base_style: bool,
     css: Option<String>,
     dependencies: Vec<String>,
+    deferred_defaults: String,
 }
 #[wasm_bindgen]
 impl Output {
@@ -158,6 +161,7 @@ impl Output {
                 map,
                 css_file,
                 dependencies,
+                deferred_defaults: "[]".to_string(),
                 updated_base_style: updated_base_style || default_collected,
                 css: {
                     if !collected && !default_collected {
@@ -215,6 +219,13 @@ impl Output {
     #[must_use]
     pub fn dependencies(&self) -> Vec<String> {
         self.dependencies.clone()
+    }
+
+    /// Serialized semantic obligations; acceptance belongs to the native verifier.
+    #[wasm_bindgen(getter, js_name = "deferredDefaults")]
+    #[must_use]
+    pub fn deferred_defaults(&self) -> String {
+        self.deferred_defaults.clone()
     }
 }
 
@@ -469,6 +480,7 @@ pub fn code_extract_internal(
         None,
         None,
         source_type,
+        &[],
     )
 }
 
@@ -497,6 +509,7 @@ pub fn code_extract_without_source_map_internal(
         None,
         None,
         source_type,
+        &[],
     )
 }
 
@@ -528,6 +541,7 @@ pub fn code_extract_with_modules_internal(
         Some(resolver),
         None,
         source_type,
+        &[],
     )
 }
 
@@ -545,6 +559,7 @@ fn code_extract_internal_impl(
     resolver: Option<&ModuleResolver>,
     resolver_fault: Option<&RefCell<Option<String>>>,
     source_type: Option<extractor::ExtractSourceType>,
+    opaque_mdx_defaults: &[String],
 ) -> Result<Output, String> {
     let option = ExtractOption {
         package: package.to_string(),
@@ -553,26 +568,38 @@ fn code_extract_internal_impl(
         import_main_css: import_main_css_in_code,
         import_aliases,
     };
-    let extracted = extractor::extract_with_source_type(
+    let extracted = extractor::extract_with_source_policy(
         filename,
         code,
         option,
         matches!(source_map, SourceMapMode::Generate),
         resolver,
         source_type,
+        opaque_mdx_defaults,
     );
 
     match checked_extraction(extracted, resolver_fault) {
-        Ok(output) => Ok(Output::new(
-            output.code,
-            output.styles,
-            output.map,
-            single_css,
-            filename.to_string(),
-            output.css_file,
-            import_main_css_in_css,
-            output.dependencies,
-        )),
+        Ok(output) => {
+            let deferred = serde_json::Value::Array(output.deferred_defaults.iter().map(|record| serde_json::json!({
+                "extraction": record.extraction, "request": record.request, "exports": record.exports,
+                "line": record.line, "column": record.column,
+                "demand": match record.demand { extractor::RenderDemand::RenderOnly => "render-only" },
+                "attributes": record.attributes,
+                "cutImporter": record.cut_importer, "cutRequest": record.cut_request, "cutExport": record.cut_export,
+            })).collect()).to_string();
+            let mut result = Output::new(
+                output.code,
+                output.styles,
+                output.map,
+                single_css,
+                filename.to_string(),
+                output.css_file,
+                import_main_css_in_css,
+                output.dependencies,
+            );
+            result.deferred_defaults = deferred;
+            Ok(result)
+        }
         Err(error) => Err(error),
     }
 }
@@ -676,10 +703,17 @@ fn code_extract_js(
     import_aliases: JsValue,
     source_map: SourceMapMode,
     source_type: JsValue,
+    opaque_mdx_defaults: JsValue,
 ) -> Result<Output, JsValue> {
     let source_type = source_type_from_js(source_type)
         .map_err(|error| js_error(format!("{filename}:1:1: {error}")))?;
     let import_aliases = import_aliases_from_js(import_aliases)?;
+    let opaque_mdx_defaults: Vec<String> =
+        if opaque_mdx_defaults.is_undefined() || opaque_mdx_defaults.is_null() {
+            Vec::new()
+        } else {
+            serde_wasm_bindgen::from_value(opaque_mdx_defaults).map_err(js_error)?
+        };
     let fault = RefCell::new(None);
     let resolver = resolver_from_js(&fault);
     code_extract_internal_impl(
@@ -695,6 +729,7 @@ fn code_extract_js(
         resolver.as_deref(),
         Some(&fault),
         source_type,
+        &opaque_mdx_defaults,
     )
     .map_err(js_error)
 }
@@ -741,6 +776,7 @@ pub fn code_extract(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
     source_type: JsValue,
+    opaque_mdx_defaults: JsValue,
 ) -> Result<Output, JsValue> {
     code_extract_js(
         filename,
@@ -753,6 +789,7 @@ pub fn code_extract(
         import_aliases,
         SourceMapMode::Generate,
         source_type,
+        opaque_mdx_defaults,
     )
 }
 
@@ -769,6 +806,7 @@ pub fn code_extract_without_source_map(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
     source_type: JsValue,
+    opaque_mdx_defaults: JsValue,
 ) -> Result<Output, JsValue> {
     code_extract_js(
         filename,
@@ -781,13 +819,14 @@ pub fn code_extract_without_source_map(
         import_aliases,
         SourceMapMode::Skip,
         source_type,
+        opaque_mdx_defaults,
     )
 }
 
 #[wasm_bindgen(typescript_custom_section)]
 const EXTRACTION_TYPES: &str = r#"
-export function codeExtract(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx'): Output;
-export function codeExtractWithoutSourceMap(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx'): Output;
+export function codeExtract(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx', opaqueMdxDefaults?: readonly string[]): Output;
+export function codeExtractWithoutSourceMap(filename: string, code: string, package: string, css_dir: string, single_css: boolean, import_main_css_in_code: boolean, import_main_css_in_css: boolean, import_aliases: Record<string, string | null>, sourceType?: 'compiled-mdx', opaqueMdxDefaults?: readonly string[]): Output;
 "#;
 
 /// Internal function to register theme (testable without `JsValue`)
@@ -952,6 +991,7 @@ mod tests {
             None,
             Some(&fault),
             None,
+            &[],
         );
         assert_eq!(result.err(), Some("resolver failed".to_string()));
         assert_eq!(export_sheet_internal().unwrap(), before);

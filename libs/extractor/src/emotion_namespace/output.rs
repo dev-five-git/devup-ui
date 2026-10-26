@@ -38,6 +38,7 @@ impl Rewritten<'_> {
             }),
             css_file: None,
             dependencies: Vec::new(),
+            deferred_defaults: Vec::new(),
         }
     }
 }
