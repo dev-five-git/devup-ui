@@ -6,7 +6,7 @@ use std::rc::Rc;
 use oxc_allocator::Allocator;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    Argument, Declaration, ExportDefaultDeclarationKind, ImportDeclarationSpecifier,
+    Argument, Declaration, ExportDefaultDeclarationKind, Expression, ImportDeclarationSpecifier,
     ModuleExportName, Statement,
 };
 use oxc_parser::Parser;
@@ -423,12 +423,100 @@ impl Rewrites<'_> {
     }
 }
 
+pub(crate) struct ModuleSource<'s> {
+    pub script: &'s str,
+    pub original: &'s str,
+    pub filename: &'s str,
+}
+
+impl ModuleSource<'_> {
+    fn specifier_error(&self, api: &str, failed: &oxc_ast::ast::StringLiteral<'_>) -> String {
+        let allocator = Allocator::default();
+        let program = Parser::new(
+            &allocator,
+            self.original,
+            SourceType::from_path(self.filename).unwrap_or_else(|_| SourceType::ts()),
+        )
+        .parse()
+        .program;
+        let semantic = SemanticBuilder::new()
+            .with_build_nodes(true)
+            .build(&program)
+            .semantic;
+        semantic
+            .nodes()
+            .iter()
+            .filter_map(|node| {
+                let (specifier, candidate_api) = match node.kind() {
+                    AstKind::ImportDeclaration(import)
+                        if !import.import_kind.is_type()
+                            && import.specifiers.as_ref().is_none_or(|specifiers| {
+                                specifiers.is_empty() || specifiers.iter().any(|specifier| {
+                                    !matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(named) if named.import_kind.is_type())
+                                })
+                            }) => (&import.source, "module"),
+                    AstKind::ExportFromDeclaration(export)
+                        if !export.export_kind.is_type()
+                            && (export.specifiers.is_empty()
+                                || export.specifiers.iter().any(|specifier| !specifier.export_kind.is_type())) =>
+                    {
+                        (&export.source, "module")
+                    }
+                    AstKind::ExportAllDeclaration(export) if !export.export_kind.is_type() => {
+                        (&export.source, "module")
+                    }
+                    AstKind::CallExpression(call) if api == "require" => {
+                        let Expression::Identifier(callee) = &call.callee else {
+                            return None;
+                        };
+                        if callee.name != "require"
+                            || semantic
+                                .scoping()
+                                .get_reference(callee.reference_id.get()?)
+                                .symbol_id()
+                                .is_some()
+                        {
+                            return None;
+                        }
+                        let [Argument::StringLiteral(specifier)] = call.arguments.as_slice() else {
+                            return None;
+                        };
+                        (specifier.as_ref(), "require")
+                    }
+                    _ => return None,
+                };
+                let offset = usize::try_from(specifier.span.start).ok()?;
+                (candidate_api == api && specifier.value == failed.value).then(|| {
+                    format!(
+                        "{}: {}",
+                        crate::locate(self.filename, self.original, offset),
+                        crate::utils::build_time_error(
+                            api,
+                            specifier.span.source_text(self.original),
+                            "module specifiers must contain no unpaired UTF-16 surrogate"
+                        ),
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 pub(crate) fn module_script(
     unit: &Rc<Unit>,
     loader: &mut ModuleLoader<'_>,
     entry: bool,
 ) -> Result<ModuleScript, String> {
     let (script, filename) = (unit.script(), unit.filename());
+    let source = ModuleSource {
+        script,
+        original: unit.original(),
+        filename,
+    };
+    let ModuleSource {
+        script, filename, ..
+    } = source;
     if entry {
         loader.retained_css.root = filename.to_string();
     }
@@ -468,7 +556,11 @@ pub(crate) fn module_script(
         let Statement::ImportDeclaration(import) = statement else {
             continue;
         };
-        let source = import.source.value.as_str();
+        let source = import
+            .source
+            .value
+            .as_str()
+            .ok_or_else(|| source.specifier_error("module", &import.source))?;
         let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
         if specifiers.is_empty() {
             if !crate::package_specifier::is_package(source, &package)
@@ -482,7 +574,7 @@ pub(crate) fn module_script(
             }
             continue;
         }
-        let module = if source == package || source == "@vanilla-extract/css" {
+        let module = if source == package.as_str() || source == "@vanilla-extract/css" {
             PACKAGE_BINDING.to_string()
         } else {
             load_module(loader, source, import.source.span.start)?
@@ -515,7 +607,11 @@ pub(crate) fn module_script(
             if let AstKind::CallExpression(call) = semantic.nodes().parent_kind(node)
                 && let [Argument::StringLiteral(specifier)] = call.arguments.as_slice()
             {
-                let module = load_module(loader, specifier.value.as_str(), specifier.span.start)?;
+                let specifier_text = specifier
+                    .value
+                    .as_str()
+                    .ok_or_else(|| source.specifier_error("require", specifier))?;
+                let module = load_module(loader, specifier_text, specifier.span.start)?;
                 let replacement = if loader.css_bindings.contains_key(&module) {
                     module
                 } else {
@@ -583,11 +679,12 @@ pub(crate) fn module_script(
                 }
             }
             Statement::ExportFromDeclaration(export) => {
-                let module = load_module(
-                    loader,
-                    export.source.value.as_str(),
-                    export.source.span.start,
-                )?;
+                let specifier = export
+                    .source
+                    .value
+                    .as_str()
+                    .ok_or_else(|| source.specifier_error("module", &export.source))?;
+                let module = load_module(loader, specifier, export.source.span.start)?;
                 for specifier in &export.specifiers {
                     exports.push((
                         export_name(&specifier.exported),
@@ -617,11 +714,12 @@ pub(crate) fn module_script(
                 exports.push(("default".to_string(), local));
             }
             Statement::ExportAllDeclaration(export) => {
-                let module = load_module(
-                    loader,
-                    export.source.value.as_str(),
-                    export.source.span.start,
-                )?;
+                let specifier = export
+                    .source
+                    .value
+                    .as_str()
+                    .ok_or_else(|| source.specifier_error("module", &export.source))?;
+                let module = load_module(loader, specifier, export.source.span.start)?;
                 match &export.exported {
                     Some(exported) => exports.push((export_name(exported), module)),
                     None => spreads.push(module),

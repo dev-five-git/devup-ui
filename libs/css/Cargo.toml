@@ -12,15 +12,15 @@ categories = ["development-tools", "wasm", "web-programming"]
 workspace = true
 
 [dependencies]
-phf = { version = "0.14", features = ["macros"] }
+phf = { version = "0.14.0", features = ["macros"] }
 serde = { version = "1.0.229", features = ["derive"] }
-regex-lite = "0.1"
+regex-lite = "0.1.9"
 bimap = { version = "0.6.3" }
 
 [dev-dependencies]
-rstest = "0.27.0"
+rstest = "0.28.0"
 serial_test = "4.0.1"
-criterion = { version = "0.8", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [[bench]]
 name = "css_benchmark"

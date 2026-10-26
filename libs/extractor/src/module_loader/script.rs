@@ -49,6 +49,12 @@ impl Unit {
         &self.script
     }
 
+    pub(crate) fn original(&self) -> &str {
+        self.written
+            .as_ref()
+            .map_or(&self.script, |written| &written.source)
+    }
+
     /// `filename:line:column` of the byte `offset` of the script as written,
     /// `None` where the build generated it
     fn locate(&self, offset: usize) -> Option<String> {

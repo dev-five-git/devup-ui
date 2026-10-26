@@ -110,7 +110,7 @@ impl<'a> ClassParts<'_, 'a> {
                 SPAN,
                 TemplateElementValue {
                     raw: Str::from_in("", self.ast.allocator()),
-                    cooked: None,
+                    cooked: Some("".into()),
                 },
                 tail,
                 self.ast,
@@ -193,7 +193,10 @@ impl<'a> ClassParts<'_, 'a> {
 
     fn add(&mut self, expression: &Expression<'a>, out: &mut Vec<Expression<'a>>) {
         match unwrap_syntax_only(expression) {
-            Expression::StringLiteral(text) => self.text(&text.value, out),
+            Expression::StringLiteral(text) => match text.value.as_str() {
+                Some(text) => self.text(text, out),
+                None => out.push(self.clone(expression)),
+            },
             Expression::TemplateLiteral(template) => self.template(template, out),
             Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => {}
             Expression::Identifier(name) if name.name == "undefined" => {}
@@ -252,18 +255,18 @@ impl<'a> ClassParts<'_, 'a> {
     /// A template literal split into its classes when every interpolation is
     /// set apart by spaces, and kept whole when one is glued to a class
     fn template(&mut self, template: &TemplateLiteral<'a>, out: &mut Vec<Expression<'a>>) {
-        let texts: Vec<String> = template
+        let texts: Option<Vec<String>> = template
             .quasis
             .iter()
-            .map(|quasi| {
-                quasi
-                    .value
-                    .cooked
-                    .as_ref()
-                    .unwrap_or(&quasi.value.raw)
-                    .to_string()
-            })
+            .map(|quasi| Some(quasi.value.cooked?.as_str()?.to_string()))
             .collect();
+        let Some(texts) = texts else {
+            out.push(Expression::TemplateLiteral(oxc_allocator::Box::new_in(
+                template.clone_in(self.ast.allocator()),
+                self.ast,
+            )));
+            return;
+        };
         let glued = texts.windows(2).any(|pair| {
             pair[0]
                 .chars()
@@ -340,10 +343,7 @@ pub(super) fn flatten_classes<'a>(
     let elements = flat.texts.iter().enumerate().map(|(index, text)| {
         TemplateElement::new(
             SPAN,
-            TemplateElementValue {
-                raw: Str::from_in(text.as_str(), ast.allocator()),
-                cooked: None,
-            },
+            crate::utils::template_element_value(text, ast),
             index + 1 == last,
             ast,
         )

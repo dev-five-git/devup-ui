@@ -84,7 +84,10 @@ impl Reads {
             BindingPattern::ObjectPattern(object) => {
                 for property in &object.properties {
                     match property.key.static_name() {
-                        Some(name) if !property.computed => self.push(&name),
+                        Some(name) if !property.computed => match name.as_str() {
+                            Some(name) => self.push(name),
+                            None => self.whole = true,
+                        },
                         _ => self.whole = true,
                     }
                 }
@@ -234,7 +237,7 @@ fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Opt
     use oxc_ast::ast::{BinaryOperator, LogicalOperator, UnaryOperator};
     let is_prop = |e: &Expression<'_>| matches!(unwrap_syntax_only(e), Expression::Identifier(i) if i.name == prop);
     let string = |e: &Expression<'_>| match unwrap_syntax_only(e) {
-        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
         _ => None,
     };
     Some(match unwrap_syntax_only(expression) {

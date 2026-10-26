@@ -121,7 +121,7 @@ impl Calls<'_> {
             Expression::ComputedMemberExpression(member) => match &member.object {
                 Expression::Identifier(identifier) => (
                     identifier.as_ref(),
-                    Some(member.static_property_name()?.to_string()),
+                    Some(member.static_property_name()?.as_str()?.to_string()),
                 ),
                 _ => return None,
             },

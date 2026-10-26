@@ -79,13 +79,10 @@ fn css_retention_emits_portable_specifiers_when_helper_loads_css(
         .body
         .iter()
         .filter_map(|statement| match statement {
-            oxc_ast::ast::Statement::ImportDeclaration(import)
-                if !crate::package_specifier::is_package(
-                    import.source.value.as_str(),
-                    "@devup-ui/react",
-                ) =>
-            {
-                Some(import.source.value.as_str())
+            oxc_ast::ast::Statement::ImportDeclaration(import) => {
+                import.source.value.as_str().filter(|source| {
+                    !crate::package_specifier::is_package(source, "@devup-ui/react")
+                })
             }
             _ => None,
         })

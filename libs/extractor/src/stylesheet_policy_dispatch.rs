@@ -61,9 +61,13 @@ impl<'s> Dispatch<'s> {
             let Statement::ImportDeclaration(import) = statement else {
                 return true;
             };
-            let specifier = import.source.value.as_str();
-            if import.import_kind.is_type()
-                || specifier == self.option.package
+            if import.import_kind.is_type() {
+                return true;
+            }
+            let Some(specifier) = import.source.value.as_str() else {
+                return false;
+            };
+            if specifier == self.option.package
                 || specifier == format!("{}/compat", self.option.package)
             {
                 return true;

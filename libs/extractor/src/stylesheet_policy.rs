@@ -170,7 +170,11 @@ impl Proof<'_> {
             return true;
         }
         let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
-        let of_package = packages.contains(&import.source.value.as_str());
+        let of_package = import
+            .source
+            .value
+            .as_str()
+            .is_some_and(|source| packages.contains(&source));
         !specifiers.is_empty()
             && specifiers.iter().all(|specifier| match specifier {
                 ImportDeclarationSpecifier::ImportSpecifier(specifier)

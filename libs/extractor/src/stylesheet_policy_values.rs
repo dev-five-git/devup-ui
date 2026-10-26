@@ -102,7 +102,7 @@ impl Proof<'_> {
             Expression::BooleanLiteral(_) => Some(Value::Scalar),
             Expression::NullLiteral(_) => Some(Value::Nullish),
             Expression::NumericLiteral(number) => Some(Value::Number(number.value)),
-            Expression::StringLiteral(text) => Some(Value::Text(text.value.to_string())),
+            Expression::StringLiteral(text) => Some(Value::Text(text.value.as_str()?.to_string())),
             Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) => {
                 Some(Value::Function)
             }
@@ -166,7 +166,7 @@ impl Proof<'_> {
                             let key = if property.computed {
                                 self.value(property.key.as_expression()?)?.key()?
                             } else {
-                                property.key.static_name()?.to_string()
+                                property.key.static_name()?.as_str()?.to_string()
                             };
                             if key == "__proto__" {
                                 return None;
@@ -190,23 +190,23 @@ impl Proof<'_> {
                 .value(&member.object)?
                 .member(&self.value(&member.expression)?.key()?),
             Expression::TemplateLiteral(template) => {
-                let mut text = String::new();
+                let mut text = Vec::new();
                 let mut exact = true;
                 for (index, quasi) in template.quasis.iter().enumerate() {
-                    text.push_str(quasi.value.cooked.as_ref()?.as_str());
+                    text.extend(quasi.value.cooked?.encode_utf16());
                     if let Some(expression) = template.expressions.get(index) {
                         let value = self.value(expression)?;
                         if !value.primitive() {
                             return None;
                         }
                         match value.key() {
-                            Some(key) => text.push_str(&key),
+                            Some(key) => text.extend(key.encode_utf16()),
                             None => exact = false,
                         }
                     }
                 }
                 Some(if exact {
-                    Value::Text(text)
+                    Value::Text(String::from_utf16(&text).ok()?)
                 } else {
                     Value::Scalar
                 })
