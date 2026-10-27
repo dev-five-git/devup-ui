@@ -4,6 +4,100 @@ import { join } from 'node:path'
 
 import { expect, it } from 'bun:test'
 
+/**
+ * @param {{data: {active: readonly number[], pids: readonly number[]}}} tree
+ * @param {string} output
+ * @param {NodeJS.Platform} platform
+ */
+function assertTreeExit(tree, output, platform = process.platform) {
+  expect(tree.data.active).toEqual([])
+  if (platform === 'win32') {
+    expect(tree.data.pids.length).toBeGreaterThan(1)
+    for (const match of output.matchAll(/W65-FAULT-PID (\d+)/g))
+      expect(tree.data.pids).toContain(Number(match[1]))
+  }
+}
+
+/**
+ * Model only the two historical fixture IDs; never reach the OS signal API.
+ * @param {number | undefined} reusedPid
+ * @param {() => void} assertion
+ */
+function withHistoricalPidLookup(reusedPid, assertion) {
+  const originalKill = process.kill
+  const unexpected = []
+  process.kill = (pid, signal) => {
+    if (signal !== 0 || ![101, 202].includes(pid)) {
+      unexpected.push({ pid, signal })
+      throw new RangeError('Unexpected historical PID lookup')
+    }
+    if (pid === reusedPid) return true
+    throw Object.assign(new Error('Historical process has exited'), {
+      code: 'ESRCH',
+    })
+  }
+  try {
+    assertion()
+  } finally {
+    process.kill = originalKill
+    // The old toThrow probe must not swallow an unexpected PID or signal.
+    expect(unexpected).toEqual([])
+  }
+}
+
+it('accepts a Windows job receipt when a historical PID belongs to an unrelated process', () => {
+  // Given a reaped job whose historical ID 101 now identifies an unrelated process.
+  const tree = { data: { active: [], pids: [101, 202] } }
+  const output = 'W65-FAULT-PID 202'
+  withHistoricalPidLookup(101, () => {
+    // When the same receipt assertion used by real Next scenarios runs as Windows.
+    // Then unrelated global PID reuse must not invalidate completed job ownership.
+    expect(() => assertTreeExit(tree, output, 'win32')).not.toThrow()
+  })
+})
+
+it('accepts a Windows job receipt when all historical PIDs are absent', () => {
+  // Given a reaped job with both observed IDs absent from the global PID table.
+  const tree = { data: { active: [], pids: [101, 202] } }
+  withHistoricalPidLookup(undefined, () => {
+    // When the shared receipt assertion runs as Windows.
+    // Then the completed job and observed fault descendant are accepted.
+    expect(() =>
+      assertTreeExit(tree, 'W65-FAULT-PID 202', 'win32'),
+    ).not.toThrow()
+  })
+})
+
+for (const { condition, active, pids, output } of [
+  {
+    condition: 'owned membership is still active',
+    active: [101],
+    pids: [101, 202],
+    output: '',
+  },
+  {
+    condition: 'only one process was observed',
+    active: [],
+    pids: [101],
+    output: '',
+  },
+  {
+    condition: 'a fault descendant was not observed',
+    active: [],
+    pids: [101, 202],
+    output: 'W65-FAULT-PID 303',
+  },
+])
+  it(`rejects a Windows job receipt when ${condition}`, () => {
+    // Given an invalid job receipt, with historical numeric lookups all absent.
+    const tree = { data: { active, pids } }
+    withHistoricalPidLookup(undefined, () => {
+      // When the shared receipt assertion runs as Windows.
+      // Then the missing ownership evidence is rejected independently of PID reuse.
+      expect(() => assertTreeExit(tree, output, 'win32')).toThrow()
+    })
+  })
+
 for (const singleCss of ['0', '1'])
   it(`delivers actual HTML-linked CSS through cold/repeat/warm webpack builds (singleCss=${singleCss})`, () => {
     // Given identical physical server, edge, client and accepted-package fixtures.
@@ -52,17 +146,9 @@ for (const fault of [
       .map((line) => JSON.parse(line.slice(14)))
     const tree = events.find((entry) => entry.event === 'tree_exit')
     const cleanup = events.find((entry) => entry.event === 'cleanup')
-    expect(tree.data.active).toEqual([])
+    assertTreeExit(tree, output)
     expect(cleanup.data.removed).toBe(true)
     expect(existsSync(cleanup.data.root)).toBe(false)
-    if (process.platform === 'win32') {
-      expect(tree.data.pids.length).toBeGreaterThan(1)
-      for (const pid of tree.data.pids) {
-        expect(() => process.kill(pid, 0)).toThrow()
-      }
-      for (const match of output.matchAll(/W65-FAULT-PID (\d+)/g))
-        expect(tree.data.pids).toContain(Number(match[1]))
-    }
     if (fault) {
       expect(result.status).not.toBe(0)
       expect(output).not.toContain('webpack production proof passed')
