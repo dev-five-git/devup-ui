@@ -4,7 +4,7 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
 
-import { runValues } from './private-values.mjs'
+import { runProtocol, runValues, withControl } from './private-values.mjs'
 
 const [entry, destination, group] = process.argv.slice(2)
 assert.equal(process.argv.length, 5)
@@ -14,7 +14,10 @@ assert.ok(['protocol', 'raw-resolver-failure'].includes(group))
 const require = createRequire(import.meta.url)
 const image = realpathSync(join(dirname(entry), 'binding.node'))
 const raw = require(image)
-const { withAccess } = require('../../../bindings/devup-ui-binding/interop.cjs')
+const {
+  OP,
+  withAccess,
+} = require('../../../bindings/devup-ui-binding/interop.cjs')
 const {
   createBinding,
 } = require('../../../bindings/devup-ui-binding/adapter.cjs')
@@ -28,8 +31,7 @@ const pkg = '@devup-ui/react'
 const code =
   'import { Box } from "./barrel"; export const x = <Box color="red" />'
 const request = () => [file, code, pkg, {}]
-const call = (method, value) =>
-  withAccess((access) => raw[method](value, access))
+const call = (method, value) => withAccess(raw[method], value)
 
 check('state-before-init', () => {
   assert.throws(() => raw.reset(false), /native facade is not initialized/)
@@ -95,50 +97,34 @@ if (group === 'raw-resolver-failure') {
       )
     assert.throws(() => raw.getThemeInterface(pkg, [false]), /String/)
   })
-  // Only these failure envelopes are synthetic. Every untouched operation delegates
-  // to the authored interop, including ordinary successful traversal and decoding.
-  for (const [name, envelope] of [
-    ['empty', []],
-    ['missing-value', [true]],
-    ['missing-origin', [false]],
-    ['wrong-status', ['yes']],
-    ['wrong-value', [true, 7]],
-    ['wrong-origin', [false, undefined, 'schema']],
-  ]) {
-    check(`access-${name}`, () => {
-      assert.throws(
-        () =>
-          withAccess((access) =>
-            raw.importCanonicalMap({}, (op, value, key) =>
-              op === 'iter' ? envelope : access(op, value, key),
-            ),
-          ),
-        Error,
-      )
-    })
-  }
   check('schema-callback-throw', () => {
     const marker = new Error('private schema callback throw')
+    const target = raw.importCanonicalMap
     assert.throws(
       () =>
-        withAccess((access) =>
-          raw.importCanonicalMap(false, (op, value, key) => {
-            if (op === 'schema') throw marker
-            return access(op, value, key)
-          }),
-        ),
+        withControl(target, false, ({ access }) => (op, value, key) => {
+          if (op === OP.schema) throw marker
+          return access(op, value, key)
+        }),
       (error) => error === marker,
     )
   })
   check('preflight-host-failure', () => {
+    const target = raw.hasDevupUi
     assert.throws(
       () =>
-        withAccess((access) =>
-          raw.hasDevupUi(request(), (op, value, key) =>
-            op === 'iter' ? [] : access(op, value, key),
-          ),
+        withControl(
+          target,
+          request(),
+          ({ access }) =>
+            (op, value, key) =>
+              op === OP.entries ? [] : access(op, value, key),
         ),
-      /missing private access result/,
+      {
+        name: 'Error',
+        code: 'GenericFailure',
+        message: /^Error: Array length < 2$/,
+      },
     )
   })
   check('preflight-access-failure', () => {
@@ -156,16 +142,25 @@ if (group === 'raw-resolver-failure') {
     )
   })
   check('preflight-failure-operation-host', () => {
+    const target = raw.hasDevupUi
     assert.throws(
       () =>
-        withAccess((access) =>
-          raw.hasDevupUi(request(), (op, value, key) => {
-            if (op === 'iter') return [false, undefined, false]
-            if (op === 'preflightFailure') return []
-            return access(op, value, key)
-          }),
+        withControl(
+          target,
+          request(),
+          ({ access, accessToken }) =>
+            (op, value, key) => {
+              if (op === OP.iter) return accessToken
+              if (op === OP.preflightFailure)
+                throw new Error('private preflight failure host')
+              return access(op, value, key)
+            },
         ),
-      /missing private access result/,
+      {
+        name: 'Error',
+        code: 'GenericFailure',
+        message: /^Error: (?:Error: )?private preflight failure host$/,
+      },
     )
   })
   check('reservation-row-arity', () => {
@@ -177,19 +172,20 @@ if (group === 'raw-resolver-failure') {
   check('unknown-field-is-not-read', () => {
     let reads = 0
     const operations = []
-    withAccess((access) =>
-      raw.importSheet(
-        {
-          get unknown() {
-            reads++
-            throw Error('unknown field read')
-          },
+    const target = raw.importSheet
+    withControl(
+      target,
+      {
+        get unknown() {
+          reads++
+          throw Error('unknown field read')
         },
+      },
+      ({ access }) =>
         (op, value, key) => {
           operations.push([op, key])
           return access(op, value, key)
         },
-      ),
     )
     assert.equal(reads, 0)
     assert.deepEqual(
@@ -203,10 +199,11 @@ if (group === 'raw-resolver-failure') {
         'imports',
         'font_faces',
         'layer_orders',
-      ].map((key) => ['field', key]),
+      ].map((key) => [OP.field, key]),
     )
   })
   runValues(w, check, file)
+  runProtocol(raw, check, request)
 }
 w.resetStateForTesting()
 writeFileSync(

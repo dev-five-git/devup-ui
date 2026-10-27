@@ -1,6 +1,6 @@
-use crate::value::{De, Error, item};
+use crate::value::{De, Error, Operation, item};
 use napi::ValueType;
-use napi::bindgen_prelude::{Array, Unknown};
+use napi::bindgen_prelude::{Array, Either, Unknown};
 use serde::Deserializer as _;
 use serde::de::{self, DeserializeSeed, Error as _, IntoDeserializer, Visitor};
 
@@ -11,10 +11,10 @@ pub(crate) struct Sequence<'a, 'env> {
 }
 impl<'a, 'env> Sequence<'a, 'env> {
     pub(crate) fn new(source: De<'a, 'env>, pairs: bool) -> Result<Option<Self>, Error> {
-        if !pairs && source.op::<bool>("array", None)? {
+        if !pairs && source.op::<bool>(Operation::Array, None)? {
             return Self::array(source).map(Some);
         }
-        let iterator: Unknown<'env> = source.op("iter", None)?;
+        let iterator: Unknown<'env> = source.op(Operation::Iter, None)?;
         if iterator.get_type()? != ValueType::Undefined {
             return Ok(Some(Self {
                 source: source.child(iterator),
@@ -22,7 +22,7 @@ impl<'a, 'env> Sequence<'a, 'env> {
             }));
         }
         if pairs && source.kind()? == ValueType::Object {
-            let (entries, len): (Unknown<'env>, u32) = source.op("entries", None)?;
+            let (entries, len): (Unknown<'env>, u32) = source.op(Operation::Entries, None)?;
             return Ok(Some(Self {
                 source: source.child(entries),
                 range: Some(0..len),
@@ -32,7 +32,7 @@ impl<'a, 'env> Sequence<'a, 'env> {
     }
     fn array(source: De<'a, 'env>) -> Result<Self, Error> {
         Ok(Self {
-            range: Some(0..source.op("length", None)?),
+            range: Some(0..source.op(Operation::Length, None)?),
             source,
         })
     }
@@ -42,12 +42,12 @@ impl<'a, 'env> Sequence<'a, 'env> {
                 .next()
                 .map(|index| {
                     self.source
-                        .op("index", Some(index.to_string()))
+                        .op(Operation::Index, Some(Either::A(index)))
                         .map(|value| self.source.child(value))
                 })
                 .transpose()
         } else {
-            let result: Array<'env> = self.source.op("next", None)?;
+            let result: Array<'env> = self.source.op(Operation::Next, None)?;
             if item::<bool>(&result, 0)? {
                 Ok(None)
             } else {
@@ -103,7 +103,7 @@ impl<'de> de::MapAccess<'de> for Entries<'_, '_> {
         match &mut self.keys {
             Keys::Pairs(sequence) => match sequence.next()? {
                 Some(pair) => {
-                    let pair_values: Array<'_> = pair.op("pair", None)?;
+                    let pair_values: Array<'_> = pair.op(Operation::Pair, None)?;
                     self.value = pair.child(item(&pair_values, 1)?);
                     seed.deserialize(pair.child(item(&pair_values, 0)?))
                         .map(Some)
@@ -112,7 +112,7 @@ impl<'de> de::MapAccess<'de> for Entries<'_, '_> {
             },
             Keys::Fields(source, fields) => {
                 for field in fields {
-                    let result: Array<'_> = source.op("field", Some((*field).to_string()))?;
+                    let result: Array<'_> = source.op(Operation::Field, Some(Either::B(*field)))?;
                     if item::<bool>(&result, 0)? {
                         self.value = source.child(item(&result, 1)?);
                         return seed.deserialize((*field).into_deserializer()).map(Some);
@@ -136,20 +136,20 @@ impl<'a, 'env> Variant<'a, 'env> {
         match source.kind()? {
             ValueType::String => Ok(Self {
                 tag: source,
-                payload: source.child(source.op("undefined", None)?),
+                payload: source.child(source.op(Operation::Undefined, None)?),
             }),
             ValueType::Object => {
-                let (entries, len): (Unknown<'env>, u32) = source.op("entries", None)?;
+                let (entries, len): (Unknown<'env>, u32) = source.op(Operation::Entries, None)?;
                 let entries = source.child(entries);
                 if len != 1 {
-                    let len: u32 = entries.op("length", None)?;
+                    let len: u32 = entries.op(Operation::Length, None)?;
                     return Err(Error::invalid_length(
                         usize::try_from(len).map_err(Error::custom)?,
                         &"1",
                     ));
                 }
-                let pair = entries.child(entries.op("index", Some("0".to_string()))?);
-                let values: Array<'env> = pair.op("pair", None)?;
+                let pair = entries.child(entries.op(Operation::Index, Some(Either::A(0)))?);
+                let values: Array<'env> = pair.op(Operation::Pair, None)?;
                 Ok(Self {
                     tag: source.child(item(&values, 0)?),
                     payload: source.child(item(&values, 1)?),

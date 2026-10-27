@@ -1,8 +1,9 @@
 use crate::access::{Entries, Sequence, Variant};
-use crate::value::{De, Error};
+use crate::value::{De, Error, Operation, widen_index};
 use napi::ValueType;
-use napi::bindgen_prelude::FromNapiValue;
-use serde::de::{self, Error as _, Visitor};
+use napi::bindgen_prelude::{FromNapiValue, Uint8Array};
+use serde::de::{self, Error as _, Unexpected, Visitor};
+use std::fmt;
 
 macro_rules! integers {
     ($method:ident: $($name:ident),+) => {$ (
@@ -18,14 +19,14 @@ impl<'de> de::Deserializer<'de> for De<'_, '_> {
             ValueType::Null | ValueType::Undefined => visitor.visit_unit(),
             ValueType::Boolean => visitor.visit_bool(bool::from_unknown(self.value)?),
             ValueType::Number => {
-                if self.op::<bool>("safeInt", None)? {
+                if self.op::<bool>(Operation::SafeInt, None)? {
                     visitor.visit_i64(i64::from_unknown(self.value)?)
                 } else {
                     visitor.visit_f64(f64::from_unknown(self.value)?)
                 }
             }
             ValueType::BigInt => {
-                let text: String = self.op("bigint", None)?;
+                let text: String = self.op(Operation::Bigint, None)?;
                 match text.parse::<i64>() {
                     Ok(value) => visitor.visit_i64(value),
                     Err(_) => visitor.visit_u64(text.parse::<u64>().map_err(|_| Error::custom(
@@ -34,13 +35,13 @@ impl<'de> de::Deserializer<'de> for De<'_, '_> {
             }
             ValueType::String => visitor.visit_string(String::from_unknown(self.value)?),
             ValueType::Object => {
-                if self.op::<bool>("array", None)? {
+                if self.op::<bool>(Operation::Array, None)? {
                     return self.deserialize_seq(visitor);
                 }
-                if let Some(bytes) = self.op::<Option<Vec<u8>>>("bytes", None)? {
-                    return visitor.visit_byte_buf(bytes);
+                if let Some(bytes) = self.op::<Option<Uint8Array>>(Operation::Bytes, None)? {
+                    return visitor.visit_byte_buf(bytes.to_vec());
                 }
-                if self.op::<bool>("anyMap", None)? {
+                if self.op::<bool>(Operation::AnyMap, None)? {
                     return self.deserialize_map(visitor);
                 }
                 Err(self.invalid(&visitor)?)
@@ -135,5 +136,31 @@ impl<'de> de::Deserializer<'de> for De<'_, '_> {
     }
     fn deserialize_tuple<V: Visitor<'de>>(self, _: usize, visitor: V) -> Result<V::Value, Error> {
         self.deserialize_seq(visitor)
+    }
+}
+/// A serialized usize is wasm32-sized on every native host, with usize diagnostics.
+#[derive(PartialEq, Eq, Hash)]
+pub(crate) struct Wasm32Index(pub(crate) usize);
+struct IndexVisitor;
+impl<'value> Visitor<'value> for IndexVisitor {
+    type Value = Wasm32Index;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("usize")
+    }
+    fn visit_newtype_struct<D: serde::Deserializer<'value>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_u64(self)
+    }
+    fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+        let value = u32::try_from(value)
+            .map_err(|_| E::invalid_value(Unexpected::Unsigned(value), &self))?;
+        Ok(Wasm32Index(widen_index(value)))
+    }
+}
+impl<'de> serde::Deserialize<'de> for Wasm32Index {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_newtype_struct("Wasm32Index", IndexVisitor)
     }
 }

@@ -8,46 +8,119 @@ mod value;
 pub use host::{Resolved, extract, has_devup_ui, init, reserve, reset, set_resolver};
 pub use output::NativeOutput;
 
+use de::Wasm32Index;
 use devup_ui_binding_core as core;
 use napi::bindgen_prelude::{Either, Undefined, Unknown};
-use napi::{Error, Result};
+use napi::{Env, Error, Result};
 use napi_derive::napi;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use value::{Access, Wasm32Index, decode, widen_index};
+use value::{Access, AccessCallback, decode, widen_index};
 
 #[doc = "Restore a completely decoded sheet."]
 #[napi]
-pub fn import_sheet<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn import_sheet<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     core::import_sheet_internal(decode::<sheet::StyleSheet>(value, &access, 0)?);
     Ok(())
 }
 #[doc = "Register a completely decoded theme."]
 #[napi]
-pub fn register_theme<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn register_theme<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     core::register_theme_internal(decode::<sheet::theme::Theme>(value, &access, 0)?);
     Ok(())
 }
 #[doc = "Register typed shorthand targets."]
 #[napi]
-pub fn register_shorthands<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn register_shorthands<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     core::register_shorthands_internal(decode::<BTreeMap<String, Vec<String>>>(value, &access, 0)?);
     Ok(())
 }
 #[doc = "Restore canonical bucket identities."]
 #[napi]
-pub fn import_canonical_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn import_canonical_map<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     core::import_canonical_map_internal(decode::<HashMap<String, String>>(value, &access, 0)?);
     Ok(())
 }
 #[doc = "Restore iterable route sets."]
 #[napi]
-pub fn import_file_routes<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn import_file_routes<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     core::import_file_routes_internal(decode::<HashMap<String, HashSet<u32>>>(value, &access, 0)?);
     Ok(())
 }
 /// Restore wasm32-sized class slots, widening only after complete decoding.
 #[napi]
-pub fn import_class_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn import_class_map<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     let map: HashMap<String, HashMap<String, Wasm32Index>> = decode(value, &access, 0)?;
     core::import_class_map_internal(
         map.into_iter()
@@ -66,7 +139,19 @@ pub fn import_class_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Res
 }
 /// Restore file slots using the same bimap decoding and wasm32 width as WASM.
 #[napi]
-pub fn import_file_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+pub fn import_file_map<'env>(
+    env: Env,
+    value: Unknown<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     let map: bimap::BiHashMap<String, Wasm32Index> = decode(value, &access, 0)?;
     core::import_file_map_internal(
         map.into_iter()

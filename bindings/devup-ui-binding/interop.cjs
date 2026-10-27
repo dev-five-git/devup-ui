@@ -1,6 +1,27 @@
 'use strict'
 const boundary = require('../argument-validation.cjs')()
 exports.boundary = boundary
+const OP = {
+  preflightFailure: 0,
+  schema: 1,
+  array: 2,
+  safeInt: 3,
+  bytes: 4,
+  debug: 5,
+  bigint: 6,
+  undefined: 7,
+  anyMap: 8,
+  entries: 9,
+  length: 10,
+  index: 11,
+  pair: 12,
+  field: 13,
+  iter: 14,
+  next: 15,
+}
+exports.OP = OP
+const schemaToken = class {}
+const accessToken = class {}
 function instance(value, type) {
   try {
     return value instanceof type
@@ -59,69 +80,70 @@ function bytes(value) {
   if (source === undefined) return undefined
   const copy = new Uint8Array(source.length)
   Uint8Array.prototype.set.call(copy, source)
-  return Array.from(copy)
+  return copy
 }
-exports.withAccess = function withAccess(run) {
+exports.withAccess = function withAccess(target, value) {
   let failure, schema
-  const access = (name, value, key) => {
+  const access = (operation, value, key) => {
     let wrapped = false
     try {
       let result
-      switch (name) {
-        case 'preflightFailure': {
+      switch (operation) {
+        case OP.preflightFailure: {
           const pending = failure
           failure = undefined
           pending(true)
           break
         }
-        case 'schema':
-          schema = boundary.fail(Number(key))
+        case OP.schema:
+          schema = boundary.fail(key)
           break
-        case 'array':
+        case OP.array:
           result = Array.isArray(value)
           break
-        case 'safeInt':
+        case OP.safeInt:
           result = Number.isSafeInteger(value)
           break
-        case 'bytes':
+        case OP.bytes:
           result = bytes(value)
           break
-        case 'debug':
+        case OP.debug:
           result = `JsValue(${debugString(value)})`
           break
-        case 'bigint':
-          result = String(value)
+        case OP.bigint:
+          result = `${value}`
           break
-        case 'undefined':
+        case OP.undefined:
           result = undefined
           break
-        case 'anyMap':
+        case OP.anyMap:
           result = !(Symbol.iterator in value) || instance(value, Map)
           break
-        case 'entries': {
+        case OP.entries: {
           const entries = Object.entries(value)
           result = [entries, entries.length >>> 0]
           break
         }
-        case 'length':
+        case OP.length:
           result = value.length >>> 0
           break
-        case 'index':
-          result = value[Number(key)]
+        case OP.index:
+          result = value[key]
           break
-        case 'pair':
-          if (!boundary.shape(value, true)) return [false, undefined, true]
+        case OP.pair:
+          if (!boundary.shape(value, true)) return schemaToken
           result = [value[0], value[1]]
           break
-        case 'field': {
+        case OP.field: {
           const field = value[key]
           result = [field !== undefined || key in value, field]
           break
         }
-        case 'iter': {
-          if (!boundary.shape(value)) return [false, undefined, true]
+        case OP.iter: {
+          if (!boundary.shape(value)) return schemaToken
+          const iteratorSymbol = Symbol.iterator
           wrapped = true
-          const method = Reflect.get(value, Symbol.iterator)
+          const method = Reflect.get(value, iteratorSymbol)
           if (typeof method !== 'function') break
           const iterator = method.call(value)
           wrapped = false
@@ -133,30 +155,30 @@ exports.withAccess = function withAccess(run) {
               : undefined
           break
         }
-        case 'next': {
+        case OP.next: {
           wrapped = true
           const next = value.next()
           wrapped = false
-          if (!boundary.shape(next)) return [false, undefined, true]
+          if (!boundary.shape(next)) return schemaToken
           result =
             (+next.done | 0) !== 0 ? [true, undefined] : [false, next.value]
           break
         }
         default:
-          throw new Error(`unknown private access operation: ${name}`)
+          throw new Error(`unknown private access operation: ${operation}`)
       }
-      return [true, result]
+      return result
     } catch (error) {
       failure = (forgive = false) => {
         if (!wrapped) throw error
         const converted = new Error(String(error))
         if (!forgive) throw converted
       }
-      return [false, undefined, false]
+      return accessToken
     }
   }
   try {
-    return run(access)
+    return target(value, access, schemaToken, accessToken)
   } catch (error) {
     if (failure) return failure()
     if (schema) throw schema

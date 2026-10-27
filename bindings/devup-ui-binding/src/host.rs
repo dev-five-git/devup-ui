@@ -1,8 +1,8 @@
 use crate::output::NativeOutput;
-use crate::value::{Access, decode, decode_preflight, schema_error};
+use crate::value::{Access, AccessCallback, decode, decode_preflight, schema_error};
 use devup_ui_binding_core as core;
 use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule};
-use napi::bindgen_prelude::{Array, FnArgs, FromNapiValue, FunctionRef};
+use napi::bindgen_prelude::{Array, FnArgs, FromNapiValue, FunctionRef, Unknown};
 use napi::{Env, Error, Result};
 use napi_derive::napi;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -53,6 +53,10 @@ fn with_resolver<T>(
     action: impl FnOnce(Option<&ModuleResolver>) -> Result<T>,
 ) -> Result<T> {
     let current = state(&env)?.0.clone();
+    let current = match current {
+        None => return action(None),
+        Some(current) => Some(current),
+    };
     let failure = Rc::new(RefCell::new(None));
     let resolver = current.map(|current| {
         let failure = Rc::clone(&failure);
@@ -103,7 +107,19 @@ fn aliases(values: HashMap<String, Option<String>>) -> HashMap<String, ImportAli
 /// # Errors
 /// Returns an error if the private request or environment cannot be read.
 #[napi]
-pub fn has_devup_ui<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Result<bool> {
+pub fn has_devup_ui<'env>(
+    env: Env,
+    request: Array<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<bool> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     let filename: String = arg(&request, 0)?;
     let code: String = arg(&request, 1)?;
     let package: String = arg(&request, 2)?;
@@ -116,7 +132,19 @@ pub fn has_devup_ui<'env>(env: Env, request: Array<'env>, access: Access<'env>) 
 }
 /// Private positional request retains both public eight-argument extraction signatures.
 #[napi]
-pub fn extract<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Result<NativeOutput> {
+pub fn extract<'env>(
+    env: Env,
+    request: Array<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<NativeOutput> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     let filename: String = arg(&request, 0)?;
     let code: String = arg(&request, 1)?;
     let option = ExtractOption {
@@ -148,7 +176,19 @@ pub fn extract<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Re
 }
 /// Prepare the entire reservation packet before any core allocation or scratch state.
 #[napi]
-pub fn reserve<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Result<()> {
+pub fn reserve<'env>(
+    env: Env,
+    request: Array<'env>,
+    callback: AccessCallback<'env>,
+    schema_token: Unknown<'env>,
+    access_token: Unknown<'env>,
+) -> Result<()> {
+    let access = Access {
+        env,
+        callback,
+        schema_token,
+        failure_token: access_token,
+    };
     let value = arg(&request, 0)?;
     let rows: Vec<Vec<String>> = decode(value, &access, 0)?;
     let inputs = rows

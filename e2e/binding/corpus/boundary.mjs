@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict'
+
 import { box, dependent, file, resolved, source } from './extraction.mjs'
 
 const cases = []
@@ -191,3 +193,53 @@ add('prefix-valid-and-malformed-boolean-strict', (h) => {
   h.call('setPrefix')
 })
 export const boundary = cases
+
+export function capturePatched(patches, action) {
+  const originals = patches.map(([target, key]) =>
+    Object.getOwnPropertyDescriptor(target, key),
+  )
+  try {
+    for (const [target, key, value] of patches) target[key] = value
+    return { value: action() }
+  } catch (error) {
+    return { error }
+  } finally {
+    for (let i = 0; i < patches.length; i++) {
+      const [target, key] = patches[i]
+      const descriptor = originals[i]
+      if (descriptor) Object.defineProperty(target, key, descriptor)
+      else delete target[key]
+    }
+  }
+}
+
+export function checkGlobalNeighbours(h) {
+  for (const [name, target, key] of [
+    ['Reflect.get', Reflect, 'get'],
+    ['Uint8Array.set', Uint8Array.prototype, 'set'],
+  ]) {
+    const result = h.step(`global-neighbour-${name}`, () => {
+      // Given: a throwing dynamic intrinsic still observed by both real engines.
+      const marker = new Error(`observed ${name}`)
+      const input = name === 'Reflect.get' ? {} : { probe: new Uint8Array([1]) }
+      let calls = 0
+      const replacement = () => {
+        calls++
+        throw marker
+      }
+      // When: strict map decoding reaches iterator lookup or the typed-byte copy.
+      const outcome = capturePatched([[target, key, replacement]], () =>
+        h.w.importCanonicalMap(input),
+      )
+      // Then: iterator-import errors convert once; byte-copy errors stay raw.
+      assert.equal(calls, 1)
+      if (name === 'Reflect.get') {
+        assert.ok(outcome.error instanceof Error)
+        assert.equal(outcome.error.name, 'Error')
+        assert.notEqual(outcome.error, marker)
+        assert.equal(outcome.error.message, `Error: ${marker.message}`)
+      } else assert.equal(outcome.error, marker)
+    })
+    assert.equal(result.tag, 'return', name)
+  }
+}

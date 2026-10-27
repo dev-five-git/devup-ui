@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
 
 import { corpus, file, pkg, source } from './corpus.mjs'
+import { capturePatched } from './corpus/boundary.mjs'
 import { capture, encode, hash } from './observation.mjs'
 
 export { encode } from './observation.mjs'
@@ -19,8 +20,19 @@ assert.equal(process.env.NODE_OPTIONS, '')
 assert.equal(process.env.BUN_OPTIONS, '')
 assert.deepEqual(process.execArgv, [])
 const require = createRequire(import.meta.url),
-  loaded = realpathSync(entry),
+  loaded = realpathSync(entry)
+const nativeImages = []
+const dlopen = process.dlopen
+let w
+process.dlopen = function (...args) {
+  nativeImages.push(realpathSync(args[1]))
+  return Reflect.apply(dlopen, this, args)
+}
+try {
   w = require(loaded)
+} finally {
+  process.dlopen = dlopen
+}
 const save = (name, value) =>
   writeFileSync(
     join(destination, name),
@@ -31,6 +43,7 @@ const modules = Object.keys(require.cache)
 const images = [
   ...new Set([
     ...modules,
+    ...nativeImages,
     ...[...new Set(modules.map(dirname))].flatMap((directory) =>
       readdirSync(directory)
         .filter((name) => name.endsWith('.wasm'))
@@ -194,4 +207,44 @@ for (const test of corpus) {
   test.run(h)
   emit({ kind: 'complete', state: snapshot() })
 }
+// Number replacement is an approved engine difference, outside parity records.
+const native = nativeImages.length > 0
+const originalNumber = Number
+const numberUserData = []
+for (const mode of ['unmodified', 'replaced', 'throwing']) {
+  // Given: the same numeric user data and a replacement retaining safe-int checks.
+  w.resetStateForTesting()
+  const marker = new Error('Number user-data marker')
+  let calls = 0
+  const replacement = (value) => {
+    calls++
+    assert.equal(value, 8)
+    if (mode === 'throwing') throw marker
+    return 99
+  }
+  replacement.isSafeInteger = originalNumber.isSafeInteger
+  // When: the real loaded engine decodes user data, never a private control key.
+  const outcome = capturePatched(
+    mode === 'unmodified' ? [] : [[globalThis, 'Number', replacement]],
+    () => w.importFileMap({ probe: 8 }),
+  )
+  // Then: ordinary inputs agree; only WASM observes the replaced Number call.
+  const observesNumber = !native && mode !== 'unmodified'
+  const throwsMarker = observesNumber && mode === 'throwing'
+  assert.equal(calls, observesNumber ? 1 : 0)
+  assert.equal(outcome.error, throwsMarker ? marker : undefined)
+  const fileMap = JSON.parse(w.exportFileMap())
+  assert.deepEqual(
+    fileMap,
+    throwsMarker ? {} : { probe: observesNumber ? 99 : 8 },
+  )
+  numberUserData.push({
+    mode,
+    calls,
+    threwMarker: outcome.error === marker,
+    fileMap,
+  })
+}
+save('number-userdata.json', { native, records: numberUserData })
+w.resetStateForTesting()
 if (abi.result.tag !== 'return') process.exitCode = 1

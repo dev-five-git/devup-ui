@@ -2,7 +2,7 @@
 const { boundary, withAccess } = require('./interop.cjs')
 exports.createBinding = function createBinding(raw) {
   raw.init()
-  const call = (fn, value) => withAccess((access) => fn(value, access))
+  const call = withAccess
   const index = (value) => (value == null ? undefined : value >>> 0)
   function codeExtract(
     filename,
