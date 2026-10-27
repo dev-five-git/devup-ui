@@ -72,7 +72,7 @@ impl<'de> de::Deserializer<'de> for De<'_, '_> {
     }
     fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         if self.nullish()? {
-            visitor.visit_unit()
+            self.deserialize_ignored_any(visitor)
         } else {
             Err(self.invalid(&visitor)?)
         }

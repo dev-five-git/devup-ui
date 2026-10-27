@@ -169,7 +169,11 @@ impl Constant {
     fn change(&self) -> Option<Rc<Change>> {
         match self {
             Self::Changed(change) => Some(change.clone()),
-            Self::Object(object) => object.values().find_map(Self::change),
+            Self::Object(object) => object
+                .iter()
+                .filter_map(|(key, value)| value.change().map(|change| (key, change)))
+                .min_by(|left, right| left.0.cmp(right.0))
+                .map(|(_, change)| change),
             Self::Record(entries) => entries.iter().find_map(|(_, value)| value.change()),
             Self::Array(values) => values.iter().find_map(Self::change),
             _ => None,
@@ -3145,3 +3149,51 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
 mod scope_tests;
 #[cfg(test)]
 mod stylex_scope_tests;
+
+#[cfg(test)]
+mod order_tests {
+    use super::*;
+
+    #[test]
+    fn nested_change_uses_lowest_object_key_when_multiple_children_are_changed() {
+        // Given object keys differ from change names and alpha holds a nested array.
+        let alpha = Rc::new(Change {
+            name: "zeta".into(),
+            site: ChangeSite::Here(3),
+            handed: false,
+        });
+        let beta = Rc::new(Change {
+            name: "beta".into(),
+            site: ChangeSite::Here(4),
+            handed: false,
+        });
+        let object = Constant::Object(Rc::new(FxHashMap::from_iter([
+            ("beta".into(), Constant::Changed(beta)),
+            (
+                "alpha".into(),
+                Constant::Array(Rc::new(vec![
+                    Constant::Null,
+                    Constant::Changed(alpha.clone()),
+                ])),
+            ),
+            ("aaa".into(), Constant::Null),
+        ])));
+        // When selecting the namespace's retained nested change.
+        let selected = object.change();
+        // Then the lowest key holding a change wins, not the change name or hash order.
+        assert!(selected.is_some_and(|selected| Rc::ptr_eq(&selected, &alpha)));
+    }
+
+    #[test]
+    fn nested_change_is_absent_when_object_children_are_unchanged() {
+        // Given an object whose descendants hold no mutation.
+        let object = Constant::Object(Rc::new(FxHashMap::from_iter([
+            ("alpha".into(), Constant::Null),
+            ("beta".into(), Constant::Array(Rc::new(vec![]))),
+        ])));
+        // When selecting a retained change.
+        let selected = object.change();
+        // Then there is no diagnostic origin to select.
+        assert!(selected.is_none());
+    }
+}

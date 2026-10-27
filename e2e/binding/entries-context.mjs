@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { pkg } from './corpus/extraction.mjs'
+import { runNamespaceOrder } from './entries-errors.mjs'
 import { reserve } from './entries-fixtures.mjs'
 import {
   runAliasConversions,
@@ -210,4 +211,5 @@ export async function runContext(h) {
   await runAliasConversions(h, barrel, resolved)
   await runResolverOrder(h)
   await runQueues(h)
+  await runNamespaceOrder(h)
 }

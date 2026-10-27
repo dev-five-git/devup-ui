@@ -1,6 +1,7 @@
 use bimap::BiHashMap;
 use serde::de::{DeserializeOwned, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+use std::marker::PhantomData;
 use wasm_bindgen::prelude::*;
 
 /// File slots grow only from decoded entries, never a JavaScript length hint.
@@ -42,22 +43,163 @@ extern "C" {
     pub(crate) fn fail(slot: u32) -> JsValue;
 }
 
-pub(crate) fn decode<T: DeserializeOwned>(value: JsValue, slot: u32) -> Result<T, JsValue> {
-    begin(slot);
-    match serde_wasm_bindgen::from_value(value) {
-        Ok(value) => {
-            end();
-            Ok(value)
+/// Function-item lifecycle hooks stay statically dispatched, including on WASM.
+pub(crate) struct Decoder<D, J, L> {
+    lifecycle: L,
+    types: PhantomData<fn() -> (D, J)>,
+}
+
+impl<D, J, B, E, F> Decoder<D, J, (B, E, F)>
+where
+    B: Fn(u32),
+    E: Fn(),
+    F: Fn(J) -> J,
+{
+    pub(crate) fn decode<'de, T: DeserializeOwned, I>(&self, value: I, slot: u32) -> Result<T, J>
+    where
+        D: Deserializer<'de> + From<I>,
+        J: From<D::Error>,
+    {
+        (self.lifecycle.0)(slot);
+        match T::deserialize(D::from(value)) {
+            Ok(value) => {
+                (self.lifecycle.1)();
+                Ok(value)
+            }
+            Err(cause) => Err((self.lifecycle.2)(J::from(cause))),
         }
-        Err(cause) => Err(error(JsValue::from(cause))),
+    }
+}
+
+type WasmDecoder<B, E, F> = Decoder<serde_wasm_bindgen::Deserializer, JsValue, (B, E, F)>;
+
+pub(crate) const fn wasm() -> WasmDecoder<impl Fn(u32), impl Fn(), impl Fn(JsValue) -> JsValue> {
+    Decoder {
+        lifecycle: (begin, end, error),
+        types: PhantomData,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::FileMap;
+    use super::{Decoder, FileMap, wasm};
     use serde::Deserialize;
     use serde::de::value::{Error, MapDeserializer};
+    use std::cell::RefCell;
+    use std::marker::PhantomData;
+
+    std::thread_local! {
+        static EVENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    struct Original(serde_json::Value);
+
+    impl From<Original> for serde_json::Value {
+        fn from(value: Original) -> Self {
+            EVENTS.with_borrow_mut(|events| events.push("construct".into()));
+            value.0
+        }
+    }
+
+    struct Observed<T>(T);
+
+    impl<'de, T: Deserialize<'de>> Deserialize<'de> for Observed<T> {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            EVENTS.with_borrow_mut(|events| events.push("deserialize".into()));
+            T::deserialize(deserializer).map(Self)
+        }
+    }
+
+    #[derive(Debug)]
+    struct Cause(serde_json::Error);
+
+    impl From<serde_json::Error> for Cause {
+        fn from(cause: serde_json::Error) -> Self {
+            EVENTS.with_borrow_mut(|events| events.push("convert".into()));
+            Self(cause)
+        }
+    }
+
+    type NativeDecoder<B, E, F> = Decoder<serde_json::Value, Cause, (B, E, F)>;
+
+    fn native() -> NativeDecoder<impl Fn(u32), impl Fn(), impl Fn(Cause) -> Cause> {
+        Decoder {
+            lifecycle: (
+                |slot| EVENTS.with_borrow_mut(|events| *events = vec![format!("begin:{slot}")]),
+                || EVENTS.with_borrow_mut(|events| events.push("end".into())),
+                |cause| {
+                    EVENTS.with_borrow_mut(|events| events.push("error".into()));
+                    cause
+                },
+            ),
+            types: PhantomData,
+        }
+    }
+
+    #[test]
+    fn ends_after_real_file_map_decode_when_input_is_valid() -> Result<(), serde_json::Error> {
+        // Given the production wiring can be selected without invoking JS imports.
+        assert_eq!(std::mem::size_of_val(&wasm()), 0);
+        let source = Original(serde_json::json!({"a": 7, "b": 9}));
+        // When the common body constructs a real Serde deserializer and decodes FileMap.
+        let Observed(FileMap(map)) = native().decode(source, 7).map_err(|cause| cause.0)?;
+        // Then decoded entries and the complete success-only lifecycle survive.
+        assert_eq!(map.get_by_left("a"), Some(&7));
+        assert_eq!(map.get_by_left("b"), Some(&9));
+        EVENTS.with_borrow(|events| {
+            assert_eq!(*events, ["begin:7", "construct", "deserialize", "end"]);
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn decodes_typed_rows_when_a_different_target_type_is_selected() -> Result<(), serde_json::Error>
+    {
+        // Given a reservation-shaped input rather than a file map.
+        let source = Original(serde_json::json!([["src/a.tsx", "source", "df"]]));
+        // When the common body deserializes a different owned target type.
+        let Observed(rows): Observed<Vec<Vec<String>>> =
+            native().decode(source, 0).map_err(|cause| cause.0)?;
+        // Then the real nested rows, not an untyped pass-through, are returned.
+        assert_eq!(rows, [["src/a.tsx", "source", "df"]]);
+        EVENTS.with_borrow(|events| {
+            assert_eq!(*events, ["begin:0", "construct", "deserialize", "end"]);
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn converts_original_cause_once_when_file_map_input_is_invalid() {
+        // Given invalid map shapes and values, using real Serde Value deserializers.
+        for (source, message) in [
+            (
+                serde_json::json!(false),
+                "invalid type: boolean `false`, expected a map",
+            ),
+            (
+                serde_json::json!({"a": false}),
+                "invalid type: boolean `false`, expected usize",
+            ),
+            (
+                serde_json::json!({"a": -1}),
+                "invalid value: integer `-1`, expected usize",
+            ),
+        ] {
+            // When the same production lifecycle encounters a decoding error.
+            let result: Result<Observed<FileMap>, Cause> = native().decode(Original(source), 3);
+            // Then the original cause reaches conversion/error once, with no success end.
+            let Err(cause) = result else {
+                panic!("invalid input decoded successfully");
+            };
+            assert_eq!(cause.0.to_string(), message);
+            EVENTS.with_borrow(|events| {
+                assert_eq!(
+                    *events,
+                    ["begin:3", "construct", "deserialize", "convert", "error"]
+                );
+            });
+        }
+    }
 
     struct HugeHint<I>(I);
 

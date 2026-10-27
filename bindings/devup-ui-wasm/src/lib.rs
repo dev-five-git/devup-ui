@@ -207,7 +207,7 @@ pub fn import_sheet_internal(sheet: StyleSheet) {
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let sheet: StyleSheet = boundary::decode(sheet_object, 0)?;
+    let sheet: StyleSheet = const { boundary::wasm() }.decode(sheet_object, 0)?;
     import_sheet_internal(sheet);
     Ok(())
 }
@@ -231,7 +231,7 @@ pub fn export_class_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    binding_core::import_class_map_internal(boundary::decode(sheet_object, 0)?);
+    binding_core::import_class_map_internal(const { boundary::wasm() }.decode(sheet_object, 0)?);
     Ok(())
 }
 
@@ -249,7 +249,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    let boundary::FileMap(map) = boundary::decode(sheet_object, 0)?;
+    let boundary::FileMap(map) = const { boundary::wasm() }.decode(sheet_object, 0)?;
     binding_core::import_file_map_internal(map);
     Ok(())
 }
@@ -273,7 +273,7 @@ pub fn export_canonical_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importCanonicalMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_canonical_map(map_object: JsValue) -> Result<(), JsValue> {
-    import_canonical_map_internal(boundary::decode(map_object, 0)?);
+    import_canonical_map_internal(const { boundary::wasm() }.decode(map_object, 0)?);
     Ok(())
 }
 
@@ -332,7 +332,7 @@ pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSe
 #[wasm_bindgen(js_name = "importFileRoutes")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_routes(map_object: JsValue) -> Result<(), JsValue> {
-    import_file_routes_internal(boundary::decode(map_object, 0)?);
+    import_file_routes_internal(const { boundary::wasm() }.decode(map_object, 0)?);
     Ok(())
 }
 
@@ -526,7 +526,8 @@ fn import_aliases_from_js(
     import_aliases: JsValue,
     slot: u32,
 ) -> Result<HashMap<String, ImportAlias>, JsValue> {
-    let aliases: HashMap<String, Option<String>> = boundary::decode(import_aliases, slot)?;
+    let aliases: HashMap<String, Option<String>> =
+        const { boundary::wasm() }.decode(import_aliases, slot)?;
     Ok(aliases
         .into_iter()
         .map(|(key, value)| {
@@ -599,7 +600,7 @@ pub fn register_theme_internal(theme: sheet::theme::Theme) {
 #[wasm_bindgen(js_name = "registerTheme")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    let theme: sheet::theme::Theme = boundary::decode(theme_object, 0)?;
+    let theme: sheet::theme::Theme = const { boundary::wasm() }.decode(theme_object, 0)?;
     register_theme_internal(theme);
     Ok(())
 }
@@ -612,7 +613,7 @@ pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
 #[wasm_bindgen(js_name = "registerShorthands")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_shorthands(shorthands: JsValue) -> Result<(), JsValue> {
-    let shorthands = boundary::decode(shorthands, 0)?;
+    let shorthands = const { boundary::wasm() }.decode(shorthands, 0)?;
     register_shorthands_internal(shorthands);
     Ok(())
 }

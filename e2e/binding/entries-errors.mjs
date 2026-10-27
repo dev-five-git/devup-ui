@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 
+import { pkg } from './corpus/extraction.mjs'
 import {
   indexed,
   iteratorFailure,
@@ -171,4 +172,85 @@ export async function runErrors(h) {
   })
   await runAliasRaw(h)
   await runSlots(h)
+}
+
+export async function runNamespaceOrder(h) {
+  const { w } = h
+  await h.test('namespace-barrel-lexical-callback-subset', () => {
+    const events = []
+    const modules = {
+      './barrel': {
+        path: 'src/barrel.ts',
+        code: "export * as ns from './namespace';",
+      },
+      './namespace': {
+        path: 'src/namespace.ts',
+        code: "export { Box as alpha } from './left'; export { Box as beta } from './right';",
+      },
+      './left': {
+        path: 'src/left.ts',
+        code: `export { Box } from '${pkg}';`,
+      },
+      './right': {
+        path: 'src/right.ts',
+        code: `export { Box } from '${pkg}';`,
+      },
+    }
+    w.setModuleResolver((specifier, importer) => {
+      events.push([specifier, importer])
+      assert.ok(Object.hasOwn(modules, specifier), specifier)
+      return modules[specifier]
+    })
+    const result = h.take(() =>
+      h.read(
+        h.open({
+          file: 'src/W74l-entry.tsx',
+          code: "import { ns } from './barrel'; export const view = <ns.Box p={2}/>;",
+        }),
+      ),
+    )
+    assert.equal(result.caught, true)
+    assert.ok(result.error instanceof Error)
+    assert.equal(
+      result.error.message,
+      'src/W74l-entry.tsx:1:53: `ns` cannot use `./barrel` at build time: the build cannot follow its re-export of Devup UI (`./namespace` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead',
+    )
+    assert.deepEqual(events, [
+      ['./barrel', 'src/W74l-entry.tsx'],
+      ['./namespace', 'src/barrel.ts'],
+      ['./left', 'src/namespace.ts'],
+    ])
+    return { events, message: result.error.message }
+  })
+  await h.test('namespace-change-lowest-object-key', () => {
+    const events = []
+    w.setModuleResolver((specifier, importer) => {
+      events.push([specifier, importer])
+      assert.equal(specifier, './tokens')
+      return {
+        path: 'src/tokens.ts',
+        code: "export const alpha = { color: 'red' };\nexport const beta = { color: 'blue' };\nalpha.color = 'pink';\nbeta.color = 'cyan';",
+      }
+    })
+    const result = h.take(() =>
+      h.read(
+        h.open({
+          file: 'src/W74l-entry.tsx',
+          code: "import { css } from '@devup-ui/react'; import * as tokens from './tokens'; export const cls = css(tokens);",
+        }),
+      ),
+    )
+    assert.equal(result.caught, true)
+    assert.ok(result.error instanceof Error)
+    assert.equal(
+      result.error.message,
+      'src/W74l-entry.tsx:1:99: `css()` cannot use `tokens` at build time: its styles must be an object literal or a constant object, or be computed from constants\nsrc/tokens.ts:3:1: `alpha` is changed here, so the build cannot read it as a constant',
+    )
+    const callback = ['./tokens', 'src/W74l-entry.tsx']
+    assert.deepEqual(
+      events,
+      Array.from({ length: 5 }, () => callback),
+    )
+    return { events, message: result.error.message }
+  })
 }

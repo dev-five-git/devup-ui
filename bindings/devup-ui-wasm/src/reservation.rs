@@ -23,7 +23,7 @@ pub fn reserve_class_slots(
     _import_main_css_in_css: bool,
     import_aliases: JsValue,
 ) -> Result<(), JsValue> {
-    let rows: Vec<Vec<String>> = boundary::decode(rows, 0)?;
+    let rows: Vec<Vec<String>> = const { boundary::wasm() }.decode(rows, 0)?;
     let inputs = rows::parse_rows(rows).map_err(|_| boundary::fail(0))?;
     let option = ExtractOption {
         package: package.to_string(),
