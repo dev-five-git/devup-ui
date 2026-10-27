@@ -118,7 +118,9 @@ module.exports = function createBoundary() {
                 if (typeof value !== 'string') throw fail(0)
                 copied.push(value)
               }
-              copied.length = +files.length >>> 0
+              const length = +files.length >>> 0
+              if (length > copied.length) throw fail(0)
+              copied.length = length
               args[0] = copied
             }
             return Reflect.apply(target, receiver, args)

@@ -68,6 +68,12 @@ exports.withAccess = function withAccess(run) {
     try {
       let result
       switch (name) {
+        case 'preflightFailure': {
+          const pending = failure
+          failure = undefined
+          pending(true)
+          break
+        }
         case 'schema':
           schema = boundary.fail(Number(key))
           break
@@ -92,9 +98,11 @@ exports.withAccess = function withAccess(run) {
         case 'anyMap':
           result = !(Symbol.iterator in value) || instance(value, Map)
           break
-        case 'entries':
-          result = Object.entries(value)
+        case 'entries': {
+          const entries = Object.entries(value)
+          result = [entries, entries.length >>> 0]
           break
+        }
         case 'length':
           result = value.length >>> 0
           break
@@ -139,9 +147,10 @@ exports.withAccess = function withAccess(run) {
       }
       return [true, result]
     } catch (error) {
-      failure = () => {
-        if (wrapped) throw new Error(String(error))
-        throw error
+      failure = (forgive = false) => {
+        if (!wrapped) throw error
+        const converted = new Error(String(error))
+        if (!forgive) throw converted
       }
       return [false, undefined, false]
     }

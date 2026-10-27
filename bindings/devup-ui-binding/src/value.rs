@@ -50,6 +50,23 @@ pub(crate) fn decode<'env, T: DeserializeOwned>(
         Error::Access | Error::Host(_) => napi::Error::from_reason(format!("Error: {error}")),
     })
 }
+/// Preflight forgives schema errors and converted caught imports, never raw access faults.
+pub(crate) fn decode_preflight<'env, T: DeserializeOwned + Default>(
+    value: Unknown<'env>,
+    access: &Access<'env>,
+) -> napi::Result<T> {
+    match T::deserialize(De { value, access }) {
+        Ok(value) => Ok(value),
+        Err(Error::Schema(_)) => Ok(T::default()),
+        Err(Error::Access) => {
+            De { value, access }
+                .op::<Unknown<'env>>("preflightFailure", None)
+                .map_err(|error| napi::Error::from_reason(format!("Error: {error}")))?;
+            Ok(T::default())
+        }
+        Err(error @ Error::Host(_)) => Err(napi::Error::from_reason(format!("Error: {error}"))),
+    }
+}
 /// Notify only on failure; the JS facade replays access failures before this token.
 pub(crate) fn schema_error<'env>(
     value: Unknown<'env>,

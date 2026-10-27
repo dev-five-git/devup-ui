@@ -249,7 +249,8 @@ pub fn export_file_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    binding_core::import_file_map_internal(boundary::decode(sheet_object, 0)?);
+    let boundary::FileMap(map) = boundary::decode(sheet_object, 0)?;
+    binding_core::import_file_map_internal(map);
     Ok(())
 }
 

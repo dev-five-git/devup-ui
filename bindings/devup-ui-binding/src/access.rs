@@ -22,7 +22,11 @@ impl<'a, 'env> Sequence<'a, 'env> {
             }));
         }
         if pairs && source.kind()? == ValueType::Object {
-            return Self::array(source.child(source.op("entries", None)?)).map(Some);
+            let (entries, len): (Unknown<'env>, u32) = source.op("entries", None)?;
+            return Ok(Some(Self {
+                source: source.child(entries),
+                range: Some(0..len),
+            }));
         }
         Ok(None)
     }
@@ -135,10 +139,10 @@ impl<'a, 'env> Variant<'a, 'env> {
                 payload: source.child(source.op("undefined", None)?),
             }),
             ValueType::Object => {
-                let entries: Unknown<'env> = source.op("entries", None)?;
+                let (entries, len): (Unknown<'env>, u32) = source.op("entries", None)?;
                 let entries = source.child(entries);
-                let len: u32 = entries.op("length", None)?;
                 if len != 1 {
+                    let len: u32 = entries.op("length", None)?;
                     return Err(Error::invalid_length(
                         usize::try_from(len).map_err(Error::custom)?,
                         &"1",

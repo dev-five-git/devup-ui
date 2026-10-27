@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Batch native entries and snapshot-length access, stream WASM file maps without trusting allocation hints, and reject seed copies with unvalidated trailing holes before either engine runs. Malformed seed headers now use the existing canonical TypeError; no new source build errors. Separately fix target-dependent demanded-name resolver callback order in the shared extractor: native and WASM now resolve demanded local names lexically while preserving pass order and callback multiplicity.",
+  "date": "2026-10-27T00:00:00.000Z"
+}

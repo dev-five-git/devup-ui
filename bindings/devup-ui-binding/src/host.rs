@@ -1,8 +1,8 @@
 use crate::output::NativeOutput;
-use crate::value::{Access, decode, schema_error};
+use crate::value::{Access, decode, decode_preflight, schema_error};
 use devup_ui_binding_core as core;
 use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule};
-use napi::bindgen_prelude::{Array, FnArgs, FromNapiValue, FunctionRef, Unknown};
+use napi::bindgen_prelude::{Array, FnArgs, FromNapiValue, FunctionRef};
 use napi::{Env, Error, Result};
 use napi_derive::napi;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -84,13 +84,8 @@ fn arg<T: FromNapiValue>(request: &Array<'_>, index: u32) -> Result<T> {
         .get(index)?
         .ok_or_else(|| Error::from_reason("missing private request field"))
 }
-fn aliases<'env>(
-    value: Unknown<'env>,
-    access: &Access<'env>,
-    slot: u32,
-) -> Result<HashMap<String, ImportAlias>> {
-    let values: HashMap<String, Option<String>> = decode(value, access, slot)?;
-    Ok(values
+fn aliases(values: HashMap<String, Option<String>>) -> HashMap<String, ImportAlias> {
+    values
         .into_iter()
         .map(|(key, value)| {
             (
@@ -101,7 +96,7 @@ fn aliases<'env>(
                 },
             )
         })
-        .collect())
+        .collect()
 }
 /// Check extraction eligibility with forgiving aliases and this environment's resolver.
 ///
@@ -112,8 +107,7 @@ pub fn has_devup_ui<'env>(env: Env, request: Array<'env>, access: Access<'env>) 
     let filename: String = arg(&request, 0)?;
     let code: String = arg(&request, 1)?;
     let package: String = arg(&request, 2)?;
-    // Only preflight defaults malformed aliases; extraction and reservation still reject them.
-    let aliases = aliases(arg(&request, 3)?, &access, 3).unwrap_or_default();
+    let aliases = aliases(decode_preflight(arg(&request, 3)?, &access)?);
     with_resolver(env, |resolver| {
         Ok(core::has_devup_ui_with(
             &filename, &code, &package, &aliases, resolver,
@@ -130,7 +124,7 @@ pub fn extract<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Re
         css_dir: arg(&request, 3)?,
         single_css: arg(&request, 4)?,
         import_main_css: arg(&request, 5)?,
-        import_aliases: aliases(arg(&request, 7)?, &access, 7)?,
+        import_aliases: aliases(decode(arg(&request, 7)?, &access, 7)?),
     };
     let import_main_css_in_css = arg(&request, 6)?;
     let source_map = if arg(&request, 8)? {
@@ -174,7 +168,7 @@ pub fn reserve<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Re
         package: arg(&request, 1)?,
         single_css: arg(&request, 2)?,
         import_main_css: arg(&request, 3)?,
-        import_aliases: aliases(arg(&request, 5)?, &access, 5)?,
+        import_aliases: aliases(decode(arg(&request, 5)?, &access, 5)?),
         ..ExtractOption::default()
     };
     with_resolver(env, |resolver| {

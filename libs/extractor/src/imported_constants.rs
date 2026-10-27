@@ -750,7 +750,9 @@ fn inline_in<'a>(
             }
         }
         let reads_math = names.contains("Math") && !scope.binds("Math");
-        for name in &names {
+        let mut sorted_names: Vec<&String> = names.iter().collect();
+        sorted_names.sort_unstable();
+        for name in sorted_names {
             let bound = scope.binds(name);
             let constant = scope.lookup(&mut modules, name);
             match &constant {
