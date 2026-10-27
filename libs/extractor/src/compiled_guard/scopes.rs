@@ -136,11 +136,10 @@ impl<'a> Visit<'a> for Scopes {
             AstKind::VariableDeclaration(node) => {
                 let mut target = self.current;
                 if node.kind == VariableDeclarationKind::Var {
-                    while !self.entries[target].function {
-                        match self.entries[target].parent {
-                            Some(parent) => target = parent,
-                            None => break,
-                        }
+                    while !self.entries[target].function
+                        && let Some(parent) = self.entries[target].parent
+                    {
+                        target = parent;
                     }
                 }
                 for declaration in &node.declarations {

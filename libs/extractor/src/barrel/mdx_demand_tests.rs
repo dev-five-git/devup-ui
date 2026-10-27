@@ -5,6 +5,9 @@ use serial_test::serial;
 
 use crate::{ExtractOption, ModuleResolution, ResolvedModule, extract_with_source_policy};
 
+#[path = "coverage_demand_tests.rs"]
+mod coverage_tests;
+
 #[rstest]
 #[case("import Doc from './doc.mdx'; export const view=<Box bg='red'><Doc/></Box>;")]
 #[case(

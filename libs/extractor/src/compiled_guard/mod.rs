@@ -3,6 +3,12 @@
 mod callable;
 #[cfg(test)]
 mod callable_tests;
+#[cfg(test)]
+mod coverage_helper_tests;
+#[cfg(test)]
+mod coverage_reference_tests;
+#[cfg(test)]
+mod coverage_scope_tests;
 mod diagnostics;
 mod exports;
 #[cfg(test)]

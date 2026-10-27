@@ -84,7 +84,8 @@ export function compiledFacts(
           bindingScope(scope, id.name)?.bindings.set(id.name, value)
       }
     }
-    if (node.kind === 'ImportDeclaration') return
+    if (node.kind === 'ImportDeclaration' || node.kind === 'MetaProperty')
+      return
     if (node.kind === 'ExportAllDeclaration') {
       const request = nodeName(field(node, 'source'))
       const exported = nodeName(field(node, 'exported'))

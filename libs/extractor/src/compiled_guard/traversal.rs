@@ -3,9 +3,9 @@ use oxc_ast::ast::{
     AssignmentExpression, AssignmentTarget, AssignmentTargetProperty, BindingPattern,
     BindingProperty, ComputedMemberExpression, ExportAllDeclaration, ExportDeclaration,
     ExportDefaultDeclaration, ExportFromDeclaration, ExportNamedDeclaration, Expression,
-    IdentifierReference, ImportDeclaration, ImportMeta, JSXElementName, NewTarget, ObjectProperty,
-    PrivateFieldExpression, PropertyKey, StaticMemberExpression, VariableDeclaration,
-    VariableDeclarationKind, VariableDeclarator,
+    IdentifierReference, ImportDeclaration, JSXElementName, ObjectProperty, PrivateFieldExpression,
+    PropertyKey, StaticMemberExpression, VariableDeclaration, VariableDeclarationKind,
+    VariableDeclarator,
 };
 use oxc_ast_visit::{Visit, walk};
 
@@ -172,22 +172,6 @@ impl<'a> Visit<'a> for Collector {
     }
 
     fn visit_jsx_element_name(&mut self, _node: &JSXElementName<'a>) {}
-
-    fn visit_import_meta(&mut self, node: &ImportMeta) {
-        let scope = self.scopes.at(node.unstable_address());
-        self.record(
-            self.scopes.binding(scope, "meta"),
-            node.span.end.saturating_sub(4),
-        );
-    }
-
-    fn visit_new_target(&mut self, node: &NewTarget) {
-        let scope = self.scopes.at(node.unstable_address());
-        self.record(
-            self.scopes.binding(scope, "target"),
-            node.span.end.saturating_sub(6),
-        );
-    }
 
     fn visit_object_property(&mut self, node: &ObjectProperty<'a>) {
         if let Some(key) = node.key.as_expression()
