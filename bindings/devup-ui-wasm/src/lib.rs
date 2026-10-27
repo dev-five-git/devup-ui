@@ -1,3 +1,4 @@
+mod boundary;
 mod reservation;
 pub use reservation::{
     ReservationInput, get_unreserved_class_slot_count, reserve_class_slots_internal,
@@ -206,7 +207,7 @@ pub fn import_sheet_internal(sheet: StyleSheet) {
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?;
+    let sheet: StyleSheet = boundary::decode(sheet_object, 0)?;
     import_sheet_internal(sheet);
     Ok(())
 }
@@ -230,9 +231,7 @@ pub fn export_class_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    binding_core::import_class_map_internal(
-        serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?,
-    );
+    binding_core::import_class_map_internal(boundary::decode(sheet_object, 0)?);
     Ok(())
 }
 
@@ -250,9 +249,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    binding_core::import_file_map_internal(
-        serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?,
-    );
+    binding_core::import_file_map_internal(boundary::decode(sheet_object, 0)?);
     Ok(())
 }
 
@@ -275,7 +272,7 @@ pub fn export_canonical_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importCanonicalMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_canonical_map(map_object: JsValue) -> Result<(), JsValue> {
-    import_canonical_map_internal(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
+    import_canonical_map_internal(boundary::decode(map_object, 0)?);
     Ok(())
 }
 
@@ -334,7 +331,7 @@ pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSe
 #[wasm_bindgen(js_name = "importFileRoutes")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_routes(map_object: JsValue) -> Result<(), JsValue> {
-    import_file_routes_internal(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
+    import_file_routes_internal(boundary::decode(map_object, 0)?);
     Ok(())
 }
 
@@ -502,7 +499,7 @@ fn code_extract_js(
     import_aliases: JsValue,
     source_map: SourceMapMode,
 ) -> Result<Output, JsValue> {
-    let import_aliases = import_aliases_from_js(import_aliases)?;
+    let import_aliases = import_aliases_from_js(import_aliases, 7)?;
     let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
         move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
     });
@@ -526,9 +523,9 @@ fn code_extract_js(
 #[cfg(not(tarpaulin_include))]
 fn import_aliases_from_js(
     import_aliases: JsValue,
+    slot: u32,
 ) -> Result<HashMap<String, ImportAlias>, JsValue> {
-    let aliases: HashMap<String, Option<String>> =
-        serde_wasm_bindgen::from_value(import_aliases).map_err(js_error)?;
+    let aliases: HashMap<String, Option<String>> = boundary::decode(import_aliases, slot)?;
     Ok(aliases
         .into_iter()
         .map(|(key, value)| {
@@ -601,8 +598,7 @@ pub fn register_theme_internal(theme: sheet::theme::Theme) {
 #[wasm_bindgen(js_name = "registerTheme")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    let theme: sheet::theme::Theme =
-        serde_wasm_bindgen::from_value(theme_object).map_err(js_error)?;
+    let theme: sheet::theme::Theme = boundary::decode(theme_object, 0)?;
     register_theme_internal(theme);
     Ok(())
 }
@@ -615,7 +611,7 @@ pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
 #[wasm_bindgen(js_name = "registerShorthands")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_shorthands(shorthands: JsValue) -> Result<(), JsValue> {
-    let shorthands = serde_wasm_bindgen::from_value(shorthands).map_err(js_error)?;
+    let shorthands = boundary::decode(shorthands, 0)?;
     register_shorthands_internal(shorthands);
     Ok(())
 }
@@ -663,7 +659,7 @@ pub fn has_devup_ui_wasm(
     package: &str,
     import_aliases: JsValue,
 ) -> bool {
-    let aliases = import_aliases_from_js(import_aliases).unwrap_or_default();
+    let aliases = import_aliases_from_js(import_aliases, 3).unwrap_or_default();
     binding_core::has_devup_ui_with(
         filename,
         code,

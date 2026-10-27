@@ -7,23 +7,30 @@ use std::fmt;
 pub(crate) type Access<'env> =
     Function<'env, FnArgs<(String, Unknown<'env>, Option<String>)>, Array<'env>>;
 
-/// A Serde diagnostic, before the WASM-compatible outer Error is constructed.
+/// Decoder origin is retained independently of diagnostic text.
 #[derive(Debug)]
-pub(crate) struct Error(String);
+pub(crate) enum Error {
+    Schema(String),
+    Access,
+    Host(String),
+}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        match self {
+            Self::Schema(message) | Self::Host(message) => message.fmt(f),
+            Self::Access => f.write_str("JavaScript access failed"),
+        }
     }
 }
 impl std::error::Error for Error {}
 impl de::Error for Error {
     fn custom<T: fmt::Display>(message: T) -> Self {
-        Self(message.to_string())
+        Self::Schema(message.to_string())
     }
 }
 impl From<napi::Error> for Error {
     fn from(error: napi::Error) -> Self {
-        Self(error.reason)
+        Self::Host(error.reason)
     }
 }
 /// One original JS value; children retain the same scoped decoder and access seam.
@@ -36,15 +43,29 @@ pub(crate) struct De<'a, 'env> {
 pub(crate) fn decode<'env, T: DeserializeOwned>(
     value: Unknown<'env>,
     access: &Access<'env>,
+    slot: u32,
 ) -> napi::Result<T> {
-    T::deserialize(De { value, access })
-        .map_err(|error| napi::Error::from_reason(format!("Error: {error}")))
+    T::deserialize(De { value, access }).map_err(|error| match error {
+        Error::Schema(_) => schema_error(value, access, slot),
+        Error::Access | Error::Host(_) => napi::Error::from_reason(format!("Error: {error}")),
+    })
+}
+/// Notify only on failure; the JS facade replays access failures before this token.
+pub(crate) fn schema_error<'env>(
+    value: Unknown<'env>,
+    access: &Access<'env>,
+    slot: u32,
+) -> napi::Error {
+    match access.call(("schema".to_string(), value, Some(slot.to_string())).into()) {
+        Ok(_) => napi::Error::from_reason("invalid argument"),
+        Err(error) => error,
+    }
 }
 /// Read only a fresh private control envelope, never properties of an original input.
 pub(crate) fn item<T: FromNapiValue>(array: &Array<'_>, index: u32) -> Result<T, Error> {
     array
         .get(index)?
-        .ok_or_else(|| Error::custom("missing private access result"))
+        .ok_or_else(|| Error::Host("missing private access result".to_string()))
 }
 impl<'env> De<'_, 'env> {
     pub(crate) const fn child(self, value: Unknown<'env>) -> Self {
@@ -64,7 +85,11 @@ impl<'env> De<'_, 'env> {
             .access
             .call((name.to_string(), self.value, key).into())?;
         if !item::<bool>(&result, 0)? {
-            return Err(Error::custom("JavaScript access failed"));
+            return Err(if item::<bool>(&result, 2)? {
+                Error::custom("invalid intrinsic receiver")
+            } else {
+                Error::Access
+            });
         }
         item(&result, 1)
     }

@@ -1,4 +1,6 @@
 'use strict'
+const boundary = require('../argument-validation.cjs')()
+exports.boundary = boundary
 function instance(value, type) {
   try {
     return value instanceof type
@@ -60,12 +62,15 @@ function bytes(value) {
   return Array.from(copy)
 }
 exports.withAccess = function withAccess(run) {
-  let failure
+  let failure, schema
   const access = (name, value, key) => {
     let wrapped = false
     try {
       let result
       switch (name) {
+        case 'schema':
+          schema = boundary.fail(Number(key))
+          break
         case 'array':
           result = Array.isArray(value)
           break
@@ -97,6 +102,7 @@ exports.withAccess = function withAccess(run) {
           result = value[Number(key)]
           break
         case 'pair':
+          if (!boundary.shape(value, true)) return [false, undefined, true]
           result = [value[0], value[1]]
           break
         case 'field': {
@@ -105,6 +111,7 @@ exports.withAccess = function withAccess(run) {
           break
         }
         case 'iter': {
+          if (!boundary.shape(value)) return [false, undefined, true]
           wrapped = true
           const method = Reflect.get(value, Symbol.iterator)
           if (typeof method !== 'function') break
@@ -122,6 +129,7 @@ exports.withAccess = function withAccess(run) {
           wrapped = true
           const next = value.next()
           wrapped = false
+          if (!boundary.shape(next)) return [false, undefined, true]
           result =
             (+next.done | 0) !== 0 ? [true, undefined] : [false, next.value]
           break
@@ -135,13 +143,14 @@ exports.withAccess = function withAccess(run) {
         if (wrapped) throw new Error(String(error))
         throw error
       }
-      return [false, undefined]
+      return [false, undefined, false]
     }
   }
   try {
     return run(access)
   } catch (error) {
     if (failure) return failure()
+    if (schema) throw schema
     throw error
   }
 }

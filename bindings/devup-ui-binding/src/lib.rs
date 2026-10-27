@@ -20,7 +20,7 @@ macro_rules! import {
         #[doc = $doc]
         #[napi]
         pub fn $name<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
-            $target(decode::<$kind>(value, &access)?);
+            $target(decode::<$kind>(value, &access, 0)?);
             Ok(())
         }
     };
@@ -43,7 +43,7 @@ import!(import_file_routes, core::import_file_routes_internal, HashMap<String, H
 /// Restore wasm32-sized class slots, widening only after complete decoding.
 #[napi]
 pub fn import_class_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
-    let map: HashMap<String, HashMap<String, Wasm32Index>> = decode(value, &access)?;
+    let map: HashMap<String, HashMap<String, Wasm32Index>> = decode(value, &access, 0)?;
     core::import_class_map_internal(
         map.into_iter()
             .map(|(file, entries)| {
@@ -62,7 +62,7 @@ pub fn import_class_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Res
 /// Restore file slots using the same bimap decoding and wasm32 width as WASM.
 #[napi]
 pub fn import_file_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
-    let map: bimap::BiHashMap<String, Wasm32Index> = decode(value, &access)?;
+    let map: bimap::BiHashMap<String, Wasm32Index> = decode(value, &access, 0)?;
     core::import_file_map_internal(
         map.into_iter()
             .map(|(file, index)| (file, index.0))

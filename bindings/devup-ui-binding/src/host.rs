@@ -1,5 +1,5 @@
 use crate::output::NativeOutput;
-use crate::value::{Access, decode};
+use crate::value::{Access, decode, schema_error};
 use devup_ui_binding_core as core;
 use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule};
 use napi::bindgen_prelude::{Array, FnArgs, FromNapiValue, FunctionRef, Unknown};
@@ -87,8 +87,9 @@ fn arg<T: FromNapiValue>(request: &Array<'_>, index: u32) -> Result<T> {
 fn aliases<'env>(
     value: Unknown<'env>,
     access: &Access<'env>,
+    slot: u32,
 ) -> Result<HashMap<String, ImportAlias>> {
-    let values: HashMap<String, Option<String>> = decode(value, access)?;
+    let values: HashMap<String, Option<String>> = decode(value, access, slot)?;
     Ok(values
         .into_iter()
         .map(|(key, value)| {
@@ -112,7 +113,7 @@ pub fn has_devup_ui<'env>(env: Env, request: Array<'env>, access: Access<'env>) 
     let code: String = arg(&request, 1)?;
     let package: String = arg(&request, 2)?;
     // Only preflight defaults malformed aliases; extraction and reservation still reject them.
-    let aliases = aliases(arg(&request, 3)?, &access).unwrap_or_default();
+    let aliases = aliases(arg(&request, 3)?, &access, 3).unwrap_or_default();
     with_resolver(env, |resolver| {
         Ok(core::has_devup_ui_with(
             &filename, &code, &package, &aliases, resolver,
@@ -129,7 +130,7 @@ pub fn extract<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Re
         css_dir: arg(&request, 3)?,
         single_css: arg(&request, 4)?,
         import_main_css: arg(&request, 5)?,
-        import_aliases: aliases(arg(&request, 7)?, &access)?,
+        import_aliases: aliases(arg(&request, 7)?, &access, 7)?,
     };
     let import_main_css_in_css = arg(&request, 6)?;
     let source_map = if arg(&request, 8)? {
@@ -154,18 +155,14 @@ pub fn extract<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Re
 /// Prepare the entire reservation packet before any core allocation or scratch state.
 #[napi]
 pub fn reserve<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Result<()> {
-    let rows: Vec<Vec<String>> = decode(arg(&request, 0)?, &access)?;
+    let value = arg(&request, 0)?;
+    let rows: Vec<Vec<String>> = decode(value, &access, 0)?;
     let inputs = rows
         .into_iter()
-        .enumerate()
-        .map(|(index, row)| {
-            let [filename, code, css_dir]: [String; 3] =
-                row.try_into().map_err(|row: Vec<String>| {
-                    Error::from_reason(format!(
-                        "reservation row {index} must contain exactly 3 strings, got {} fields",
-                        row.len()
-                    ))
-                })?;
+        .map(|row| {
+            let [filename, code, css_dir]: [String; 3] = row
+                .try_into()
+                .map_err(|_: Vec<String>| schema_error(value, &access, 0))?;
             Ok(core::ReservationInput {
                 filename,
                 code,
@@ -177,7 +174,7 @@ pub fn reserve<'env>(env: Env, request: Array<'env>, access: Access<'env>) -> Re
         package: arg(&request, 1)?,
         single_css: arg(&request, 2)?,
         import_main_css: arg(&request, 3)?,
-        import_aliases: aliases(arg(&request, 5)?, &access)?,
+        import_aliases: aliases(arg(&request, 5)?, &access, 5)?,
         ..ExtractOption::default()
     };
     with_resolver(env, |resolver| {

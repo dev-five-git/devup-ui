@@ -10,7 +10,7 @@ use crate::with_style_sheet_mut;
 pub use devup_ui_binding_core::{ReservationInput, reserve_class_slots_internal};
 mod rows;
 #[cfg(not(tarpaulin_include))]
-use crate::{MODULE_RESOLVER, call_module_resolver, import_aliases_from_js, js_error};
+use crate::{MODULE_RESOLVER, boundary, call_module_resolver, import_aliases_from_js};
 
 /// Reserve `[filename, code, cssDir]` rows using the current resolver and configuration.
 #[wasm_bindgen(js_name = "reserveClassSlots")]
@@ -23,13 +23,13 @@ pub fn reserve_class_slots(
     _import_main_css_in_css: bool,
     import_aliases: JsValue,
 ) -> Result<(), JsValue> {
-    let rows: Vec<Vec<String>> = serde_wasm_bindgen::from_value(rows).map_err(js_error)?;
-    let inputs = rows::parse_rows(rows).map_err(js_error)?;
+    let rows: Vec<Vec<String>> = boundary::decode(rows, 0)?;
+    let inputs = rows::parse_rows(rows).map_err(|_| boundary::fail(0))?;
     let option = ExtractOption {
         package: package.to_string(),
         single_css,
         import_main_css: import_main_css_in_code,
-        import_aliases: import_aliases_from_js(import_aliases)?,
+        import_aliases: import_aliases_from_js(import_aliases, 5)?,
         ..ExtractOption::default()
     };
     let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
