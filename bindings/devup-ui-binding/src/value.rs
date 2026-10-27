@@ -162,26 +162,26 @@ pub(crate) fn widen_index(value: u32) -> usize {
 /// A serialized usize is wasm32-sized on every native host, with usize diagnostics.
 #[derive(PartialEq, Eq, Hash)]
 pub(crate) struct Wasm32Index(pub(crate) usize);
+struct IndexVisitor;
+impl<'value> Visitor<'value> for IndexVisitor {
+    type Value = Wasm32Index;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("usize")
+    }
+    fn visit_newtype_struct<D: serde::Deserializer<'value>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_u64(self)
+    }
+    fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+        let value = u32::try_from(value)
+            .map_err(|_| E::invalid_value(Unexpected::Unsigned(value), &self))?;
+        Ok(Wasm32Index(widen_index(value)))
+    }
+}
 impl<'de> serde::Deserialize<'de> for Wasm32Index {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct IndexVisitor;
-        impl<'value> Visitor<'value> for IndexVisitor {
-            type Value = Wasm32Index;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("usize")
-            }
-            fn visit_newtype_struct<D: serde::Deserializer<'value>>(
-                self,
-                deserializer: D,
-            ) -> Result<Self::Value, D::Error> {
-                deserializer.deserialize_u64(self)
-            }
-            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
-                let value = u32::try_from(value)
-                    .map_err(|_| E::invalid_value(Unexpected::Unsigned(value), &self))?;
-                Ok(Wasm32Index(widen_index(value)))
-            }
-        }
         deserializer.deserialize_newtype_struct("Wasm32Index", IndexVisitor)
     }
 }

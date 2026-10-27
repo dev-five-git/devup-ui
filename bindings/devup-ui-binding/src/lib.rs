@@ -15,31 +15,36 @@ use napi_derive::napi;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use value::{Access, Wasm32Index, decode, widen_index};
 
-macro_rules! import {
-    ($name:ident, $target:path, $kind:ty, $doc:literal) => {
-        #[doc = $doc]
-        #[napi]
-        pub fn $name<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
-            $target(decode::<$kind>(value, &access, 0)?);
-            Ok(())
-        }
-    };
+#[doc = "Restore a completely decoded sheet."]
+#[napi]
+pub fn import_sheet<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+    core::import_sheet_internal(decode::<sheet::StyleSheet>(value, &access, 0)?);
+    Ok(())
 }
-import!(
-    import_sheet,
-    core::import_sheet_internal,
-    sheet::StyleSheet,
-    "Restore a completely decoded sheet."
-);
-import!(
-    register_theme,
-    core::register_theme_internal,
-    sheet::theme::Theme,
-    "Register a completely decoded theme."
-);
-import!(register_shorthands, core::register_shorthands_internal, BTreeMap<String, Vec<String>>, "Register typed shorthand targets.");
-import!(import_canonical_map, core::import_canonical_map_internal, HashMap<String, String>, "Restore canonical bucket identities.");
-import!(import_file_routes, core::import_file_routes_internal, HashMap<String, HashSet<u32>>, "Restore iterable route sets.");
+#[doc = "Register a completely decoded theme."]
+#[napi]
+pub fn register_theme<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+    core::register_theme_internal(decode::<sheet::theme::Theme>(value, &access, 0)?);
+    Ok(())
+}
+#[doc = "Register typed shorthand targets."]
+#[napi]
+pub fn register_shorthands<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+    core::register_shorthands_internal(decode::<BTreeMap<String, Vec<String>>>(value, &access, 0)?);
+    Ok(())
+}
+#[doc = "Restore canonical bucket identities."]
+#[napi]
+pub fn import_canonical_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+    core::import_canonical_map_internal(decode::<HashMap<String, String>>(value, &access, 0)?);
+    Ok(())
+}
+#[doc = "Restore iterable route sets."]
+#[napi]
+pub fn import_file_routes<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
+    core::import_file_routes_internal(decode::<HashMap<String, HashSet<u32>>>(value, &access, 0)?);
+    Ok(())
+}
 /// Restore wasm32-sized class slots, widening only after complete decoding.
 #[napi]
 pub fn import_class_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Result<()> {
@@ -70,19 +75,26 @@ pub fn import_file_map<'env>(value: Unknown<'env>, access: Access<'env>) -> Resu
     );
     Ok(())
 }
-macro_rules! export {
-    ($name:ident, $target:path) => {
-        #[doc = "Return the unchanged core serialization, without normalization."]
-        #[napi]
-        pub fn $name() -> Result<String> {
-            $target().map_err(Error::from_reason)
-        }
-    };
+#[doc = "Return the unchanged core serialization, without normalization."]
+#[napi]
+pub fn export_sheet() -> Result<String> {
+    core::export_sheet_internal().map_err(Error::from_reason)
 }
-export!(export_sheet, core::export_sheet_internal);
-export!(export_class_map, core::export_class_map_internal);
-export!(export_file_map, core::export_file_map_internal);
-export!(export_canonical_map, core::export_canonical_map_internal);
+#[doc = "Return the unchanged core serialization, without normalization."]
+#[napi]
+pub fn export_class_map() -> Result<String> {
+    core::export_class_map_internal().map_err(Error::from_reason)
+}
+#[doc = "Return the unchanged core serialization, without normalization."]
+#[napi]
+pub fn export_file_map() -> Result<String> {
+    core::export_file_map_internal().map_err(Error::from_reason)
+}
+#[doc = "Return the unchanged core serialization, without normalization."]
+#[napi]
+pub fn export_canonical_map() -> Result<String> {
+    core::export_canonical_map_internal().map_err(Error::from_reason)
+}
 /// Return the optional prefix as a string or undefined.
 #[napi]
 pub fn get_prefix() -> Either<String, Undefined> {

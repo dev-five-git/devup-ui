@@ -7,26 +7,26 @@ use wasm_bindgen::prelude::*;
 /// File slots grow only from decoded entries, never a JavaScript length hint.
 pub(crate) struct FileMap(pub(crate) BiHashMap<String, usize>);
 
+struct FileMapVisitor;
+
+impl<'de> Visitor<'de> for FileMapVisitor {
+    type Value = FileMap;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a map")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut entries: A) -> Result<FileMap, A::Error> {
+        let mut map = BiHashMap::new();
+        while let Some((file, index)) = entries.next_entry::<String, usize>()? {
+            map.insert(file, index);
+        }
+        Ok(FileMap(map))
+    }
+}
+
 impl<'de> Deserialize<'de> for FileMap {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct FileMapVisitor;
-
-        impl<'de> Visitor<'de> for FileMapVisitor {
-            type Value = FileMap;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a map")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut entries: A) -> Result<FileMap, A::Error> {
-                let mut map = BiHashMap::new();
-                while let Some((file, index)) = entries.next_entry::<String, usize>()? {
-                    map.insert(file, index);
-                }
-                Ok(FileMap(map))
-            }
-        }
-
         deserializer.deserialize_map(FileMapVisitor)
     }
 }
