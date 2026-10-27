@@ -257,6 +257,40 @@ type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(Stri
 /// layer name -> Vec<(selector, property, value)> collected for `@layer` output.
 type LayeredStyles = BTreeMap<String, String>;
 
+fn serialize_properties<S>(
+    properties: &BTreeMap<String, PropertyMap>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut files = BTreeMap::new();
+    for (file, levels) in properties {
+        let mut sorted_levels = BTreeMap::new();
+        for (level, orders) in levels {
+            let mut sorted_orders = BTreeMap::new();
+            for (order, properties) in orders {
+                let mut records = properties
+                    .iter()
+                    .map(|property| serde_json::to_vec(property).map(|bytes| (bytes, property)))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(serde::ser::Error::custom)?;
+                records.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+                sorted_orders.insert(
+                    order,
+                    records
+                        .into_iter()
+                        .map(|(_, property)| property)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            sorted_levels.insert(level, sorted_orders);
+        }
+        files.insert(file, sorted_levels);
+    }
+    files.serialize(serializer)
+}
+
 fn deserialize_btree_map_u8<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<String, PropertyMap>, D::Error>
@@ -288,7 +322,11 @@ where
 pub struct StyleSheet {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atom_plan: Option<BTreeSet<String>>,
-    #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
+    #[serde(
+        deserialize_with = "deserialize_btree_map_u8",
+        serialize_with = "serialize_properties",
+        default
+    )]
     pub properties: BTreeMap<String, PropertyMap>,
     #[serde(default)]
     pub css: BTreeMap<String, Vec<StyleSheetCss>>,
@@ -1541,6 +1579,50 @@ mod tests {
     use rstest::rstest;
     use rustc_hash::FxHashSet;
     use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn export_snapshot_totally_orders_complete_property_records() {
+        let _state = css::test_state::TestStateGuard::new();
+        // Given an explicitly noncanonical set, including ties in both existing Ord impls.
+        let (properties, expected) = (0..8)
+            .find_map(|salt| {
+                let properties: FxHashSet<_> = (0..64)
+                    .map(|i| StyleSheetProperty {
+                        class_name: format!("{salt}-{}", i & 1),
+                        property: "color".into(),
+                        value: "red".into(),
+                        selector: Some(StyleSelector::Global("body".into(), (i & 32).to_string())),
+                        layer: Some((i & 2).to_string()),
+                        typography: i & 4 != 0,
+                        hoisted: i & 8 != 0,
+                        order: i & 16,
+                    })
+                    .collect();
+                let actual: Vec<_> = properties
+                    .iter()
+                    .map(|p| serde_json::to_string(p).unwrap())
+                    .collect();
+                let mut expected = actual.clone();
+                expected.sort();
+                (actual != expected).then_some((properties, expected))
+            })
+            .expect("fixture must expose noncanonical hash iteration");
+        let mut sheet = StyleSheet::default();
+        sheet.properties.insert(
+            String::new(),
+            BTreeMap::from([(0, BTreeMap::from([(0, properties)]))]),
+        );
+        let css = sheet.create_css(None, false);
+        // When
+        let raw = serde_json::to_string(&sheet.export_snapshot()).unwrap();
+        // Then: compare raw array bytes, preserving all 64 unequal records.
+        assert!(
+            raw.contains(&format!("\"0\":[{}]", expected.join(","))),
+            "{raw}"
+        );
+        assert_eq!(sheet.create_css(None, false), css);
+    }
 
     #[rstest]
     #[serial]
