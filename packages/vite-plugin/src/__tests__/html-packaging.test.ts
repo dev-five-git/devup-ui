@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { expect, it } from 'bun:test'
 
@@ -21,6 +23,9 @@ it.each(['cjs', 'mjs'])(
       '<script type=module src="/&copy;.js"></script>',
     )
     const filename = resolve(import.meta.dir, `../../dist/index.${extension}`)
+    const vite = pathToFileURL(
+      createRequire(import.meta.url).resolve('vite'),
+    ).href
     const code = readFileSync(filename, 'utf8')
     const load =
       extension === 'cjs'
@@ -36,6 +41,7 @@ it.each(['cjs', 'mjs'])(
     import { createRequire } from 'node:module';
     import { resolve } from 'node:path';
     const require = createRequire(import.meta.url);
+    const { resolveConfig } = await import(${JSON.stringify(vite)});
     const api = ${load};
     const root = ${JSON.stringify(project.root)};
     const [plugin] = api.DevupUI({
@@ -43,9 +49,10 @@ it.each(['cjs', 'mjs'])(
       distDir: resolve(root, 'df'), cssDir: resolve(root, 'df/css')
     });
     try {
-      await plugin.configResolved({ command: 'build', root, publicDir: false });
+      const config = await resolveConfig({ configFile: false, root, publicDir: false }, 'build');
+      await plugin.configResolved(config);
       const watched = [];
-      await plugin.buildStart.call({ addWatchFile(file) { watched.push(file); } });
+      await plugin.buildStart.call({ addWatchFile(file) { watched.push(file); } }, { input: resolve(root, 'index.html') });
       console.log(resolve(watched.find(file => file.endsWith('/©.js'))));
     } finally {
       await plugin.closeBundle();
@@ -56,7 +63,9 @@ it.each(['cjs', 'mjs'])(
     )
     // Then
     expect(code).toMatch(/import\(["']parse5["']\)/)
-    expect(result.status).toBe(0)
+    expect({ status: result.status, stderr: result.stderr }).toMatchObject({
+      status: 0,
+    })
     expect(result.stdout.trim()).toBe(resolve(project.root, '©.js'))
   },
 )

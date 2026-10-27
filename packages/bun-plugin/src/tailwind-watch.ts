@@ -7,16 +7,29 @@ import { watch } from 'node:fs'
  */
 export function createTailwindWatcher(
   reload: () => Promise<string[]>,
-  watchFile: typeof watch = watch,
+  watchFile: (
+    file: string,
+    options: { persistent: false },
+    listener: () => void,
+  ) => {
+    close(): void
+    on(event: 'error', listener: () => void): unknown
+  } = watch,
 ) {
-  const watched = new Set<string>()
+  const watched = new Map<string, ReturnType<typeof watchFile>>()
+  let active = true
+  let pending = Promise.resolve()
   function watchFiles(files: string[]) {
+    if (!active) return
     for (const file of files) {
       if (watched.has(file)) continue
-      watched.add(file)
       const watcher = watchFile(file, { persistent: false }, () => {
-        void reload().then(watchFiles)
+        if (!active) return
+        pending = pending.then(async () => {
+          if (active) watchFiles(await reload())
+        })
       })
+      watched.set(file, watcher)
       // A file that is removed or cannot be watched no longer rebuilds
       watcher.on('error', () => {
         watcher.close()
@@ -24,5 +37,12 @@ export function createTailwindWatcher(
       })
     }
   }
-  return watchFiles
+  return Object.assign(watchFiles, {
+    close() {
+      active = false
+      for (const watcher of watched.values()) watcher.close()
+      watched.clear()
+      return pending
+    },
+  })
 }

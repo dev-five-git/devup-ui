@@ -78,18 +78,16 @@ impl HeaderPragmas {
 
 /// A collected stylesheet has new source; copy its authored instructions into
 /// that intermediate source, before Oxc generates both the output and its map.
-pub(crate) fn stylesheet_source(source: &str, generated: String, filename: &str) -> String {
+pub(crate) fn stylesheet_source(
+    source: &str,
+    generated: String,
+    source_type: SourceType,
+) -> String {
     if generated.is_empty() || !source.contains("@jsx") {
         return generated;
     }
     let allocator = Allocator::default();
-    let program = Parser::new(
-        &allocator,
-        source,
-        SourceType::from_path(filename).unwrap_or_default(),
-    )
-    .parse()
-    .program;
+    let program = Parser::new(&allocator, source, source_type).parse().program;
     let header = HeaderPragmas::capture(&program);
     let mut output = String::new();
     for comment in &program.comments {

@@ -1,11 +1,11 @@
 import { dirname, relative, resolve } from 'node:path'
 
 import {
-  createModuleResolver,
   createSharedSlotReservation,
+  resolveSourceDirs,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
-import { reserveClassSlots, setModuleResolver } from '@devup-ui/wasm'
+import { reserveClassSlots } from '@devup-ui/wasm'
 import type { Compiler } from 'webpack'
 
 import type { DevupUIWebpackPluginOptions } from './plugin'
@@ -21,8 +21,7 @@ export function createWebpackReservation(
   }: Pick<Compiler['options'], 'context' | 'entry'>) => {
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
-    const toId = (path: string) => relative(cwd, path).replaceAll('\\', '/')
-    setModuleResolver(createModuleResolver({ toId }))
+    const toId = (path: string) => relative(root, path).replaceAll('\\', '/')
     slots.invalidate()
     slots.reserve(
       {
@@ -32,17 +31,30 @@ export function createWebpackReservation(
             resolve(cwd, 'app'),
             resolve(root, 'src'),
             resolve(root, 'app'),
+            ...resolveSourceDirs(root, options.sourceDirs),
           ]),
         ],
         entries:
           typeof entry === 'function'
             ? []
             : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
-                requests.map((request) => ({ request, context: root })),
+                requests.flatMap((request) => {
+                  const resource = request
+                    .slice(request.lastIndexOf('!') + 1)
+                    .split('?')[0]
+                  if (
+                    !resource ||
+                    resource.startsWith('\0') ||
+                    (/^[a-z][a-z\d+.-]*:/i.test(resource) &&
+                      !/^[a-z]:[\\/]/i.test(resource))
+                  )
+                    return []
+                  return [{ request: resource, context: root }]
+                }),
               ),
         include: options.include,
-        cwd,
-        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        cwd: root,
+        tsconfigPath: resolve(root, 'tsconfig.json'),
         package: options.package,
         importAliases,
         toId,

@@ -6,6 +6,7 @@ use oxc_ast::ast::{
     Declaration, ImportDeclaration, ImportDeclarationSpecifier, Statement,
     TSImportEqualsDeclaration, TSModuleReference,
 };
+use oxc_span::SourceType;
 
 fn is_emotion_require(declaration: &TSImportEqualsDeclaration<'_>) -> bool {
     !declaration.import_kind.is_type()
@@ -105,7 +106,7 @@ impl Normalizer<'_, '_> {
 /// Lower only the enabled root Emotion alias; offsets belong to the input source.
 pub(crate) fn normalize<'a>(
     code: &'a str,
-    filename: &str,
+    source_type: SourceType,
     aliases: &HashMap<String, ImportAlias>,
 ) -> Result<Normalized<'a>, Errors> {
     if aliases.get("@emotion/css") != Some(&ImportAlias::NamedToNamed)
@@ -114,12 +115,7 @@ pub(crate) fn normalize<'a>(
         return Ok((Cow::Borrowed(code), vec![]));
     }
     let allocator = Allocator::default();
-    let parsed = Parser::new(
-        &allocator,
-        code,
-        crate::parsing::source_type(filename).unwrap_or_default(),
-    )
-    .parse();
+    let parsed = Parser::new(&allocator, code, source_type).parse();
     let semantic = SemanticBuilder::new()
         .with_build_nodes(true)
         .build(&parsed.program)

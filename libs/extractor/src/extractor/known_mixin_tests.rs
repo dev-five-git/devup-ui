@@ -25,9 +25,12 @@ fn imported(base: &str, body: &str) -> ExtractOutput {
     let entry =
         format!("import styled from '@emotion/styled'; import {{ Base }} from './base'; {body}");
     let resolver = move |specifier: &str, _: &str| {
-        (specifier == "./base").then(|| ResolvedModule {
-            path: "/composition/base.tsx".to_string(),
-            code: module.clone(),
+        (specifier == "./base").then(|| {
+            crate::ModuleResolution::Resolved(ResolvedModule {
+                path: "/composition/base.tsx".to_string(),
+                code: module.clone(),
+                source_type: None,
+            })
         })
     };
     crate::extract_with_modules("/composition/entry.tsx", &entry, option(), false, &resolver)

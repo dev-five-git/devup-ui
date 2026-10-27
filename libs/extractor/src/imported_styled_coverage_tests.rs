@@ -63,6 +63,7 @@ fn imported_evaluation_when_source_is_unparseable_returns_no_computed_module() {
         "/composition/broken.tsx",
         "export const Broken = ;",
         &crate::imported_constants::Unknown::default(),
+        None,
     );
     // Then
     assert_eq!(result, None);

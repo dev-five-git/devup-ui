@@ -118,10 +118,11 @@ fn deep_namespace_when_given_css_prop_does_not_inherit_one_level_definition()
     // Given
     let source = "/** @jsxImportSource @emotion/react */ import * as UI from './base'; export const result = <UI.Nested.Child css={{ color: 'blue' }} />;";
     let resolver = |specifier: &str, _: &str| {
-        (specifier == "./base").then(|| ResolvedModule {
+        (specifier == "./base").then(|| crate::ModuleResolution::Resolved(ResolvedModule {
         path: "/composition/base.tsx".into(),
         code: "import styled from '@emotion/styled'; export const Child = styled.div`color: red;`;".into(),
-    })
+        source_type: None,
+    }))
     };
     // When
     let output = extract_with_modules(
@@ -153,10 +154,11 @@ fn unknown_namespace_selector_when_not_an_exact_member_reports_error(
         "import styled from '@emotion/styled'; import * as UI from './base'; export const result = styled.div`${{{selector}}} {{ color: blue; }}`;"
     );
     let resolver = |specifier: &str, _: &str| {
-        (specifier == "./base").then(|| ResolvedModule {
+        (specifier == "./base").then(|| crate::ModuleResolution::Resolved(ResolvedModule {
         path: "/composition/base.tsx".into(),
         code: "import styled from '@emotion/styled'; export const Child = styled.div`color: red;`;".into(),
-    })
+        source_type: None,
+    }))
     };
     // When
     let error = extract_with_modules(

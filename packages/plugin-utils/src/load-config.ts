@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
@@ -48,12 +48,48 @@ export function deepMerge<T, U>(base: T, override: U): T {
 /**
  * Parse JSON content safely
  */
-function parseConfig(content: string): DevupConfig {
-  try {
-    return JSON.parse(content) as DevupConfig
-  } catch {
-    return {}
+export class ConfigLoadError extends Error {
+  constructor(
+    readonly file: string,
+    cause: unknown,
+  ) {
+    super(
+      `${file}:1:1: Cannot load configuration: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    )
+    this.name = 'ConfigLoadError'
   }
+}
+
+function isDevupConfig(value: unknown): value is DevupConfig {
+  return (
+    isPlainObject(value) &&
+    (value.extends === undefined ||
+      (Array.isArray(value.extends) &&
+        value.extends.every((path) => typeof path === 'string')))
+  )
+}
+
+function parseConfig(content: string): DevupConfig {
+  const config: unknown = JSON.parse(content)
+  if (!isDevupConfig(config))
+    throw new TypeError(
+      'Expected a config object with an array of extends paths',
+    )
+  return config
+}
+
+function configStack(configPath: string, stack: readonly string[]): string[] {
+  const canonical = realpathSync(configPath)
+  if (stack.includes(canonical) || stack.length >= 128) {
+    throw new ConfigLoadError(
+      configPath,
+      new Error(
+        `Configuration inheritance cycle or depth limit: ${[...stack, canonical].join(' -> ')}`,
+      ),
+    )
+  }
+  return [...stack, canonical]
 }
 
 /**
@@ -86,26 +122,38 @@ function mergeExtendedConfigs(
 export function loadDevupConfigSync(
   configPath: string,
   inputs?: Set<string>,
+  stack: readonly string[] = [],
 ): DevupConfig {
-  inputs?.add(resolve(configPath))
-  if (!existsSync(configPath)) {
-    return {}
+  const file = resolve(configPath)
+  inputs?.add(file)
+  let config: DevupConfig
+  let nextStack: string[]
+  try {
+    nextStack = configStack(file, stack)
+    config = parseConfig(readFileSync(file, 'utf-8'))
+  } catch (cause) {
+    if (
+      stack.length === 0 &&
+      cause instanceof Error &&
+      'code' in cause &&
+      cause.code === 'ENOENT'
+    )
+      return {}
+    if (cause instanceof ConfigLoadError) throw cause
+    throw new ConfigLoadError(file, cause)
   }
-
-  const content = readFileSync(configPath, 'utf-8')
-  const config = parseConfig(content)
 
   // If no extends, return the config as-is
   if (!config.extends || config.extends.length === 0) {
     return config
   }
 
-  const configDir = dirname(configPath)
+  const configDir = dirname(file)
 
   return mergeExtendedConfigs(
     config,
     config.extends.map((extendPath) =>
-      loadDevupConfigSync(resolve(configDir, extendPath), inputs),
+      loadDevupConfigSync(resolve(configDir, extendPath), inputs, nextStack),
     ),
   )
 }
@@ -120,27 +168,39 @@ export function loadDevupConfigSync(
 export async function loadDevupConfig(
   configPath: string,
   inputs?: Set<string>,
+  stack: readonly string[] = [],
 ): Promise<DevupConfig> {
-  inputs?.add(resolve(configPath))
-  if (!existsSync(configPath)) {
-    return {}
+  const file = resolve(configPath)
+  inputs?.add(file)
+  let config: DevupConfig
+  let nextStack: string[]
+  try {
+    nextStack = configStack(file, stack)
+    config = parseConfig(await readFile(file, 'utf-8'))
+  } catch (cause) {
+    if (
+      stack.length === 0 &&
+      cause instanceof Error &&
+      'code' in cause &&
+      cause.code === 'ENOENT'
+    )
+      return {}
+    if (cause instanceof ConfigLoadError) throw cause
+    throw new ConfigLoadError(file, cause)
   }
-
-  const content = await readFile(configPath, 'utf-8')
-  const config = parseConfig(content)
 
   // If no extends, return the config as-is
   if (!config.extends || config.extends.length === 0) {
     return config
   }
 
-  const configDir = dirname(configPath)
+  const configDir = dirname(file)
 
   // Load extends sequentially to preserve merge order
   const extendedConfigs: DevupConfig[] = []
   for (const extendPath of config.extends) {
     extendedConfigs.push(
-      await loadDevupConfig(resolve(configDir, extendPath), inputs),
+      await loadDevupConfig(resolve(configDir, extendPath), inputs, nextStack),
     )
   }
 

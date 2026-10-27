@@ -32,6 +32,7 @@ pub(super) fn input(filename: &str, code: &str) -> ReservationInput {
         filename: filename.into(),
         code: code.into(),
         css_dir: "./css".into(),
+        source_type: None,
     }
 }
 
@@ -48,6 +49,7 @@ pub(super) fn transform(
         option.import_main_css,
         true,
         option.import_aliases.clone(),
+        input.source_type,
     )
 }
 
@@ -279,7 +281,7 @@ fn unwind_restores_sheet_files_and_allocator_after_nested_resolver() -> TestResu
         export_file_map_internal()?,
     );
     let resolver =
-        |_: &str, _: &str| -> Option<extractor::ResolvedModule> { panic!("resolver unwind") };
+        |_: &str, _: &str| -> Option<extractor::ModuleResolution> { panic!("resolver unwind") };
     // When
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         reserve_class_slots_internal(
@@ -319,10 +321,14 @@ fn nested_supplier_reservation_is_reused_by_two_roots() -> TestResult {
         "b.css.ts".into(),
     ]);
     let resolver = |specifier: &str, _: &str| {
-        (specifier == "./supplier.css").then(|| extractor::ResolvedModule {
-            path: "supplier.css.ts".into(),
-            code: "import {style} from '@devup-ui/react'; export const base=style({color:'red'});"
-                .into(),
+        (specifier == "./supplier.css").then(|| {
+            extractor::ModuleResolution::Resolved(extractor::ResolvedModule {
+                path: "supplier.css.ts".into(),
+                code:
+                    "import {style} from '@devup-ui/react'; export const base=style({color:'red'});"
+                        .into(),
+                source_type: None,
+            })
         })
     };
     let source = "import {style} from '@devup-ui/react'; import {base} from './supplier.css'; export const own=style([base,{width:'12px'}]);";
@@ -339,6 +345,7 @@ fn nested_supplier_reservation_is_reused_by_two_roots() -> TestResult {
             false,
             true,
             HashMap::new(),
+            input.source_type,
             &resolver,
         )?;
         assert!(output.code.contains("export const own"));

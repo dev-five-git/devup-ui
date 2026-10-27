@@ -4,6 +4,10 @@ const { join, resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { put } = require('./reservation-native-fixture.cjs')
 const { observe } = require('./reservation-native-observer.cjs')
+const {
+  observeRefreshFailure,
+  configFailure,
+} = require('./config-refresh-observer.cjs')
 const wasm = require('@devup-ui/wasm')
 const key = (/** @type {string} */ path) => resolve(path).replaceAll('\\', '/')
 const mode = process.argv[2]
@@ -53,6 +57,29 @@ async function main() {
   const notifications = new Map()
   /** @type {Set<string>} */
   const registrations = new Set()
+  /** @type {Map<string, unknown>} */
+  const failures = new Map()
+  const plugins = DevupUI({
+    singleCss: true,
+    devupFile: join(root, 'devup.json'),
+    distDir: join(root, 'df'),
+    cssDir: join(root, 'df/css'),
+  })
+  assert(Array.isArray(plugins))
+  observeRefreshFailure(plugins[0], (fact, environment, error) => {
+    const file = fact.phase === 'watchChange' ? fact.file : fact.context.file
+    console.info(
+      JSON.stringify({
+        event: 'config-refresh-failure',
+        phase: fact.phase,
+        file,
+        environment,
+      }),
+    )
+    if (environment !== 'client') return
+    failures.set(key(file), error)
+    notifications.get(key(file))?.resolve()
+  })
   const server = await createServer({
     root,
     configFile: false,
@@ -84,12 +111,7 @@ async function main() {
           },
         },
       },
-      DevupUI({
-        singleCss: true,
-        devupFile: join(root, 'devup.json'),
-        distDir: join(root, 'df'),
-        cssDir: join(root, 'df/css'),
-      }),
+      plugins,
     ],
   })
   async function extract(/** @type {string} */ query) {
@@ -111,13 +133,30 @@ async function main() {
   async function change(
     /** @type {string} */ path,
     /** @type {()=>void} */ operation,
+    expectedFailure = false,
   ) {
     /** @type {PromiseWithResolvers<void>} */
     const done = Promise.withResolvers()
-    notifications.set(key(join(root, path)), done)
+    const file = key(join(root, path))
+    failures.delete(file)
+    notifications.set(file, done)
+    const native = new Promise((resolveEvent) => {
+      const listener = (
+        /** @type {string} */ event,
+        /** @type {string} */ changed,
+      ) => {
+        if (key(changed) !== file) return
+        server.watcher.off('all', listener)
+        resolveEvent(event)
+      }
+      server.watcher.on('all', listener)
+    })
     operation()
-    await done.promise
-    notifications.delete(key(join(root, path)))
+    const [event] = await Promise.all([native, done.promise])
+    notifications.delete(file)
+    const failure = failures.get(file)
+    if (!expectedFailure) assert.equal(failure, undefined)
+    return { failure, event }
   }
   try {
     await server.listen()
@@ -154,13 +193,45 @@ async function main() {
       )
       assert.notEqual(after.output.code, before.output.code)
       assert(registrations.has(key(join(root, changed))))
-      await change(changed, () => rmSync(join(root, changed)))
-      const deleted = await extract('?prereq=deleted')
-      assert.doesNotMatch(deleted.css, /29px/)
-      await change(changed, () => write(changed, theme(['17px', null, '37px'])))
+      const deleted = await change(
+        changed,
+        () => rmSync(join(root, changed)),
+        true,
+      )
+      assert.equal(deleted.event, 'unlink')
+      configFailure(join(root, changed))(deleted.failure)
+      const count = telemetry.extractions.length
+      await assert.rejects(
+        extract('?prereq=deleted'),
+        configFailure(join(root, changed)),
+      )
+      assert.equal(telemetry.extractions.length, count)
+      const repaired = await change(changed, () =>
+        write(changed, theme(['17px', null, '37px'])),
+      )
+      assert.equal(repaired.event, 'add')
       const recreated = await extract('?prereq=recreated')
       assert.match(recreated.css, /37px/)
       assert.match(recreated.css, /@media/)
+      const malformed = await change(changed, () => write(changed, '{'), true)
+      assert.equal(malformed.event, 'change')
+      configFailure(join(root, changed), 'SyntaxError')(malformed.failure)
+      await assert.rejects(
+        extract('?prereq=malformed'),
+        configFailure(join(root, changed), 'SyntaxError'),
+      )
+      const removedMalformed = await change(
+        changed,
+        () => rmSync(join(root, changed)),
+        true,
+      )
+      assert.equal(removedMalformed.event, 'unlink')
+      configFailure(join(root, changed))(removedMalformed.failure)
+      await change(changed, () => write(changed, theme(['19px', null, '47px'])))
+      const valid = await extract('?prereq=repaired')
+      assert.match(valid.css, /47px/)
+      assert.match(valid.css, /@media/)
+      assert.equal(configResolved, 1)
     } else {
       assert.match(before.css, /color:red/)
       assert(

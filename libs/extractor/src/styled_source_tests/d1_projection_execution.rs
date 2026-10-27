@@ -237,9 +237,12 @@ fn d1_projection_keeps_imported_metadata_when_record_or_style_is_reused(
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     let resolver = move |source: &str, _: &str| {
-        (source == "./mixin").then(|| crate::ResolvedModule {
-            path: "/mixin.ts".to_string(),
-            code: module.to_string(),
+        (source == "./mixin").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                path: "/mixin.ts".to_string(),
+                code: module.to_string(),
+                source_type: None,
+            })
         })
     };
     // When: the complete generated renderer composes the imported semantic operand.

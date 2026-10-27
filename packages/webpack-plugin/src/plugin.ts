@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 
 import {
-  beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
   collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
@@ -17,11 +16,20 @@ import {
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
+  isSelectedSource,
   loadDevupConfigSync,
+  mdxSourceFilter,
   mergeImportAliases,
+  normalizeMdxExtensions,
   planAtomHoist,
   readJsxImportSource,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
+  resolveProjectPaths,
+  resolveSourceDirs,
   seedFileNumbers,
+  SOURCE_FILE_RE,
+  type StaticImportGraph,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -32,13 +40,9 @@ import {
   getDefaultTheme,
   getThemeInterface,
   importCanonicalMap,
-  importClassMap,
-  importFileMap,
   importFileRoutes,
-  importSheet,
   registerShorthands,
   registerTheme,
-  resetBuildState,
   seedFileMap,
   setAtomHoist,
   setDebug,
@@ -47,6 +51,12 @@ import {
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
+import {
+  bindCompilerScope,
+  type WebpackBuildScope,
+  type WebpackGenerationBinding,
+} from './build-scope'
+import { registerCompiledGuard } from './compiled-guard'
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
 import { reconcileWatchCss } from './watch-css'
@@ -62,6 +72,8 @@ export interface DevupUIWebpackPluginOptions {
   singleCss: boolean
   prefix?: string
   shorthands?: CustomShorthands
+  sourceDirs?: string | string[]
+  mdxExtensions?: readonly string[]
   /**
    * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
    * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
@@ -90,27 +102,42 @@ export class DevupUIWebpackPlugin {
   classMapFile: string
   fileMapFile: string
   private importAliases: WasmImportAliases
+  private excludeModules: RegExp
+  private readonly mdxExtensions: readonly string[]
+  private seedWarningEmitted = false
+  private pathOptions: {
+    readonly devupFile: string
+    readonly distDir: string
+    readonly cssDir: string
+  }
 
-  constructor({
-    package: libPackage = '@devup-ui/react',
-    devupFile = 'devup.json',
-    distDir = 'df',
-    cssDir = resolve(distDir, 'devup-ui'),
-    watch = false,
-    debug = false,
-    include = [],
-    singleCss = false,
-    prefix,
-    shorthands,
-    atomHoist = 2,
-    productionPrewarmFiles,
-    importAliases: userImportAliases,
-  }: Partial<DevupUIWebpackPluginOptions> = {}) {
-    registerShorthands(shorthands ?? {})
+  constructor(
+    {
+      package: libPackage = '@devup-ui/react',
+      devupFile = 'devup.json',
+      distDir = 'df',
+      cssDir = join(distDir, 'devup-ui'),
+      watch = false,
+      debug = false,
+      include = [],
+      singleCss = false,
+      prefix,
+      shorthands,
+      sourceDirs,
+      atomHoist = 2,
+      productionPrewarmFiles,
+      importAliases: userImportAliases,
+      mdxExtensions,
+    }: Partial<DevupUIWebpackPluginOptions> = {},
+    private readonly generationBinding?: WebpackGenerationBinding,
+  ) {
+    this.mdxExtensions = normalizeMdxExtensions(mdxExtensions)
     this.importAliases = mergeImportAliases(
       userImportAliases,
       readJsxImportSource(),
     )
+    this.excludeModules = createNodeModulesExcludeRegex(include)
+    this.pathOptions = { devupFile, distDir, cssDir }
 
     this.options = {
       package: libPackage,
@@ -124,16 +151,14 @@ export class DevupUIWebpackPlugin {
       prefix,
       shorthands,
       atomHoist,
+      sourceDirs,
       productionPrewarmFiles:
         productionPrewarmFiles === undefined
           ? undefined
           : [
               ...new Set(
                 productionPrewarmFiles.map((file) =>
-                  relative(
-                    process.cwd(),
-                    resolve(process.cwd(), file.replaceAll('\\', '/')),
-                  ).replaceAll('\\', '/'),
+                  file.replaceAll('\\', '/'),
                 ),
               ),
             ].sort(),
@@ -144,73 +169,45 @@ export class DevupUIWebpackPlugin {
     this.fileMapFile = join(this.options.distDir, 'fileMap.json')
   }
 
-  /** The files the project's Tailwind CSS is read from */
   tailwindFiles: string[] = []
 
-  writeDataFiles() {
-    try {
-      const config = loadDevupConfigSync(this.options.devupFile)
-      const theme = config.theme ?? {}
+  writeDataFiles(options = this.options, root = process.cwd()) {
+    const config = loadDevupConfigSync(options.devupFile)
+    const theme = withTailwindCss(config.theme ?? {}, config, root)
+    this.tailwindFiles = tailwindCssFiles(config, root)
 
-      registerTheme(withTailwindCss(theme, config))
-      this.tailwindFiles = tailwindCssFiles(config)
-      const interfaceCode = getThemeInterface(
-        ...createThemeInterfaceArgs(this.options.package),
-      )
+    registerTheme(theme)
+    const interfaceCode = getThemeInterface(
+      ...createThemeInterfaceArgs(options.package),
+    )
 
-      if (interfaceCode) {
-        writeFileSync(join(this.options.distDir, 'theme.d.ts'), interfaceCode, {
-          encoding: 'utf-8',
-        })
-      }
-    } catch (error) {
-      console.error(error)
-      registerTheme({})
-    }
-    if (!existsSync(this.options.cssDir))
-      mkdirSync(this.options.cssDir, { recursive: true })
-    if (this.options.watch)
-      writeFileSync(
-        join(this.options.cssDir, 'devup-ui.css'),
-        getCss(null, false),
-      )
+    writeFileSync(join(options.distDir, 'theme.d.ts'), interfaceCode, {
+      encoding: 'utf-8',
+    })
+    if (!existsSync(options.cssDir))
+      mkdirSync(options.cssDir, { recursive: true })
+    if (options.watch)
+      writeFileSync(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+    return theme
   }
 
-  /**
-   * Extract the source files under `src` that `entries` reach into the shared
-   * WASM sheet, in path order, so that a stylesheet built on its first import
-   * holds the styles of every one (all collapsed members of a bucket, and the
-   * shared base), not just those of the modules webpack happened to build
-   * first. Mirrors the loader's `codeExtract` call (same filename keying +
-   * options) so re-extraction during compilation is idempotent. Generic entry
-   * discovery remains best-effort; an adapter's complete set is authoritative
-   * and its read/extraction failures must fail the build.
-   */
-  private prewarmExtractor(entries: string[]) {
-    try {
-      const cwd = process.cwd()
-      // The same resolver as the loader's, so imported constants and
-      // stylesheets extract to the classes the loader emits
-      setModuleResolver(
-        createModuleResolver({
-          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-        }),
-      )
-      const files =
-        this.options.productionPrewarmFiles?.map((file) =>
-          resolve(cwd, file),
-        ) ??
-        computeReachableFiles({
-          srcDir: resolve(cwd, 'src'),
-          tsconfigPath: resolve(cwd, 'tsconfig.json'),
-          entries,
-        })
-      if (this.options.productionPrewarmFiles !== undefined) {
-        seedFileNumbers({ seedFileMap }, [
-          ...this.options.productionPrewarmFiles,
-        ])
-      }
-      for (const file of files) {
+  private prewarmExtractor(options: {
+    graph: StaticImportGraph
+    entries: string[]
+    cwd: string
+  }) {
+    const { graph, entries, cwd } = options
+    const files =
+      this.options.productionPrewarmFiles?.map((file) => resolve(cwd, file)) ??
+      computeReachableFiles({
+        srcDir: graph.files,
+        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        entries,
+        graph,
+      })
+    for (const file of files) {
+      if (!SOURCE_FILE_RE.test(file)) continue
+      try {
         const relativePath = relative(cwd, file).replaceAll('\\', '/')
         let relCssDir = relative(dirname(file), this.options.cssDir).replaceAll(
           '\\',
@@ -226,30 +223,177 @@ export class DevupUIWebpackPlugin {
           false,
           true,
           this.importAliases,
+        ).free()
+      } catch (cause) {
+        throw new Error(
+          `[devup-ui] prewarm failed at ${file} (root ${cwd}): ${cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
         )
       }
-    } catch (error) {
-      if (this.options.productionPrewarmFiles !== undefined) throw error
-      // Best-effort warm-up; on failure the css-loader still serves whatever
-      // atoms were extracted, matching pre-fix behavior.
     }
   }
 
   apply(compiler: Compiler) {
-    // A build starts from its own options, not from what an earlier build in
-    // this process left in the engine
-    const endBuild = beginBuild({ resetBuildState })
-    try {
-      compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
-      this.initialize(compiler)
-    } catch (error) {
-      // Webpack cannot return the compiler when apply throws, so no caller can close it.
-      endBuild()
-      throw error
+    if (compiler.hooks.afterEnvironment) {
+      compiler.hooks.afterEnvironment.tap('DevupUIWebpackPlugin', () => {
+        this.setupCompiler(compiler)
+      })
+    } else {
+      this.setupCompiler(compiler)
     }
   }
 
-  private initialize(compiler: Compiler) {
+  private setupCompiler(compiler: Compiler) {
+    const scope = bindCompilerScope(compiler, this.generationBinding, {
+      integration: 'Webpack',
+      root: compiler.context ?? compiler.options.context ?? process.cwd(),
+    })
+    compiler.hooks.beforeRun.tapPromise('DevupUIBuildGeneration', async () =>
+      scope.start(),
+    )
+    compiler.hooks.watchRun.tapPromise('DevupUIBuildGeneration', async () =>
+      scope.start(),
+    )
+    compiler.hooks.shutdown?.tap('DevupUIBuildGeneration', () => scope.close())
+    compiler.hooks.watchClose?.tap('DevupUIBuildGeneration', () =>
+      scope.close(),
+    )
+    compiler.hooks.failed?.tap('DevupUIBuildGeneration', () => {
+      if (!compiler.watchMode) scope.abort()
+    })
+    try {
+      scope.run(() => this.configureCompiler(compiler, scope))
+    } catch (cause) {
+      scope.abort()
+      throw cause
+    }
+  }
+
+  private configureCompiler(compiler: Compiler, scope: WebpackBuildScope) {
+    const cwd = compiler.context ?? compiler.options.context ?? process.cwd()
+    const paths = resolveProjectPaths(cwd, this.pathOptions)
+    this.options = { ...this.options, ...paths }
+    if (this.options.productionPrewarmFiles !== undefined)
+      this.options = {
+        ...this.options,
+        productionPrewarmFiles: [
+          ...new Set(
+            this.options.productionPrewarmFiles.map((file) =>
+              relative(cwd, resolve(cwd, file)).replaceAll('\\', '/'),
+            ),
+          ),
+        ].sort(),
+      }
+    const options = this.options
+    this.sheetFile = join(paths.distDir, 'sheet.json')
+    this.classMapFile = join(paths.distDir, 'classMap.json')
+    this.fileMapFile = join(paths.distDir, 'fileMap.json')
+    const sourceDirs = resolveSourceDirs(cwd, this.options.sourceDirs)
+    const resolveOptions = compiler.options.resolve
+    const inputFiles = new Set<string>()
+    const missingInputs = new Set<string>()
+    const watchPaths = new Map<string, string>()
+    const onResolutionInputs: ResolutionInputObserver = (inputs) => {
+      for (const path of inputs.fileDependencies)
+        inputFiles.add(
+          resolutionWatchPath(
+            path,
+            resolveOptions?.symlinks === false,
+            watchPaths,
+          ),
+        )
+      for (const path of inputs.missingDependencies)
+        missingInputs.add(
+          resolutionWatchPath(
+            path,
+            resolveOptions?.symlinks === false,
+            watchPaths,
+          ),
+        )
+    }
+    compiler.hooks.afterCompile.tap(
+      'DevupUIResolutionInputs',
+      (compilation) => {
+        for (const path of inputFiles) compilation.fileDependencies.add(path)
+        for (const path of missingInputs)
+          compilation.missingDependencies.add(path)
+        watchPaths.clear()
+      },
+    )
+    const baseConditions = resolveOptions?.conditionNames ?? [
+      'webpack',
+      compiler.options.mode === 'development' ? 'development' : 'production',
+      'browser',
+    ]
+    const conditions = (
+      resolveOptions?.byDependency?.esm?.conditionNames ?? [
+        'import',
+        'module',
+        '...',
+      ]
+    ).flatMap((condition) =>
+      condition === '...' ? baseConditions : [condition],
+    )
+    const entryFiles = (entry: Compiler['options']['entry']) =>
+      typeof entry === 'function'
+        ? []
+        : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
+            requests.flatMap((request) => {
+              const resource = request
+                .slice(request.lastIndexOf('!') + 1)
+                .split('?')[0]
+              if (
+                !resource ||
+                resource.startsWith('\0') ||
+                (/^[a-z][a-z\d+.-]*:/i.test(resource) &&
+                  !/^[a-z]:[\\/]/i.test(resource))
+              )
+                return []
+              return isSelectedSource(resource, this.mdxExtensions) ||
+                !extname(resource)
+                ? [resolve(cwd, resource)]
+                : []
+            }),
+          )
+    const entries = entryFiles(compiler.options.entry)
+    const roots = [
+      ...new Set([
+        ...sourceDirs,
+        ...entries
+          .map((file) => dirname(file))
+          .filter(
+            (directory) =>
+              directory !== resolve(cwd) &&
+              (this.options.productionPrewarmFiles === undefined ||
+                !this.options.singleCss ||
+                !this.excludeModules.test(directory)),
+          ),
+      ]),
+    ]
+    const generated = [
+      paths.distDir,
+      paths.cssDir,
+      resolve(cwd, compiler.options.output?.path ?? 'dist'),
+    ]
+    const endBuild = () => scope.abort()
+    let moduleResolver: ReturnType<typeof createModuleResolver>
+    try {
+      moduleResolver = createModuleResolver({
+        cwd,
+        includeMdx: this.mdxExtensions,
+        conditions,
+        alias: resolveOptions?.alias,
+        onResolutionInputs,
+        toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+      })
+      setModuleResolver(moduleResolver)
+    } catch (cause) {
+      endBuild()
+      throw new Error(
+        `[devup-ui] resolver setup failed at ${cwd}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
+      )
+    }
     setDebug(this.options.debug)
     setPrefix(this.options.prefix ?? null)
     registerShorthands(this.options.shorthands ?? {})
@@ -264,23 +408,18 @@ export class DevupUIWebpackPlugin {
       'utf-8',
     )
 
-    if (this.options.watch) {
-      try {
-        // load sheet
-        if (existsSync(this.sheetFile))
-          importSheet(JSON.parse(readFileSync(this.sheetFile, 'utf-8')))
-        if (existsSync(this.classMapFile))
-          importClassMap(JSON.parse(readFileSync(this.classMapFile, 'utf-8')))
-        if (existsSync(this.fileMapFile))
-          importFileMap(JSON.parse(readFileSync(this.fileMapFile, 'utf-8')))
-      } catch (error) {
-        console.error(error)
-        importSheet({})
-        importClassMap({})
-        importFileMap({})
-      }
+    let theme: ReturnType<typeof this.writeDataFiles>
+    let tailwindFiles: string[]
+    try {
+      theme = this.writeDataFiles(options, cwd)
+      tailwindFiles = this.tailwindFiles
+    } catch (cause) {
+      endBuild()
+      throw new Error(
+        `[devup-ui] theme setup failed at ${cwd}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
+      )
     }
-    this.writeDataFiles()
 
     // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
     // Configured before loaders run codeExtract (apply() is synchronous), so
@@ -299,15 +438,28 @@ export class DevupUIWebpackPlugin {
     // merge into that importer's bucket, deduplicating their identical atoms.
     // The canonical map is built + imported unconditionally; only atom HOISTING
     // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
+    let graph: StaticImportGraph
+    let routes: Record<string, number[]> = {}
+    let threshold: number | undefined
     try {
-      const srcDir = resolve(process.cwd(), 'src')
-      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
-      const cwd = process.cwd()
+      const srcDir = roots
+      const tsconfigPath = resolve(cwd, 'tsconfig.json')
+      graph = buildStaticImportGraph(roots, tsconfigPath, {
+        includeMdx: this.mdxExtensions,
+        cwd,
+        exclude: generated,
+        include: this.options.include,
+        conditions,
+        alias: resolveOptions?.alias,
+        entries: entries.length ? entries : undefined,
+        onResolutionInputs,
+      })
       const canonicalMap = buildCanonicalMap({
         srcDir,
         tsconfigPath,
         cwd,
         keyBy: 'cwd-relative',
+        graph,
       })
       importCanonicalMap(canonicalMap)
 
@@ -317,9 +469,13 @@ export class DevupUIWebpackPlugin {
           tsconfigPath,
           cwd,
           keyBy: 'cwd-relative',
+          graph,
+          entries: entries.length ? entries : undefined,
         })
         const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
         if (plan) {
+          routes = plan.reachByBucket
+          threshold = plan.threshold
           importFileRoutes(plan.reachByBucket)
           setAtomHoist(plan.threshold)
         } else {
@@ -328,41 +484,41 @@ export class DevupUIWebpackPlugin {
           )
         }
       }
-    } catch (error) {
-      if (
-        !this.options.watch &&
-        this.options.productionPrewarmFiles !== undefined
+    } catch (cause) {
+      endBuild()
+      throw new Error(
+        `[devup-ui] graph setup failed at ${cwd}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
       )
-        throw error
-      // Best-effort; on failure canonical() is the identity (no merge) and atom
-      // hoisting stays off.
     }
 
     // Number every file the build can extract in path order, so class
     // prefixes do not depend on which file a worker reaches first. Numbers
     // already handed out (a restored map in watch mode) stay.
-    if (this.options.debug)
-      try {
-        const cwd = process.cwd()
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: [resolve(cwd, 'src')],
-            include: this.options.include,
-            cwd,
-            needles: extractedNeedles(this.options.package, this.importAliases),
-            importAliases: this.importAliases,
-            toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-          }),
+    try {
+      seedFileNumbers(
+        { seedFileMap },
+        collectNumberedFiles({
+          roots,
+          includeMdx: this.mdxExtensions,
+          exclude: generated,
+          include: this.options.include,
+          cwd,
+          needles: extractedNeedles(this.options.package, this.importAliases),
+          importAliases: this.importAliases,
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
+    } catch (cause) {
+      if (options.productionPrewarmFiles !== undefined) throw cause
+      if (!this.seedWarningEmitted) {
+        this.seedWarningEmitted = true
+        console.warn(
+          '[devup-ui] deterministic file seeding failed; class IDs now depend on module arrival order',
+          { phase: 'seed', root: cwd, cause },
         )
-      } catch (error) {
-        if (
-          !this.options.watch &&
-          this.options.productionPrewarmFiles !== undefined
-        )
-          throw error
-        // Best-effort; numbering falls back to arrival order.
       }
+    }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
     // Webpack builds a stylesheet module ONCE, at its FIRST import: the shared
@@ -372,18 +528,26 @@ export class DevupUIWebpackPlugin {
     // (single shared WASM instance). Re-extraction by the per-file loader is
     // then idempotent (set-based atom dedup). Watch mode rebuilds stylesheets
     // through the files the loaders write instead.
-    const reserve = createWebpackReservation(this.options, this.importAliases)
-    const reserveBeforeCompile = () => {
-      reserve(compiler.options)
-      if (this.options.watch) return
-      const { entry, context = process.cwd() } = compiler.options
-      this.prewarmExtractor(
-        typeof entry === 'function'
-          ? []
-          : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
-              requests.map((request) => resolve(context, request)),
-            ),
+    if (options.productionPrewarmFiles !== undefined)
+      seedFileNumbers(
+        { seedFileMap },
+        options.productionPrewarmFiles.map((file) =>
+          relative(cwd, resolve(cwd, file)).replaceAll('\\', '/'),
+        ),
       )
+    const reserve = createWebpackReservation(options, this.importAliases)
+    const reserveBeforeCompile = () => {
+      scope.run(() => {
+        setModuleResolver(moduleResolver)
+        reserve({
+          ...compiler.options,
+          context: compiler.context ?? compiler.options.context ?? cwd,
+        })
+        if (!options.watch) {
+          const currentEntries = entryFiles(compiler.options.entry)
+          this.prewarmExtractor({ graph, entries: currentEntries, cwd })
+        }
+      })
     }
     compiler.hooks.run.tap(
       'DevupUIWebpackPluginReservation',
@@ -397,17 +561,17 @@ export class DevupUIWebpackPlugin {
         },
       )
 
-    if (this.options.watch) {
+    if (options.watch) {
       compiler.hooks.thisCompilation.tap(
         'DevupUIWebpackPluginWatchCss',
-        reconcileWatchCss,
+        (compilation) =>
+          reconcileWatchCss(compilation, (callback) => scope.run(callback)),
       )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
         const stamps: number[] = []
-        if (existsDevup)
-          stamps.push((await stat(this.options.devupFile)).mtimeMs)
-        for (const file of this.tailwindFiles) {
+        if (existsDevup) stamps.push((await stat(options.devupFile)).mtimeMs)
+        for (const file of tailwindFiles) {
           stamps.push(
             await stat(file).then(
               (stats) => stats.mtimeMs,
@@ -418,25 +582,36 @@ export class DevupUIWebpackPlugin {
         if (stamps.length > 0) {
           const modifiedTime = stamps.join()
           if (lastModifiedTime && lastModifiedTime !== modifiedTime)
-            this.writeDataFiles()
+            scope.run(() => {
+              theme = this.writeDataFiles(options, cwd)
+              tailwindFiles = this.tailwindFiles
+              sourceLoader.options.configurationFiles = configurationFiles()
+            })
 
           lastModifiedTime = modifiedTime
         }
-        reserve(compiler.options)
+        scope.run(() => {
+          setModuleResolver(moduleResolver)
+          reserve({
+            ...compiler.options,
+            context: compiler.context ?? compiler.options.context ?? cwd,
+          })
+        })
       })
     }
-    if (existsDevup || this.tailwindFiles.length > 0)
+    if (existsDevup || tailwindFiles.length > 0)
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
         if (existsDevup)
-          compilation.fileDependencies.add(resolve(this.options.devupFile))
-        for (const file of this.tailwindFiles)
+          compilation.fileDependencies.add(resolve(options.devupFile))
+        for (const file of tailwindFiles)
           compilation.fileDependencies.add(resolve(file))
       })
-    compiler.options.plugins.push(
-      new compiler.webpack.DefinePlugin({
-        'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
-      }),
-    )
+
+    const definePlugin = new compiler.webpack.DefinePlugin({
+      'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
+    })
+    if (compiler.hooks.afterEnvironment) definePlugin.apply(compiler)
+    else compiler.options.plugins.push(definePlugin)
     if (!this.options.watch) {
       // A stylesheet module is built on its first import, which can come before
       // the modules whose styles it holds are extracted. When one was, compile
@@ -449,27 +624,29 @@ export class DevupUIWebpackPlugin {
       compiler.hooks.thisCompilation.tap(
         'DevupUIWebpackPlugin',
         (compilation) => {
-          const basePath = join(this.options.cssDir, 'devup-ui.css')
-          const base = getCss(null, true)
+          const basePath = join(options.cssDir, 'devup-ui.css')
+          const base = scope.run(() => getCss(null, true))
           // A file's stylesheet `@import`s the shared base, which the CSS
           // loaders read from disk without passing through this plugin, so it
           // must hold every style extracted so far
           if (!existsSync(basePath) || readFileSync(basePath, 'utf-8') !== base)
             writeFileSync(basePath, base, 'utf-8')
           let stale: string[] = []
-          compilation.hooks.finishModules.tap('DevupUIWebpackPlugin', () => {
-            if (compiler.watchMode) return
-            const changed = new Set(
-              [...servedCss(compilation)]
-                .filter(
-                  ([path, css]) =>
-                    getCss(getFileNumByFilename(path), true) !== css,
-                )
-                .map(([path]) => path),
-            )
-            if (getCss(null, true) !== base) changed.add(basePath)
-            stale = [...changed]
-          })
+          compilation.hooks.finishModules.tap('DevupUIWebpackPlugin', () =>
+            scope.run(() => {
+              if (compiler.watchMode) return
+              const changed = new Set(
+                [...servedCss(compilation)]
+                  .filter(
+                    ([path, css]) =>
+                      getCss(getFileNumByFilename(path), true) !== css,
+                  )
+                  .map(([path]) => path),
+              )
+              if (getCss(null, true) !== base) changed.add(basePath)
+              stale = [...changed]
+            }),
+          )
           // The next pass writes the build; this one writes none of its files
           compilation.hooks.processAssets.tap(
             {
@@ -487,12 +664,14 @@ export class DevupUIWebpackPlugin {
             () => {
               if (stale.length === 0 || passes > 0) return undefined
               passes += 1
-              for (const path of stale)
-                writeFileSync(
-                  path,
-                  getCss(getFileNumByFilename(path), true),
-                  'utf-8',
-                )
+              scope.run(() => {
+                for (const path of stale)
+                  writeFileSync(
+                    path,
+                    getCss(getFileNumByFilename(path), true),
+                    'utf-8',
+                  )
+              })
               return true
             },
           )
@@ -502,48 +681,59 @@ export class DevupUIWebpackPlugin {
         if (!stats.hasErrors()) {
           // write css file
           await writeFile(
-            join(this.options.cssDir, 'devup-ui.css'),
-            getCss(null, false),
+            join(options.cssDir, 'devup-ui.css'),
+            scope.run(() => getCss(null, false)),
             'utf-8',
           )
-        }
+        } else if (!compiler.watchMode) scope.abort()
       })
     }
 
+    const exclude = this.excludeModules
+    // CJS bundles must resolve from their installed module, not a baked source URL.
+    const resolveLoader = require.resolve
+    const configurationFiles = () => [
+      ...(existsDevup ? [resolve(options.devupFile)] : []),
+      ...tailwindFiles.map((file) => resolve(file)),
+    ]
+    const sourceLoader = {
+      loader: resolveLoader('@devup-ui/webpack-plugin/loader'),
+      options: {
+        package: this.options.package,
+        cssDir: this.options.cssDir,
+        sheetFile: this.sheetFile,
+        classMapFile: this.classMapFile,
+        fileMapFile: this.fileMapFile,
+        watch: this.options.watch,
+        singleCss: this.options.singleCss,
+        importAliases: this.importAliases,
+        rootDir: cwd,
+        conditions,
+        alias: resolveOptions?.alias,
+        mdxExtensions: this.mdxExtensions,
+        symlinks: resolveOptions?.symlinks,
+        configurationFiles: configurationFiles(),
+      },
+    }
     compiler.options.module.rules.push(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
-        exclude: createNodeModulesExcludeRegex(
-          this.options.include,
-          '.mdx.[tj]sx?$',
-        ),
+        test: SOURCE_FILE_RE,
+        exclude,
         enforce: 'pre',
-        use: [
-          {
-            loader: createRequire(import.meta.url).resolve(
-              '@devup-ui/webpack-plugin/loader',
-            ),
-            options: {
-              package: this.options.package,
-              cssDir: this.options.cssDir,
-              sheetFile: this.sheetFile,
-              classMapFile: this.classMapFile,
-              fileMapFile: this.fileMapFile,
-              watch: this.options.watch,
-              singleCss: this.options.singleCss,
-              importAliases: this.importAliases,
-            },
-          },
-        ],
+        use: [sourceLoader],
+      },
+      {
+        test: mdxSourceFilter(this.mdxExtensions),
+        exclude,
+        enforce: 'post',
+        use: [sourceLoader],
       },
       {
         test: this.options.cssDir,
         enforce: 'pre',
         use: [
           {
-            loader: createRequire(import.meta.url).resolve(
-              '@devup-ui/webpack-plugin/css-loader',
-            ),
+            loader: resolveLoader('@devup-ui/webpack-plugin/css-loader'),
             options: {
               watch: this.options.watch,
             },
@@ -551,5 +741,19 @@ export class DevupUIWebpackPlugin {
         ],
       },
     )
+    registerCompiledGuard(compiler, {
+      package: this.options.package,
+      mdxExtensions: this.mdxExtensions,
+      importAliases: this.importAliases,
+    })
+    scope.setConfiguration(() => {
+      setDebug(options.debug)
+      setPrefix(options.prefix ?? null)
+      registerShorthands(options.shorthands ?? {})
+      registerTheme(theme)
+      importFileRoutes(routes)
+      setAtomHoist(threshold)
+      setModuleResolver(moduleResolver)
+    })
   }
 }

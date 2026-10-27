@@ -4796,9 +4796,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(specifiers) = &it.specifiers
         {
             for specifier in specifiers {
-                if let ImportSpecifier(import) = specifier {
-                    self.bindings
-                        .jsx_import(&import.local, import.imported.to_string());
+                match specifier {
+                    ImportSpecifier(import) => {
+                        self.bindings
+                            .jsx_import(&import.local, import.imported.to_string());
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(import) => {
+                        self.bindings.jsx_namespace(import.local.symbol_id.get());
+                    }
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {}
                 }
             }
         } else if (it.source.value == self.package.as_str()

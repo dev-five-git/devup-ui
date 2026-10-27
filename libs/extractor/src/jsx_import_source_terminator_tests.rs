@@ -22,8 +22,13 @@ fn project_jsx_preserves_adjacent_hashbang_terminator_and_offsets(
     ]);
 
     // When: project-only JSX is redirected before bundler lowering.
-    let rewritten =
-        transform_import_aliases_with_edits(&source, "project.jsx", "@devup-ui/react", &aliases);
+    let rewritten = transform_import_aliases_with_edits(
+        &source,
+        "project.jsx",
+        "@devup-ui/react",
+        &aliases,
+        oxc_span::SourceType::jsx(),
+    );
 
     // Then: insertion consumes only the adjacent terminator; authored bytes map back exactly.
     assert_eq!(

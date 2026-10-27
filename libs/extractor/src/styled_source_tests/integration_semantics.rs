@@ -231,9 +231,12 @@ fn imported_metadata_is_readable_only_when_local_rules_are_style_only(
         if observed { "observe(rules);" } else { "" }
     );
     let resolver = move |specifier: &str, _: &str| {
-        (specifier == "./base").then(|| crate::ResolvedModule {
-            path: "/src/base.tsx".to_string(),
-            code: base.clone(),
+        (specifier == "./base").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                path: "/src/base.tsx".to_string(),
+                code: base.clone(),
+                source_type: None,
+            })
         })
     };
     // When

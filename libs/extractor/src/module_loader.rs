@@ -14,7 +14,10 @@ use oxc_span::{GetSpan, SourceType};
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
+use crate::{ExtractOption, ModuleResolution, ModuleResolver, utils::is_vanilla_extract_file};
+#[cfg(test)]
+#[path = "ignored_loader_tests.rs"]
+mod ignored_loader_tests;
 
 /// The object the package's API is bound to while a stylesheet runs
 pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
@@ -103,11 +106,14 @@ fn is_evaluating(filename: &str) -> bool {
 /// Loads what a stylesheet imports, each module once, as JavaScript that
 /// defines the module's exports object ahead of the stylesheet
 pub(crate) struct ModuleLoader<'r> {
-    resolver: Option<&'r ModuleResolver>,
+    resolver: Option<&'r ModuleResolver<'r>>,
     option: &'r ExtractOption,
     /// Definitions of the loaded modules, each after the ones it uses
     definitions: Vec<String>,
-    loaded: FxHashMap<String, String>,
+    loaded: FxHashMap<crate::source_type::ModuleCacheKey, String>,
+    ignored: FxHashMap<(String, String), String>,
+    ignored_bindings: FxHashSet<String>,
+    helper_emitted: bool,
     /// `(path, name)` of the modules being defined, outermost first
     loading: Vec<(String, String)>,
     /// Names of modules imported before they finished evaluating, whose
@@ -128,6 +134,9 @@ impl<'r> ModuleLoader<'r> {
             option,
             definitions: Vec::new(),
             loaded: FxHashMap::default(),
+            ignored: FxHashMap::default(),
+            ignored_bindings: FxHashSet::default(),
+            helper_emitted: false,
             loading: Vec::new(),
             pending: FxHashSet::default(),
             next_module: 0,
@@ -152,13 +161,31 @@ impl<'r> ModuleLoader<'r> {
         let resolver = self
             .resolver
             .ok_or_else(|| format!("Cannot load '{specifier}' without a module resolver"))?;
-        let module = resolver(specifier, importer)
-            .ok_or_else(|| format!("Cannot resolve '{specifier}' from '{importer}'"))?;
+        let module = match resolver(specifier, importer)
+            .ok_or_else(|| format!("Cannot resolve '{specifier}' from '{importer}'"))?
+        {
+            ModuleResolution::Resolved(module) => module,
+            ModuleResolution::Ignored => {
+                let key = (importer.to_string(), specifier.to_string());
+                if let Some(name) = self.ignored.get(&key) {
+                    return Ok(name.clone());
+                }
+                let name = format!("__module_{}__", self.next_module);
+                self.next_module += 1;
+                self.definitions.push(format!(
+                    "const {name}$ = {{}};\nconst {name} = {{ default: {name}$, __exports__: {name}$ }};\n"
+                ));
+                self.ignored.insert(key, name.clone());
+                self.ignored_bindings.insert(name.clone());
+                return Ok(name);
+            }
+        };
+        let key = (module.path.clone(), module.code.clone(), module.source_type);
         let stylesheet = is_vanilla_extract_file(&module.path);
         if direct && stylesheet {
             self.keep_import(specifier);
         }
-        if let Some(name) = self.loaded.get(&module.path) {
+        if let Some(name) = self.loaded.get(&key) {
             return Ok(name.clone());
         }
         if let Some((_, name)) = self.loading.iter().find(|(path, _)| *path == module.path) {
@@ -170,8 +197,9 @@ impl<'r> ModuleLoader<'r> {
         self.next_module += 1;
         // Created before the modules it imports, so a cycle among them can
         // reach it; reading it before it starts evaluating is an error
-        if self.definitions.is_empty() {
+        if !self.helper_emitted {
             self.definitions.push(MODULE_HELPER.to_string());
+            self.helper_emitted = true;
         }
         self.definitions.push(format!(
             "const {name}$ = __module__({:?});\nconst {name} = {name}$.module;\n",
@@ -181,15 +209,15 @@ impl<'r> ModuleLoader<'r> {
             // The stylesheet importing it is evaluated on its own, so it never
             // starts here
             self.pending.insert(name.clone());
-            self.loaded.insert(module.path, name.clone());
+            self.loaded.insert(key, name.clone());
             return Ok(name);
         }
         self.dependencies.insert(module.path.clone());
         self.loading.push((module.path.clone(), name.clone()));
         let defined = self.define(&name, module, stylesheet, resolver);
-        let (path, _) = self.loading.pop().unwrap_or_default();
+        self.loading.pop();
         defined?;
-        self.loaded.insert(path, name.clone());
+        self.loaded.insert(key, name.clone());
         Ok(name)
     }
 
@@ -203,12 +231,13 @@ impl<'r> ModuleLoader<'r> {
         let code = if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
-            let output = crate::extract_with_source_map(
+            let output = crate::extract_with_source_type(
                 &module.path,
                 &module.code,
                 self.option.clone(),
                 false,
                 Some(resolver),
+                module.source_type,
             )
             .map_err(|error| error.to_string())?;
             self.dependencies.extend(output.dependencies);
@@ -216,10 +245,19 @@ impl<'r> ModuleLoader<'r> {
         } else {
             module.code
         };
-        let instrumented =
-            crate::dead_properties::instrument(&code, &module.path, &self.option.package)
-                .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
-        let script = crate::vanilla_extract::strip_typescript(&instrumented.code, &module.path);
+        let source_type = crate::source_type::parser_type(&module.path, module.source_type)?;
+        let instrumented = crate::dead_properties::instrument(
+            &code,
+            &module.path,
+            &self.option.package,
+            source_type,
+        )
+        .map_err(|error| format!("{}{error}", crate::dead_properties::ERROR_CHANNEL))?;
+        let script = crate::vanilla_extract::strip_typescript_with_type(
+            &instrumented.code,
+            &module.path,
+            module.source_type,
+        )?;
         let module_script = module_script(
             ModuleSource {
                 script: &script,
@@ -261,6 +299,28 @@ impl<'r> ModuleLoader<'r> {
             module_script.body,
         ));
         Ok(())
+    }
+}
+
+impl ModuleLoader<'_> {
+    fn named(&self, module: &str, name: &str) -> String {
+        if name != "default" && self.ignored_bindings.contains(module) {
+            return "void 0".to_string();
+        }
+        let object = if name == "default" {
+            module.to_string()
+        } else {
+            self.namespace(module)
+        };
+        format!("{object}[{name:?}]")
+    }
+
+    fn namespace(&self, module: &str) -> String {
+        if self.ignored_bindings.contains(module) {
+            format!("{module}.__exports__")
+        } else {
+            module.to_string()
+        }
     }
 }
 
@@ -501,14 +561,32 @@ pub(crate) fn module_script(
                 let mut named = Vec::new();
                 for specifier in import.specifiers.iter().flatten() {
                     match specifier {
-                        ImportDeclarationSpecifier::ImportSpecifier(specifier) => named.push(
-                            format!("{:?}: {}", specifier.imported.name(), specifier.local.name),
-                        ),
+                        ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                            if loader.ignored_bindings.contains(module) {
+                                let _ = writeln!(
+                                    body,
+                                    "const {} = {};",
+                                    specifier.local.name,
+                                    loader.named(module, specifier.imported.name().as_str())
+                                );
+                            } else {
+                                named.push(format!(
+                                    "{:?}: {}",
+                                    specifier.imported.name(),
+                                    specifier.local.name
+                                ));
+                            }
+                        }
                         ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
                             named.push(format!("\"default\": {}", specifier.local.name));
                         }
                         ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
-                            let _ = writeln!(body, "const {} = {module};", specifier.local.name);
+                            let _ = writeln!(
+                                body,
+                                "const {} = {};",
+                                specifier.local.name,
+                                loader.namespace(module)
+                            );
                         }
                     }
                 }
@@ -542,7 +620,7 @@ pub(crate) fn module_script(
                 for specifier in &export.specifiers {
                     exports.push((
                         export_name(&specifier.exported),
-                        format!("{module}[{:?}]", export_name(&specifier.local)),
+                        loader.named(&module, &export_name(&specifier.local)),
                     ));
                 }
             }
@@ -573,8 +651,10 @@ pub(crate) fn module_script(
                     .ok_or_else(|| source.specifier_error("module", &export.source))?;
                 let module = loader.load(source, filename, entry)?;
                 match &export.exported {
-                    Some(exported) => exports.push((export_name(exported), module)),
-                    None => spreads.push(module),
+                    Some(exported) => {
+                        exports.push((export_name(exported), loader.namespace(&module)));
+                    }
+                    None => spreads.push(loader.namespace(&module)),
                 }
             }
             statement => {

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const { rmSync } = require('node:fs')
 const { join } = require('node:path')
+const { configFailure } = require('./config-refresh-observer.cjs')
 const {
   fixture,
   observe,
@@ -127,12 +128,14 @@ async function main() {
         assert.match(css, /@media/)
         if (mode === 'inherited') {
           rmSync(join(root, changed))
-          await plugin.watchChange(join(root, changed))
-          await transform(source)
-          assert.doesNotMatch(wasm.getCss(null, false), /29px/)
+          const missing = configFailure(join(root, changed))
+          await assert.rejects(plugin.watchChange(join(root, changed)), missing)
+          await assert.rejects(transform(source), missing)
+          assert.equal(telemetry.extractions.length, count + 1)
           write(changed, theme(['17px', null, '37px']))
           await plugin.watchChange(join(root, changed))
           await transform(source)
+          assert.equal(telemetry.extractions.length, count + 2)
           assert.match(wasm.getCss(null, false), /37px/)
         }
         break

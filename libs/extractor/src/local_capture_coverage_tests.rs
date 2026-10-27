@@ -31,7 +31,13 @@ fn local_shape_when_callback_capture_is_unresolved_reports_binding_error(
         vec![(offset, crate::utils::local_style_error("inner"))]
     );
     assert_eq!(
-        crate::located_errors("capture.tsx", &source, &[], inlined.errors),
+        crate::located_errors(
+            "capture.tsx",
+            &source,
+            &[],
+            inlined.errors,
+            parsed.program.source_type
+        ),
         format!(
             "capture.tsx:2:22: {}",
             crate::utils::local_style_error("inner")
@@ -155,9 +161,12 @@ fn imported_class_when_used_as_a_controller_selects_by_declarations_not_metadata
     // Given
     let module = format!("import {{css}} from '@devup-ui/react';export const mixin=css({rules});");
     let resolver = move |specifier: &str, _: &str| {
-        (specifier == "./base").then(|| crate::ResolvedModule {
-            path: "/base.tsx".into(),
-            code: module.clone(),
+        (specifier == "./base").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                path: "/base.tsx".into(),
+                code: module.clone(),
+                source_type: None,
+            })
         })
     };
     let source = "import {styled} from '@devup-ui/react';import {mixin} from './base';const Choice=styled.div(mixin?{color:'red'}:{color:'blue'});";

@@ -13,7 +13,7 @@ use oxc_ast::ast::{
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk};
 use oxc_parser::{Parser, ParserReturn};
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::css_prop::{CssProp, CssTakers};
@@ -21,7 +21,7 @@ use crate::extractor::extract_style_from_styled::StyledDefinition;
 use crate::import_alias_visit::{Aliased, transform_import_aliases_with_edits};
 use crate::utils::{is_vanilla_extract_file, unwrap_syntax_only};
 use crate::visit::DevupVisitor;
-use crate::{ExtractOption, ModuleResolver};
+use crate::{ExtractOption, ModuleResolution, ModuleResolver};
 
 /// What a module exports, which marks the components other files select
 #[derive(Default)]
@@ -190,7 +190,7 @@ type Module<'a> = Rc<Components<'a>>;
 
 struct Reader<'r, 'a> {
     option: &'r ExtractOption,
-    resolver: &'r ModuleResolver,
+    resolver: &'r ModuleResolver<'r>,
     allocator: &'a Allocator,
     modules: FxHashMap<String, Option<Module<'a>>>,
     /// The modules being read, which one of them importing another in a
@@ -202,7 +202,9 @@ struct Reader<'r, 'a> {
 impl<'a> Reader<'_, 'a> {
     /// The components of the module `specifier` names, as `importer` imports it
     fn module(&mut self, specifier: &str, importer: &str) -> Option<Module<'a>> {
-        let module = (self.resolver)(specifier, importer)?;
+        let ModuleResolution::Resolved(module) = (self.resolver)(specifier, importer)? else {
+            return None;
+        };
         self.dependencies.insert(module.path.clone());
         if let Some(read) = self.modules.get(&module.path) {
             return read.clone();
@@ -211,7 +213,9 @@ impl<'a> Reader<'_, 'a> {
             return None;
         }
         self.reading.push(module.path.clone());
-        let read = self.read(&module.path, &module.code).map(Rc::new);
+        let read = self
+            .read(&module.path, &module.code, module.source_type)
+            .map(Rc::new);
         self.reading.pop();
         self.modules.insert(module.path, read.clone());
         read
@@ -219,14 +223,26 @@ impl<'a> Reader<'_, 'a> {
 
     /// The styled components the module at `path` exports, found by compiling
     /// it as its own extraction does
-    fn read(&mut self, path: &str, code: &str) -> Option<Components<'a>> {
-        self.read_source(path, code, false)
+    fn read(
+        &mut self,
+        path: &str,
+        code: &str,
+        mode: Option<crate::ExtractSourceType>,
+    ) -> Option<Components<'a>> {
+        self.read_source(path, code, mode, false)
     }
 
-    fn read_source(&mut self, path: &str, code: &str, evaluated: bool) -> Option<Components<'a>> {
+    fn read_source(
+        &mut self,
+        path: &str,
+        code: &str,
+        mode: Option<crate::ExtractSourceType>,
+        evaluated: bool,
+    ) -> Option<Components<'a>> {
         if is_vanilla_extract_file(path) {
             return None;
         }
+        let source_type = crate::source_type::parser_type(path, mode).ok()?;
         let Aliased {
             code: transformed,
             css_prop,
@@ -237,13 +253,14 @@ impl<'a> Reader<'_, 'a> {
             path,
             &self.option.package,
             &self.option.import_aliases,
+            source_type,
         );
         let sub = Allocator::default();
         let ParserReturn {
             mut program,
             fatal_error,
             ..
-        } = Parser::new(&sub, &transformed, SourceType::from_path(path).ok()?).parse();
+        } = Parser::new(&sub, &transformed, source_type).parse();
         if fatal_error {
             return None;
         }
@@ -293,10 +310,10 @@ impl<'a> Reader<'_, 'a> {
         if (!readable || needs_values)
             && !evaluated
             && let Some((computed, dependencies)) =
-                self.evaluate_values(path, code, &inlined.unknown)
+                self.evaluate_values(path, code, &inlined.unknown, mode)
         {
             self.dependencies.extend(dependencies);
-            return self.read_source(path, &computed, true);
+            return self.read_source(path, &computed, mode, true);
         }
         exports.extend(
             components
@@ -311,7 +328,9 @@ impl<'a> Reader<'_, 'a> {
         path: &str,
         code: &str,
         unknown: &crate::imported_constants::Unknown,
+        mode: Option<crate::ExtractSourceType>,
     ) -> Option<(String, BTreeSet<String>)> {
+        let source_type = crate::source_type::parser_type(path, mode).ok()?;
         let Aliased {
             code: transformed,
             edits: alias_mapping,
@@ -321,10 +340,10 @@ impl<'a> Reader<'_, 'a> {
             path,
             &self.option.package,
             &self.option.import_aliases,
+            source_type,
         );
         let allocator = Allocator::default();
-        let parsed =
-            Parser::new(&allocator, &transformed, SourceType::from_path(path).ok()?).parse();
+        let parsed = Parser::new(&allocator, &transformed, source_type).parse();
         if parsed.fatal_error {
             return None;
         }
@@ -382,6 +401,7 @@ impl<'a> Reader<'_, 'a> {
             self.option,
             Some(self.resolver),
             unknown,
+            mode,
         )?;
         let mut result = String::new();
         let mut original = 0;
@@ -746,6 +766,7 @@ mod tests {
 
     use super::*;
     use crate::{ExtractOutput, ImportAlias, ResolvedModule, extract_with_modules};
+    use oxc_span::SourceType;
 
     fn option() -> ExtractOption {
         ExtractOption {
@@ -778,9 +799,12 @@ mod tests {
                         .iter()
                         .any(|extension| format!("{path}{extension}") == *file)
                 })
-                .map(|(file, code)| ResolvedModule {
-                    path: file.clone(),
-                    code: code.clone(),
+                .map(|(file, code)| {
+                    crate::ModuleResolution::Resolved(ResolvedModule {
+                        path: file.clone(),
+                        code: code.clone(),
+                        source_type: None,
+                    })
                 })
         };
         let code = files.iter().find(|(path, _)| *path == entry).unwrap().1;
@@ -1386,7 +1410,7 @@ mod tests {
             "{STYLED}import {{ css }} from '@devup-ui/react'; export const Child = styled.div`padding: 4px;`; export function bad() {{ const local = {{ color: 'red' }}; expose(local); return css(local); }}"
         );
         reset();
-        let module = reader.read("/src/base.ts", &code).unwrap();
+        let module = reader.read("/src/base.ts", &code, None).unwrap();
         assert!(module["Child"].definition.is_none());
         assert_eq!(module["Child"].markers.len(), 1);
     }
@@ -1735,7 +1759,6 @@ export default styled.span`margin: 1px;`;
                 "/src/theme.css.ts",
                 "import { style } from '@vanilla-extract/css';\nexport const base = style({ color: 'red' });",
             ),
-            ("/src/data.json", "{}"),
             ("/src/broken.ts", "export const = ;"),
             (
                 "/src/types.ts",
@@ -1748,7 +1771,7 @@ export default styled.span`margin: 1px;`;
             "import Anonymous, { Base, fn, a, P } from './plain';\nexport const A = styled(Base)`color: blue;`;\nexport const B = styled(Anonymous)`color: blue;`;\nexport const C = styled(fn)`color: blue;`;\nexport const D = styled(a)`color: blue;`;\nexport const E = styled(P)`color: blue;`;",
             "import { Good, Bad } from './bad';\nexport const A = styled(Good)`color: blue;`;\nexport const B = styled.div`${Good} { color: red; }`;",
             "import { A } from './cycle-a';\nexport const App = styled(A)`color: blue;`;",
-            "import { base } from './theme.css';\nimport { Data } from './data.json';\nimport { Broken } from './broken';\nimport { Missing } from './missing';\nimport { Nope } from './types';\nexport const A = styled(Data)`color: blue;`;\nexport const B = styled(Broken)`color: blue;`;\nexport const C = styled(Missing)`color: blue;`;\nexport const D = styled(Nope)`color: blue;`;\nexport const E = styled(base)`color: blue;`;",
+            "import { base } from './theme.css';\nimport { Broken } from './broken';\nimport { Missing } from './missing';\nimport { Nope } from './types';\nexport const B = styled(Broken)`color: blue;`;\nexport const C = styled(Missing)`color: blue;`;\nexport const D = styled(Nope)`color: blue;`;\nexport const E = styled(base)`color: blue;`;",
             "import type { Base } from './types';\nimport { type Base as Other } from './types';\nexport const A = styled(Base)`color: blue;`;\nexport const B = styled(Other)`color: blue;`;",
             "import { Base } from './types';\nexport const A = styled(Base)`color: blue;`;",
             "import * as types from './types';\nexport const A = styled(types.deep.Base)`color: blue;`;\nexport const B = styled(types['Base'])`color: blue;`;",
@@ -1763,6 +1786,49 @@ export default styled.span`margin: 1px;`;
             })
             .collect();
         assert_debug_snapshot!(outputs);
+    }
+
+    #[test]
+    #[serial]
+    fn imported_components_reject_raw_json_when_resolved_as_source() {
+        // Given: the resolver supplies raw JSON without a source-type override.
+        reset();
+        let app = format!(
+            "{STYLED}import {{ Data }} from './data.json';\nexport const A = styled(Data)`color: blue;`;"
+        );
+        // When: extraction reads the imported component through the source boundary.
+        let error = extract_in(
+            &[("/src/data.json", "{}"), ("/src/app.tsx", &app)],
+            "/src/app.tsx",
+        )
+        .unwrap_err();
+        // Then: rejection identifies the resolved JSON source, not the consumer.
+        assert!(
+            error.starts_with("/src/data.json:1:1: source parser"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn ignored_component_module_does_not_become_a_dependency_or_cached_source() {
+        let allocator = Allocator::default();
+        let option = option();
+        let resolver = |_: &str, _: &str| Some(ModuleResolution::Ignored);
+        let mut reader = Reader {
+            option: &option,
+            resolver: &resolver,
+            allocator: &allocator,
+            modules: FxHashMap::default(),
+            reading: Vec::new(),
+            dependencies: BTreeSet::new(),
+        };
+
+        let module = reader.module("./ignored", "/src/app.tsx");
+
+        assert!(module.is_none());
+        assert_eq!(reader.dependencies, BTreeSet::new());
+        assert_eq!(reader.modules.len(), 0);
+        assert_eq!(reader.reading, Vec::<String>::new());
     }
 
     #[test]

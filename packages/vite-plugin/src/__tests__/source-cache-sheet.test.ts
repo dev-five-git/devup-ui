@@ -2,24 +2,39 @@ import { readFileSync } from 'node:fs'
 
 import * as wasm from '@devup-ui/wasm'
 import { expect, it } from 'bun:test'
+import { resolveConfig } from 'vite'
 
 import {
   cacheFixture,
   cssLoader,
   extractionObserver,
+  SOURCE,
   writeGate,
 } from './source-cache-fixture'
 it('fully bypasses extraction reuse when identical build inputs repeat', async () => {
   // Given: actual build configuration of the source plugin and real facade.
-  using state = await cacheFixture()
-  await state.plugin.configResolved({ ...state.config, command: 'build' })
-  await state.plugin.buildStart.call(state.context)
+  using state = await cacheFixture(false)
+  const config = await resolveConfig(
+    {
+      root: state.project.root,
+      configFile: false,
+      logLevel: 'silent',
+      build: { lib: { entry: state.id, formats: ['es'] } },
+    },
+    'build',
+  )
+  await state.plugin.configResolved(config)
+  const context = {
+    ...state.context,
+    environment: { name: 'client', config: config.environments.client },
+  }
+  await state.plugin.buildStart.call(context, { input: [state.id] })
   using extracts = extractionObserver()
   using writes = writeGate(state.cssFile)
   writes.release()
   // When
-  const first = await state.transform()
-  const second = await state.transform()
+  const first = await state.plugin.transform.call(context, SOURCE, state.id)
+  const second = await state.plugin.transform.call(context, SOURCE, state.id)
   // Then: build calls both run extraction; actual CSS is persisted on disk.
   expect(second).toEqual(first)
   expect(extracts).toHaveBeenCalledTimes(2)

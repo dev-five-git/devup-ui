@@ -64,7 +64,7 @@ it.each([false, true])(
           { request: './a.js', context: resolve('external') },
         ])
         expect(discovery).toMatchObject({
-          cwd: process.cwd(),
+          cwd: resolve('other'),
           include: ['included-ui'],
           package: '@devup-ui/react',
           importAliases: {},

@@ -129,12 +129,15 @@ config.plugins.push({
   name: 'native-observer',
   setup(api) {
     setups++
-    api.modifyRspackConfig((rspackConfig) => {
-      if (scenario === 'opaque')
-        rspackConfig.entry = () => {
+    if (scenario === 'opaque')
+      api.transform(
+        { test: /[\\/]src[\\/]entry\.js$/, order: 'pre' },
+        ({ code }) => {
           entries++
-          return { main: { import: ['./external/entry.css.ts'] } }
-        }
+          return `${code}\nimport "../external/entry.css.ts"`
+        },
+      )
+    api.modifyRspackConfig((rspackConfig) => {
       rspackConfig.plugins.push({
         apply(compiler) {
           compiler.hooks.thisCompilation.tap('native-observer', () => {

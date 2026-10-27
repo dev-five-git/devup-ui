@@ -7,7 +7,7 @@ const { join } = require('node:path')
 const { put } = require('./reservation-native-fixture.cjs')
 
 /** @typedef {import('../reservation-inputs').ReservationConfig} Config */
-/** @typedef {{configResolved(config:Config):Promise<void>, watchChange(file:string):Promise<void>, closeBundle():void|Promise<void>, buildStart(this:{addWatchFile(file:string):void}):Promise<void>, transform(this:{addWatchFile(file:string):void},code:string,id:string):Promise<unknown>}} Hooks */
+/** @typedef {{configResolved(config:Config):Promise<void>, watchChange(file:string):Promise<void>, closeBundle():void|Promise<void>, buildStart(this:{addWatchFile(file:string):void},options?:{input:readonly string[]}):Promise<void>, transform(this:{addWatchFile(file:string):void},code:string,id:string):Promise<unknown>}} Hooks */
 /** @param {unknown} value @returns {value is Hooks} */
 function hooks(value) {
   return (
@@ -46,7 +46,7 @@ function project() {
     singleCss: true,
   })
   assert(Array.isArray(plugins))
-  const plugin = plugins[0]
+  const plugin = { ...plugins[0], transform: plugins[0].transform.handler }
   assert(hooks(plugin))
   /** @type {Config} */
   const config = { root, command: 'serve' }

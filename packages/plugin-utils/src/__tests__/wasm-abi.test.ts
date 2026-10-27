@@ -14,6 +14,7 @@ function saveState() {
     classMap: JSON.parse(wasm.exportClassMap()),
     fileMap: JSON.parse(wasm.exportFileMap()),
     canonicalMap: JSON.parse(wasm.exportCanonicalMap()),
+    reservation: JSON.parse(wasm.exportReservationState()),
     css: wasm.getCss(null, false),
     debug: wasm.isDebug(),
     prefix: wasm.getPrefix(),
@@ -25,6 +26,7 @@ function restoreState(state: ReturnType<typeof saveState>) {
   wasm.importClassMap(state.classMap)
   wasm.importFileMap(state.fileMap)
   wasm.importCanonicalMap(state.canonicalMap)
+  wasm.importReservationState(state.reservation)
   wasm.setDebug(state.debug)
   wasm.setPrefix(state.prefix ?? null)
 }
@@ -34,7 +36,7 @@ function extract(code: string, filename = 'abi.tsx') {
 }
 
 describe('@devup-ui/wasm exports', () => {
-  it('exposes exactly the functions the plugins call', () => {
+  it('exposes exactly the compiled engine functions', () => {
     // default is the CommonJS module object a Node-style import adds
     expect(
       Object.keys(wasm)
@@ -44,21 +46,31 @@ describe('@devup-ui/wasm exports', () => {
       'Output',
       'codeExtract',
       'codeExtractWithoutSourceMap',
+      'compiledGuardFacts',
       'exportCanonicalMap',
       'exportClassMap',
       'exportFileMap',
+      'exportReservationState',
       'exportSheet',
       'getCss',
       'getDefaultTheme',
       'getPrefix',
+      'getSuppressedReservationRowCount',
       'getThemeInterface',
       'getUnreservedClassSlotCount',
       'hasDevupUI',
       'importCanonicalMap',
+      'importCanonicalMapJson',
       'importClassMap',
+      'importClassMapJson',
       'importFileMap',
+      'importFileMapJson',
       'importFileRoutes',
+      'importReservationState',
+      'importReservationStateJson',
       'importSheet',
+      'importSheetJson',
+      'install_panic_hook',
       'isDebug',
       'registerShorthands',
       'registerTheme',
@@ -108,10 +120,10 @@ describe('@devup-ui/wasm extraction', () => {
 
   it('tells a file that uses Devup UI from one that does not', () => {
     expect(
-      wasm.hasDevupUI('a.tsx', `import { Box } from '${PACKAGE}'`, PACKAGE),
+      wasm.hasDevupUI('a.tsx', `import { Box } from '${PACKAGE}'`, PACKAGE, {}),
     ).toBe(true)
     expect(
-      wasm.hasDevupUI('a.tsx', `import { Box } from 'other'`, PACKAGE),
+      wasm.hasDevupUI('a.tsx', `import { Box } from 'other'`, PACKAGE, {}),
     ).toBe(false)
   })
 
@@ -391,5 +403,94 @@ describe('@devup-ui/wasm reservation', () => {
     expect(wasm.getUnreservedClassSlotCount()).toBe(2)
     wasm.resetBuildState()
     expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+  })
+
+  it('restores the live accounting phase and prior misses across owner resets', () => {
+    // Given
+    const source = (color: string) =>
+      `import { Box } from '${PACKAGE}'; export const a = <Box color="${color}" />`
+    wasm.reserveClassSlots(
+      [['owner.tsx', source('red'), 'df']],
+      PACKAGE,
+      true,
+      false,
+      false,
+      {},
+    )
+    extract(source('blue'), 'owner.tsx').free()
+    expect(wasm.getUnreservedClassSlotCount()).toBe(1)
+    const owner = saveState()
+    wasm.resetBuildState()
+    extract(source('green'), 'sibling.tsx').free()
+    expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+    // When
+    restoreState(owner)
+    extract(source('yellow'), 'owner.tsx').free()
+    // Then
+    expect(wasm.getUnreservedClassSlotCount()).toBe(2)
+    const before = wasm.exportReservationState()
+    expect(() => wasm.importReservationState(null)).toThrow()
+    expect(wasm.exportReservationState()).toBe(before)
+  })
+
+  it.each([false, true])(
+    'reserves compiler output under its actual TS filename (singleCss %s)',
+    (singleCss) => {
+      // Given
+      const code = `import {Box} from '${PACKAGE}'; export const view = <Box color='red' gap={value}/>;`
+      const before = wasm.getCss(null, false)
+      // When
+      wasm.reserveClassSlots(
+        [['page.ts', code, 'df', 'compiled-mdx']],
+        PACKAGE,
+        singleCss,
+        false,
+        false,
+        {},
+      )
+      const classes = wasm.exportClassMap()
+      const output = wasm.codeExtract(
+        'page.ts',
+        code,
+        PACKAGE,
+        'df',
+        singleCss,
+        false,
+        false,
+        {},
+        'compiled-mdx',
+      )
+      // Then
+      try {
+        expect(before).not.toContain('color:red')
+        expect(output.code).not.toContain('<Box')
+        expect(output.css).toContain('color:red')
+        expect(wasm.exportClassMap()).toBe(classes)
+        expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+      } finally {
+        output.free()
+      }
+    },
+  )
+
+  it('rejects an invalid row grammar before any allocator or stylesheet mutation', () => {
+    // Given
+    const before = saveState()
+    const code = `import {Box} from '${PACKAGE}'; export const view = <Box color='red'/>;`
+    // When / Then
+    expect(() =>
+      wasm.reserveClassSlots(
+        [
+          ['valid.tsx', code, 'df'],
+          ['invalid.mdown', code, 'df', 'tsx'],
+        ],
+        PACKAGE,
+        true,
+        false,
+        false,
+        {},
+      ),
+    ).toThrow(/invalid\.mdown:1:1: source type/)
+    expect(saveState()).toEqual(before)
   })
 })

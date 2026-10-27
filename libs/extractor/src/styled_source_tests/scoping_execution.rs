@@ -29,9 +29,12 @@ fn compile(source: &str, single_css: bool, surface: Surface) -> crate::ExtractOu
         option.import_aliases.clear();
     }
     let resolver = |specifier: &str, _: &str| {
-        (specifier == "./base").then(|| ResolvedModule {
-            path: "/composition/base.ts".into(),
-            code: String::new(),
+        (specifier == "./base").then(|| {
+            crate::ModuleResolution::Resolved(ResolvedModule {
+                path: "/composition/base.ts".into(),
+                code: String::new(),
+                source_type: None,
+            })
         })
     };
     let result = match surface {

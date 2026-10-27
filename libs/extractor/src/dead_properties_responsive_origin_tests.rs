@@ -1,6 +1,8 @@
 use crate::dead_properties_test_utils::{failure, position};
 use crate::utils::{RESPONSIVE_ARRAY, build_time_error};
-use crate::{ExtractOption, ImportAlias, ResolvedModule, extract, extract_with_modules};
+use crate::{
+    ExtractOption, ImportAlias, ModuleResolution, ResolvedModule, extract, extract_with_modules,
+};
 use css::{class_map::reset_class_map, file_map::reset_file_map};
 use rstest::rstest;
 use serial_test::serial;
@@ -124,10 +126,11 @@ fn imported_nested_arrays_report_the_consuming_stylesheet_call(
     );
     let module = format!("export const {export}={value};");
     let resolver = move |specifier: &str, _: &str| match specifier {
-        "./values" => Some(ResolvedModule {
+        "./values" => Some(ModuleResolution::Resolved(ResolvedModule {
+            source_type: None,
             path: "values.ts".to_string(),
             code: module.clone(),
-        }),
+        })),
         _ => None,
     };
 
@@ -163,10 +166,11 @@ fn imported_stylesheet_nested_arrays_keep_the_declaring_call_origin() {
     let source = "import {style} from '@vanilla-extract/css';\nimport {bad} from './other.css';\nexport const result=style([bad,{color:'red'}]);";
     let resolver = |specifier: &str, _: &str| {
         match specifier {
-        "./other.css" => Some(ResolvedModule {
+        "./other.css" => Some(ModuleResolution::Resolved(ResolvedModule {
+            source_type: None,
             path: "other.css.ts".to_string(),
             code: concat!("import {style} from '@vanilla-extract/css';\nconst values=[[1,2],3];\n\n\nexport const bad = style(", "{", "p:values", "}", ");").to_string(),
-        }),
+        })),
         _ => None,
     }
     };

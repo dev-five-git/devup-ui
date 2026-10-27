@@ -3,6 +3,10 @@ const { rmSync, symlinkSync } = require('node:fs')
 const { dirname, join, resolve } = require('node:path')
 const { provenanceFixture, observe, wasm } = require('./provenance-fixture.cjs')
 const { registrationBarrier } = require('./provenance-registration.cjs')
+const {
+  observeRefreshFailure,
+  configFailure,
+} = require('./config-refresh-observer.cjs')
 
 const root = process.argv[2]
 assert(root)
@@ -36,9 +40,44 @@ async function main() {
   const { createServer } = await import('vite')
   /** @type {ReturnType<typeof registrationBarrier> | undefined} */
   let membership
-  /** @type {{type:string,done:PromiseWithResolvers<void>,environments:Set<string>,timestamp?:number} | undefined} */
+  /** @type {{type:string,done:PromiseWithResolvers<void>,environments:Set<string>,failures:{environment:string,phase:string,error:unknown}[],timestamp?:number} | undefined} */
   let update
   const file = join(root, 'src/base.json')
+  const observed = (
+    /** @type {import('vite').HotUpdateOptions} */ context,
+    /** @type {string} */ environment,
+  ) => {
+    if (
+      !update ||
+      resolve(context.file) !== resolve(file) ||
+      context.type !== update.type
+    )
+      return
+    update.timestamp ??= context.timestamp
+    assert.equal(context.timestamp, update.timestamp)
+    update.environments.delete(environment)
+    if (!update.environments.size) update.done.resolve()
+  }
+  observeRefreshFailure(state.plugins[0], (fact, environment, error) => {
+    if (fact.phase === 'hotUpdate') {
+      if (update && resolve(fact.context.file) === resolve(file))
+        update.failures.push({ environment, phase: fact.phase, error })
+      observed(fact.context, environment)
+      return
+    }
+    if (
+      !update ||
+      resolve(fact.file) !== resolve(file) ||
+      fact.type !== update.type
+    )
+      return
+    update.failures.push({ environment, phase: fact.phase, error })
+    console.info(
+      JSON.stringify({ event: 'config-refresh-failure', ...fact, environment }),
+    )
+    update.environments.delete(environment)
+    if (!update.environments.size) update.done.resolve()
+  })
   const server = await createServer({
     root: join(root, 'project'),
     configFile: false,
@@ -54,17 +93,8 @@ async function main() {
         },
         hotUpdate: {
           order: 'post',
-          handler({ file: changed, type, timestamp }) {
-            if (
-              !update ||
-              resolve(changed) !== resolve(file) ||
-              type !== update.type
-            )
-              return
-            update.timestamp ??= timestamp
-            assert.equal(timestamp, update.timestamp)
-            update.environments.delete(this.environment.name)
-            if (!update.environments.size) update.done.resolve()
+          handler(context) {
+            observed(context, this.environment.name)
           },
         },
       },
@@ -107,7 +137,19 @@ async function main() {
               ? 'delete'
               : 'create',
         done,
-        environments: new Set(Object.keys(server.environments)),
+        environments: new Set(
+          action === 'delete'
+            ? Object.values(server.environments)
+                .filter(
+                  (environment) =>
+                    environment.name === 'client' ||
+                    server.config.server.perEnvironmentWatchChangeDuringDev ||
+                    state.plugins[0].perEnvironmentWatchChangeDuringDev,
+                )
+                .map((environment) => environment.name)
+            : Object.keys(server.environments),
+        ),
+        failures: [],
       }
       const count = telemetry.extractions.length
       membership.assertReady()
@@ -121,6 +163,34 @@ async function main() {
           ),
         )
       await Promise.all([native, done.promise])
+      if (action === 'delete') {
+        assert.deepEqual(
+          update.failures.map(({ environment }) => environment).sort(),
+          Object.values(server.environments)
+            .filter(
+              (environment) =>
+                environment.name === 'client' ||
+                server.config.server.perEnvironmentWatchChangeDuringDev ||
+                state.plugins[0].perEnvironmentWatchChangeDuringDev,
+            )
+            .map((environment) => environment.name)
+            .sort(),
+        )
+        assert.equal(
+          update.timestamp,
+          undefined,
+          'watchChange rejects before native hotUpdate begins',
+        )
+        for (const { phase, error } of update.failures) {
+          assert.equal(phase, 'watchChange')
+          configFailure(file)(error)
+        }
+        await assert.rejects(extract(), configFailure(file))
+        await assert.rejects(extract(), configFailure(file))
+        assert.equal(telemetry.extractions.length, count)
+        continue
+      }
+      assert.deepEqual(update.failures, [])
       await extract()
       assert.equal(
         telemetry.extractions.length,
@@ -132,9 +202,6 @@ async function main() {
         case 'edit':
           assert.match(css, /29px/)
           assert.match(css, /@media/)
-          break
-        case 'delete':
-          assert.doesNotMatch(css, /29px/)
           break
         case 'recreate':
           assert.match(css, /37px/)

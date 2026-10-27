@@ -97,10 +97,7 @@ async function main() {
     assert.equal(constructed.css, before.css)
     assert.equal(constructed.count, before.count)
     assert.equal(wasm.exportSheet(), sheet)
-    assert.deepEqual(cjsOwnership(), {
-      running: 2,
-      generation: lease.generation + 1,
-    })
+    assert.deepEqual(cjsOwnership(), lease)
     assert.deepEqual(esmOwnership(), cjsOwnership())
     await server.environments.client.transformRequest(
       '/src/A.tsx?prereq=overlap',
@@ -119,18 +116,15 @@ async function main() {
     assert.equal(after.fileMap, before.fileMap)
     assert.equal(configResolved, 1)
     assert(Array.isArray(other))
-    const otherPlugin = other[0]
+    const otherPlugin = { ...other[0], transform: other[0].transform.handler }
     assert(hooks(otherPlugin))
     await otherPlugin.closeBundle()
     other = undefined
-    assert.deepEqual(esmOwnership(), {
-      running: 1,
-      generation: lease.generation + 2,
-    })
+    assert.deepEqual(esmOwnership(), lease)
     console.info(JSON.stringify({ first, second, code, css: after.css }))
   } finally {
     if (Array.isArray(other)) {
-      const otherPlugin = other[0]
+      const otherPlugin = { ...other[0], transform: other[0].transform.handler }
       assert(hooks(otherPlugin))
       await otherPlugin.closeBundle()
     }

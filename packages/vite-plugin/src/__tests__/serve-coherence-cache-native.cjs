@@ -15,10 +15,20 @@ async function main() {
   const state = fixture(root)
   const { plugin, source, id, transform } = state
   try {
-    await plugin.configResolved({
-      root,
-      command: mode === 'build' ? 'build' : 'serve',
-    })
+    if (mode === 'build') {
+      const { resolveConfig } = await import('vite')
+      await plugin.configResolved(
+        await resolveConfig(
+          {
+            root,
+            configFile: false,
+            logLevel: 'silent',
+            build: { lib: { entry: id, formats: ['es'] } },
+          },
+          'build',
+        ),
+      )
+    } else await plugin.configResolved({ root, command: 'serve' })
     const first = await transform()
     const count = telemetry.extractions.length
     // When: the exact full transform id and whole input repeat without changes.

@@ -15,9 +15,12 @@ fn compile_css(
         files
             .iter()
             .find(|(name, _)| *name == path)
-            .map(|(name, source)| crate::ResolvedModule {
-                path: name.clone(),
-                code: source.clone(),
+            .map(|(name, source)| {
+                crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                    path: name.clone(),
+                    code: source.clone(),
+                    source_type: None,
+                })
             })
     };
     crate::extract_with_modules(

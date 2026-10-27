@@ -13,6 +13,7 @@ fn extract_fixture() -> Output {
         false,
         false,
         HashMap::new(),
+        None,
     )
     .unwrap()
 }

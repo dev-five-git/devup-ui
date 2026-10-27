@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import {
-  createModuleResolver,
+  createModulePathResolver,
   importedSpecifiers,
   isSourceFile,
   listSourceFiles,
@@ -18,6 +18,7 @@ export type ReservationInput = {
   readonly physicalPath: string
   readonly filename: string
   readonly code: string
+  readonly sourceType?: import('./prepared-source').SourceType
 }
 
 /** Internal compiled-input overlay for Devup-owned preparation, not a plugin option. */
@@ -89,7 +90,8 @@ export function collectReservationInputs(
     if (
       existing &&
       (existing.filename !== prepared.filename ||
-        existing.code !== prepared.code)
+        existing.code !== prepared.code ||
+        existing.sourceType !== prepared.sourceType)
     )
       throw new PreparedInputConflictError(key)
     overlays.set(key, { ...prepared, physicalPath: key })
@@ -100,19 +102,19 @@ export function collectReservationInputs(
     if (directory !== undefined) roots.push(directory)
   }
   const initial = roots.flatMap((root) =>
-    listSourceFiles(root, isReservationReadFailure),
+    listSourceFiles(root, [], {}, isReservationReadFailure),
   )
   const packageManifests = new Set<string>()
   const resolverOptions = {
     cwd,
-    toId: (path: string) => path,
+    includeMdx: true,
     onPackageManifest: (path: string) =>
       packageManifests.add(physicalKey(path)),
     ...(options.tsconfigPath === undefined
       ? {}
       : { tsconfigPath: resolve(cwd, options.tsconfigPath) }),
   }
-  const resolver = createModuleResolver({
+  const resolver = createModulePathResolver({
     ...resolverOptions,
     allowPackage: (specifier) => allowedPackage(specifier, include),
   })
@@ -125,15 +127,16 @@ export function collectReservationInputs(
   const seeds = new Set(overlays.keys())
   const pending = [...initial, ...overlays.keys()]
   if (options.entries?.length) {
-    const resolveEntry = createModuleResolver(resolverOptions)
+    const resolveEntry = createModulePathResolver(resolverOptions)
     for (const { request, context } of options.entries) {
       const module = reservationSource(
         () => resolveEntry(request, resolve(cwd, context, '__devup_entry__')),
         true,
       )
-      if (!module || !isSourceFile(module.path)) continue
+      if (!module || module.ignored === true) continue
+      if (!isSourceFile(module.path) && !overlays.has(physicalKey(module.path)))
+        continue
       entryTargets.add(physicalKey(module.path))
-      sources.set(physicalKey(module.path), module.code)
       pending.push(module.path)
     }
   }
@@ -152,6 +155,9 @@ export function collectReservationInputs(
       physicalPath,
       filename,
       code,
+      ...(overlay?.sourceType === undefined
+        ? {}
+        : { sourceType: overlay.sourceType }),
     })
     if (
       isProjectJsx(filename, options.importAliases) ||
@@ -165,18 +171,20 @@ export function collectReservationInputs(
     for (const specifier of importedSpecifiers(
       overlay?.filename ?? physicalPath,
       code,
+      overlay?.sourceType,
     )) {
       const allowed = allowedPackage(specifier, include)
       const module = reservationSource(
         () => resolver(specifier, physicalPath),
         true,
       )
-      if (!module || !isSourceFile(module.path)) continue
+      if (!module || module.ignored === true) continue
+      if (!isSourceFile(module.path) && !overlays.has(physicalKey(module.path)))
+        continue
       const target = physicalKey(module.path)
       resolutions.set(specifier, target)
       targets.add(target)
       if (allowed) seeds.add(target)
-      if (!sources.has(target)) sources.set(target, module.code)
       pending.push(module.path)
     }
   }

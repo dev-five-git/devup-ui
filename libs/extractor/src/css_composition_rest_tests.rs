@@ -307,6 +307,7 @@ fn layers_stay_distinct_when_nested_spreads_override_matching_rules() {
         map: None,
         css_file: None,
         dependencies: vec![],
+        deferred_defaults: vec![],
     };
     let styles = result_styles(&output, true);
     assert_eq!(

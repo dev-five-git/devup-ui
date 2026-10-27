@@ -95,8 +95,8 @@ it.each(['build', 'runtime'])(
   120000,
 )
 
-it.each(['outside', 'default'])(
-  'preserves real runtime residual/default behavior in %s mode',
+it.each(['outside', 'debug'])(
+  'preserves real runtime residual/readable behavior in %s mode',
   (mode) => {
     // Given: an outside-D9 runtime source never promised by a static build entry.
     const root = fixture()
@@ -105,9 +105,9 @@ it.each(['outside', 'default'])(
         join(root, 'outside.ts'),
         'import {css} from "@devup-ui/react"; export const cls=css({padding:"31px"});',
       )
-      // When: real runtime imports it in short mode, or uses default readable mode.
+      // When: real runtime imports it in short mode, or uses explicit readable mode.
       const result = run(root, mode)
-      // Then: outside short allocations are observable; default true has no reservation.
+      // Then: outside short allocations are observable; readable debug has no reservation.
       if (mode === 'outside') {
         expect(result.count).toBeGreaterThan(0)
         expect(JSON.stringify(result.batches)).not.toContain('outside.ts')

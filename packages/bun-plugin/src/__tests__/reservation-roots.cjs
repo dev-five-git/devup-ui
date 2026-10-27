@@ -36,7 +36,7 @@ async function main() {
       writeFileSync(output.path, bytes)
     }
   } else {
-    await register(mode === 'default' ? {} : { debug: false })
+    await register({ debug: mode === 'debug' })
     const module = await import(
       resolve(mode === 'outside' ? 'outside.ts' : 'src/A.ts')
     )

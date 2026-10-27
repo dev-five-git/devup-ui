@@ -38,7 +38,11 @@ function createWebpackConfig(): NextWebpackConfig {
 function createWebpackContext(
   overrides: Partial<NextWebpackContext> = {},
 ): NextWebpackContext {
-  return { buildId: 'tmpBuildId', ...overrides } as NextWebpackContext
+  return {
+    buildId: 'tmpBuildId',
+    config: {},
+    ...overrides,
+  } as NextWebpackContext
 }
 
 function setNodeEnv(value: string): void {
@@ -209,12 +213,15 @@ describe('DevupUINextPlugin', () => {
         // When: Next configures its webpack compilation.
         ret.webpack?.(createWebpackConfig(), createWebpackContext())
         // Then: explicit zero/thresholds and singleCss reach the real adapter seam.
-        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-          ...options,
-          singleCss: true,
-          cssDir: resolve('.next/cache', 'devup-ui'),
-          productionPrewarmFiles: [],
-        })
+        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+          {
+            ...options,
+            singleCss: true,
+            cssDir: resolve('.next/cache', 'devup-ui'),
+            productionPrewarmFiles: [],
+          },
+          expect.objectContaining({ complete: true }),
+        )
       },
     )
 
@@ -223,10 +230,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('.next/cache', 'devup-ui'),
-        productionPrewarmFiles: [],
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          cssDir: resolve('.next/cache', 'devup-ui'),
+          productionPrewarmFiles: [],
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with dev', async () => {
@@ -234,10 +244,13 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext({ dev: true }))
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        cssDir: resolve('df', 'devup-ui_tmpBuildId'),
-        watch: true,
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          cssDir: resolve('df', 'devup-ui_tmpBuildId'),
+          watch: true,
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with config', async () => {
@@ -250,11 +263,14 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui'),
-        productionPrewarmFiles: [],
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui'),
+          productionPrewarmFiles: [],
+        },
+        expect.objectContaining({ complete: true }),
+      )
     })
 
     it('should apply webpack plugin with webpack obj', async () => {
@@ -270,11 +286,14 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!(createWebpackConfig(), createWebpackContext())
 
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
-        package: 'new-package',
-        cssDir: resolve('.next/cache', 'devup-ui'),
-        productionPrewarmFiles: [],
-      })
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        {
+          package: 'new-package',
+          cssDir: resolve('.next/cache', 'devup-ui'),
+          productionPrewarmFiles: [],
+        },
+        expect.objectContaining({ complete: true }),
+      )
       expect(webpack).toHaveBeenCalled()
     })
   })
@@ -461,13 +480,9 @@ describe('DevupUINextPlugin', () => {
               ],
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -513,13 +528,9 @@ describe('DevupUINextPlugin', () => {
             '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },
@@ -575,7 +586,15 @@ describe('DevupUINextPlugin', () => {
       readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
       mkdirSyncSpy.mockReturnValue('')
       writeFileSyncSpy.mockReturnValue(undefined)
-      const ret = DevupUI({})
+      const realpathSpy = spyOn(fs, 'realpathSync').mockImplementation((path) =>
+        resolve(String(path)),
+      )
+      let ret: ReturnType<typeof DevupUI>
+      try {
+        ret = DevupUI({})
+      } finally {
+        realpathSpy.mockRestore()
+      }
 
       expect(ret).toEqual({
         turbopack: {
@@ -607,13 +626,9 @@ describe('DevupUINextPlugin', () => {
             '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
-                  path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                  path: importGraphModule.createNodeModulesExcludeRegex(
+                    [],
+                    '.mdx.[tj]sx?$',
                   ),
                 },
               },

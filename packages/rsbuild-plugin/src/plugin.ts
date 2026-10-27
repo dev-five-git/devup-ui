@@ -5,20 +5,37 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
+  collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
+  createDependencyGuard,
   createModuleResolver,
+  type CreateModuleResolverOptions,
   createNodeModulesExcludeRegex,
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
+  isMdxSource,
+  isSelectedSource,
   loadDevupConfig,
+  mdxSourceFilter,
   mergeImportAliases,
+  normalizeMdxExtensions,
   planAtomHoist,
   readJsxImportSource,
+  remapMdxError,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
+  resolveProjectPaths,
+  resolveSourceDirs,
+  seedFileNumbers,
+  SOURCE_FILE_RE,
+  type StaticImportGraph,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -32,6 +49,7 @@ import {
   registerShorthands,
   registerTheme,
   resetBuildState,
+  seedFileMap,
   setAtomHoist,
   setDebug,
   setModuleResolver,
@@ -39,7 +57,7 @@ import {
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
 
-import { createReservation, staticEntries } from './reservation'
+import { createReservation } from './reservation'
 
 const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
@@ -54,6 +72,8 @@ export interface DevupUIRsbuildPluginOptions {
   singleCss: boolean
   prefix?: string
   shorthands?: CustomShorthands
+  sourceDirs?: string | string[]
+  mdxExtensions?: readonly string[]
   /**
    * Atom-level route-aware hoisting threshold. Defaults to 2; 0 disables it.
    * Positive thresholds are clamped to >= 2. Canonical buckets reached by at
@@ -83,38 +103,22 @@ async function writeDataFiles(
     DevupUIRsbuildPluginOptions,
     'extractCss' | 'debug' | 'include'
   >,
+  root: string,
 ): Promise<string[]> {
-  let tailwindFiles: string[] = []
-  try {
-    const config = await loadDevupConfig(options.devupFile)
-    const theme = config.theme ?? {}
+  const config = await loadDevupConfig(options.devupFile)
+  const theme = config.theme ?? {}
 
-    registerTheme(withTailwindCss(theme, config))
-    tailwindFiles = tailwindCssFiles(config)
-    const interfaceCode = getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
-    )
+  registerTheme(withTailwindCss(theme, config, root))
+  const interfaceCode = getThemeInterface(
+    ...createThemeInterfaceArgs(options.package),
+  )
 
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
-  } catch (error) {
-    console.error(error)
-    registerTheme({})
-  }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
-      : Promise.resolve(),
-  ])
-  return tailwindFiles
+  await writeFile(join(options.distDir, 'theme.d.ts'), interfaceCode, 'utf-8')
+  if (!existsSync(options.cssDir))
+    await mkdir(options.cssDir, { recursive: true })
+  if (!options.singleCss)
+    await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+  return tailwindCssFiles(config, root)
 }
 
 /**
@@ -132,20 +136,24 @@ export const DevupUI = ({
   package: libPackage = '@devup-ui/react',
   extractCss = true,
   distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
+  cssDir: configuredCssDir,
   devupFile = 'devup.json',
   debug = false,
   singleCss = false,
   prefix,
   shorthands,
+  sourceDirs: configuredSourceDirs,
   atomHoist = 2,
   importAliases: userImportAliases,
+  mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  registerShorthands(shorthands ?? {})
   const importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
   )
+  const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
+  const excludeModules = createNodeModulesExcludeRegex(include)
+  let seedWarningEmitted = false
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
@@ -153,28 +161,61 @@ export const DevupUI = ({
   return {
     name: PLUGIN_NAME,
     async setup(api) {
+      const root = api.context.rootPath
+      const {
+        cssDir,
+        distDir: outputDir,
+        devupFile: configFile,
+      } = resolveProjectPaths(root, {
+        distDir,
+        devupFile,
+        cssDir: configuredCssDir,
+      })
       // A build starts from its own options, not from what an earlier build
       // in this process left in the engine
-      const endBuild = beginBuild({ resetBuildState })
+      const endBuild = beginBuild(
+        { resetBuildState },
+        {
+          integration: 'Rsbuild',
+          root,
+        },
+      )
+      registerShorthands(shorthands ?? {})
       api.onCloseBuild?.(endBuild)
+      // Rsbuild rejects a failed build without running onCloseBuild
+      api.onAfterBuild?.(({ stats }) => {
+        if (stats?.hasErrors()) endBuild()
+      })
       setDebug(debug)
       setPrefix(prefix ?? null)
 
-      if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
-      await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
-      await writeFile(
-        join(distDir, 'compat.d.ts'),
-        createCompatTypes(importAliases),
-        'utf-8',
-      )
+      let tailwindFiles: string[]
+      try {
+        if (!existsSync(outputDir)) await mkdir(outputDir, { recursive: true })
+        await writeFile(join(outputDir, '.gitignore'), '*', 'utf-8')
+        await writeFile(
+          join(outputDir, 'compat.d.ts'),
+          createCompatTypes(importAliases),
+          'utf-8',
+        )
 
-      let tailwindFiles = await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
+        tailwindFiles = await writeDataFiles(
+          {
+            package: libPackage,
+            cssDir,
+            devupFile: configFile,
+            distDir: outputDir,
+            singleCss,
+          },
+          root,
+        )
+      } catch (cause) {
+        endBuild()
+        throw new Error(
+          `[devup-ui] setup failed at ${root}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
+        )
+      }
       if (!extractCss) return
 
       // The project's Tailwind CSS defines what a Tailwind class compiles to:
@@ -204,13 +245,16 @@ export const DevupUI = ({
                   )
                 ).join()
                 if (stamp !== undefined && stamp !== current) {
-                  tailwindFiles = await writeDataFiles({
-                    package: libPackage,
-                    cssDir,
-                    devupFile,
-                    distDir,
-                    singleCss,
-                  })
+                  tailwindFiles = await writeDataFiles(
+                    {
+                      package: libPackage,
+                      cssDir,
+                      devupFile: configFile,
+                      distDir: outputDir,
+                      singleCss,
+                    },
+                    root,
+                  )
                 }
                 stamp = current
               },
@@ -228,65 +272,40 @@ export const DevupUI = ({
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
       const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
-      setModuleResolver(
-        createModuleResolver({
-          toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
-        }),
-      )
-      if (atomMode) {
-        try {
-          const root = process.cwd()
-          const srcDir = resolve(root, 'src')
-          const tsconfigPath = resolve(root, 'tsconfig.json')
-          const canonicalMap = buildCanonicalMap({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-          })
-          importCanonicalMap(canonicalMap)
-          const fileReach = computeFileReach({
-            srcDir,
-            tsconfigPath,
-            cwd: root,
-            keyBy: 'absolute',
-          })
-          const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
-          if (plan) {
-            importFileRoutes(plan.reachByBucket)
-            setAtomHoist(plan.threshold)
-          } else {
-            console.info(
-              '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
-            )
-          }
-        } catch {
-          // Best-effort; on failure atom hoisting stays off (identity).
+      const toId = (path: string) =>
+        atomMode ? path.replaceAll('\\', '/') : path
+      const sourceDirs = [
+        ...new Set([
+          ...resolveSourceDirs(root, configuredSourceDirs),
+          ...resolveSourceDirs(root),
+        ]),
+      ]
+      const plans = new Map<
+        string,
+        {
+          graph: StaticImportGraph
+          roots: string[]
+          entries: string[]
+          resolver: ReturnType<typeof createModuleResolver>
+          resolverOptions: CreateModuleResolverOptions
+          preserveSymlinks: boolean
+          watchPaths: Map<string, string>
+          inputFiles: Set<string>
+          missingInputs: Set<string>
         }
-      }
-
-      const reservation = createReservation({
-        root: api.context.rootPath,
-        package: libPackage,
-        include,
-        cssDir,
-        singleCss,
-        atomMode,
-        importAliases,
-      })
-      const entryFiles = new Set<string>()
-      // Extract the source files under `src` that the entries reach, in path
-      // order, the same way the transform does, so that a stylesheet built on
-      // its first import already holds the styles of every one. Best-effort:
-      // a stylesheet still missing styles is rebuilt by another pass.
-      const prewarm = () => {
-        try {
-          const root = api.context.rootPath
-          for (const file of computeReachableFiles({
-            srcDir: resolve(root, 'src'),
-            tsconfigPath: resolve(root, 'tsconfig.json'),
-            entries: [...entryFiles],
-          })) {
+      >()
+      const refreshPlans = new Map<string, () => void>()
+      const prewarm = (plan: NonNullable<ReturnType<typeof plans.get>>) => {
+        plan.resolver = createModuleResolver(plan.resolverOptions)
+        setModuleResolver(plan.resolver)
+        for (const file of computeReachableFiles({
+          srcDir: plan.roots,
+          tsconfigPath: resolve(root, 'tsconfig.json'),
+          entries: plan.entries,
+          graph: plan.graph,
+        })) {
+          if (!SOURCE_FILE_RE.test(file)) continue
+          try {
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
               '/',
@@ -294,7 +313,7 @@ export const DevupUI = ({
             if (!extractCssDir.startsWith('./'))
               extractCssDir = `./${extractCssDir}`
             codeExtract(
-              atomMode ? file.replaceAll('\\', '/') : file,
+              toId(file),
               readFileSync(file, 'utf-8'),
               libPackage,
               extractCssDir,
@@ -302,22 +321,40 @@ export const DevupUI = ({
               atomMode,
               !atomMode,
               importAliases,
+            ).free()
+          } catch (cause) {
+            throw new Error(
+              `[devup-ui] prewarm failed at ${file} (root ${root}): ${cause instanceof Error ? cause.message : String(cause)}`,
+              { cause },
             )
           }
-        } catch {
-          // The transform reports the error of the file it cannot extract
         }
       }
-      api.onBeforeBuild(({ environments }) => {
-        for (const { entry } of Object.values(environments)) {
-          for (const request of staticEntries(entry))
-            entryFiles.add(resolve(api.context.rootPath, request))
+      const reservation = createReservation({
+        root,
+        package: libPackage,
+        include,
+        cssDir,
+        singleCss,
+        atomMode,
+        importAliases,
+        sourceDirs,
+      })
+      api.onBeforeBuild(() => {
+        for (const refresh of refreshPlans.values()) refresh()
+        for (const plan of plans.values()) {
+          setModuleResolver(plan.resolver)
+          reservation.reserve()
+          prewarm(plan)
         }
-        reservation.reserve()
-        prewarm()
       })
 
       const servedCss = new Map<string, Map<string, string>>()
+      const checkCompiled = createDependencyGuard({
+        package: libPackage,
+        mdxExtensions,
+        importAliases,
+      })
       const stylesheet = (resourcePath: string) =>
         // A file's stylesheet imports the shared base, except in atom mode,
         // where the entry code imports the base itself so that hoisted atoms
@@ -341,22 +378,190 @@ export const DevupUI = ({
       // once more: every module is extracted by then. The dev server rebuilds it
       // through the stylesheet files the transforms write instead.
       api.modifyRspackConfig((config, { environment }) => {
-        for (const request of staticEntries(environment.entry))
-          entryFiles.add(resolve(api.context.rootPath, request))
+        const initialize = (normalized: Rspack.Compiler['options']) => {
+          const baseConditions = normalized.resolve?.conditionNames ?? [
+            'webpack',
+            normalized.mode === 'development' ? 'development' : 'production',
+            environment.config?.output?.target === 'node' ? 'node' : 'browser',
+          ]
+          const conditions = (
+            normalized.resolve?.byDependency?.esm?.conditionNames ?? [
+              'import',
+              'module',
+              '...',
+            ]
+          ).flatMap((condition) =>
+            condition === '...' ? baseConditions : [condition],
+          )
+          const entry = normalized.entry
+          if (typeof entry === 'function')
+            throw new Error(
+              `[devup-ui] graph setup failed at ${root}: dynamic Rspack entries are not available for prewarm`,
+            )
+          const rawEntries =
+            typeof entry === 'string'
+              ? [entry]
+              : Array.isArray(entry)
+                ? entry
+                : Object.values(entry ?? {}).flatMap((value) =>
+                    typeof value === 'string'
+                      ? [value]
+                      : Array.isArray(value)
+                        ? value
+                        : (value.import ?? []),
+                  )
+          const entries = rawEntries
+            .filter((file) => isSelectedSource(file, mdxExtensions))
+            .map((file) => resolve(root, file))
+          const roots = [
+            ...new Set([
+              ...sourceDirs,
+              ...entries
+                .map((file) => dirname(file))
+                .filter((directory) => directory !== resolve(root)),
+            ]),
+          ]
+          const generated = [
+            basename(outputDir),
+            basename(cssDir),
+            resolve(root, normalized.output?.path ?? 'dist'),
+          ]
+          const tsconfigPath = resolve(root, 'tsconfig.json')
+          const inputFiles = new Set<string>()
+          const missingInputs = new Set<string>()
+          const preserveSymlinks = normalized.resolve?.symlinks === false
+          const watchPaths = new Map<string, string>()
+          const onResolutionInputs: ResolutionInputObserver = (inputs) => {
+            for (const path of inputs.fileDependencies)
+              inputFiles.add(
+                resolutionWatchPath(path, preserveSymlinks, watchPaths),
+              )
+            for (const path of inputs.missingDependencies)
+              missingInputs.add(
+                resolutionWatchPath(path, preserveSymlinks, watchPaths),
+              )
+          }
+          try {
+            const resolverOptions = {
+              cwd: root,
+              includeMdx: mdxExtensions,
+              conditions,
+              alias: normalized.resolve?.alias,
+              toId,
+              onResolutionInputs,
+            }
+            const resolver = createModuleResolver(resolverOptions)
+            setModuleResolver(resolver)
+            const graph = buildStaticImportGraph(roots, tsconfigPath, {
+              includeMdx: mdxExtensions,
+              cwd: root,
+              include,
+              conditions,
+              alias: normalized.resolve?.alias,
+              exclude: generated,
+              entries: entries.length ? entries : undefined,
+              onResolutionInputs,
+            })
+            const plan = {
+              graph,
+              roots,
+              entries,
+              resolver,
+              resolverOptions,
+              preserveSymlinks,
+              watchPaths,
+              inputFiles,
+              missingInputs,
+            }
+            plans.set(environment.name, plan)
+            if (atomMode) {
+              const canonicalMap = buildCanonicalMap({
+                srcDir: roots,
+                tsconfigPath,
+                cwd: root,
+                keyBy: 'absolute',
+                graph,
+              })
+              importCanonicalMap(canonicalMap)
+              const reach = computeFileReach({
+                srcDir: roots,
+                tsconfigPath,
+                cwd: root,
+                keyBy: 'absolute',
+                graph,
+                entries: entries.length ? entries : undefined,
+              })
+              const hoist = planAtomHoist(canonicalMap, reach, atomHoist)
+              if (hoist) {
+                importFileRoutes(hoist.reachByBucket)
+                setAtomHoist(hoist.threshold)
+              } else {
+                console.info(
+                  '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+                )
+              }
+            }
+            try {
+              seedFileNumbers(
+                { seedFileMap },
+                collectNumberedFiles({
+                  roots,
+                  includeMdx: mdxExtensions,
+                  exclude: generated,
+                  include,
+                  cwd: root,
+                  needles: extractedNeedles(libPackage, importAliases),
+                  importAliases,
+                  toId,
+                }),
+              )
+            } catch (cause) {
+              if (!seedWarningEmitted) {
+                seedWarningEmitted = true
+                console.warn(
+                  '[devup-ui] deterministic file seeding failed; class IDs now depend on module arrival order',
+                  { phase: 'seed', root, cause },
+                )
+              }
+            }
+          } catch (cause) {
+            endBuild()
+            throw new Error(
+              `[devup-ui] graph setup failed at ${root}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              { cause },
+            )
+          }
+        }
         config.plugins ??= []
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
+            initialize(compiler.options)
             reservation.trackCompiler(environment.name, compiler)
+            refreshPlans.set(environment.name, () =>
+              initialize(compiler.options),
+            )
+            const prepare = () => {
+              initialize(compiler.options)
+              reservation.reserve()
+              const plan = plans.get(environment.name)
+              if (plan && !compiler.watchMode) prewarm(plan)
+            }
             let passes = 0
             compiler.hooks.run.tap(PLUGIN_NAME, () => {
               passes = 0
-              reservation.reserve()
+              prepare()
             })
             compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
             compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
+              initialize(compiler.options)
               reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
+              const plan = plans.get(environment.name)
+              for (const path of plan?.inputFiles ?? [])
+                compilation.fileDependencies.add(path)
+              for (const path of plan?.missingInputs ?? [])
+                compilation.missingDependencies.add(path)
               const served = new Map<string, string>()
               servedCss.set(environment.name, served)
               const basePath = join(cssDir, 'devup-ui.css')
@@ -375,6 +580,30 @@ export const DevupUI = ({
                 if (stylesheet(basePath) !== base) changed.add(basePath)
                 stale = [...changed]
               })
+              compilation.hooks.finishModules.tap(
+                'DevupUICompiledSourceGuard',
+                (modules) => {
+                  const dependencies = new Map<unknown, Rspack.Dependency>()
+                  for (const module of modules)
+                    for (const dependency of module.dependencies)
+                      dependencies.set(dependency, dependency)
+                  compilation.errors.push(
+                    ...checkCompiled(modules, {
+                      graph: compilation.moduleGraph,
+                      target(dependency) {
+                        const actual = dependencies.get(dependency)
+                        const module =
+                          actual && compilation.moduleGraph.getModule(actual)
+                        return module &&
+                          'resource' in module &&
+                          typeof module.resource === 'string'
+                          ? module.resource
+                          : undefined
+                      },
+                    }),
+                  )
+                },
+              )
               // The next pass writes the build; this one writes none of its files
               compilation.hooks.processAssets.tap(
                 {
@@ -424,16 +653,20 @@ export const DevupUI = ({
             }
           }) => {
             rspackConfig.optimization ??= {}
-            const sc = rspackConfig.optimization.splitChunks
-            if (sc && typeof sc === 'object') {
-              sc.cacheGroups ??= {}
-              sc.cacheGroups['devupUiShared'] = {
-                type: 'css/mini-extract',
-                name: 'devup-ui-shared',
-                test: /[\\/]devup-ui\.css$/,
-                chunks: 'all',
-                enforce: true,
-              }
+            const splitChunks = rspackConfig.optimization.splitChunks
+            if (splitChunks === false)
+              throw new Error(
+                `[devup-ui] atomHoist requires splitChunks at ${root}; splitChunks: false disables shared CSS`,
+              )
+            const sc = splitChunks ?? {}
+            rspackConfig.optimization.splitChunks = sc
+            sc.cacheGroups ??= {}
+            sc.cacheGroups['devupUiShared'] = {
+              type: 'css/mini-extract',
+              name: 'devup-ui-shared',
+              test: /[\\/]devup-ui\.css$/,
+              chunks: 'all',
+              enforce: true,
             }
           }
           config.tools.rspack = Array.isArray(prev)
@@ -445,80 +678,137 @@ export const DevupUI = ({
         return config
       })
 
-      api.transform(
-        {
-          test: /\.(tsx|ts|js|mjs|jsx)$/,
-        },
-        async ({ code, resourcePath, addDependency }) => {
-          if (createNodeModulesExcludeRegex(include).test(resourcePath))
-            return code
-          for (const file of tailwindFiles) addDependency(file)
-          // The stylesheet import is emitted relative to the importing file, as
-          // in the next/webpack/vite loaders. An absolute cssDir would bake this
-          // checkout's path into the emitted module, so byte-identical sources
-          // in two checkouts (git worktrees, a CI matrix, sibling clones) would
-          // produce different output and any content-addressed or relocated
-          // build cache would serve the wrong checkout's stylesheet.
-          //
-          // Atom mode additionally mirrors vite: the entry CODE imports the
-          // shared base (import_main_css_in_code=true) so rspack emits
-          // devup-ui.css once and links it from every entry (hoisted atoms
-          // shared, not inlined), and the extraction filename is
-          // POSIX-normalized to match the absolute-keyed canonical map /
-          // FILE_ROUTES.
-          let extractCssDir = relative(
-            dirname(resourcePath),
-            cssDir,
-          ).replaceAll('\\', '/')
-          if (!extractCssDir.startsWith('./'))
-            extractCssDir = `./${extractCssDir}`
-          const extractName = atomMode
-            ? resourcePath.replaceAll('\\', '/')
-            : resourcePath
-          const {
-            code: retCode,
-            map,
-            cssFile,
-            updatedBaseStyle,
-            dependencies = [],
-          } = codeExtract(
-            extractName,
-            code,
-            libPackage,
-            extractCssDir,
-            singleCss,
-            atomMode,
-            !atomMode,
-            importAliases,
+      const extract: Parameters<typeof api.transform>[1] = async ({
+        code,
+        resourcePath,
+        addDependency,
+        addMissingDependency,
+        environment,
+      }) => {
+        if (excludeModules.test(resourcePath)) return code
+        for (const file of tailwindFiles) addDependency(file)
+        const plan = plans.get(environment?.name)
+        if (plan)
+          setModuleResolver(
+            createModuleResolver({
+              ...plan.resolverOptions,
+              onResolutionInputs: (inputs) => {
+                for (const path of inputs.fileDependencies)
+                  addDependency(
+                    resolutionWatchPath(
+                      path,
+                      plan.preserveSymlinks,
+                      plan.watchPaths,
+                    ),
+                  )
+                for (const path of inputs.missingDependencies)
+                  addMissingDependency(
+                    resolutionWatchPath(
+                      path,
+                      plan.preserveSymlinks,
+                      plan.watchPaths,
+                    ),
+                  )
+              },
+            }),
           )
-          for (const dependency of dependencies) addDependency(dependency)
-          const promises: Promise<void>[] = []
-          if (updatedBaseStyle) {
-            // update base style
-            promises.push(
-              stateWriter.write(
-                join(cssDir, 'devup-ui.css'),
-                getCss(null, false),
-                'utf-8',
-              ),
+        // The stylesheet import is emitted relative to the importing file, as
+        // in the next/webpack/vite loaders. An absolute cssDir would bake this
+        // checkout's path into the emitted module, so byte-identical sources
+        // in two checkouts (git worktrees, a CI matrix, sibling clones) would
+        // produce different output and any content-addressed or relocated
+        // build cache would serve the wrong checkout's stylesheet.
+        //
+        // Atom mode additionally mirrors vite: the entry CODE imports the
+        // shared base (import_main_css_in_code=true) so rspack emits
+        // devup-ui.css once and links it from every entry (hoisted atoms
+        // shared, not inlined), and the extraction filename is
+        // POSIX-normalized to match the absolute-keyed canonical map /
+        // FILE_ROUTES.
+        let extractCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
+          '\\',
+          '/',
+        )
+        if (!extractCssDir.startsWith('./'))
+          extractCssDir = `./${extractCssDir}`
+        const extractName = atomMode
+          ? resourcePath.replaceAll('\\', '/')
+          : resourcePath
+        const output = (() => {
+          try {
+            return codeExtract(
+              extractName,
+              code,
+              libPackage,
+              extractCssDir,
+              singleCss,
+              atomMode,
+              !atomMode,
+              importAliases,
+              ...(isMdxSource(resourcePath, mdxExtensions)
+                ? (['compiled-mdx'] as const)
+                : ([] as const)),
             )
+          } catch (error) {
+            if (isMdxSource(resourcePath, mdxExtensions))
+              throw remapMdxError(error, resourcePath)
+            throw error
           }
+        })()
+        const {
+          code: retCode,
+          map,
+          cssFile,
+          updatedBaseStyle,
+          dependencies = [],
+        } = (() => {
+          try {
+            return {
+              code: output.code,
+              map: output.map,
+              cssFile: output.cssFile,
+              updatedBaseStyle: output.updatedBaseStyle,
+              dependencies: output.dependencies,
+            }
+          } finally {
+            output.free()
+          }
+        })()
+        for (const dependency of dependencies) addDependency(dependency)
+        const promises: Promise<void>[] = []
+        if (updatedBaseStyle) {
+          // update base style
+          promises.push(
+            stateWriter.write(
+              join(cssDir, 'devup-ui.css'),
+              getCss(null, false),
+              'utf-8',
+            ),
+          )
+        }
 
-          if (cssFile) {
-            promises.push(
-              stateWriter.write(
-                join(cssDir, basename(cssFile)),
-                `/* ${resourcePath} ${Date.now()} */`,
-                'utf-8',
-              ),
-            )
-          }
-          await Promise.all(promises)
-          return {
-            code: retCode,
-            map,
-          }
-        },
+        if (cssFile) {
+          promises.push(
+            stateWriter.write(
+              join(cssDir, basename(cssFile)),
+              `/* ${resourcePath} ${Date.now()} */`,
+              'utf-8',
+            ),
+          )
+        }
+        await Promise.all(promises)
+        return {
+          code: retCode,
+          map,
+        }
+      }
+      api.transform({ test: SOURCE_FILE_RE }, extract)
+      // Rsbuild's order: post installs an enforce: post Rspack loader. Its
+      // transform context does not expose the incoming map, so located errors
+      // are explicitly labelled as compiled MDX rather than claiming raw lines.
+      api.transform(
+        { test: mdxSourceFilter(mdxExtensions), order: 'post' },
+        extract,
       )
     },
   }

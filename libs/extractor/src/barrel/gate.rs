@@ -89,7 +89,13 @@ mod tests {
     fn exported_alias_is_rewritten_when_assignment_text_does_not_match(#[case] exported: &str) {
         let code = format!("import {{ Box }} from '@devup-ui/react'; {exported}");
 
-        let result = rewrite(&code, "ui.tsx", "@devup-ui/react", None);
+        let result = rewrite(
+            &code,
+            "ui.tsx",
+            "@devup-ui/react",
+            None,
+            oxc_span::SourceType::tsx(),
+        );
 
         let Barreled::Rewritten(result) = result else {
             panic!("exported alias was not rewritten");
@@ -105,6 +111,7 @@ mod tests {
     #[test]
     fn inline_type_import_is_not_a_runtime_origin_when_value_imports_are_mixed() {
         let module = ResolvedModule {
+            source_type: None,
             path: "ui.ts".to_string(),
             code: "export { Box, css }; import { type Box, css } from '@devup-ui/react';"
                 .to_string(),

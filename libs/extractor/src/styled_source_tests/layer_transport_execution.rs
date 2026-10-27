@@ -88,9 +88,12 @@ fn imported_layers_register_in_consumer_when_first_atom_is_overridden(
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     let resolver = move |source: &str, _: &str| {
-        (source == "./mixin").then(|| crate::ResolvedModule {
-            path: "/mixin.ts".to_string(),
-            code: module.to_string(),
+        (source == "./mixin").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                path: "/mixin.ts".to_string(),
+                code: module.to_string(),
+                source_type: None,
+            })
         })
     };
     // When: the consuming styled composition overrides a.

@@ -15,6 +15,7 @@ import { codeExtract, exportFileMap, getCss } from '@devup-ui/wasm'
 
 import { DevupUI } from '../../../next-plugin/src/plugin.ts'
 import { setWebpackPluginForTesting } from '../../../next-plugin/src/wasm.ts'
+import * as webpackPlugin from '../index.ts'
 import { DevupUIWebpackPlugin } from '../plugin.ts'
 
 const originalCwd = process.cwd()
@@ -113,12 +114,19 @@ try {
     assert.fail('initialization-proof-failure')
   }
   // Given production Next callbacks, discovery supplies the same complete set without extracting.
-  setWebpackPluginForTesting({ DevupUIWebpackPlugin })
+  setWebpackPluginForTesting(webpackPlugin)
   const next = DevupUI({}, { include: ['design-system'] })
+  const publicConfig = {}
   const configured = ['server', 'edge-server', 'client'].map((name) => {
     const config = next.webpack(
       { plugins: [] },
-      { buildId: 'proof', dev: false, name },
+      {
+        buildId: 'proof',
+        config: publicConfig,
+        dev: false,
+        isServer: name !== 'client',
+        name,
+      },
     )
     return config.plugins[0].options.productionPrewarmFiles
   })

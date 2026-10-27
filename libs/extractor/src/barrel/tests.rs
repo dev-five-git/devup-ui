@@ -7,8 +7,8 @@ use css::file_map::reset_file_map;
 use serial_test::serial;
 
 use crate::{
-    ExtractOption, ExtractOutput, ModuleResolver, ResolvedModule, extract, extract_with_modules,
-    has_devup_ui_with,
+    ExtractOption, ExtractOutput, ModuleResolution, ModuleResolver, ResolvedModule, extract,
+    extract_with_modules, has_devup_ui_with,
 };
 
 /// A project of real files on disk, removed when dropped
@@ -32,7 +32,7 @@ impl Project {
         self.root.join(name).to_string_lossy().replace('\\', "/")
     }
 
-    fn resolver(&self) -> impl Fn(&str, &str) -> Option<ResolvedModule> + use<> {
+    fn resolver(&self) -> impl Fn(&str, &str) -> Option<ModuleResolution> + use<> {
         let root = self.root.clone();
         move |specifier, importer| {
             let base = if specifier.starts_with('.') {
@@ -48,9 +48,12 @@ impl Project {
             candidates
                 .into_iter()
                 .find(|candidate| candidate.is_file())
-                .map(|path| ResolvedModule {
-                    code: fs::read_to_string(&path).unwrap(),
-                    path: path.to_string_lossy().replace('\\', "/"),
+                .map(|path| {
+                    ModuleResolution::Resolved(ResolvedModule {
+                        code: fs::read_to_string(&path).unwrap(),
+                        path: path.to_string_lossy().replace('\\', "/"),
+                        source_type: None,
+                    })
                 })
         }
     }
@@ -1069,4 +1072,21 @@ fn aliases_that_are_not_package_exports_stay_declarations() {
     let code = project.code("app.tsx");
     assert!(code.contains("N1"), "{code}");
     assert!(project.error("ui.tsx").contains("ui.tsx:3:"));
+}
+
+#[test]
+fn unsupported_child_grammar_does_not_admit_barrel_exports() {
+    let module = ResolvedModule {
+        path: "/src/ui.data".to_string(),
+        code: "export { Box } from '@devup-ui/react'".to_string(),
+        source_type: None,
+    };
+
+    let exports = super::analyze(&module, "@devup-ui/react");
+
+    assert_eq!(exports.path, module.path);
+    assert_eq!(exports.named.len(), 0);
+    assert_eq!(exports.stars, Vec::<String>::new());
+    assert!(exports.mentions_package);
+    assert!(!exports.trivial);
 }

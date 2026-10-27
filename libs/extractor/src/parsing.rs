@@ -2,6 +2,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::ast::Program;
 use oxc_parser::Parser;
 use oxc_span::{SourceType, UnknownExtension};
+#[cfg(test)]
 use std::error::Error;
 
 pub(super) mod goal_policy;
@@ -11,17 +12,40 @@ mod hybrid_tests;
 
 /// Accept JavaScript JSX without changing the path's TypeScript or module dialect.
 pub(super) fn source_type(filename: &str) -> Result<SourceType, UnknownExtension> {
-    SourceType::from_path(filename)
-        .map(|source_type| source_type.with_jsx(source_type.is_javascript()))
+    SourceType::from_path(filename).map(|source_type| {
+        source_type.with_jsx(source_type.is_jsx() || source_type.is_javascript())
+    })
 }
 
 /// Parse source, reporting syntax errors at their primary source locations.
+#[cfg(test)]
 pub(super) fn parse<'a>(
     allocator: &'a Allocator,
     filename: &str,
     code: &'a str,
 ) -> Result<Program<'a>, Box<dyn Error>> {
-    let parsed = Parser::new(allocator, code, source_type(filename)?).parse();
+    parse_source(allocator, code, source_type(filename)?).map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|(offset, message)| {
+                format!(
+                    "{}: {message}",
+                    crate::locate(filename, code, offset as usize)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            .into()
+    })
+}
+
+/// Parse using the caller's effective grammar, leaving diagnostic mapping to it.
+pub(super) fn parse_source<'a>(
+    allocator: &'a Allocator,
+    code: &'a str,
+    source_type: SourceType,
+) -> Result<Program<'a>, Vec<(u32, String)>> {
+    let parsed = Parser::new(allocator, code, source_type).parse();
     let mut errors: Vec<_> = parsed
         .diagnostics
         .errors()
@@ -42,19 +66,23 @@ pub(super) fn parse<'a>(
     if !errors.is_empty() {
         errors.sort_unstable();
         errors.dedup();
-        return Err(errors
-            .into_iter()
-            .map(|(offset, message)| {
-                format!(
-                    "{}: {message}",
-                    crate::locate(filename, code, offset as usize)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            .into());
+        return Err(errors);
     }
     Ok(parsed.program)
+}
+
+pub(super) fn syntax_errors(errors: Vec<(u32, String)>, compiled_mdx: bool) -> Vec<(u32, String)> {
+    errors
+        .into_iter()
+        .map(|(offset, message)| {
+            let message = if compiled_mdx {
+                format!("source parser cannot use raw or invalid MDX at build time: {message}")
+            } else {
+                message
+            };
+            (offset, message)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -63,7 +91,8 @@ mod tests {
     use super::{parse, source_type};
     use crate::extract_style::extract_style_value::ExtractStyleValue;
     use crate::{
-        ExtractOption, ImportAlias, ResolvedModule, extract, extract_with_modules, has_devup_ui,
+        ExtractOption, ImportAlias, ModuleResolution, ResolvedModule, extract,
+        extract_with_modules, has_devup_ui,
     };
     use css::{class_map::reset_class_map, file_map::reset_file_map};
     use oxc_allocator::Allocator;
@@ -166,6 +195,28 @@ mod tests {
         assert!(!error.contains("panicked"));
     }
 
+    #[test]
+    fn generated_parse_diagnostic_uses_generated_coordinates_without_authored_edits() {
+        let allocator = Allocator::default();
+        let generated = "const broken = ;";
+        let edits = [(0, 5, 30)];
+        let errors = super::parse_source(&allocator, generated, SourceType::ts()).unwrap_err();
+
+        let error = crate::ParsingDiagnostic {
+            filename: "/src/generated.css.ts",
+            code: "\n\nconst authored = 1;",
+            generated: Some(generated),
+            evaluated: Some(("\n\n\nconst original = 1;", &[&edits])),
+            alias_edits: &edits,
+            namespace_edits: &edits,
+            source_type: SourceType::ts(),
+            compiled_mdx: false,
+        }
+        .locate(errors);
+
+        assert!(error.starts_with("/src/generated.css.ts:1:16:"), "{error}");
+    }
+
     #[rstest]
     #[case("js")]
     #[case("mjs")]
@@ -205,9 +256,12 @@ mod tests {
         let path = format!("tokens.{extension}");
         let dependency = path.clone();
         let resolver = move |specifier: &str, _: &str| {
-            (specifier == "./tokens").then(|| ResolvedModule {
-                path: path.clone(),
-                code: module.to_string(),
+            (specifier == "./tokens").then(|| {
+                ModuleResolution::Resolved(ResolvedModule {
+                    path: path.clone(),
+                    code: module.to_string(),
+                    source_type: None,
+                })
             })
         };
         // When a style reads the constant without executing the JSX export.
@@ -278,5 +332,34 @@ mod tests {
         // Then invalid source is not silently emitted or compiled as an absent prop.
         assert!(error.starts_with("page.js:2:"), "{error}");
         assert!(error.contains("non-empty 'expression'"), "{error}");
+    }
+
+    #[test]
+    fn syntax_locations_return_to_original_source_when_three_edit_layers_precede_them() {
+        // Given: recoverable errors after evaluation, namespace, and alias insertions.
+        let source = "const first;\nconst second;";
+        let evaluated = "// evaluated\n";
+        let namespace = "// namespace\n";
+        let alias = "// alias\n";
+        let transformed = format!("{alias}{namespace}{evaluated}{source}");
+        let allocator = Allocator::default();
+        let expected = parse(&allocator, "page.js", source)
+            .unwrap_err()
+            .to_string();
+        let errors = super::parse_source(&allocator, &transformed, SourceType::jsx()).unwrap_err();
+        let alias_edits = [(0, 0, alias.len())];
+        let namespace_edits = [(0, 0, namespace.len())];
+        let evaluated_edits = [(0, 0, evaluated.len())];
+        // When: syntax errors traverse the newest-first edit chain.
+        let actual = crate::located_errors(
+            "page.js",
+            source,
+            &[&alias_edits, &namespace_edits, &evaluated_edits],
+            errors,
+            SourceType::jsx(),
+        );
+        // Then: all primary positions agree with parsing the authored source directly.
+        assert_eq!(actual, expected);
+        assert_eq!(actual.lines().count(), 2);
     }
 }

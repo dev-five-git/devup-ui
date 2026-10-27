@@ -1,5 +1,7 @@
 use crate::dead_properties_test_utils::{failure, position};
-use crate::{ExtractOption, ImportAlias, ResolvedModule, extract, extract_with_modules};
+use crate::{
+    ExtractOption, ImportAlias, ModuleResolution, ResolvedModule, extract, extract_with_modules,
+};
 use css::{class_map::reset_class_map, file_map::reset_file_map};
 use rstest::rstest;
 use serial_test::serial;
@@ -97,10 +99,11 @@ fn imported_helper_call_keeps_its_authored_filename() {
     let source = "import { style } from '@vanilla-extract/css';\nimport { make } from './helper';\nexport const c = style(make());";
     let resolver = |specifier: &str, _: &str| {
         match specifier {
-        "./helper" => Some(ResolvedModule {
+        "./helper" => Some(ModuleResolution::Resolved(ResolvedModule {
+            source_type: None,
             path: "helper.ts".to_string(),
             code: "import { style } from '@vanilla-extract/css';\nconst key = 'box' + 'Orient';\nexport const make = () => style({ [key]: 'vertical' });".to_string(),
-        }),
+        })),
         _ => None,
     }
     };
@@ -124,10 +127,11 @@ fn imported_stylesheet_call_keeps_its_authored_filename() {
     let source = "import { style } from '@vanilla-extract/css';\nimport { c } from './other.css';\nexport const result = style([c, { color: 'red' }]);";
     let resolver = |specifier: &str, _: &str| {
         match specifier {
-        "./other.css" => Some(ResolvedModule {
+        "./other.css" => Some(ModuleResolution::Resolved(ResolvedModule {
+            source_type: None,
             path: "other.css.ts".to_string(),
             code: "import { style } from '@vanilla-extract/css';\nconst key = 'box' + 'Orient';\nexport const c = style({ [key]: 'vertical' });".to_string(),
-        }),
+        })),
         _ => None,
     }
     };
@@ -156,11 +160,12 @@ fn imported_objects_report_the_authored_styling_call(#[case] statement: &str, #[
         "import {{ Box, css, keyframes, globalCss, styled }} from '@devup-ui/react';\nimport {{ rules }} from './rules';\n{statement}"
     );
     let resolver = |specifier: &str, _: &str| match specifier {
-        "./rules" => Some(ResolvedModule {
+        "./rules" => Some(ModuleResolution::Resolved(ResolvedModule {
+            source_type: None,
             path: "rules.ts".to_string(),
             code: "export const rules = { selectors: { '&:hover': { boxOrient: 'vertical' } } };"
                 .to_string(),
-        }),
+        })),
         _ => None,
     };
 
@@ -233,10 +238,11 @@ fn required_module_specifiers_keep_authored_locations(
         "// Authored module, not generated JavaScript.\nconst unused: number = 1; const notModule = '{specifier}'; Math.max(1, 2); Number(0); function ignored(require: (x: string) => void) {{ require('{specifier}'); }} function optional() {{ require(0); }}\n   {before}'{specifier}'{after}"
     );
     let resolver = move |specifier: &str, _: &str| match specifier {
-        "./required" => Some(ResolvedModule {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "required.ts".to_string(),
             code: required.clone(),
-        }),
+            source_type: None,
+        })),
         _ => None,
     };
 
@@ -272,14 +278,16 @@ fn required_module_specifiers_accept_complete_surrogate_pairs(
     reset_file_map();
     let required = format!("\nconst unused: number = 1;\n   {before}'\\uD83D\\uDE00'{after}");
     let resolver = move |specifier: &str, _: &str| match specifier {
-        "./required" => Some(ResolvedModule {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "required.ts".to_string(),
             code: required.clone(),
-        }),
-        "😀" => Some(ResolvedModule {
+            source_type: None,
+        })),
+        "😀" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "rules.ts".to_string(),
             code: "export const rules = { color: 'red' };".to_string(),
-        }),
+            source_type: None,
+        })),
         _ => None,
     };
 
@@ -343,10 +351,11 @@ fn type_only_module_refusal_reports_required_site(
         "// Original helper source.\n{erased}'{specifier}';\nconst unused: number = 1;\n   import {{ rules }} from '{specifier}';\nexport {{ rules }};"
     );
     let resolver = move |specifier: &str, _: &str| match specifier {
-        "./required" => Some(ResolvedModule {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "required-types.ts".to_string(),
             code: required.clone(),
-        }),
+            source_type: None,
+        })),
         _ => None,
     };
 
@@ -383,14 +392,16 @@ fn type_only_module_declarations_allow_required_rules(
         "// Original helper source.\n{erased}'{specifier}';\nconst unused: number = 1;\n   import {{ rules }} from '\\uD83D\\uDE00';\nexport {{ rules }};"
     );
     let resolver = move |specifier: &str, _: &str| match specifier {
-        "./required" => Some(ResolvedModule {
+        "./required" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "required-types.ts".to_string(),
             code: required.clone(),
-        }),
-        "😀" => Some(ResolvedModule {
+            source_type: None,
+        })),
+        "😀" => Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "rules.ts".to_string(),
             code: "export const rules = { color: 'red' };".to_string(),
-        }),
+            source_type: None,
+        })),
         _ => None,
     };
 

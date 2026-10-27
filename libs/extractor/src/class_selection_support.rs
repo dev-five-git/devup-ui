@@ -23,9 +23,12 @@ pub fn compile(files: &[(&str, &str)], option: ExtractOption) -> Modules {
         sources
             .iter()
             .find(|(name, _)| *name == path)
-            .map(|(name, code)| ResolvedModule {
-                path: name.clone(),
-                code: code.clone(),
+            .map(|(name, code)| {
+                crate::ModuleResolution::Resolved(ResolvedModule {
+                    path: name.clone(),
+                    code: code.clone(),
+                    source_type: None,
+                })
             })
     };
     files
@@ -78,6 +81,7 @@ pub fn observe(outputs: &Modules, observer: &str, globals: &str) -> serde_json::
                 map: output.map.clone(),
                 css_file: output.css_file.clone(),
                 dependencies: output.dependencies.clone(),
+                deferred_defaults: output.deferred_defaults.clone(),
             },
         )
     }));

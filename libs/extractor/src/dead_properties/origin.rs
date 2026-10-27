@@ -32,6 +32,7 @@ pub(crate) fn evaluated_calls(
     source: &str,
     filename: &str,
     option: &ExtractOption,
+    source_type: oxc_span::SourceType,
 ) -> Vec<(usize, usize)> {
     let Aliased {
         code: aliased,
@@ -42,8 +43,9 @@ pub(crate) fn evaluated_calls(
         filename,
         &option.package,
         &option.import_aliases,
+        source_type,
     );
-    match super::instrument(&aliased, filename, &option.package) {
+    match super::instrument(&aliased, filename, &option.package, source_type) {
         Ok(instrumented) => instrumented
             .calls
             .into_iter()

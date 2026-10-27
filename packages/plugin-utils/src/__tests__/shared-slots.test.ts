@@ -211,6 +211,33 @@ it('re-reserves prepared compiled bytes even when the raw MDX file is unchanged'
   expect(recorded.packets).toHaveLength(2)
 })
 
+it('re-reserves when a real-filename compiled source gains or loses its explicit grammar', () => {
+  // Given
+  using fs = fixture()
+  fs.write('src/page.ts', STYLE)
+  const prepared = {
+    physicalPath: join(fs.root, 'src/page.ts'),
+    filename: 'src/page.ts',
+    code: STYLE,
+  }
+  const options = { ...discovery(fs.root), prepared: [prepared] }
+  const recorded = recorder()
+  const manager = createSharedSlotReservation(recorded.engine)
+  manager.reserve(options, flags)
+  // When
+  manager.reserve(
+    { ...options, prepared: [{ ...prepared, sourceType: 'compiled-mdx' }] },
+    flags,
+  )
+  manager.reserve(options, flags)
+  // Then
+  expect(recorded.packets.map(({ rows }) => rows[0])).toEqual([
+    ['src/page.ts', STYLE, '../df/devup-ui'],
+    ['src/page.ts', STYLE, '../df/devup-ui', 'compiled-mdx'],
+    ['src/page.ts', STYLE, '../df/devup-ui'],
+  ])
+})
+
 it('preserves exact CSS mappings and extraction flags and detects changed aliases or flags', () => {
   // Given
   using fs = fixture()

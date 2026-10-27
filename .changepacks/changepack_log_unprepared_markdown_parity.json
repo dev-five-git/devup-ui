@@ -1,0 +1,11 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Keep unprepared Markdown unreadable during Next and Webpack evaluation as on main, while preserving strict compiler-cache guards for preparation-owning adapters. Use neutral portable test scratch paths. Actual compiled-MDX evaluation remains separate work. No new build errors.",
+  "date": "2026-10-21T00:00:00.000Z"
+}

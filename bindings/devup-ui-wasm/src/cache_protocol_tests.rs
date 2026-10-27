@@ -66,6 +66,7 @@ fn exported_generation_roundtrips_frozen_atom_placement() {
             false,
             false,
             HashMap::new(),
+            None,
         )
         .unwrap_or_else(|error| panic!("{error}"));
     }

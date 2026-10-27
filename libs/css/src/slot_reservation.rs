@@ -2,10 +2,17 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::class_map::{get_class_map, set_class_map};
 use crate::file_map::{get_file_map, set_file_map};
+mod row;
+pub use row::RowSlots;
+pub(crate) use row::{record_class, record_file};
+#[cfg(test)]
+mod row_tests;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 enum Phase {
     #[default]
     Legacy,
@@ -13,10 +20,11 @@ enum Phase {
     Live,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub(crate) struct State {
     phase: Phase,
     misses: usize,
+    suppressed: usize,
 }
 
 #[cfg_attr(target_arch = "wasm32", path = "slot_reservation/state_wasm.rs")]
@@ -29,6 +37,21 @@ mod wasm_state_for_tests;
 
 use state::with_state;
 
+/// Opaque reservation bookkeeping captured alongside an integration's allocator maps.
+#[derive(Clone, Copy, Deserialize, Serialize)]
+pub struct Snapshot(State);
+
+/// Capture both the active accounting phase and its accumulated live misses.
+#[must_use]
+pub fn capture() -> Snapshot {
+    Snapshot(with_state(|state| *state))
+}
+
+/// Restore bookkeeping after the matching integration's allocator maps are restored.
+pub fn restore(snapshot: Snapshot) {
+    with_state(|state| *state = snapshot.0);
+}
+
 pub(crate) fn record_insert() {
     with_state(|state| match state.phase {
         Phase::Legacy | Phase::Scratch => {}
@@ -40,6 +63,17 @@ pub(crate) fn record_insert() {
 #[must_use]
 pub fn unreserved_slot_count() -> usize {
     with_state(|state| state.misses)
+}
+
+/// Number of failed rows suppressed by the most recently completed reservation batch.
+#[must_use]
+pub fn suppressed_row_count() -> usize {
+    with_state(|state| state.suppressed)
+}
+
+/// Record a failed scratch row independently of actual live allocator misses.
+pub fn record_suppressed_row() {
+    with_state(|state| state.suppressed = state.suppressed.saturating_add(1));
 }
 
 /// Clear reservation bookkeeping at the existing build-reset boundary.
@@ -84,6 +118,7 @@ impl Default for ScratchSlots {
         let state = with_state(|state| {
             let saved = *state;
             state.phase = Phase::Scratch;
+            state.suppressed = 0;
             saved
         });
         Self {
@@ -108,6 +143,7 @@ impl Drop for ScratchSlots {
             with_state(|state| {
                 *state = State {
                     phase: Phase::Live,
+                    suppressed: state.suppressed,
                     ..self.state
                 }
             });
@@ -129,7 +165,11 @@ mod tests {
     fn complete_phase_and_count_restore_when_nested_or_unwinding() {
         let _state = crate::test_state::TestStateGuard::new();
         for phase in [Phase::Legacy, Phase::Scratch, Phase::Live] {
-            replace_state(State { phase, misses: 7 });
+            replace_state(State {
+                phase,
+                misses: 7,
+                suppressed: 0,
+            });
             {
                 let _inner = crate::test_state::TestStateGuard::new();
                 record_insert();
@@ -185,6 +225,23 @@ mod tests {
         assert_eq!(unreserved_slot_count(), 1);
         reset();
         assert_eq!(unreserved_slot_count(), 0);
+    }
+
+    #[test]
+    #[serial]
+    fn owner_restore_keeps_live_phase_and_prior_misses() {
+        // Given
+        reset();
+        ScratchSlots::default().commit();
+        record_insert();
+        let saved = capture();
+        reset();
+        // When
+        restore(saved);
+        record_insert();
+        // Then
+        assert_eq!(unreserved_slot_count(), 2);
+        reset();
     }
 
     #[test]

@@ -197,11 +197,14 @@ fn aliased_types_read_in_an_imported_module_still_publish_their_variables() {
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     let resolver = |specifier: &str, _: &str| {
-        (specifier == "./vars").then(|| crate::ResolvedModule {
-            path: "/src/vars.ts".to_string(),
-            code: "import { defineVars, types as t } from '@stylexjs/stylex';
+        (specifier == "./vars").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                source_type: None,
+                path: "/src/vars.ts".to_string(),
+                code: "import { defineVars, types as t } from '@stylexjs/stylex';
 export const vars = defineVars({ tone: t.color('red'), size: t.length(unknown()) });"
-                .to_string(),
+                    .to_string(),
+            })
         })
     };
     let output = crate::extract_with_modules(

@@ -35,6 +35,7 @@ fn compile(file: &str, source: &str) -> Output {
             "@vanilla-extract/css".to_string(),
             ImportAlias::NamedToNamed,
         )]),
+        None,
     )
     .unwrap_or_else(|error| panic!("{error}"))
 }
@@ -56,6 +57,7 @@ fn reserve(sources: &[(&str, &str)]) {
             filename: (*file).into(),
             code: (*source).into(),
             css_dir: "df".into(),
+            source_type: None,
         })
         .collect();
     reserve_class_slots_internal(

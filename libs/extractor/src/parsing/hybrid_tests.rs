@@ -130,9 +130,12 @@ fn hybrid_dependency_is_read_when_commonjs_contains_es_exports(
     reset_class_map();
     reset_file_map();
     let resolver = |specifier: &str, _: &str| {
-        (specifier == "./tokens").then(|| ResolvedModule {
-            path: "tokens.cjs".into(),
-            code: "export const color = 'teal'; console.log(new.target);".into(),
+        (specifier == "./tokens").then(|| {
+            crate::ModuleResolution::Resolved(ResolvedModule {
+                path: "tokens.cjs".into(),
+                code: "export const color = 'teal'; console.log(new.target);".into(),
+                source_type: None,
+            })
         })
     };
     // When

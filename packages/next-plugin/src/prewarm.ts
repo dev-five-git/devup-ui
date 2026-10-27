@@ -96,7 +96,7 @@ export function collectProductionPrewarmFiles({
         continue
     }
     const module = resolveModule(specifier, importer)
-    if (!module) continue
+    if (!module || module.ignored === true) continue
     const filename = preferEsmFile(module.path)
     if (!EXTRACTABLE_EXTENSION.test(filename) || visited.has(filename)) continue
     visited.add(filename)

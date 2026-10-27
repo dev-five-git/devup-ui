@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,10 +8,9 @@ import { expect, it } from 'bun:test'
 
 import { assertRetained, parseReceipt, record } from './reservation-receipt'
 
-const require = createRequire(import.meta.url)
 const fixture: {
   prepare(root: string, watch: boolean): void
-} = require('./reservation-fixture.cjs')
+} = (await import('./reservation-fixture.cjs')).default
 
 function run(root: string, order: string, mode: string) {
   const receipt = join(root, `${order}.json`)
@@ -55,7 +53,7 @@ for (const mode of ['build', 'run', 'watch', 'dev']) {
       expect(ab.fileMap).toEqual(ba.fileMap)
       if (mode !== 'dev') expect(ab.assets).toEqual(ba.assets)
       for (const result of [ab, ba]) {
-        if (mode === 'run') {
+        if (mode === 'build' || mode === 'run') {
           expect(result.css).not.toContain('padding:19px')
           record(result.assets)
           const emittedCss = Object.entries(result.assets)
@@ -73,7 +71,8 @@ for (const mode of ['build', 'run', 'watch', 'dev']) {
             ({ before, after }) => before === 0 && after === 0,
           ),
         ).toBe(true)
-        expect(result.entries).toBe(result.compilations)
+        expect(result.entries).toBe(0)
+        expect(result.compilations).toBeGreaterThan(0)
         expect(result.beforeBuild).toBe(mode === 'build' ? 1 : 0)
         expect(result.css).toContain(
           mode === 'watch' ? 'darkmagenta' : revision ? 'crimson' : 'red',
@@ -113,7 +112,14 @@ for (const mode of ['build', 'run', 'watch', 'dev']) {
           expect(result.events[0]).toBe('reserve')
         }
         if (mode === 'build') {
-          expect(result.outputs[0]?.name).toBe(join(root, 'src/entry.js'))
+          expect(
+            result.outputs.some(({ name }) => name === join(root, 'app/A.js')),
+          ).toBe(true)
+          expect(
+            result.outputs.some(
+              ({ name }) => name === join(root, 'src/entry.js'),
+            ),
+          ).toBe(false)
         }
       }
       console.info(
@@ -130,3 +136,29 @@ for (const mode of ['build', 'run', 'watch', 'dev']) {
     }
   }, 120000)
 }
+
+it('fails closed for native function entries rather than claiming the pending R1 barrier', () => {
+  const root = realpathSync.native(
+    mkdtempSync(join(tmpdir(), 'devup-rsbuild-dynamic-')),
+  )
+  try {
+    fixture.prepare(root, false)
+    const child = spawnSync(
+      'node',
+      [
+        join(import.meta.dir, 'reservation-native.cjs'),
+        root,
+        'AB',
+        'dynamic',
+        join(root, 'dynamic.json'),
+      ],
+      { encoding: 'utf8', timeout: 60000 },
+    )
+    expect(child.status).toBe(1)
+    expect(child.stderr).toContain(
+      'dynamic Rspack entries are not available for prewarm',
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 120000)

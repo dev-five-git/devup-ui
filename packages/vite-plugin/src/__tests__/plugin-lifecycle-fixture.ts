@@ -27,7 +27,10 @@ type LifecyclePlugin = {
     config: ReservationConfig
     environments: NonNullable<Server['environments']>
   }): Promise<void>
-  buildStart(this: { addWatchFile(file: string): void }): Promise<void>
+  buildStart(
+    this: { addWatchFile(file: string): void },
+    options?: { readonly input: readonly string[] },
+  ): Promise<void>
   closeBundle(): void
   transform(
     this: { environment?: { name: string }; addWatchFile(file: string): void },
@@ -105,6 +108,14 @@ export function environment(
   }
 }
 
+export function lifecycleHook(hook: unknown): unknown {
+  return typeof hook === 'function'
+    ? hook
+    : typeof hook === 'object' && hook !== null && 'handler' in hook
+      ? hook.handler
+      : undefined
+}
+
 export async function lifecycle(options: Parameters<typeof DevupUI>[0] = {}) {
   const project = fixture()
   project.write('devup.json', '{}')
@@ -117,7 +128,15 @@ export async function lifecycle(options: Parameters<typeof DevupUI>[0] = {}) {
     ...options,
   })
   assert(Array.isArray(plugins))
-  const plugin: unknown = plugins[0]
+  const raw: unknown = plugins[0]
+  assert(typeof raw === 'object' && raw !== null)
+  const transform: unknown = Reflect.get(raw, 'transform')
+  const buildApp: unknown = Reflect.get(raw, 'buildApp')
+  const plugin: unknown = {
+    ...raw,
+    transform: lifecycleHook(transform),
+    buildApp: lifecycleHook(buildApp),
+  }
   assert(isLifecyclePlugin(plugin))
   const config = { root: project.root, command: 'serve' as const }
   await plugin.configResolved(config)

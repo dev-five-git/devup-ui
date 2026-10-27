@@ -27,9 +27,12 @@ pub(in super::super) fn compile(
         sources
             .iter()
             .find(|(name, _)| *name == path)
-            .map(|(name, code)| crate::ResolvedModule {
-                path: name.clone(),
-                code: code.clone(),
+            .map(|(name, code)| {
+                crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                    path: name.clone(),
+                    code: code.clone(),
+                    source_type: None,
+                })
             })
     };
     let option = crate::ExtractOption {

@@ -1,0 +1,371 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+
+import {
+  beginBuild,
+  collectNumberedFiles,
+  createCompatTypes,
+  createModuleResolver,
+  createSharedSlotReservation,
+  createThemeInterfaceArgs,
+  type CustomShorthands,
+  isMdxSource,
+  listSourceFiles,
+  loadDevupConfig,
+  mdxSourceFilter,
+  normalizeMdxExtensions,
+  resolveProjectPaths,
+  resolveSourceDirs,
+  seedFileNumbers,
+  selectedSourceFilter,
+  tailwindCssFiles,
+  withTailwindCss,
+} from '@devup-ui/plugin-utils'
+import {
+  getCss,
+  getThemeInterface,
+  hasDevupUI,
+  registerShorthands,
+  registerTheme,
+  reserveClassSlots,
+  resetBuildState,
+  seedFileMap,
+  setDebug,
+  setModuleResolver,
+  setPrefix,
+} from '@devup-ui/wasm'
+import { type BunPlugin, type PluginBuilder } from 'bun'
+
+import { cssNamespace, resolveCssId } from './css-id'
+import { createMdxPreparation, type PreparedMdx } from './mdx'
+import { createMdxOwnership } from './mdx-ownership'
+import {
+  compiledPackages,
+  importAliases,
+  libPackage,
+  mentionsCompiledPackage,
+  runtimeSourceFilter,
+} from './source'
+import { loadSourceFile, type SourceProject } from './source-load'
+import { createTailwindWatcher } from './tailwind-watch'
+
+type PluginHooks = {
+  readonly config?: PluginBuilder['config']
+  readonly onStart?: (...args: Parameters<PluginBuilder['onStart']>) => void
+  readonly onEnd?: (...args: Parameters<PluginBuilder['onEnd']>) => void
+  readonly onLoad: (...args: Parameters<PluginBuilder['onLoad']>) => void
+  readonly onResolve: (...args: Parameters<PluginBuilder['onResolve']>) => void
+}
+
+export interface DevupUIBunPluginOptions {
+  shorthands?: CustomShorthands
+  /** Resolved against Bun.build's root, or cwd in the runtime. */
+  root?: string
+  devupFile?: string
+  distDir?: string
+  sourceDirs?: string | string[]
+  /** Uncompiled dependencies to transform under the runtime. */
+  include?: string[]
+  /** Readable class names. Defaults to false in both runtime and builds. */
+  debug?: boolean
+  mdxExtensions?: readonly string[]
+}
+
+type Project = ReturnType<typeof resolveProjectPaths> & SourceProject
+
+async function writeDataFiles(project: Project): Promise<string[]> {
+  const { root, devupFile, distDir, cssDir } = project
+  const config = await loadDevupConfig(devupFile)
+  registerTheme(withTailwindCss(config.theme ?? {}, config, root))
+
+  // Generate theme interface after registration (always write, even if empty)
+  await writeFile(
+    join(distDir, 'theme.d.ts'),
+    getThemeInterface(...createThemeInterfaceArgs(libPackage)),
+    'utf-8',
+  )
+
+  if (!existsSync(cssDir)) {
+    await mkdir(cssDir, { recursive: true })
+  }
+  await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  return tailwindCssFiles(config, root)
+}
+
+async function initialize(
+  project: Project,
+  options: DevupUIBunPluginOptions,
+  watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
+) {
+  const { distDir } = project
+  registerShorthands(options.shorthands ?? {})
+  setPrefix(null)
+  setModuleResolver(project.resolver)
+  if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
+  await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+  await writeFile(
+    join(distDir, 'compat.d.ts'),
+    createCompatTypes(importAliases),
+    'utf-8',
+  )
+  watchTailwindCss(await writeDataFiles(project))
+}
+
+/**
+ * The Devup UI plugin, for `Bun.build` (`plugins: [DevupUI()]`) as well as the
+ * Bun runtime ({@link register}).
+ */
+export function DevupUI(options: DevupUIBunPluginOptions = {}) {
+  return {
+    name: 'devup-ui',
+
+    async setup(build: PluginHooks) {
+      // `Bun.build` hands its config to plugins; the runtime has none
+      const bundling = build.config !== undefined
+      const root = resolve(options.root ?? build.config?.root ?? process.cwd())
+      const targetConditions = {
+        browser: ['browser'],
+        bun: ['bun', 'node'],
+        node: ['node'],
+      } as const
+      const customConditions =
+        typeof build.config?.conditions === 'string'
+          ? [build.config.conditions]
+          : (build.config?.conditions ?? [])
+      const mdxExtensions = normalizeMdxExtensions(options.mdxExtensions)
+      const conditions = [
+        ...targetConditions[
+          build.config?.target ?? (bundling ? 'browser' : 'bun')
+        ],
+        'import',
+        ...(bundling ? ['module'] : []),
+        ...customConditions,
+      ]
+      const prepared = new Map<string, PreparedMdx>()
+      const mdx = createMdxPreparation({
+        root,
+        extensions: mdxExtensions,
+        prepared,
+        bundling,
+      })
+      let reservedRevision = -1
+      const ownership = createMdxOwnership({
+        root,
+        extensions: mdxExtensions,
+        conditions,
+        entries: build.config?.entrypoints ?? [],
+      })
+      const project: Project = {
+        ...resolveProjectPaths(root, options),
+        root,
+        debug: options.debug ?? false,
+        mdxExtensions,
+        prepared,
+        ownership,
+        mdx,
+        reserve: (preparedChanged) => {
+          if (
+            (bundling || !project.debug) &&
+            (reservationPending ||
+              preparedChanged ||
+              reservedRevision !== mdx.revision)
+          ) {
+            reserveFiles()
+            reservationPending = false
+          }
+        },
+        resolver: createModuleResolver({
+          cwd: root,
+          // Extracted ESM imports stay import requests even in the vanilla
+          // CommonJS evaluator. The callback does not expose a request kind.
+          conditions,
+          includeMdx: mdxExtensions,
+          prepareSource: (filename) => mdx.read(filename),
+        }),
+      }
+      // A build starts from its own options, not from what an earlier build in
+      // this process left in the engine
+      const endBuild = beginBuild(
+        { resetBuildState },
+        {
+          integration: 'Bun',
+          root,
+        },
+      )
+      const watchTailwindCss = createTailwindWatcher(() =>
+        writeDataFiles(project),
+      )
+      build.onEnd?.(async (result) => {
+        try {
+          await watchTailwindCss.close()
+          if (result.success) {
+            ownership.validate()
+            mdx.validate()
+          }
+        } finally {
+          endBuild()
+        }
+      })
+      await initialize(project, options, watchTailwindCss)
+      setDebug(project.debug)
+      const slots = createSharedSlotReservation({ reserveClassSlots })
+      let reservationPending = bundling
+      const seedFiles = () => {
+        try {
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots: resolveSourceDirs(root, options.sourceDirs),
+              includeMdx: mdxExtensions,
+              cwd: root,
+              include: options.include,
+              needles: compiledPackages,
+              importAliases,
+              toId: (path) => path,
+            }),
+          )
+        } catch (cause) {
+          if (!(cause instanceof Error)) throw cause
+          console.warn('[devup-ui] File numbering fallback', {
+            root,
+            phase: 'seed',
+            impact: 'arrival-order file IDs',
+            cause,
+          })
+        }
+      }
+      const reserveFiles = () => {
+        seedFiles()
+        slots.invalidate()
+        slots.reserve(
+          {
+            roots: resolveSourceDirs(root, options.sourceDirs),
+            entries: (build.config?.entrypoints ?? []).map((request) => ({
+              request,
+              context: root,
+            })),
+            cwd: root,
+            include: ['@devup-ui/components', ...(options.include ?? [])],
+            package: libPackage,
+            importAliases,
+            toId: (path) => path,
+            prepared: [...prepared].map(([physicalPath, source]) => ({
+              physicalPath,
+              filename: physicalPath,
+              code: source.code,
+              sourceType: source.sourceType,
+            })),
+          },
+          {
+            singleCss: true,
+            importMainCssInCode: true,
+            importMainCssInCss: false,
+            cssDir: ({ physicalPath }) =>
+              relative(dirname(physicalPath), project.cssDir).replaceAll(
+                '\\',
+                '/',
+              ),
+          },
+        )
+        reservedRevision = mdx.revision
+      }
+      if (bundling)
+        build.onStart?.(() => {
+          reservationPending = true
+          mdx.reset()
+          ownership.reset()
+          reservedRevision = -1
+        })
+      else if (!project.debug) reserveFiles()
+      else seedFiles()
+      let writtenCss = getCss(null, false)
+      // Native token modules must keep Bun's filesystem watch/CJS loading path.
+      const sourceFilter = bundling
+        ? selectedSourceFilter(mdxExtensions)
+        : new RegExp(
+            `${
+              runtimeSourceFilter([
+                ...listSourceFiles(
+                  root,
+                  [
+                    'target',
+                    'dist',
+                    basename(project.distDir),
+                    '.git',
+                    'coverage',
+                  ],
+                  { includeMdx: mdxExtensions },
+                ).filter((file) => {
+                  if (isMdxSource(file, mdxExtensions)) return true
+                  const contents = readFileSync(file, 'utf-8')
+                  return (
+                    mentionsCompiledPackage(contents) ||
+                    hasDevupUI(file, contents, libPackage, importAliases)
+                  )
+                }),
+                ...collectNumberedFiles({
+                  roots: resolveSourceDirs(root, options.sourceDirs),
+                  includeMdx: mdxExtensions,
+                  cwd: root,
+                  include: ['@devup-ui/components', ...(options.include ?? [])],
+                  needles: compiledPackages,
+                  importAliases,
+                  toId: (path) => path,
+                }),
+              ]).source
+            }|${mdxSourceFilter(mdxExtensions).source}|\\.(?:test|spec)\\.[mc]?[jt]sx?$`,
+            'i',
+          )
+
+      // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
+      // derived from this checkout's cwd can be baked into Bun's shared,
+      // content-keyed transpiler cache. See ./css-id.
+      build.onResolve(
+        { filter: /devup-ui(-\d+)?\.css$/ },
+        ({ path, importer }) =>
+          resolveCssId(path, importer, basename(project.distDir)),
+      )
+
+      // The bundler takes the stylesheet once every other module is loaded,
+      // so it holds the styles of all of them. The Bun runtime has no CSS
+      // loader (`onLoad` only accepts the script/data loaders), so there the
+      // injected import resolves to an empty module.
+      build.onLoad(
+        { filter: /.*/, namespace: cssNamespace },
+        async ({ defer }) => {
+          if (!bundling) return { contents: '', loader: 'js' }
+          await defer()
+          ownership.validate()
+          mdx.validate()
+          return { contents: getCss(null, false), loader: 'css' }
+        },
+      )
+
+      // Load source files from packages directory (file namespace)
+      build.onLoad(
+        {
+          filter: sourceFilter,
+        },
+        ({ path }) => {
+          return loadSourceFile(path, project).then((result) => {
+            if (isMdxSource(path, mdxExtensions)) ownership.loaded(path)
+            if (!bundling && result) {
+              const css = getCss(null, false)
+              // Read-after-import is synchronous; only identical revisions coalesce.
+              if (css !== writtenCss) {
+                writeFileSync(
+                  join(project.cssDir, 'devup-ui.css'),
+                  css,
+                  'utf-8',
+                )
+                writtenCss = css
+              }
+            }
+            return result
+          })
+        },
+      )
+    },
+  } satisfies BunPlugin
+}

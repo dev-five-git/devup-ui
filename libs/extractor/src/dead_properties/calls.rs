@@ -14,14 +14,10 @@ pub(crate) fn instrument(
     code: &str,
     filename: &str,
     package: &str,
+    source_type: oxc_span::SourceType,
 ) -> Result<Instrumented, String> {
     let allocator = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(
-        &allocator,
-        code,
-        oxc_span::SourceType::from_path(filename).unwrap_or_else(|_| oxc_span::SourceType::ts()),
-    )
-    .parse();
+    let parsed = oxc_parser::Parser::new(&allocator, code, source_type).parse();
     let semantic = oxc_semantic::SemanticBuilder::new()
         .build(&parsed.program)
         .semantic;

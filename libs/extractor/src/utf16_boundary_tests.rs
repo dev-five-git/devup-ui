@@ -20,12 +20,15 @@ fn imported_constant_when_unused_require_sources_are_surrogates_still_extracts()
             !source.contains('\u{FFFD}'),
             "lossy module source: {source:?}"
         );
-        (source == "./tokens").then(|| crate::ResolvedModule {
-            path: "/tokens.js".to_string(),
-            code: r"const high = require('\uD800');
+        (source == "./tokens").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                path: "/tokens.js".to_string(),
+                code: r"const high = require('\uD800');
 const low = require('\uDC00');
 export const spacing = 3;"
-                .to_string(),
+                    .to_string(),
+                source_type: None,
+            })
         })
     };
     // When constant collection reads the imported module, not just the root scope.
@@ -193,9 +196,12 @@ fn barrel_resolution_ignores_unrepresentable_reexport_sources(#[case] reexport: 
     let code = format!("{reexport}\nexport {{ Box }} from '@devup-ui/react';");
     let resolver = move |source: &str, _: &str| {
         assert_ne!(source, "\u{FFFD}");
-        (source == "./ui").then(|| crate::ResolvedModule {
-            path: "/ui.ts".to_string(),
-            code: code.clone(),
+        (source == "./ui").then(|| {
+            crate::ModuleResolution::Resolved(crate::ResolvedModule {
+                path: "/ui.ts".to_string(),
+                code: code.clone(),
+                source_type: None,
+            })
         })
     };
     // When the barrel is followed for its valid export.

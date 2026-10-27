@@ -4,21 +4,48 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
-  statSync,
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
-import {
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
-import { PackageManifestShapeError } from './package-manifest'
-import { decodeStringLiteral } from './string-literal'
+import { createDirectoryExclusion } from './directory-exclusion'
+import {
+  freezeImportRequests,
+  type ImportGraphRequest,
+  type ImportRequestOutcome,
+  retainImportGraphFailure,
+} from './import-requests'
+import {
+  type ImportRequestReference,
+  scanImportRequests,
+} from './import-scanner'
+import { remapMdxError } from './mdx-errors'
+import { type AliasResolution, resolveModuleAlias } from './module-alias'
+import { resolveFile } from './owned-file-resolution'
+import { findPackage, resolvePackage } from './owned-module-resolution'
+import { isResolutionFile as isFile } from './packaged-config-inputs'
+import type { PreparationInputs } from './preparation-inputs'
+import { preparedDiagnostics } from './prepared-diagnostics'
+import {
+  createPreparedResolver,
+  type ModuleResolver,
+} from './prepared-resolver'
+import { PreparedSourceTypeError, readPreparedSource } from './prepared-source'
+import { isManifestShapeFailure } from './reservation-source'
+import {
+  createResolutionInputs,
+  type ResolutionInputObserver,
+} from './resolution-inputs'
+import { createNodeModulesExcludeRegex, SOURCE_FILE_RE } from './shared'
+import {
+  isSelectedSource,
+  type MdxSelection,
+  sourceExtensions,
+  type SourceSelectionOptions,
+} from './source-selection'
+import { type PathAlias, readPathAliases } from './tsconfig'
+import type { ModuleAliasOptions } from './types'
 
 /**
  * How map keys (and bucket-root values) are stringified.
@@ -37,18 +64,13 @@ function makeToKey(cwd: string, keyBy: GraphKeyMode): (file: string) => string {
 }
 
 export interface BuildCanonicalMapOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   hoistV?: number
   keyBy?: GraphKeyMode
   /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
   graph?: StaticImportGraph
-}
-
-interface ImportReference {
-  kind: 'static' | 'dynamic'
-  specifier: string
 }
 
 interface OxcParser {
@@ -59,12 +81,6 @@ interface OxcParser {
   ) => unknown
 }
 
-interface PathAlias {
-  prefix: string
-  suffix: string
-  targets: string[]
-}
-
 interface ResolveContext {
   aliases: PathAlias[]
   aliasBaseDir: string
@@ -72,12 +88,10 @@ interface ResolveContext {
   srcDir: string
 }
 
-const jsExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs']
-const jsFileRegex = /\.(?:tsx?|jsx?|mjs)$/
-const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/
+const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/i
 const routeFileRegex =
-  /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.(tsx|ts|jsx|js)$/
-const leafRouteFileRegex = /(^|\/)page\.(tsx|ts|jsx|js)$/
+  /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.[^./]+$/
+const leafRouteFileRegex = /(^|\/)page\.[^./]+$/
 
 let cachedOxcParser: false | OxcParser | undefined
 
@@ -89,6 +103,7 @@ let cachedOxcParser: false | OxcParser | undefined
  * hoisting reads and parses every source file only ONCE per build.
  */
 export interface StaticImportGraph {
+  readonly requests?: readonly ImportGraphRequest[]
   /** absolute paths, sorted by POSIX path relative to `srcDir`. */
   files: string[]
   fileSet: Set<string>
@@ -113,30 +128,176 @@ export interface StaticImportGraph {
   externalImports?: Map<string, Set<string>>
 }
 
+export interface ScannedStaticImportGraph extends StaticImportGraph {
+  readonly requests: readonly ImportGraphRequest[]
+}
+
 /**
  * Scan `srcDir` once (`listSourceFiles` -> read -> parse imports -> resolve)
  * and return the full static import graph. All three graph consumers accept
  * the result, so the file I/O and parsing cost is paid a single time.
  */
 export function buildStaticImportGraph(
-  srcDir: string,
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  options: PreparedGraphOptions,
+): Promise<ScannedStaticImportGraph>
+export function buildStaticImportGraph(
+  srcDir: string | string[],
   tsconfigPath?: string,
-): StaticImportGraph {
-  const resolvedSrcDir = resolve(srcDir)
-  const files = listSourceFiles(resolvedSrcDir)
-  const fileSet = new Set(files)
-  const aliases = readPathAliases(tsconfigPath)
-  const context: ResolveContext = {
-    aliases: aliases.aliases,
-    aliasBaseDir: aliases.baseDir,
-    files: fileSet,
-    srcDir: resolvedSrcDir,
+  options?: SyncGraphOptions,
+): ScannedStaticImportGraph
+export function buildStaticImportGraph(
+  srcDir: string | string[],
+  tsconfigPath?: string,
+  options: SyncGraphOptions | PreparedGraphOptions = {},
+): ScannedStaticImportGraph | Promise<ScannedStaticImportGraph> {
+  if (options.prepareSource)
+    return drivePreparedGraph(srcDir, tsconfigPath, options)
+  const traversal = traverseGraph(srcDir, tsconfigPath, options)
+  let step = traversal.next()
+  while (!step.done) step = traversal.next(undefined)
+  return step.value
+}
+
+export type PreparedSource =
+  | string
+  | {
+      readonly code: string
+      readonly map?: unknown
+      readonly sourceType?: import('./prepared-source').SourceType
+    }
+  | undefined
+
+export function buildPreparationImportGraph(
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  context: {
+    readonly options: SyncGraphOptions
+    readonly inputs: PreparationInputs
+  },
+): ScannedStaticImportGraph {
+  const traversal = traverseGraph(
+    srcDir,
+    tsconfigPath,
+    context.options,
+    context.inputs,
+  )
+  let step = traversal.next()
+  while (!step.done) step = traversal.next(undefined)
+  return step.value
+}
+export type PrepareSource = (
+  filename: string,
+) => PreparedSource | Promise<PreparedSource>
+export interface SyncGraphOptions extends StaticImportGraphOptions {
+  readonly prepareSource?: never
+}
+export interface PreparedGraphOptions extends StaticImportGraphOptions {
+  readonly prepareSource: PrepareSource
+}
+
+class GraphPreparationError extends Error {
+  constructor(filename: string, cause: unknown) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    const location =
+      cause instanceof Error &&
+      !(cause instanceof PreparedSourceTypeError) &&
+      'line' in cause &&
+      typeof cause.line === 'number'
+        ? `${cause.line}:${'column' in cause && typeof cause.column === 'number' ? cause.column : 1}`
+        : '1:1'
+    super(
+      `${filename}:${location}: Graph source preparation failed: ${message}`,
+      { cause },
+    )
+    this.name = 'GraphPreparationError'
   }
+}
+
+async function drivePreparedGraph(
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  options: PreparedGraphOptions,
+): Promise<ScannedStaticImportGraph> {
+  const traversal = traverseGraph(srcDir, tsconfigPath, options)
+  let step = traversal.next()
+  while (!step.done) {
+    const filename = step.value
+    let prepared: PreparedSource
+    try {
+      prepared = readPreparedSource(await options.prepareSource(filename))
+    } catch (cause) {
+      const located = new GraphPreparationError(filename, cause)
+      if (cause instanceof PreparedSourceTypeError) throw located
+      const remapped = remapMdxError(located, filename)
+      throw new Error(
+        remapped.message.replaceAll(
+          '(in compiled MDX)',
+          '(in compiled output)',
+        ),
+        { cause },
+      )
+    }
+    step = traversal.next(prepared)
+  }
+  return step.value
+}
+
+function* traverseGraph(
+  srcDir: string | string[],
+  tsconfigPath: string | undefined,
+  options: StaticImportGraphOptions,
+  preparation?: PreparationInputs,
+): Generator<string, ScannedStaticImportGraph, PreparedSource> {
+  const cwd = resolve(options.cwd ?? process.cwd())
+  const roots = (typeof srcDir === 'string' ? [srcDir] : srcDir).map((dir) =>
+    resolve(cwd, dir),
+  )
+  const files = [
+    ...new Set(
+      roots.flatMap((root) => listSourceFiles(root, options.exclude, options)),
+    ),
+  ].sort(compareCodePoints)
+  const fileSet = new Set(files)
+  const directoryExclusion = createDirectoryExclusion(options.exclude)
+  const exclusionObservation: { outcome: ImportRequestOutcome } = {
+    outcome: { kind: 'unresolved' },
+  }
+  const excludedDirectory = (directory: string) => {
+    const entry = directoryExclusion.match(directory)
+    if (entry !== undefined)
+      exclusionObservation.outcome = { kind: 'excluded', entry }
+    return entry !== undefined
+  }
+  const collect = preparation?.collect ?? createResolutionInputs
+  let resolutionInputs = collect().snapshot()
+  const graphInputs = collect()
+  const resolver = createModulePathResolver(
+    {
+      cwd,
+      tsconfigPath: tsconfigPath ?? join(cwd, 'tsconfig.json'),
+      conditions: options.conditions,
+      alias: options.alias,
+      includeMdx: options.includeMdx,
+      onResolutionInputs: (inputs) => {
+        resolutionInputs = inputs
+        options.onResolutionInputs?.(inputs)
+      },
+    },
+    excludedDirectory,
+    collect,
+  )
+  const excluded = createNodeModulesExcludeRegex(options.include ?? [])
+  const includedRoots = new Set<string>()
+  const localAliasRoots = new Set<string>()
   const staticImporters = new Map<string, Set<string>>()
   const staticImports = new Map<string, Set<string>>()
   const dynamicImports = new Map<string, Set<string>>()
   const dynamicTargets = new Set<string>()
   const externalImports = new Map<string, Set<string>>()
+  const requests: ImportGraphRequest[] = []
+  const deferred: { file: string; error: unknown }[] = []
 
   for (const file of files) {
     staticImporters.set(file, new Set())
@@ -145,32 +306,161 @@ export function buildStaticImportGraph(
     externalImports.set(file, new Set())
   }
 
-  for (const file of files) {
-    const imports = parseImports(file, readFileSync(file, 'utf-8'))
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index]
+    const prepared = yield file
+    graphInputs.file(file)
+    options.onResolutionInputs?.(graphInputs.snapshot())
+    const code = typeof prepared === 'string' ? prepared : prepared?.code
+    const imports =
+      code === undefined
+        ? parseImports(
+            file,
+            preparation ? preparation.read(file) : readFileSync(file, 'utf-8'),
+            preparation?.scan,
+          )
+        : parsePreparedImports(
+            file,
+            code,
+            typeof prepared === 'object' ? prepared.map : undefined,
+            typeof prepared === 'object' ? prepared.sourceType : undefined,
+          )
     for (const importRef of imports) {
-      const target = resolveImport(importRef.specifier, file, context)
-      if (!target) {
+      const request = {
+        importer: file,
+        request: importRef.request,
+        specifier: importRef.specifier,
+        kind: importRef.requestKind,
+        position: importRef.position,
+        source: code === undefined ? 'source' : 'compiled',
+        ...(code === undefined
+          ? {}
+          : { map: typeof prepared === 'object' ? prepared.map : undefined }),
+      } satisfies Omit<ImportGraphRequest, 'outcome'>
+      exclusionObservation.outcome = { kind: 'unresolved' }
+      try {
+        const resolution = resolver(importRef.specifier, file)
+        if (resolution === false) {
+          requests.push({ ...request, outcome: exclusionObservation.outcome })
+          continue
+        }
+        if (resolution?.ignored === true) {
+          requests.push({ ...request, outcome: { kind: 'ignored' } })
+          continue
+        }
+        const resolved = resolution?.path
+        if (resolved && excludedDirectory(dirname(resolved))) {
+          requests.push({ ...request, outcome: exclusionObservation.outcome })
+          continue
+        }
+        requests.push({
+          ...request,
+          outcome:
+            resolved !== undefined
+              ? { kind: 'resolved', path: resolved, inputs: resolutionInputs }
+              : !importRef.specifier.startsWith('.') &&
+                  !importRef.specifier.startsWith('/') &&
+                  !isAbsolute(importRef.specifier)
+                ? { kind: 'external', request: importRef.specifier }
+                : { kind: 'unresolved' },
+        })
+        const rewritten = resolution?.request ?? importRef.specifier
+        const local =
+          resolved !== undefined &&
+          isInsideDir(cwd, resolved) &&
+          !relative(cwd, resolved).split(/[\\/]/).includes('node_modules')
+        if (resolved && local && rewritten !== importRef.specifier)
+          localAliasRoots.add(dirname(resolved))
         if (
+          resolved &&
           !importRef.specifier.startsWith('.') &&
-          !importRef.specifier.startsWith('/') &&
           !isAbsolute(importRef.specifier)
         ) {
-          externalImports.get(file)?.add(importRef.specifier)
+          const request = rewritten
+          const parts = request.split('/')
+          const name = parts.slice(0, request.startsWith('@') ? 2 : 1).join('/')
+          if (!excluded.test(`node_modules/${name}/`)) {
+            const dir = findPackage(dirname(file), name, undefined, graphInputs)
+            if (dir) includedRoots.add(realpathSync(dir))
+          }
+          if (isAbsolute(request) && !local && !excluded.test(resolved)) {
+            let directory = dirname(resolved)
+            while (
+              dirname(directory) !== directory &&
+              !isFile(join(directory, 'package.json'), graphInputs)
+            )
+              directory = dirname(directory)
+            if (isFile(join(directory, 'package.json'), graphInputs))
+              includedRoots.add(realpathSync(directory))
+          }
         }
-        continue
+        const target =
+          resolved &&
+          isSelectedSource(resolved, options.includeMdx) &&
+          (fileSet.has(resolved) ||
+            roots.some(
+              (root) =>
+                isInsideDir(root, resolved) &&
+                !relative(root, resolved)
+                  .split(/[\\/]/)
+                  .includes('node_modules'),
+            ) ||
+            (local &&
+              [...localAliasRoots].some((root) =>
+                isInsideDir(root, resolved),
+              )) ||
+            (!excluded.test(resolved) &&
+              [...includedRoots].some((root) => isInsideDir(root, resolved))))
+            ? resolved
+            : undefined
+        if (!target) {
+          if (
+            !importRef.specifier.startsWith('.') &&
+            !importRef.specifier.startsWith('/') &&
+            !isAbsolute(importRef.specifier)
+          ) {
+            externalImports.get(file)?.add(importRef.specifier)
+          }
+          continue
+        }
+        if (!fileSet.has(target)) {
+          fileSet.add(target)
+          files.push(target)
+          staticImporters.set(target, new Set())
+          staticImports.set(target, new Set())
+          dynamicImports.set(target, new Set())
+          externalImports.set(target, new Set())
+        }
+        if (importRef.kind === 'dynamic') {
+          dynamicTargets.add(target)
+          dynamicImports.get(file)?.add(target)
+          continue
+        }
+        staticImporters.get(target)?.add(file)
+        staticImports.get(file)?.add(target)
+      } catch (error) {
+        retainImportGraphFailure(error, {
+          ...request,
+          outcome: { kind: 'error', error },
+        })
+        if (options.entries === undefined || !isManifestShapeFailure(error))
+          throw error
+        deferred.push({ file, error })
+      } finally {
+        options.onResolutionInputs?.(graphInputs.snapshot())
       }
-      if (importRef.kind === 'dynamic') {
-        dynamicTargets.add(target)
-        dynamicImports.get(file)?.add(target)
-        continue
-      }
-      staticImporters.get(target)?.add(file)
-      staticImports.get(file)?.add(target)
     }
   }
 
+  throwReachableFailure(
+    deferred,
+    options.entries,
+    staticImports,
+    dynamicImports,
+  )
   return {
-    files,
+    requests: freezeImportRequests(requests),
+    files: files.sort(compareCodePoints),
     fileSet,
     staticImports,
     staticImporters,
@@ -180,13 +470,60 @@ export function buildStaticImportGraph(
   }
 }
 
+export interface StaticImportGraphOptions {
+  readonly onResolutionInputs?: ResolutionInputObserver
+  /** Include MDX only when the caller compiles it before extraction. */
+  readonly includeMdx?: MdxSelection
+  readonly alias?: ModuleAliasOptions
+  readonly cwd?: string
+  readonly include?: readonly string[]
+  readonly conditions?: readonly string[]
+  /** Bare directory names at any depth, or absolute directories and descendants. */
+  readonly exclude?: readonly string[]
+  /**
+   * Entry files that decide which failures are fatal: a package manifest that
+   * cannot be read stops the build only when the entries reach the importing
+   * file. Without entries every failure stops it.
+   */
+  readonly entries?: readonly string[]
+}
+
+function throwReachableFailure(
+  deferred: readonly { file: string; error: unknown }[],
+  entries: readonly string[] = [],
+  ...edges: ReadonlyMap<string, ReadonlySet<string>>[]
+): void {
+  if (deferred.length === 0) return
+  const reached = new Set<string>()
+  const pending = [...entries]
+  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+    if (reached.has(file)) continue
+    reached.add(file)
+    for (const edge of edges) pending.push(...(edge.get(file) ?? []))
+  }
+  const fatal = deferred.find(({ file }) => reached.has(file))
+  if (fatal) throw fatal.error
+}
+
+function graphRoot(srcDir: string | string[], cwd: string): string {
+  if (typeof srcDir === 'string') return resolve(cwd, srcDir)
+  let root = resolve(cwd, srcDir[0] ?? '.')
+  for (const dir of srcDir) {
+    const absolute = resolve(cwd, dir)
+    while (!isInsideDir(root, absolute) && dirname(root) !== root)
+      root = dirname(root)
+  }
+  return root
+}
+
 export function buildCanonicalMap(
   opts: BuildCanonicalMapOptions,
 ): Record<string, string> {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, staticImports, staticImporters, dynamicTargets } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   const globalFiles = getRouteReachableGlobalFiles(
     files,
@@ -231,7 +568,7 @@ export function buildCanonicalMap(
 }
 
 export interface ComputeFileRoutesOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
@@ -254,9 +591,10 @@ export function computeFileRoutes(
   opts: ComputeFileRoutesOptions,
 ): Record<string, number[]> {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, staticImports } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   const leafRoutes = files
     .filter((file) => leafRouteFileRegex.test(toPosixRelative(srcDir, file)))
@@ -283,7 +621,7 @@ export function computeFileRoutes(
 }
 
 export interface ComputeCompiledFilesOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
@@ -312,9 +650,10 @@ export function computeCompiledFiles(
   opts: ComputeCompiledFilesOptions,
 ): string[] {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, staticImports, dynamicImports } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   const allImports = new Map<string, Set<string>>()
   for (const file of files) {
@@ -341,7 +680,7 @@ export function computeCompiledFiles(
 }
 
 export interface ComputeReachableFilesOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   /** The bundler's entry modules, as absolute paths with or without extension. */
   entries: string[]
@@ -363,7 +702,8 @@ export function computeReachableFiles(
   const queue = opts.entries
     .map((entry) => resolveFile(resolve(entry)))
     .filter(
-      (entry): entry is string => entry !== undefined && fileSet.has(entry),
+      (entry): entry is string =>
+        typeof entry === 'string' && fileSet.has(entry),
     )
   const reached = new Set<string>()
   for (let index = 0; index < queue.length; index += 1) {
@@ -378,7 +718,7 @@ export function computeReachableFiles(
 }
 
 export interface ComputeFileReachOptions {
-  srcDir: string
+  srcDir: string | string[]
   tsconfigPath?: string
   cwd: string
   /**
@@ -413,9 +753,10 @@ export function computeFileReach(
   opts: ComputeFileReachOptions,
 ): Record<string, number[]> {
   const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
+  const srcDir = graphRoot(opts.srcDir, cwd)
   const { files, fileSet, staticImports, staticImporters, dynamicTargets } =
-    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+    opts.graph ??
+    buildStaticImportGraph(opts.srcDir, opts.tsconfigPath, { cwd })
 
   let entries: string[]
   if (opts.entries && opts.entries.length > 0) {
@@ -617,11 +958,15 @@ export function compareCodePoints(a: string, b: string): number {
  */
 export function listSourceFiles(
   srcDir: string,
+  exclude: readonly string[] = [],
+  options: SourceSelectionOptions = {},
   onReadError?: (error: unknown) => boolean,
 ): string[] {
   const files: string[] = []
+  const excludedDirectory = createDirectoryExclusion(exclude)
 
   function visit(dir: string): void {
+    if (excludedDirectory(resolve(dir))) return
     if (!existsSync(dir)) return
     let entries: readonly Dirent[]
     try {
@@ -640,7 +985,8 @@ export function listSourceFiles(
         continue
       }
       if (!entry.isFile()) continue
-      if (!isSourceFile(entry.name)) continue
+      if (!isSelectedSource(entry.name, options.includeMdx)) continue
+      if (testFileRegex.test(entry.name)) continue
       files.push(resolve(entryPath))
     }
   }
@@ -652,40 +998,120 @@ export function listSourceFiles(
 }
 
 export function isSourceFile(filename: string): boolean {
-  return jsFileRegex.test(filename) && !testFileRegex.test(filename)
+  return SOURCE_FILE_RE.test(filename) && !testFileRegex.test(filename)
 }
 
 export function importedSpecifiers(
   filename: string,
   source: string,
+  sourceType?: import('./prepared-source').SourceType,
 ): readonly string[] {
-  return parseImports(filename, source).map(({ specifier }) => specifier)
+  const imports =
+    sourceType === undefined
+      ? parseImports(filename, source)
+      : parseSourceImports(filename, source, { map: undefined, sourceType })
+  return imports.map(({ specifier }) => specifier)
 }
 
 export function parseImports(
   filename: string,
   source: string,
-): ImportReference[] {
-  const astImports = parseImportsWithOxc(filename, source)
-  if (astImports) return astImports
-  return scanImports(source)
+  scan = scanImportRequests,
+): ImportRequestReference[] {
+  if (!SOURCE_FILE_RE.test(filename))
+    return scan(mdxEsmSource(source), false, false)
+  return parseSourceImports(filename, source, undefined, scan)
 }
 
-function parseImportsWithOxc(
+function parsePreparedImports(
   filename: string,
   source: string,
-): ImportReference[] | undefined {
-  const parser = getOxcParser()
-  if (!parser) return undefined
+  map: unknown,
+  sourceType?: import('./prepared-source').SourceType,
+): ImportRequestReference[] {
+  return parseSourceImports(filename, source, { map, sourceType })
+}
 
+function parseSourceImports(
+  filename: string,
+  source: string,
+  prepared?: {
+    readonly map: unknown
+    readonly sourceType?: import('./prepared-source').SourceType
+  },
+  scan = scanImportRequests,
+): ImportRequestReference[] {
+  const parser = getOxcParser()
   try {
-    const ast = parser.parseSync(filename, source, { sourceType: 'module' })
-    const imports: ImportReference[] = []
-    collectAstImports(ast, imports)
-    return imports
-  } catch {
-    return undefined
+    const ast = parser?.parseSync(
+      filename,
+      source,
+      prepared &&
+        (prepared.sourceType === 'compiled-mdx' ||
+          !/\.[mc]?tsx?$/i.test(filename))
+        ? { sourceType: 'module', lang: 'jsx' }
+        : { sourceType: 'module' },
+    )
+    if (isRecord(ast) && Array.isArray(ast.errors) && ast.errors.length) {
+      throw new Error(preparedDiagnostics(filename, source, ast.errors))
+    }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    const located = message.startsWith(`${filename}:`)
+      ? cause
+      : new GraphPreparationError(filename, cause)
+    if (!prepared) throw located
+    const remapped = remapMdxError(located, filename, prepared.map)
+    throw new Error(
+      remapped.message.replaceAll('(in compiled MDX)', '(in compiled output)'),
+      { cause },
+    )
   }
+  return scan(
+    source,
+    prepared?.sourceType === 'compiled-mdx' ||
+      /\.[jt]sx$/i.test(filename) ||
+      (prepared !== undefined && !/\.[mc]?ts$/i.test(filename)),
+    prepared?.sourceType !== 'compiled-mdx' && /\.[mc]?tsx?$/i.test(filename),
+  )
+}
+
+function mdxEsmSource(source: string): string {
+  const blocks: string[] = []
+  let fence = ''
+  let esm = false
+  let comment = false
+  for (const line of source.split(/(?<=\n)/)) {
+    const blank = line.replace(/[^\r\n]/g, ' ')
+    if (line.includes('<!--')) comment = true
+    if (comment) {
+      if (line.includes('-->')) comment = false
+      esm = false
+      blocks.push(blank)
+      continue
+    }
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+    if (marker) {
+      if (!fence) fence = marker
+      else if (marker[0] === fence[0] && marker.length >= fence.length)
+        fence = ''
+      esm = false
+      blocks.push(blank)
+      continue
+    }
+    if (fence) {
+      blocks.push(blank)
+      continue
+    }
+    if (!line.trim()) {
+      esm = false
+      blocks.push(blank)
+      continue
+    }
+    if (/^(?:import\s+(?!\()|export\s+)/.test(line)) esm = true
+    blocks.push(esm ? line : blank)
+  }
+  return blocks.join('')
 }
 
 function getOxcParser(): OxcParser | undefined {
@@ -707,10 +1133,10 @@ function getOxcParser(): OxcParser | undefined {
 
 /**
  * @internal test-only: force the cached oxc parser. oxc-parser is an optional
- * peer that is absent in this repo, so the AST path is otherwise unreachable
+ * peer that is absent in this repo, so the diagnostic path is otherwise unreachable
  * from tests; module state is shared across test files (no per-file reset), so
  * `mock.module` cannot toggle it deterministically. Pass `undefined` to clear
- * the cache and re-detect (back to the regex fallback).
+ * the cache and re-detect. The scanner remains the sole edge authority.
  */
 export function __setOxcParserForTest(
   parser: OxcParser | false | undefined,
@@ -718,342 +1144,33 @@ export function __setOxcParserForTest(
   cachedOxcParser = parser
 }
 
-function collectAstImports(
-  node: unknown,
-  imports: ImportReference[],
-  seen = new WeakSet<object>(),
-): void {
-  if (!isRecord(node)) return
-  if (seen.has(node)) return
-  seen.add(node)
-
-  const type = typeof node.type === 'string' ? node.type : undefined
-  if (
-    type === 'ImportDeclaration' ||
-    type === 'ExportNamedDeclaration' ||
-    type === 'ExportAllDeclaration'
-  ) {
-    // `import type`/`export type ... from` carry importKind/exportKind 'type'.
-    // They are erased at build time (no runtime module), so they must NOT
-    // become static graph edges — see the regex fallback in `scanImports`.
-    // The same applies when every specifier is inline-type
-    // (`import { type A } from` / `export { type A } from`).
-    if (
-      node.importKind !== 'type' &&
-      node.exportKind !== 'type' &&
-      !hasOnlyInlineTypeSpecifiers(node)
-    ) {
-      addAstImport(imports, 'static', node.source)
-    }
-  } else if (type === 'ImportExpression') {
-    addAstImport(imports, 'dynamic', node.source ?? node.argument)
-  } else if (type === 'CallExpression' && isImportCallee(node.callee)) {
-    const firstArgument = Array.isArray(node.arguments)
-      ? node.arguments[0]
-      : undefined
-    addAstImport(imports, 'dynamic', firstArgument)
-  } else if (
-    type === 'CallExpression' &&
-    node.optional !== true &&
-    isRecord(node.callee) &&
-    node.callee.type === 'Identifier' &&
-    node.callee.name === 'require' &&
-    Array.isArray(node.arguments) &&
-    node.arguments.length === 1
-  ) {
-    const argument: unknown = node.arguments[0]
-    if (
-      isRecord(argument) &&
-      (argument.type === 'Literal' || argument.type === 'StringLiteral') &&
-      typeof argument.value === 'string'
-    )
-      addAstImport(imports, 'static', argument)
-  }
-
-  for (const value of Object.values(node)) {
-    if (Array.isArray(value)) {
-      for (const child of value) {
-        collectAstImports(child, imports, seen)
-      }
-      continue
-    }
-    collectAstImports(value, imports, seen)
-  }
-}
-
-// AST counterpart of `isAllInlineTypeSpecifiers`: an import/re-export whose
-// specifiers are ALL inline-type is erased by the bundler (no runtime module),
-// so it must not become a static graph edge. Default/namespace specifiers
-// carry no `type` kind, so their presence keeps the edge.
-function hasOnlyInlineTypeSpecifiers(node: Record<string, unknown>): boolean {
-  const specifiers = node.specifiers
-  if (!Array.isArray(specifiers) || specifiers.length === 0) return false
-  return specifiers.every(
-    (specifier) =>
-      isRecord(specifier) &&
-      (specifier.importKind === 'type' || specifier.exportKind === 'type'),
-  )
-}
-
-function addAstImport(
-  imports: ImportReference[],
-  kind: ImportReference['kind'],
-  node: unknown,
-): void {
-  const specifier = getStringLiteralValue(node)
-  if (specifier) imports.push({ kind, specifier })
-}
-
-function getStringLiteralValue(node: unknown): string | undefined {
-  if (!isRecord(node)) return undefined
-  if (typeof node.value === 'string') return node.value
-  if (typeof node.raw === 'string') return node.raw.slice(1, -1)
-  return undefined
-}
-
-function isImportCallee(node: unknown): boolean {
-  if (!isRecord(node)) return false
-  return node.type === 'Import' || node.name === 'import'
-}
-
-// A brace clause whose specifiers are ALL inline-type (`{ type A, type B }`)
-// is erased by the bundler exactly like a statement-level `import type`:
-// TypeScript import elision (the Next.js/SWC default) removes the whole
-// statement, so no runtime module is ever produced. Counting such an edge as
-// static merges a phantom member into a bucket the bundler never compiles —
-// the next-plugin coordinator then waits for a file that can never arrive.
-// A mixed clause (`{ type A, b }`) still imports the module for `b` and is
-// kept. A default/namespace clause is always a value import and is kept.
-function isAllInlineTypeSpecifiers(clause: string | undefined): boolean {
-  if (!clause) return false
-  const trimmed = clause.trim()
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return false
-  const specifiers = trimmed
-    .slice(1, -1)
-    .split(',')
-    .map((specifier) => specifier.trim())
-    .filter((specifier) => specifier.length > 0)
-  return (
-    specifiers.length > 0 &&
-    specifiers.every((specifier) => /^type\s/.test(specifier))
-  )
-}
-
-function scanImports(source: string): ImportReference[] {
-  const imports: ImportReference[] = []
-  const code = stripComments(source)
-  // The leading `(type\s+)?` is CAPTURED (not skipped) so we can drop type-only
-  // statements: `import type ... from` / `export type ... from` are erased by
-  // the bundler and produce NO runtime module — counting them as static graph
-  // edges merges phantom members into a bucket that the bundler never compiles,
-  // which is exactly what forced the coordinator's wall-clock fail-open to fire.
-  // The clause between the keyword and `from` is captured too, so all-inline-
-  // type specifier lists (`import { type A } from` / `export { type A } from`)
-  // — which the bundler also erases — are dropped via
-  // `isAllInlineTypeSpecifiers`. Mixed lists (`import { type A, b } from`)
-  // keep importing the module for `b`, so they are kept.
-  // Consume whole literals before looking for keywords inside their payloads.
-  // Real import/export matches start before their specifier's opening quote.
-  const quotedLiteral =
-    /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/
-      .source
-  const staticImportRegex = new RegExp(
-    `${quotedLiteral}|${/\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/.source}`,
-    'gm',
-  )
-  const exportFromRegex = new RegExp(
-    `${quotedLiteral}|${/\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/.source}`,
-    'gm',
-  )
-  const dynamicImportRegex = new RegExp(
-    `${quotedLiteral}|${/\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/.source}`,
-    'gm',
-  )
-  const requireRegex = new RegExp(
-    `${quotedLiteral}|${/(?<![\w$.]|\.\s*|\bnew\s+)\brequire\s*\(\s*("(?:\\(?:\r\n|[\s\S])|[^"\\\r\n])*"|'(?:\\(?:\r\n|[\s\S])|[^'\\\r\n])*')\s*\)/.source}`,
-    'gm',
-  )
-
-  for (const match of code.matchAll(staticImportRegex)) {
-    if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
-    imports.push({ kind: 'static', specifier: match[4] })
-  }
-  for (const match of code.matchAll(exportFromRegex)) {
-    if (!match[4] || match[1] || isAllInlineTypeSpecifiers(match[2])) continue
-    imports.push({ kind: 'static', specifier: match[4] })
-  }
-  for (const match of code.matchAll(dynamicImportRegex)) {
-    if (match[2]) imports.push({ kind: 'dynamic', specifier: match[2] })
-  }
-  for (const match of code.matchAll(requireRegex)) {
-    const specifier = match[1] ? decodeStringLiteral(match[1]) : undefined
-    if (specifier) imports.push({ kind: 'static', specifier })
-  }
-
-  return imports
-}
-
-function stripComments(source: string): string {
-  let result = ''
-  let index = 0
-  let quote: false | '"' | "'" | '`' = false
-
-  while (index < source.length) {
-    const char = source[index]
-    const next = source[index + 1]
-
-    if (quote) {
-      // Template-literal CONTENTS are blanked (delimiters and newlines kept):
-      // embedded code snippets (docs sites, codegen templates) would otherwise
-      // look like real import statements to the scanners below and create
-      // phantom graph edges for files the bundler never loads. Contents of
-      // '/" strings are preserved — import specifiers themselves are read from
-      // those literals by the scan regexes.
-      if (quote === '`') {
-        if (char === '\\') {
-          result += '  '
-          index += 2
-          continue
-        }
-        result += char === '`' || char === '\n' ? char : ' '
-        if (char === '`') quote = false
-        index += 1
-        continue
-      }
-      result += char
-      if (char === '\\') {
-        result += next ?? ''
-        index += 2
-        continue
-      }
-      if (char === quote) quote = false
-      index += 1
-      continue
-    }
-
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char
-      result += char
-      index += 1
-      continue
-    }
-
-    if (char === '/' && next === '/') {
-      while (index < source.length && source[index] !== '\n') {
-        result += ' '
-        index += 1
-      }
-      continue
-    }
-
-    if (char === '/' && next === '*') {
-      result += '  '
-      index += 2
-      while (
-        index < source.length &&
-        !(source[index] === '*' && source[index + 1] === '/')
-      ) {
-        result += source[index] === '\n' ? '\n' : ' '
-        index += 1
-      }
-      result += '  '
-      index += 2
-      continue
-    }
-
-    result += char
-    index += 1
-  }
-
-  return result
-}
-
-function readPathAliases(tsconfigPath: string | undefined): {
-  aliases: PathAlias[]
-  baseDir: string
-} {
-  if (!tsconfigPath || !existsSync(tsconfigPath)) {
-    return { aliases: [], baseDir: process.cwd() }
-  }
-
-  const configPath = resolve(tsconfigPath)
-  const configDir = dirname(configPath)
-  try {
-    const config = JSON.parse(
-      stripTrailingCommas(stripComments(readFileSync(configPath, 'utf-8'))),
-    )
-    if (!isRecord(config) || !isRecord(config.compilerOptions)) {
-      return { aliases: [], baseDir: configDir }
-    }
-
-    const baseUrl =
-      typeof config.compilerOptions.baseUrl === 'string'
-        ? config.compilerOptions.baseUrl
-        : '.'
-    const paths = config.compilerOptions.paths
-    if (!isRecord(paths)) {
-      return { aliases: [], baseDir: resolve(configDir, baseUrl) }
-    }
-
-    const aliases: PathAlias[] = []
-    for (const [alias, targetList] of Object.entries(paths)) {
-      if (!Array.isArray(targetList)) continue
-      const starIndex = alias.indexOf('*')
-      aliases.push({
-        prefix: starIndex === -1 ? alias : alias.slice(0, starIndex),
-        suffix: starIndex === -1 ? '' : alias.slice(starIndex + 1),
-        targets: targetList.filter(
-          (target): target is string => typeof target === 'string',
-        ),
-      })
-    }
-
-    aliases.sort((a, b) => b.prefix.length - a.prefix.length)
-    return { aliases, baseDir: resolve(configDir, baseUrl) }
-  } catch {
-    return { aliases: [], baseDir: configDir }
-  }
-}
-
-function stripTrailingCommas(json: string): string {
-  return json.replace(/,\s*([}\]])/g, '$1')
-}
-
-function resolveImport(
-  specifier: string,
-  importer: string,
-  context: ResolveContext,
-): string | undefined {
-  const candidateBases: string[] = []
-
-  if (specifier.startsWith('.')) {
-    candidateBases.push(resolve(dirname(importer), specifier))
-  } else if (specifier.startsWith('/')) {
-    candidateBases.push(resolve(specifier))
-  } else {
-    candidateBases.push(...resolveAliasCandidates(specifier, context))
-  }
-
-  for (const candidateBase of candidateBases) {
-    const resolvedFile = resolveFile(candidateBase)
-    if (!resolvedFile) continue
-    if (!context.files.has(resolvedFile)) continue
-    if (!isInsideDir(context.srcDir, resolvedFile)) continue
-    return resolvedFile
-  }
-
-  return undefined
-}
-
 /** A module an import resolved to, as `setModuleResolver` expects it. */
 export interface ResolvedModule {
+  readonly ignored?: never
   path: string
   code: string
+  readonly sourceType?: import('./prepared-source').SourceType
 }
 
+/** Successful native ignore: no filesystem module or manufactured source. */
+export interface IgnoredModule {
+  readonly ignored: true
+  readonly path?: never
+  readonly code?: never
+  readonly sourceType?: never
+  readonly request?: never
+}
+
+export type ModuleResolution = ResolvedModule | IgnoredModule
+
 export interface CreateModuleResolverOptions {
+  readonly onResolutionInputs?: ResolutionInputObserver
+  readonly prepareSource?: PrepareSource
+  readonly alias?: ModuleAliasOptions
+  readonly includeMdx?: MdxSelection
   cwd?: string
   tsconfigPath?: string
+  conditions?: readonly string[]
   /**
    * The name the plugin extracts a file under, given its absolute path. A
    * resolved module is extracted under this name, so it has to be the one the
@@ -1070,141 +1187,119 @@ export interface CreateModuleResolverOptions {
  * `module`, `main`), reading each module.
  */
 export function createModuleResolver({
-  cwd = process.cwd(),
-  tsconfigPath = join(cwd, 'tsconfig.json'),
   toId = (path) => path,
-  allowPackage,
-  onPackageManifest,
-}: CreateModuleResolverOptions = {}): (
-  specifier: string,
-  importer: string,
-) => ResolvedModule | undefined {
-  const { aliases, baseDir } = readPathAliases(tsconfigPath)
-  return (specifier, importer) => {
-    const from = resolve(cwd, importer)
-    const path = specifier.startsWith('.')
-      ? resolveSourceFile(resolve(dirname(from), specifier))
-      : isAbsolute(specifier)
-        ? resolveSourceFile(specifier)
-        : (resolveAliasCandidates(specifier, {
-            aliases,
-            aliasBaseDir: baseDir,
-          })
-            .map(resolveSourceFile)
-            .find(Boolean) ??
-          ((allowPackage?.(specifier) ?? true)
-            ? resolvePackage(specifier, from, onPackageManifest)
-            : undefined))
-    return path
-      ? { path: toId(path), code: readFileSync(path, 'utf-8') }
-      : undefined
-  }
-}
-
-const sourceExtensions = [...jsExtensions, '.cjs']
-
-/** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */
-function resolveSourceFile(base: string): string | undefined {
-  const candidates = sourceExtensions.includes(extname(base))
-    ? [base]
-    : [
-        ...jsExtensions.map((extension) => `${base}${extension}`),
-        ...jsExtensions.map((extension) => join(base, `index${extension}`)),
-      ]
-  const found = candidates.find(isFile)
-  return found && resolve(found)
-}
-
-/** Conditions of package `exports`, in the order a bundler prefers them */
-const packageConditions = ['import', 'module', 'default', 'require', 'node']
-
-function resolvePackage(
-  specifier: string,
-  importer: string,
-  onPackageManifest?: (path: string) => void,
-): string | undefined {
-  const parts = specifier.split('/')
-  const nameLength = specifier.startsWith('@') ? 2 : 1
-  const name = parts.slice(0, nameLength).join('/')
-  const packageDir = findPackage(dirname(importer), name)
-  if (!packageDir) return undefined
-  const manifestPath = join(packageDir, 'package.json')
-  onPackageManifest?.(realpathSync(manifestPath))
-  const manifest: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
-  if (!isRecord(manifest) || Array.isArray(manifest)) {
-    throw new PackageManifestShapeError(manifestPath)
-  }
-  const found = resolvePackageEntry(
-    packageDir,
-    manifest,
-    ['.', ...parts.slice(nameLength)].join('/'),
-  )
-  return found && realpathSync(found)
-}
-
-function findPackage(dir: string, name: string): string | undefined {
-  const packageDir = join(dir, 'node_modules', name)
-  if (isFile(join(packageDir, 'package.json'))) return packageDir
-  const parent = dirname(dir)
-  return parent === dir ? undefined : findPackage(parent, name)
-}
-function resolvePackageEntry(
-  dir: string,
-  manifest: Record<string, unknown>,
-  subpath: string,
-): string | undefined {
-  if (manifest.exports !== undefined) {
-    const target = exportsTarget(manifest.exports, subpath)
-    return target === undefined
-      ? undefined
-      : resolveSourceFile(join(dir, target))
-  }
-  if (subpath !== '.') return resolveSourceFile(join(dir, subpath))
-  const main = [manifest.module, manifest.main].find(
-    (entry): entry is string => typeof entry === 'string',
-  )
-  return resolveSourceFile(join(dir, main ?? 'index'))
-}
-
-function exportsTarget(exports: unknown, subpath: string): string | undefined {
-  const subpaths =
-    isRecord(exports) && !Array.isArray(exports)
-      ? Object.keys(exports).filter((key) => key.startsWith('.'))
-      : []
-  if (subpaths.length === 0) {
-    return subpath === '.' ? conditionTarget(exports) : undefined
-  }
-  const map = exports as Record<string, unknown>
-  if (subpath in map) return conditionTarget(map[subpath])
-  for (const key of subpaths) {
-    const [prefix, suffix = ''] = key.split('*')
-    if (
-      key.includes('*') &&
-      subpath.startsWith(prefix) &&
-      subpath.endsWith(suffix) &&
-      subpath.length >= prefix.length + suffix.length
-    ) {
-      const matched = subpath.slice(
-        prefix.length,
-        subpath.length - suffix.length,
+  ...options
+}: CreateModuleResolverOptions = {}): ModuleResolver {
+  const prepared = createPreparedResolver(options)
+  const resolver = createModulePathResolver({
+    ...options,
+    includeMdx: options.prepareSource ? (options.includeMdx ?? true) : false,
+    admitFile: prepared.admitFile,
+  })
+  return Object.assign(
+    (specifier: string, importer: string) => {
+      const resolution = resolver(specifier, importer)
+      if (!resolution) return undefined
+      if (resolution.ignored === true) return resolution
+      const { path } = resolution
+      const source = prepared.read(
+        path,
+        resolve(options.cwd ?? process.cwd(), importer),
       )
-      return conditionTarget(map[key])?.replaceAll('*', matched)
+      return prepared.resolved(toId(path), path, source)
+    },
+    { remapError: prepared.remapError },
+  )
+}
+
+export type ModulePathResolverOptions = Pick<
+  CreateModuleResolverOptions,
+  | 'cwd'
+  | 'tsconfigPath'
+  | 'conditions'
+  | 'alias'
+  | 'includeMdx'
+  | 'onResolutionInputs'
+  | 'allowPackage'
+  | 'onPackageManifest'
+>
+export type ModulePathResolution =
+  AliasResolution | IgnoredModule | false | undefined
+export type ModulePathResolver = (
+  specifier: string,
+  importer: string,
+) => ModulePathResolution
+
+export function createModulePathResolver(
+  {
+    cwd = process.cwd(),
+    tsconfigPath = join(cwd, 'tsconfig.json'),
+    conditions = ['import', 'module', 'require', 'node'],
+    alias = {},
+    includeMdx,
+    admitFile,
+    onResolutionInputs,
+    allowPackage,
+    onPackageManifest,
+  }: ModulePathResolverOptions & {
+    readonly admitFile?: (filename: string) => boolean
+  } = {},
+  excludedDirectory: (
+    directory: string,
+  ) => boolean = createDirectoryExclusion(),
+  collect: typeof createResolutionInputs = createResolutionInputs,
+): ModulePathResolver {
+  const setupInputs = collect()
+  const config = (() => {
+    try {
+      return readPathAliases(tsconfigPath, setupInputs)
+    } finally {
+      onResolutionInputs?.(setupInputs.snapshot())
+    }
+  })()
+  const { aliases, baseDir, baseUrl } = config
+  const setup = setupInputs.snapshot()
+  const extensions = sourceExtensions(includeMdx)
+  return (specifier, importer) => {
+    const inputs = collect(setup)
+    const fileResolver = (path: string) =>
+      resolveFile(path, { extensions, admitFile, excludedDirectory, inputs })
+    const from = resolve(cwd, importer)
+    try {
+      return resolveModuleAlias(specifier, {
+        alias,
+        importer: from,
+        resolveRequest: (request, aliased) =>
+          request.startsWith('.')
+            ? fileResolver(resolve(dirname(from), request))
+            : isAbsolute(request)
+              ? fileResolver(request)
+              : (resolveAliasCandidates(request, {
+                  aliases,
+                  aliasBaseDir: baseDir,
+                })
+                  .map(fileResolver)
+                  .find((candidate) => candidate !== undefined) ??
+                (baseUrl
+                  ? fileResolver(resolve(baseUrl, request))
+                  : undefined) ??
+                ((allowPackage?.(request) ?? true)
+                  ? resolvePackage(request, from, {
+                      conditions,
+                      fileResolver,
+                      excludedDirectory,
+                      aliased,
+                      inputs,
+                      onPackageManifest,
+                    })
+                  : undefined)),
+      })
+    } finally {
+      onResolutionInputs?.(inputs.snapshot())
     }
   }
-  return undefined
 }
 
-function conditionTarget(value: unknown): string | undefined {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) {
-    return value.map(conditionTarget).find(Boolean)
-  }
-  if (!isRecord(value)) return undefined
-  return packageConditions
-    .filter((condition) => condition in value)
-    .map((condition) => conditionTarget(value[condition]))
-    .find(Boolean)
-}
 function resolveAliasCandidates(
   specifier: string,
   context: Pick<ResolveContext, 'aliases' | 'aliasBaseDir'>,
@@ -1213,7 +1308,9 @@ function resolveAliasCandidates(
   for (const alias of context.aliases) {
     if (
       !specifier.startsWith(alias.prefix) ||
-      !specifier.endsWith(alias.suffix)
+      !specifier.endsWith(alias.suffix) ||
+      (alias.exact && specifier !== alias.prefix) ||
+      specifier.length < alias.prefix.length + alias.suffix.length
     ) {
       continue
     }
@@ -1226,35 +1323,9 @@ function resolveAliasCandidates(
         resolve(context.aliasBaseDir, target.replace('*', matched)),
       )
     }
+    break
   }
   return candidates
-}
-
-function resolveFile(candidateBase: string): string | undefined {
-  const ext = extname(candidateBase)
-  if (ext) {
-    if (!jsExtensions.includes(ext)) return undefined
-    return isFile(candidateBase) ? resolve(candidateBase) : undefined
-  }
-
-  for (const jsExtension of jsExtensions) {
-    const candidate = `${candidateBase}${jsExtension}`
-    if (isFile(candidate)) return resolve(candidate)
-  }
-  for (const jsExtension of jsExtensions) {
-    const candidate = join(candidateBase, `index${jsExtension}`)
-    if (isFile(candidate)) return resolve(candidate)
-  }
-
-  return undefined
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile()
-  } catch {
-    return false
-  }
 }
 
 function isInsideDir(dir: string, file: string): boolean {

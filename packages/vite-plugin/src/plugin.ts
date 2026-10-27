@@ -5,9 +5,9 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   collectNumberedFiles,
+  ConfigLoadError,
   createCompatTypes,
   createModuleResolver,
-  createNodeModulesExcludeRegex,
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -15,16 +15,25 @@ import {
   getBuildOwnership,
   getFileNumByFilename,
   type ImportAliases,
+  isMdxSource,
+  isSelectedSource,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeMdxExtensions,
   readJsxImportSource,
+  remapMdxError,
+  type ResolutionInputObserver,
+  resolutionWatchPath,
+  resolveProjectPaths,
+  resolveSourceDirs,
   seedFileNumbers,
+  SOURCE_FILE_RE,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
-  getCss,
+  getCss as getEngineCss,
   getDefaultTheme,
   getThemeInterface,
   registerShorthands,
@@ -44,8 +53,16 @@ import type {
   UserConfig,
 } from 'vite'
 
+import { createAggregateCssPreparation } from './aggregate-css'
 import { createCompiledDependencies } from './compiled-dependencies'
+import { createCompiledGuard } from './compiled-guard'
+import { ConfigRefresh, watchConfigFiles } from './config-refresh'
+import { DeferredDefaults } from './deferred-defaults'
+import { validateMdxDefault } from './mdx-default'
+import { createExtractionGate } from './production-manifest'
+import { ProductionActivation } from './production-numbering'
 import { createViteReservation } from './reservation'
+import { createMissingInputWatch } from './resolution-watch'
 import { createServerWatch } from './server-watch'
 
 /**
@@ -56,8 +73,6 @@ import { createServerWatch } from './server-watch'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
-
-const SOURCE_DIR_CANDIDATES = ['src', 'app']
 
 type SourceInput = { readonly code: string }
 type ExtractionCapture = {
@@ -80,18 +95,6 @@ type ExtractionSession = {
 }
 function createExtractionSession(): ExtractionSession {
   return { ready: false, flights: new Map() }
-}
-
-/**
- * Source roots to scan, or an empty list when none of the conventional layouts
- * are present. Scanning the project root instead would sweep in config files
- * and other never-transformed modules, so callers skip the scan entirely rather
- * than guess.
- */
-function resolveSourceDirs(root: string): string[] {
-  return SOURCE_DIR_CANDIDATES.map((dir) => resolve(root, dir)).filter((dir) =>
-    existsSync(dir),
-  )
 }
 
 /**
@@ -264,6 +267,8 @@ export interface DevupUIPluginOptions {
   singleCss: boolean
   prefix?: string
   shorthands?: CustomShorthands
+  sourceDirs?: string | string[]
+  mdxExtensions?: readonly string[]
   /**
    * Hoist canonical buckets reached by at least this many module boundaries.
    * Defaults to 2; 0 disables. Frozen for this build; ignored in singleCss mode.
@@ -279,37 +284,30 @@ export interface DevupUIPluginOptions {
 
 async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
+  root: string,
   inputs: Set<string>,
   publishTailwind: (files: string[]) => void,
 ): Promise<void> {
-  try {
-    const config = await loadDevupConfig(options.devupFile, inputs)
-    const theme = config.theme ?? {}
+  const config = await loadDevupConfig(options.devupFile, inputs)
+  const theme = config.theme ?? {}
 
-    registerTheme(withTailwindCss(theme, config))
-    publishTailwind(tailwindCssFiles(config))
-    const interfaceCode = getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
-    )
+  registerTheme(withTailwindCss(theme, config, root))
+  publishTailwind(tailwindCssFiles(config, root))
+  const interfaceCode = getThemeInterface(
+    ...createThemeInterfaceArgs(options.package),
+  )
 
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
-  } catch (error) {
-    console.error(error)
-    registerTheme({})
-  }
+  await writeFile(join(options.distDir, 'theme.d.ts'), interfaceCode, 'utf-8')
   // Sequential: writing into cssDir concurrently with its own mkdir loses the
   // race on a cold start (no `df/`) and fails the build with ENOENT.
   if (!existsSync(options.cssDir)) {
     await mkdir(options.cssDir, { recursive: true })
   }
   if (!options.singleCss) {
-    await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      getEngineCss(null, false),
+    )
   }
 }
 
@@ -317,35 +315,51 @@ export function DevupUI({
   package: libPackage = '@devup-ui/react',
   devupFile = 'devup.json',
   distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
+  cssDir: configuredCssDir,
   extractCss = true,
   debug = false,
   include = [],
   singleCss = false,
   prefix,
   shorthands,
+  sourceDirs: configuredSourceDirs,
   atomHoist = 2,
   importAliases: userImportAliases,
+  mdxExtensions: configuredMdxExtensions,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
-  // A build starts from its own options: whatever an earlier build in this
-  // process left in the engine (prefix, hoisting, routes, buckets, numbers,
-  // styles) is gone unless another build is still running.
-  const ownsEngine = getBuildOwnership().running === 0
-  let endBuild: (() => void) | undefined = beginBuild({ resetBuildState })
+  const mdxExtensions = normalizeMdxExtensions(configuredMdxExtensions)
+  const deferred = new DeferredDefaults()
+  let projectRoot = process.cwd()
+  let initialized = false
+  let releaseLegacy: (() => void) | undefined
+  const integration = {
+    integration: 'Vite',
+    get root() {
+      return projectRoot
+    },
+  }
+  const endBuild = () => {
+    releaseLegacy?.()
+    releaseLegacy = undefined
+  }
   let closing = false
   let ownedWork = 0
   let drained: PromiseWithResolvers<void> | undefined
   function releaseBuild() {
-    endBuild?.()
-    endBuild = undefined
+    endBuild()
   }
   function own<This, Args extends unknown[], T>(
     work: (this: This, ...args: Args) => Promise<T>,
+    admit = true,
   ) {
     return async function (this: This, ...args: Args): Promise<T | undefined> {
-      if (closing && isServe) return
-      if (!endBuild) {
-        endBuild = beginBuild({})
+      if (admit && closing && isServe) return
+      if (admit && !releaseLegacy && !production.active) {
+        releaseLegacy = beginBuild(
+          initialized ? {} : { resetBuildState },
+          integration,
+        )
+        initialized = true
         closing = false
         drained = undefined
       }
@@ -361,30 +375,69 @@ export function DevupUI({
       }
     }
   }
-  function configureEngine() {
-    registerShorthands(shorthands ?? {})
-    setDebug(debug)
-    setPrefix(prefix ?? null)
-  }
-  if (ownsEngine) configureEngine()
   const importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
   )
+  const production = new ProductionActivation(
+    {
+      package: libPackage,
+      devupFile,
+      distDir,
+      cssDir: configuredCssDir,
+      extractCss,
+      debug,
+      include,
+      singleCss,
+      prefix,
+      shorthands,
+      sourceDirs: configuredSourceDirs,
+      mdxExtensions,
+      atomHoist,
+      importAliases,
+    },
+    endBuild,
+  )
+  const getCss = (file: number | null | undefined, main: boolean) =>
+    production.active ? production.css(file, main) : getEngineCss(file, main)
+  const extractionGate = createExtractionGate({
+    package: libPackage,
+    include,
+    mdxExtensions,
+    importAliases,
+  })
+  const extracted = new Set<string>()
+  const pathOptions = { devupFile, distDir, cssDir: configuredCssDir }
+  let cssDir = configuredCssDir ?? join(distDir, 'devup-ui')
+  let pathsResolved = false
+  function resolveFallbackPaths() {
+    if (!pathsResolved) {
+      ;({ devupFile, distDir, cssDir } = resolveProjectPaths(
+        projectRoot,
+        pathOptions,
+      ))
+      pathsResolved = true
+    }
+  }
+  const cssMap = new Map()
+  const aggregateCss = createAggregateCssPreparation()
   const reservation = createViteReservation({
     package: libPackage,
     include,
     importAliases,
     singleCss,
     atomHoist,
-    cssDir,
-    distDir,
+    get cssDir() {
+      return cssDir
+    },
+    get distDir() {
+      return distDir
+    },
     relevant: (file) =>
       isConfigFile(file) ||
       isTailwindFile(file) ||
       compiledDependencies.hasSupplier(file),
   })
-  const cssMap = new Map()
   const compiledDependencies = createCompiledDependencies()
   let stopWatching: (() => void) | undefined
   let watcherSession: ExtractionSession | undefined
@@ -395,6 +448,50 @@ export function DevupUI({
   let restoreForwardedCss:
     ((outputBundle: ForwardableBundle) => void) | undefined
   let isServe = false
+  let isProduction = false
+  let seedWarningEmitted = false
+  const setupWatchFiles = new Set<string>()
+  const missingWatchContexts = new Map<object, (path: string) => void>()
+  const missingInputWatch = createMissingInputWatch((importer) => {
+    latestInputs.delete(resolve(importer))
+  })
+  let fallbackConditions: readonly string[] = [
+    'import',
+    'module',
+    'require',
+    'node',
+  ]
+  const observeSetup: ResolutionInputObserver = (inputs) => {
+    for (const path of [
+      ...inputs.fileDependencies,
+      ...inputs.missingDependencies,
+    ])
+      setupWatchFiles.add(path)
+  }
+  function moduleResolver(
+    conditions: readonly string[],
+    onResolutionInputs: ResolutionInputObserver = observeSetup,
+    context?: string,
+  ) {
+    return createModuleResolver({
+      cwd: projectRoot,
+      includeMdx: mdxExtensions,
+      conditions,
+      onResolutionInputs,
+      toId: (path) => path.replaceAll('\\', '/'),
+      ...(context === undefined
+        ? {}
+        : {
+            prepareSource: (path: string) => {
+              if (isMdxSource(path, mdxExtensions))
+                throw new TypeError(
+                  'Markdown values have no synchronous compiler input; move the imported value into JS/TS',
+                )
+              return production.modules(context).source(path)
+            },
+          }),
+    })
+  }
   // The dev server watches cssDir, so every write is an update signal. A
   // module transformed again writes its sheet again, and the reload that
   // signal causes transforms it once more: signal only a changed sheet.
@@ -405,11 +502,11 @@ export function DevupUI({
   )
   // The files the project's Tailwind CSS is read from, which change what a
   // Tailwind class compiles to
-  let tailwindFiles: string[] = []
+  let tailwindFiles: readonly string[] = []
   let configFiles = new Set([resolve(devupFile)])
   let activeConfigFiles = configFiles
   let activeTailwindFiles: string[] = []
-  const configState = { generation: 0, refreshing: 0 }
+  const configState = new ConfigRefresh()
   let extractionSession = createExtractionSession()
   const latestInputs = new Map<string, SourceInput>()
   function rotateExtractionSession() {
@@ -420,7 +517,7 @@ export function DevupUI({
     const ownership = getBuildOwnership()
     return (
       isServe &&
-      !!endBuild &&
+      !!releaseLegacy &&
       !closing &&
       capture.session === extractionSession &&
       extractionSession.ready &&
@@ -433,44 +530,43 @@ export function DevupUI({
       reservation.prepared === capture.reservation
     )
   }
-  let refreshTail = Promise.resolve()
   const isConfigFile = (file: string) =>
-    configFiles.has(resolve(file)) || activeConfigFiles.has(resolve(file))
-  async function refreshConfig() {
-    configState.generation++
-    configState.refreshing++
-    const previous = refreshTail
-    const completed = Promise.withResolvers<void>()
-    refreshTail = completed.promise
-    const inputs = new Set([resolve(devupFile)])
-    try {
-      await previous
-      activeConfigFiles = inputs
-      await writeDataFiles(
-        {
-          package: libPackage,
-          cssDir,
-          devupFile,
-          distDir,
-          singleCss,
-        },
-        inputs,
-        (files) => {
-          activeTailwindFiles = files
-          watchConfigInputs?.()
-        },
-      )
-    } finally {
-      configFiles = inputs
-      tailwindFiles = activeTailwindFiles
-      activeTailwindFiles = []
-      configState.refreshing--
-      configState.generation++
-      reservation.invalidate()
-      completed.resolve()
-      watchConfigInputs?.()
-    }
-  }
+    configFiles.has(resolve(file)) ||
+    activeConfigFiles.has(resolve(file)) ||
+    production.configFiles.includes(resolve(file))
+  const refreshConfig = () =>
+    configState.run(async () => {
+      if (production.active) {
+        await production.updateTheme(observeSetup)
+        tailwindFiles = production.tailwindFiles
+        return
+      }
+      const inputs = new Set([resolve(devupFile)])
+      try {
+        activeConfigFiles = inputs
+        await writeDataFiles(
+          {
+            package: libPackage,
+            cssDir,
+            devupFile,
+            distDir,
+            singleCss,
+          },
+          projectRoot,
+          inputs,
+          (files) => {
+            activeTailwindFiles = files
+            watchConfigInputs?.()
+          },
+        )
+      } finally {
+        configFiles = inputs
+        tailwindFiles = activeTailwindFiles
+        activeTailwindFiles = []
+        reservation.invalidate()
+        watchConfigInputs?.()
+      }
+    })
   const isTailwindFile = (file: string) =>
     [...tailwindFiles, ...activeTailwindFiles].some(
       (tailwindFile) => resolve(tailwindFile) === resolve(file),
@@ -481,6 +577,249 @@ export function DevupUI({
     sheetRevisions.set(fileName, (sheetRevisions.get(fileName) ?? 0) + 1)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
+  const sourceTransform = {
+    async transform(code, id) {
+      const session = extractionSession
+      if (!extractCss) return
+      resolveFallbackPaths()
+      const fileName = id.replace(/\?.*$/s, '')
+      if (!extractionGate.selected(fileName)) return
+      const beforeRefresh = configState.wait()
+      if (beforeRefresh) await beforeRefresh
+      const environment = this.environment ?? plugin
+      if (production.active) {
+        await production.prepare(observeSetup)
+        tailwindFiles = production.tailwindFiles
+        for (const path of tailwindFiles)
+          this.addWatchFile(path.replaceAll('\\', '/'))
+      }
+      if (!production.active) await reservation.reserve()
+      const afterRefresh = configState.wait()
+      if (afterRefresh) await afterRefresh
+      const file = resolve(fileName)
+      let input = latestInputs.get(file)
+      if (isServe && input?.code !== code) {
+        input = { code }
+        latestInputs.set(file, input)
+      }
+      const capture = input && {
+        session,
+        file,
+        input,
+        ownership: getBuildOwnership().generation,
+        reservation: reservation.revision,
+        config: configState.generation,
+      }
+      const eligible = capture && currentCapture(capture)
+      const cached = eligible ? session.flights.get(id) : undefined
+      if (cached && currentCapture(cached.capture)) {
+        compiledDependencies.update(
+          this.environment?.name ?? 'client',
+          id,
+          cached.dependencies,
+        )
+        for (const dependency of cached.dependencies)
+          this.addWatchFile(dependency)
+        await cached.ready
+        await configState.ready()
+        return cached.result
+      }
+      const context = production.active
+        ? (this.environment?.name ?? production.context)
+        : undefined
+      const preserveSymlinks =
+        this.environment?.config?.resolve?.preserveSymlinks ??
+        resolvedConfig?.resolve?.preserveSymlinks
+      const watch =
+        isServe ||
+        this.meta?.watchMode ||
+        !!(
+          this.environment?.config?.build?.watch ?? resolvedConfig?.build?.watch
+        )
+      missingInputWatch.start(fileName, environment)
+      aggregateCss.observe(this.environment ?? plugin, id)
+      if (
+        production.active &&
+        !isMdxSource(fileName, mdxExtensions) &&
+        !extracted.has(fileName) &&
+        !extractionGate.relevant(code) &&
+        !extractionGate.admission(code)
+      )
+        return
+      const environmentConditions =
+        this.environment?.config?.resolve?.conditions
+      const resolver = moduleResolver(
+        (environmentConditions
+          ? ['import', ...environmentConditions]
+          : fallbackConditions
+        ).map((condition) =>
+          condition === 'development|production'
+            ? isProduction
+              ? 'production'
+              : 'development'
+            : condition,
+        ),
+        (inputs) => {
+          for (const path of inputs.fileDependencies) {
+            const watched = (
+              watch ? resolutionWatchPath(path, preserveSymlinks) : path
+            ).replaceAll('\\', '/')
+            this.addWatchFile(watched)
+            missingInputWatch.observeFile(fileName, watched, environment)
+          }
+          for (const path of inputs.missingDependencies) {
+            const watched = (
+              watch ? resolutionWatchPath(path, preserveSymlinks) : path
+            ).replaceAll('\\', '/')
+            setupWatchFiles.add(path)
+            missingInputWatch.observe(fileName, watched, environment)
+            missingWatchContexts.get(this.environment ?? plugin)?.(watched)
+          }
+        },
+        context,
+      )
+      if (!production.active) setModuleResolver(resolver)
+      let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
+      if (!rel.startsWith('./')) rel = `./${rel}`
+      extracted.add(fileName)
+      const output = (() => {
+        try {
+          const sourceType = isMdxSource(fileName, mdxExtensions)
+            ? 'compiled-mdx'
+            : undefined
+          const sourcePolicy: [
+            sourceType?: 'compiled-mdx',
+            deferredExtensions?: readonly string[],
+          ] = production.active
+            ? [sourceType, mdxExtensions]
+            : sourceType === undefined
+              ? []
+              : [sourceType]
+          const extract = () =>
+            codeExtract(
+              fileName,
+              code,
+              libPackage,
+              rel,
+              singleCss,
+              true,
+              false,
+              importAliases,
+              ...sourcePolicy,
+            )
+          if (!production.active) return extract()
+          const key = context ?? production.context
+          return production.run(key, () =>
+            production.modules(key).extract(
+              {
+                nativeId: id,
+                id: fileName,
+                classify: (id, source = code) => {
+                  extracted.add(id)
+                  return extractionGate.relevant(source)
+                },
+                source: {
+                  code,
+                  ...(isMdxSource(fileName, mdxExtensions)
+                    ? {
+                        sourceType: 'compiled-mdx' as const,
+                        map: this.getCombinedSourcemap(),
+                      }
+                    : {}),
+                },
+              },
+              resolver,
+              extract,
+            ),
+          )
+        } catch (error) {
+          if (isMdxSource(fileName, mdxExtensions))
+            throw remapMdxError(error, fileName, this.getCombinedSourcemap())
+          throw error
+        }
+      })()
+      const {
+        code: extractedCode,
+        css = '',
+        map,
+        cssFile,
+        updatedBaseStyle,
+        dependencies = [],
+        deferredDefaults: deferredMetadata,
+      } = (() => {
+        try {
+          return {
+            code: output.code,
+            css: output.css,
+            map: output.map,
+            cssFile: output.cssFile,
+            updatedBaseStyle: output.updatedBaseStyle,
+            dependencies: output.dependencies,
+            deferredDefaults: output.deferredDefaults,
+          }
+        } finally {
+          if ('free' in output) output.free()
+        }
+      })()
+      compiledDependencies.update(
+        this.environment?.name ?? 'client',
+        id,
+        dependencies,
+      )
+      for (const dependency of dependencies) this.addWatchFile(dependency)
+      const promises: Promise<void>[] = []
+      if (updatedBaseStyle)
+        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
+      if (cssFile) {
+        const fileNum = getFileNumByFilename(cssFile)
+        const prevCss = cssMap.get(fileNum)
+        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
+        if (css) promises.push(writeCssFile(basename(cssFile), css))
+      }
+      const result = {
+        code: extractedCode,
+        map,
+        ...(production.active
+          ? { meta: { devupDeferredDefaults: deferredMetadata } }
+          : {}),
+      }
+      if (!eligible) {
+        await Promise.all(promises)
+        await configState.ready()
+        if (production.active)
+          deferred.extracted(
+            this.environment ?? deferred.fallback,
+            id,
+            deferredMetadata,
+            isMdxSource(fileName, mdxExtensions)
+              ? (prefix) =>
+                  remapMdxError(prefix, fileName, this.getCombinedSourcemap())
+                    .message
+              : undefined,
+          )
+        return result
+      }
+      const flight: ExtractionFlight = {
+        capture,
+        result,
+        dependencies: [...dependencies],
+        ready: Promise.all(promises).then(
+          () => {
+            if (session.flights.get(id) === flight && !currentCapture(capture))
+              session.flights.delete(id)
+          },
+          (error: unknown) => {
+            if (session.flights.get(id) === flight) session.flights.delete(id)
+            throw error
+          },
+        ),
+      }
+      session.flights.set(id, flight)
+      await flight.ready
+      await configState.ready()
+      return result
+    },
+  } satisfies Pick<Plugin, 'transform'>
   const plugin = {
     name: 'devup-ui',
     // The WASM sheet and transform state are intentionally shared. Vite
@@ -488,60 +827,127 @@ export function DevupUI({
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
     async configResolved(config) {
+      closing = false
+      drained = undefined
       const session = rotateExtractionSession()
-      if (!ownsEngine) configureEngine()
       resolvedConfig = config
-      isServe = config?.command === 'serve'
-      const projectRoot = config?.root ?? process.cwd()
-      // Vite ids are POSIX absolute paths
-      setModuleResolver(
-        createModuleResolver({
-          cwd: projectRoot,
-          toId: (path) => path.replaceAll('\\', '/'),
-        }),
-      )
-      const sourceDirs = resolveSourceDirs(projectRoot)
-      if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
-      await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
-      await writeFile(
-        join(distDir, 'compat.d.ts'),
-        createCompatTypes(importAliases),
-        'utf-8',
-      )
-      await refreshConfig()
-
       try {
-        // Numbers come from the sorted paths of every file the build can
-        // extract (source and included packages), not from arrival order.
-        // Files numbered before keep their numbers, so a later pass in the
-        // dev server only numbers new files after the existing ones.
-        seedFileNumbers(
-          { seedFileMap },
-          collectNumberedFiles({
-            roots: sourceDirs,
-            include,
-            cwd: projectRoot,
-            needles: extractedNeedles(libPackage, importAliases),
-            importAliases,
-          }),
+        isServe = config?.command === 'serve'
+        isProduction = config?.isProduction ?? false
+        projectRoot = config?.root ?? process.cwd()
+        ;({ devupFile, distDir, cssDir } = resolveProjectPaths(
+          projectRoot,
+          pathOptions,
+        ))
+        pathsResolved = true
+        const conditions = [
+          'import',
+          ...(config?.build?.ssr
+            ? (config.ssr?.resolve?.conditions ?? [
+                'module',
+                'node',
+                'development|production',
+              ])
+            : (config?.resolve?.conditions ?? [
+                'module',
+                'browser',
+                'development|production',
+              ])),
+        ].map((condition) =>
+          condition === 'development|production'
+            ? config?.isProduction
+              ? 'production'
+              : 'development'
+            : condition,
         )
-      } catch {
-        // Best-effort; on failure numbering falls back to arrival order.
+        // Vite ids are POSIX absolute paths
+        fallbackConditions = conditions
+        if (production.configure(config)) writtenCss.clear()
+        if (production.active) {
+          endBuild()
+          initialized = true
+          return
+        }
+        if (!releaseLegacy) {
+          releaseLegacy = beginBuild(
+            initialized ? {} : { resetBuildState },
+            integration,
+          )
+          initialized = true
+        }
+        registerShorthands(shorthands ?? {})
+        setDebug(debug)
+        setPrefix(prefix ?? null)
+        setModuleResolver(moduleResolver(conditions))
+        const sourceDirs = resolveSourceDirs(projectRoot, configuredSourceDirs)
+        const input =
+          config?.build?.rolldownOptions?.input ??
+          config?.build?.rollupOptions?.input ??
+          (config?.build?.lib && config.build.lib.entry)
+        const rawEntries =
+          typeof input === 'string'
+            ? [input]
+            : Array.isArray(input)
+              ? input
+              : input && typeof input === 'object'
+                ? Object.values(input)
+                : []
+        const entries = rawEntries
+          .filter((entry): entry is string => typeof entry === 'string')
+          .filter((entry) => isSelectedSource(entry, mdxExtensions))
+          .map((entry) => resolve(projectRoot, entry))
+        const roots = [
+          ...new Set([
+            ...sourceDirs,
+            ...entries.map((entry) => dirname(entry)),
+          ]),
+        ]
+        if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
+        await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+        await writeFile(
+          join(distDir, 'compat.d.ts'),
+          createCompatTypes(importAliases),
+          'utf-8',
+        )
+        await refreshConfig()
+
+        try {
+          // Numbers come from the sorted paths of every file the build can
+          // extract (source and included packages), not from arrival order.
+          // Files numbered before keep their numbers, so a later pass in the
+          // dev server only numbers new files after the existing ones.
+          seedFileNumbers(
+            { seedFileMap },
+            collectNumberedFiles({
+              roots,
+              includeMdx: mdxExtensions,
+              include,
+              cwd: projectRoot,
+              needles: extractedNeedles(libPackage, importAliases),
+              importAliases,
+            }),
+          )
+        } catch (cause) {
+          if (!seedWarningEmitted) {
+            seedWarningEmitted = true
+            console.warn(
+              '[devup-ui] deterministic file seeding failed; class IDs now depend on module arrival order',
+              { phase: 'seed', root: projectRoot, cause },
+            )
+          }
+        }
+      } catch (cause) {
+        endBuild()
+        throw new Error(
+          `[devup-ui] setup failed at ${projectRoot}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
+        )
       }
       reservation.configure(config)
       if (extractionSession === session) session.ready = true
     },
-    async buildApp(builder) {
-      for (const environment of Object.values(builder.environments)) {
-        reservation.configure({
-          ...builder.config,
-          environments: {
-            [environment.name]: environment.config,
-          },
-        })
-      }
-    },
     configureServer(server) {
+      missingInputWatch.attach(server)
       if (watcherSession === extractionSession) rotateExtractionSession()
       stopWatching?.()
       watcherSession = extractionSession
@@ -571,14 +977,18 @@ export function DevupUI({
         watchConfigInputs = undefined
       }
     },
-    async buildStart() {
-      if (!extractCss) return
-      await reservation.reserve()
-      for (const dependency of reservation.dependencies)
-        this.addWatchFile(dependency)
-    },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
-      const theme = getDefaultTheme()
+      const release = beginBuild(
+        initialized ? {} : { resetBuildState },
+        integration,
+      )
+      initialized = true
+      let theme: ReturnType<typeof getDefaultTheme>
+      try {
+        theme = getDefaultTheme()
+      } finally {
+        release()
+      }
       const define: Record<string, string> = {}
       if (theme) {
         define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
@@ -592,7 +1002,11 @@ export function DevupUI({
           noExternal: [...include, /@devup-ui/, /@devup-editor/],
         },
       }
-      if (extractCss) {
+      if (
+        extractCss &&
+        !userConfig?.build?.lib &&
+        userConfig?.build?.cssCodeSplit !== false
+      ) {
         ret.build = createCssChunkBuildOptions(this?.meta, userConfig)
       }
       return ret
@@ -600,7 +1014,13 @@ export function DevupUI({
     apply() {
       return true
     },
-    closeBundle() {
+    closeBundle(this: (object & { environment?: { name: string } }) | void) {
+      if (production.active)
+        production.close(this ? this.environment?.name : undefined)
+      else {
+        missingInputWatch.close()
+        missingWatchContexts.clear()
+      }
       rotateExtractionSession()
       closing = true
       stopWatching?.()
@@ -608,19 +1028,155 @@ export function DevupUI({
       drained ??= Promise.withResolvers<void>()
       return drained.promise
     },
+    async buildStart(options) {
+      if (!extractCss) return
+      if (production.active) {
+        const attempted = new Set<string>()
+        try {
+          await production.prepare(
+            (inputs) => {
+              observeSetup(inputs)
+              for (const path of [
+                ...inputs.fileDependencies,
+                ...inputs.missingDependencies,
+              ])
+                attempted.add(path)
+            },
+            () => {
+              writtenCss.clear()
+              cssMap.clear()
+            },
+          )
+        } catch (error) {
+          if (error instanceof ConfigLoadError)
+            watchConfigFiles([...attempted], (path) => this.addWatchFile(path))
+          throw error
+        }
+        production.start(this.environment?.name ?? production.context)
+        tailwindFiles = production.tailwindFiles
+        watchConfigFiles(production.configFiles, (path) =>
+          this.addWatchFile(path),
+        )
+      } else {
+        await reservation.reserve()
+        for (const dependency of reservation.dependencies)
+          this.addWatchFile(dependency)
+      }
+      const watch =
+        isServe ||
+        this.meta?.watchMode ||
+        !!(
+          this.environment?.config?.build?.watch ?? resolvedConfig?.build?.watch
+        )
+      const addWatchFile = (path: string) => {
+        this.addWatchFile(path)
+        if (isServe || !watch || existsSync(path) || !SOURCE_FILE_RE.test(path))
+          return
+        let ancestor = dirname(path)
+        while (!existsSync(ancestor) && dirname(ancestor) !== ancestor)
+          ancestor = dirname(ancestor)
+        const physical = resolve(resolutionWatchPath(ancestor, false))
+        if (
+          dirname(physical) !== physical &&
+          physical !== resolve(resolutionWatchPath(projectRoot, false)) &&
+          physical !==
+            resolve(
+              resolutionWatchPath(join(projectRoot, 'node_modules'), false),
+            ) &&
+          basename(physical) !== 'node_modules'
+        )
+          this.addWatchFile(physical.replaceAll('\\', '/'))
+      }
+      missingWatchContexts.set(this.environment ?? plugin, addWatchFile)
+      for (const path of setupWatchFiles)
+        addWatchFile(
+          (watch
+            ? resolutionWatchPath(
+                path,
+                this.environment?.config?.resolve?.preserveSymlinks ??
+                  resolvedConfig?.resolve?.preserveSymlinks,
+              )
+            : path
+          ).replaceAll('\\', '/'),
+        )
+      for (const path of tailwindFiles)
+        this.addWatchFile(path.replaceAll('\\', '/'))
+      if (isServe || !extractCss) return
+      aggregateCss.start(
+        this.environment ?? plugin,
+        options.input,
+        this.environment?.config.build ?? resolvedConfig?.build ?? {},
+      )
+    },
     async watchChange(id) {
+      if (production.active) production.invalidate(id.replaceAll('\\', '/'))
+      resolveFallbackPaths()
       reservation.invalidate(id)
       if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
           await own(refreshConfig)()
-        } catch (error) {
-          console.error(error)
+        } finally {
+          if (production.active) {
+            watchConfigFiles(production.configFiles, (path) =>
+              this.addWatchFile(path),
+            )
+          }
         }
       }
+    },
+    buildApp: {
+      order: 'pre',
+      async handler(builder) {
+        for (const environment of Object.values(builder.environments)) {
+          reservation.configure({
+            ...builder.config,
+            environments: { [environment.name]: environment.config },
+          })
+        }
+        if (!production.active) return
+        production.refine(builder.environments)
+        await production.prepare(observeSetup)
+      },
+    },
+    buildEnd: {
+      order: 'post',
+      async handler(error) {
+        if (production.active && !error) {
+          try {
+            deferred.verify(this.environment ?? deferred.fallback, this)
+          } catch (cause) {
+            if (cause instanceof Error)
+              await production.finish(
+                this.environment?.name ?? production.context,
+                this,
+                cause,
+              )
+            throw cause
+          }
+        }
+        if (production.active)
+          await production.finish(
+            this.environment?.name ?? production.context,
+            this,
+            error,
+          )
+      },
+    },
+    closeWatcher() {
+      if (production.active) production.dispose()
+      missingInputWatch.close()
+      missingWatchContexts.clear()
+      rotateExtractionSession()
+      closing = true
+      stopWatching?.()
+      if (ownedWork === 0) return releaseBuild()
+      drained ??= Promise.withResolvers<void>()
+      return drained.promise
     },
     // Runs once per environment. Vite 6+ ignores `handleHotUpdate` on a plugin
     // that defines this hook, so the devup.json reload lives here as well.
     async hotUpdate({ file, modules, timestamp }) {
+      resolveFallbackPaths()
       reservation.invalidate(file, timestamp)
       const { environment } = this
       for (const id of compiledDependencies.consumers(environment.name, file)) {
@@ -670,6 +1226,7 @@ export function DevupUI({
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
     async handleHotUpdate({ file, server, modules, timestamp }) {
+      resolveFallbackPaths()
       reservation.invalidate(file, timestamp)
       for (const id of compiledDependencies.consumers('client', file)) {
         const consumer = server.moduleGraph.getModuleById(id)
@@ -704,6 +1261,7 @@ export function DevupUI({
       return []
     },
     resolveId(id, importer) {
+      resolveFallbackPaths()
       const fileName = basename(id).split('?')[0]
       if (
         DEVUP_CSS_FILE_RE.test(fileName) &&
@@ -721,116 +1279,28 @@ export function DevupUI({
     load(id) {
       const fileName = basename(id).split('?')[0]
       if (DEVUP_CSS_FILE_RE.test(fileName)) {
-        const fileNum = getFileNumByFilename(fileName)
-        const css = getCss(fileNum, false)
-        cssMap.set(fileNum, css)
-        return css
+        const snapshot = (): string | Promise<string> => {
+          if (configState.refreshing) return configState.ready().then(snapshot)
+          configState.assertReady()
+          const fileNum = getFileNumByFilename(fileName)
+          const css = getCss(fileNum, false)
+          cssMap.set(fileNum, css)
+          return css
+        }
+        const preparation = aggregateCss.prepare(
+          this.environment ?? plugin,
+          this,
+          id,
+        )
+        return preparation ? preparation.then(snapshot) : snapshot()
       }
     },
     enforce: 'pre',
-    async transform(code, id) {
-      const session = extractionSession
-      if (!extractCss) return
-
-      const fileName = id.split('?')[0]
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
-      if (createNodeModulesExcludeRegex(include).test(fileName)) {
-        return
-      }
-      await reservation.reserve()
-
-      const file = resolve(fileName)
-      let input = latestInputs.get(file)
-      if (isServe && input?.code !== code) {
-        input = { code }
-        latestInputs.set(file, input)
-      }
-      const capture = input && {
-        session,
-        file,
-        input,
-        ownership: getBuildOwnership().generation,
-        reservation: reservation.revision,
-        config: configState.generation,
-      }
-      const eligible = capture && currentCapture(capture)
-      const cached = eligible ? session.flights.get(id) : undefined
-      if (cached && currentCapture(cached.capture)) {
-        compiledDependencies.update(
-          this.environment?.name ?? 'client',
-          id,
-          cached.dependencies,
-        )
-        for (const dependency of cached.dependencies)
-          this.addWatchFile(dependency)
-        await cached.ready
-        return cached.result
-      }
-
-      let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
-      if (!rel.startsWith('./')) rel = `./${rel}`
-
-      const {
-        code: extractedCode,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-        // import main css in code
-      } = codeExtract(
-        fileName,
-        code,
-        libPackage,
-        rel,
-        singleCss,
-        true,
-        false,
-        importAliases,
-      )
-      compiledDependencies.update(
-        this.environment?.name ?? 'client',
-        id,
-        dependencies,
-      )
-      for (const dependency of dependencies) this.addWatchFile(dependency)
-      const promises: Promise<void>[] = []
-
-      if (updatedBaseStyle) {
-        // update base style
-        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
-      }
-
-      if (cssFile) {
-        const fileNum = getFileNumByFilename(cssFile)
-        const prevCss = cssMap.get(fileNum)
-        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
-        // `css` is only set when this transform added styles to the sheet.
-        if (css) promises.push(writeCssFile(basename(cssFile), css))
-      }
-      const result = { code: extractedCode, map }
-      if (!eligible) {
-        await Promise.all(promises)
-        return result
-      }
-      const flight: ExtractionFlight = {
-        capture,
-        result,
-        dependencies: [...dependencies],
-        ready: Promise.all(promises).then(
-          () => {
-            if (session.flights.get(id) === flight && !currentCapture(capture))
-              session.flights.delete(id)
-          },
-          (error: unknown) => {
-            if (session.flights.get(id) === flight) session.flights.delete(id)
-            throw error
-          },
-        ),
-      }
-      session.flights.set(id, flight)
-      await flight.ready
-      return result
+    transform: {
+      async handler(code, id) {
+        if (!SOURCE_FILE_RE.test(id.split('?')[0])) return
+        return sourceTransform.transform.call(this, code, id)
+      },
     },
     async generateBundle(_options, bundle) {
       if (!extractCss) return
@@ -880,13 +1350,52 @@ export function DevupUI({
       },
     },
   }
-  return [
-    {
-      ...plugin,
-      configResolved: own(plugin.configResolved),
-      buildStart: own(plugin.buildStart),
-      transform: own(plugin.transform),
+  const mdxPlugin = {
+    name: 'devup-ui:mdx',
+    enforce: 'post',
+    sharedDuringBuild: true,
+    ...deferred.resolution.companion(),
+    async transform(code, id) {
+      if (!isMdxSource(id, mdxExtensions)) return
+      if (production.active) validateMdxDefault(this.parse(code), code, id)
+      const result = await sourceTransform.transform.call(this, code, id)
+      if (production.active && extractCss && result)
+        deferred.resolution.succeeded(this.environment ?? deferred.fallback, id)
+      return result
     },
-    restorePlugin,
-  ]
+  } satisfies Plugin
+  const aggregateGuard = {
+    name: 'devup-ui:aggregate-css-guard',
+    sharedDuringBuild: true,
+    apply: 'build',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        for (const asset of Object.values(bundle)) {
+          if (asset.type === 'asset') {
+            aggregateCss.checkAsset(this.environment ?? plugin, asset)
+          }
+        }
+      },
+    },
+  } satisfies Plugin
+  const compiledGuard = createCompiledGuard({
+    package: libPackage,
+    mdxExtensions,
+    importAliases,
+    extractCss,
+    deferred,
+  })
+  const plugins: [
+    typeof plugin,
+    typeof restorePlugin,
+    typeof mdxPlugin,
+    typeof aggregateGuard,
+    typeof compiledGuard,
+  ] = [plugin, restorePlugin, mdxPlugin, aggregateGuard, compiledGuard]
+  plugin.configResolved = own(plugin.configResolved, false)
+  plugin.buildStart = own(plugin.buildStart)
+  plugin.transform.handler = own(plugin.transform.handler)
+  mdxPlugin.transform = own(mdxPlugin.transform)
+  return plugins
 }

@@ -65,6 +65,7 @@ function htmlEnv(config: ReservationConfig) {
 export async function physicalEnvironmentEntries(
   config: ReservationConfig,
   environment: ReservationEnvironment,
+  read?: (path: string) => string,
 ): Promise<{
   readonly entries: readonly HtmlReservationEntry[]
   readonly html: readonly string[]
@@ -81,7 +82,7 @@ export async function physicalEnvironmentEntries(
     html.push(filename)
     let source: string
     try {
-      source = readFileSync(filename, 'utf8')
+      source = read ? read(filename) : readFileSync(filename, 'utf8')
     } catch (error) {
       if (
         error instanceof Error &&

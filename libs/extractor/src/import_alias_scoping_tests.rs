@@ -188,8 +188,13 @@ fn type_only_devup_components_do_not_take_css_props() {
 #[test]
 fn number_edits_map_back_to_original_offsets_when_imports_are_rewritten() {
     let code = "import { css as c } from '@emotion/react';\nc({ top: 23 }); function local(c) { c({ top: 24 }); }";
-    let output =
-        transform_import_aliases_with_edits(code, "test.tsx", "@devup-ui/react", &aliases());
+    let output = transform_import_aliases_with_edits(
+        code,
+        "test.tsx",
+        "@devup-ui/react",
+        &aliases(),
+        oxc_span::SourceType::tsx(),
+    );
     let Some(pixel) = output.code.find("\"23px\"") else {
         panic!("missing pixelified number: {}", output.code);
     };

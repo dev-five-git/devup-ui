@@ -1,3 +1,4 @@
+use oxc_span::SourceType;
 use rstest::rstest;
 
 use super::{Barreled, rewrite};
@@ -24,13 +25,14 @@ fn barrel_import_is_followed_when_declared_after_its_export(
 ) {
     let barrel = barrel.to_string();
     let resolver = move |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "ui.ts".to_string(),
             code: barrel.clone(),
-        })
+            source_type: None,
+        }))
     };
 
-    let result = rewrite(code, "app.tsx", PACKAGE, Some(&resolver));
+    let result = rewrite(code, "app.tsx", PACKAGE, Some(&resolver), SourceType::tsx());
 
     let Barreled::Rewritten(result) = result else {
         panic!("barrel import was not redirected");
@@ -53,13 +55,20 @@ fn namespace_shadow_is_preserved_when_outer_namespace_is_rewritten(
 ) {
     let code = format!("import * as UI from '{source}'; const outer = UI.css({{}}); {shadow}");
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "ui.ts".to_string(),
             code: "export { css, Box } from '@devup-ui/react';".to_string(),
-        })
+            source_type: None,
+        }))
     };
 
-    let result = rewrite(&code, "app.tsx", PACKAGE, Some(&resolver));
+    let result = rewrite(
+        &code,
+        "app.tsx",
+        PACKAGE,
+        Some(&resolver),
+        SourceType::tsx(),
+    );
 
     let Barreled::Rewritten(result) = result else {
         panic!("outer namespace was not rewritten");
@@ -81,7 +90,7 @@ fn named_shadow_is_preserved_when_import_alias_is_rewritten(#[case] shadow: &str
         "import {{ css }} from '@devup-ui/react'; function real() {{ const local = css; return local({{}}); }} {shadow}"
     );
 
-    let result = rewrite(&code, "app.tsx", PACKAGE, None);
+    let result = rewrite(&code, "app.tsx", PACKAGE, None, SourceType::tsx());
 
     let Barreled::Rewritten(result) = result else {
         panic!("import alias was not rewritten");
@@ -101,13 +110,20 @@ fn barrel_alias_shadow_is_preserved_when_same_spelling_occurs_in_multiple_scopes
         "import {{ css }} from './ui'; const top = css; function a() {{ const local = top; return local({{}}); }} function b() {{ const local = css; return local({{}}); }} {shadow}"
     );
     let resolver = |_: &str, _: &str| {
-        Some(ResolvedModule {
+        Some(crate::ModuleResolution::Resolved(ResolvedModule {
             path: "ui.ts".to_string(),
             code: "import { css } from '@devup-ui/react'; function f(css) { const local = css; return local; } export { css };".to_string(),
-        })
+            source_type: None,
+        }))
     };
 
-    let result = rewrite(&code, "app.tsx", PACKAGE, Some(&resolver));
+    let result = rewrite(
+        &code,
+        "app.tsx",
+        PACKAGE,
+        Some(&resolver),
+        SourceType::tsx(),
+    );
 
     let Barreled::Rewritten(result) = result else {
         panic!("barrel aliases were not rewritten");
@@ -121,7 +137,7 @@ fn nested_namespace_import_is_preserved_when_exporting_an_outer_alias() {
     let shadow = "namespace Local { import UI = Other.UI; export const B = UI.Box; }";
     let code = format!("import * as UI from '@devup-ui/react'; {shadow} export const B = UI.Box;");
 
-    let result = rewrite(&code, "app.tsx", PACKAGE, None);
+    let result = rewrite(&code, "app.tsx", PACKAGE, None, SourceType::tsx());
 
     let Barreled::Rewritten(result) = result else {
         panic!("outer export was not rewritten");
@@ -141,7 +157,7 @@ fn runtime_import_is_unchanged_when_exporting_its_alias() {
     let code =
         "import { useTheme } from '@devup-ui/react'; const theme = useTheme; export { theme };";
 
-    let result = rewrite(code, "app.tsx", PACKAGE, None);
+    let result = rewrite(code, "app.tsx", PACKAGE, None, SourceType::tsx());
 
     assert!(matches!(result, Barreled::Unchanged));
 }
@@ -171,7 +187,7 @@ fn unresolved_alias_is_preserved_when_exporting_a_compiled_import() {
     let code =
         "import { Box } from '@devup-ui/react'; const alias = unknown; export { Box, alias };";
 
-    let result = rewrite(code, "app.tsx", PACKAGE, None);
+    let result = rewrite(code, "app.tsx", PACKAGE, None, SourceType::tsx());
 
     let Barreled::Rewritten(result) = result else {
         panic!("compiled export was not rewritten");

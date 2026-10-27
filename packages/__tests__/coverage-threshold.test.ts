@@ -49,7 +49,10 @@ function configPath(words: readonly string[]): string | undefined {
 }
 
 // `root` and `preload` name repository files; every other option applies unchanged.
-const fixtureConfig = bunfig.replace(/^(?:root|preload) = .*$/gm, '')
+const configs = [
+  ['root', bunfig],
+  ['vite', await Bun.file(resolve(root, 'bunfig.vite.toml')).text()],
+] as const
 const fixtureTest = `import { expect, test } from 'bun:test'
 import { pick } from './source'
 
@@ -60,15 +63,28 @@ test('pick', () => {
 const fullyCovered =
   'export function pick(value: boolean) {\n  return value ? 1 : 2\n}\n'
 
-function coverageRun(source: string) {
+function coverageRun(source: string, lane: 'root' | 'vite') {
   const directory = mkdtempSync(join(tmpdir(), 'coverage-threshold-'))
   try {
-    writeFileSync(join(directory, 'bunfig.toml'), fixtureConfig)
+    const fixtureConfig = configs.find(([name]) => name === lane)?.[1]
+    assert(typeof fixtureConfig === 'string')
+    writeFileSync(
+      join(directory, 'bunfig.toml'),
+      fixtureConfig.replace(/^(?:root|preload) = .*$/gm, ''),
+    )
     writeFileSync(join(directory, 'source.ts'), source)
     writeFileSync(join(directory, 'source.test.ts'), fixtureTest)
-    const run = Bun.spawnSync([process.execPath, 'test', '--coverage'], {
-      cwd: directory,
-    })
+    const run = Bun.spawnSync(
+      [
+        process.execPath,
+        'test',
+        ...(lane === 'root' ? ['--isolate'] : []),
+        '--coverage',
+      ],
+      {
+        cwd: directory,
+      },
+    )
     return {
       exitCode: run.exitCode,
       output: run.stdout.toString() + run.stderr.toString(),
@@ -88,6 +104,17 @@ it('collects coverage in every Bun test run of the test script', () => {
   const commands = bunTestCommands('test')
   expect(commands).not.toEqual([])
   expect(commands.filter((words) => !words.includes('--coverage'))).toEqual([])
+})
+
+it('keeps the actual root native command serial and isolated and Vite neutral', () => {
+  const commands = bunTestCommands('test')
+  const roots = commands.filter((words) => configPath(words) === undefined)
+  const vite = commands.filter((words) => configPath(words) !== undefined)
+  expect(roots).toHaveLength(1)
+  expect(vite).toHaveLength(1)
+  expect(roots[0]).toContain('--isolate')
+  expect(commands.some((words) => words.includes('--parallel'))).toBe(false)
+  expect(vite[0]).not.toContain('--isolate')
 })
 
 it.each([
@@ -111,16 +138,32 @@ it('requires every explicit Bun test config to be fully covered', async () => {
   }
 })
 
-it.each([
-  [
-    'an uncovered line',
-    'export function pick(value: boolean) {\n  if (value) {\n    return 1\n  }\n  return 2\n}\n',
-  ],
-  ['an uncovered function', `${fullyCovered}export const unused = () => 3\n`],
-])('fails the run when a file has %s', (_, source) => {
-  expect(coverageRun(source)).toMatchObject({ exitCode: 1 })
+it.each(
+  configs.flatMap(
+    ([lane]) =>
+      [
+        [
+          lane,
+          'an uncovered line',
+          'export function pick(value: boolean) {\n  if (value) {\n    return 1\n  }\n  return 2\n}\n',
+        ],
+        [
+          lane,
+          'an uncovered function',
+          `${fullyCovered}export const unused = () => 3\n`,
+        ],
+      ] as const,
+  ),
+)('fails the %s run when a file has %s', (lane, _, source) => {
+  const result = coverageRun(source, lane)
+  expect(result).toMatchObject({ exitCode: 1 })
+  expect(result.output).toMatch(/^\s*1 pass$/m)
+  expect(result.output).toMatch(/^\s*0 fail$/m)
 })
 
-it('passes the run when every file is fully covered', () => {
-  expect(coverageRun(fullyCovered)).toMatchObject({ exitCode: 0 })
-})
+it.each(['root', 'vite'] as const)(
+  'passes the %s run when every file is fully covered',
+  (lane) => {
+    expect(coverageRun(fullyCovered, lane)).toMatchObject({ exitCode: 0 })
+  },
+)
