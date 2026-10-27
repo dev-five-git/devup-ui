@@ -1,3 +1,7 @@
+mod compiled_guard;
+#[cfg(target_arch = "wasm32")]
+pub use compiled_guard::compiled_guard_facts;
+pub use compiled_guard::compiled_guard_facts_internal;
 mod reservation;
 pub use reservation::{
     ReservationInput, get_suppressed_reservation_row_count, get_unreserved_class_slot_count,

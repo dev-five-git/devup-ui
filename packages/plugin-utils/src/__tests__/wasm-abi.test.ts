@@ -46,6 +46,7 @@ describe('@devup-ui/wasm exports', () => {
       'Output',
       'codeExtract',
       'codeExtractWithoutSourceMap',
+      'compiledGuardFacts',
       'exportCanonicalMap',
       'exportClassMap',
       'exportFileMap',
@@ -114,10 +115,10 @@ describe('@devup-ui/wasm extraction', () => {
 
   it('tells a file that uses Devup UI from one that does not', () => {
     expect(
-      wasm.hasDevupUI('a.tsx', `import { Box } from '${PACKAGE}'`, PACKAGE),
+      wasm.hasDevupUI('a.tsx', `import { Box } from '${PACKAGE}'`, PACKAGE, {}),
     ).toBe(true)
     expect(
-      wasm.hasDevupUI('a.tsx', `import { Box } from 'other'`, PACKAGE),
+      wasm.hasDevupUI('a.tsx', `import { Box } from 'other'`, PACKAGE, {}),
     ).toBe(false)
   })
 

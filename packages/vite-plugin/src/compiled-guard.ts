@@ -1,5 +1,4 @@
 import {
-  compiledFacts,
   createCompileTimeClassifier,
   type GuardFacts,
   type GuardObservation,
@@ -10,6 +9,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import type { Plugin } from 'vite'
 
+import { sourceFacts } from './compiled-facts'
 import type { DeferredDefaults } from './deferred-defaults'
 
 export function createCompiledGuard(options: {
@@ -49,8 +49,8 @@ export function createCompiledGuard(options: {
     async moduleParsed(info) {
       if (!options.extractCss || !info.code) return
       let observation: GuardObservation | undefined
-      const facts = compiledFacts(
-        this.parse(info.code),
+      const facts = sourceFacts(
+        info.code,
         options.deferred
           ? (value) => {
               observation = value
@@ -67,7 +67,10 @@ export function createCompiledGuard(options: {
         { readonly request: string; readonly kind?: 'require-call' }
       >(
         [
-          ...facts.references,
+          ...(!info.id.startsWith('\0') &&
+          !isSelectedSource(info.id.split('?')[0], options.mdxExtensions)
+            ? facts.references
+            : []),
           ...[...facts.exports.values()].flatMap((ref) => (ref ? [ref] : [])),
           ...facts.stars.map((request) => ({ request })),
         ].map((ref) => [targetKey(ref), ref]),

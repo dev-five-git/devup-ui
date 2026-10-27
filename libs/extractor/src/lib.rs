@@ -18,7 +18,10 @@ mod class_selection_state;
 mod class_selection_support;
 #[cfg(test)]
 mod class_selection_tests;
+/// Pure final-JavaScript compiled guard facts producer.
+pub mod compiled_guard;
 mod component;
+pub use compiled_guard::{CompiledGuardError, compiled_guard_facts_internal};
 mod composition;
 #[cfg(test)]
 mod css_composition_rest_tests;
