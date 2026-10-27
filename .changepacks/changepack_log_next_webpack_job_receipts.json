@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Use identity-bound Windows job membership for Next webpack lifecycle assertions so unrelated historical PID reuse cannot invalidate completed cleanup. Preserve genuine production, fault, descendant and fixture-removal checks. No runtime behavior change or new build errors.",
+  "date": "2026-10-27T00:00:00.000Z"
+}
