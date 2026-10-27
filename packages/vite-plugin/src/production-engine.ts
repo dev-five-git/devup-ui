@@ -11,11 +11,11 @@ import {
   exportFileMap,
   exportReservationState,
   exportSheet,
-  importCanonicalMap,
-  importClassMap,
-  importFileMap,
-  importReservationState,
-  importSheet,
+  importCanonicalMapJson,
+  importClassMapJson,
+  importFileMapJson,
+  importReservationStateJson,
+  importSheetJson,
   resetBuildState,
 } from '@devup-ui/wasm'
 
@@ -147,16 +147,12 @@ export interface ProductionState {
 export const productionEngine: GenerationEngine<ProductionState> = {
   reset: resetBuildState,
   restore(state) {
-    const sheet: unknown = JSON.parse(state.sheet)
-    const classes: unknown = JSON.parse(state.classes)
-    const files: unknown = JSON.parse(state.files)
-    const canonical: unknown = JSON.parse(state.canonical)
-    const reservation: unknown = JSON.parse(state.reservation)
-    importSheet(sheet)
-    importClassMap(classes)
-    importFileMap(files)
-    importCanonicalMap(canonical)
-    importReservationState(reservation)
+    // Private BuildGeneration handoffs contain matching Rust exports, not user JSON.
+    importSheetJson(state.sheet)
+    importClassMapJson(state.classes)
+    importFileMapJson(state.files)
+    importCanonicalMapJson(state.canonical)
+    importReservationStateJson(state.reservation)
   },
   capture() {
     return {

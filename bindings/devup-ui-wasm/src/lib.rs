@@ -2,7 +2,26 @@ mod compiled_guard;
 #[cfg(target_arch = "wasm32")]
 pub use compiled_guard::compiled_guard_facts;
 pub use compiled_guard::compiled_guard_facts_internal;
+mod owner_codec;
 mod reservation;
+#[cfg(target_arch = "wasm32")]
+pub use owner_codec::{
+    import_canonical_map_json, import_class_map_json, import_file_map_json,
+    import_reservation_state_json, import_sheet_json,
+};
+pub use owner_codec::{
+    import_canonical_map_json_internal, import_class_map_json_internal,
+    import_file_map_json_internal, import_reservation_state_json_internal,
+    import_sheet_json_internal,
+};
+#[cfg(test)]
+mod owner_codec_error_tests;
+#[cfg(test)]
+mod owner_codec_remaining_error_tests;
+#[cfg(test)]
+mod owner_codec_remaining_tests;
+#[cfg(test)]
+mod owner_codec_tests;
 pub use reservation::{
     ReservationInput, get_suppressed_reservation_row_count, get_unreserved_class_slot_count,
     reserve_class_slots_internal,
