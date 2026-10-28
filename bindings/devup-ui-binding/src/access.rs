@@ -11,7 +11,10 @@ pub(crate) struct Sequence<'a, 'env> {
 }
 impl<'a, 'env> Sequence<'a, 'env> {
     pub(crate) fn new(source: De<'a, 'env>, pairs: bool) -> Result<Option<Self>, Error> {
-        if !pairs && source.op::<bool>(Operation::Array, None)? {
+        if pairs {
+            return Self::map(source);
+        }
+        if source.op::<bool>(Operation::Array, None)? {
             return Self::array(source).map(Some);
         }
         let iterator: Unknown<'env> = source.op(Operation::Iter, None)?;
@@ -21,14 +24,30 @@ impl<'a, 'env> Sequence<'a, 'env> {
                 range: None,
             }));
         }
-        if pairs && source.kind()? == ValueType::Object {
-            let (entries, len): (Unknown<'env>, u32) = source.op(Operation::Entries, None)?;
-            return Ok(Some(Self {
-                source: source.child(entries),
-                range: Some(0..len),
-            }));
-        }
         Ok(None)
+    }
+    fn map(source: De<'a, 'env>) -> Result<Option<Self>, Error> {
+        let fallback = u32::from(source.kind()? == ValueType::Object);
+        let packet: Array<'env> = source.op(Operation::MapStart, Some(Either::A(fallback)))?;
+        // Tags are exact numeric metadata, not truncating/wrapping u32 conversions.
+        match (item::<f64>(&packet, 0)?, packet.len()) {
+            (0.0, 1) => Ok(None),
+            (1.0, 2) => {
+                let iterator: Unknown<'env> = item(&packet, 1)?;
+                if iterator.get_type()? != ValueType::Object {
+                    return Err(Error::Host("invalid private map iterator".to_string()));
+                }
+                Ok(Some(Self {
+                    source: source.child(iterator),
+                    range: None,
+                }))
+            }
+            (2.0, 3) => Ok(Some(Self {
+                source: source.child(item(&packet, 1)?),
+                range: Some(0..item::<u32>(&packet, 2)?),
+            })),
+            _ => Err(Error::Host("invalid private map start".to_string())),
+        }
     }
     fn array(source: De<'a, 'env>) -> Result<Self, Error> {
         Ok(Self {

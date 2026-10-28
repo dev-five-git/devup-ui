@@ -35,6 +35,30 @@ export function indexed(get) {
   return new Proxy({}, { get })
 }
 
+export function queueProbe(target, { phase, mark, enqueue }) {
+  if (!['iterator', 'nonfunction-method', 'noncallable-next'].includes(phase))
+    return undefined
+  const event = phase === 'iterator' ? 'iterator' : 'probe'
+  const probe = () => {
+    mark(event)
+    enqueue()
+  }
+  Object.defineProperty(target, Symbol.iterator, {
+    get() {
+      if (phase === 'noncallable-next')
+        return () => ({
+          get next() {
+            probe()
+            return 3
+          },
+        })
+      probe()
+      return phase === 'iterator' ? undefined : 3
+    },
+  })
+  return event
+}
+
 export function reserve(w, rows, aliases) {
   return w.reserveClassSlots(rows, pkg, false, false, false, aliases)
 }

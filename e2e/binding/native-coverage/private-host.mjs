@@ -4,7 +4,8 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
 
-import { runProtocol, runValues, withControl } from './private-values.mjs'
+import { runProtocol } from './private-protocol.mjs'
+import { runValues, withControl } from './private-values.mjs'
 
 const [entry, destination, group] = process.argv.slice(2)
 assert.equal(process.argv.length, 5)
@@ -118,12 +119,12 @@ if (group === 'raw-resolver-failure') {
           request(),
           ({ access }) =>
             (op, value, key) =>
-              op === OP.entries ? [] : access(op, value, key),
+              op === OP.mapStart ? [] : access(op, value, key),
         ),
       {
         name: 'Error',
         code: 'GenericFailure',
-        message: /^Error: Array length < 2$/,
+        message: /^Error: missing private access result$/,
       },
     )
   })
@@ -150,7 +151,7 @@ if (group === 'raw-resolver-failure') {
           request(),
           ({ access, accessToken }) =>
             (op, value, key) => {
-              if (op === OP.iter) return accessToken
+              if (op === OP.mapStart) return accessToken
               if (op === OP.preflightFailure)
                 throw new Error('private preflight failure host')
               return access(op, value, key)

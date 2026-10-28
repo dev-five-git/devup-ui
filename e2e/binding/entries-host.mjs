@@ -13,6 +13,7 @@ import { box, pkg, source } from './corpus/extraction.mjs'
 import { runCases } from './entries-cases.mjs'
 import { runContext } from './entries-context.mjs'
 import { runErrors } from './entries-errors.mjs'
+import { runQueues } from './entries-queues.mjs'
 import { encode, hash } from './observation.mjs'
 
 const [entry, destination, host] = process.argv.slice(2)
@@ -146,6 +147,8 @@ const snapshot = () => ({
   css: [null, 0, 1].map((index) => w.getCss(index, false)),
 })
 const ids = []
+let activeIds = ids,
+  recordsFile = 'records.jsonl'
 const h = {
   w,
   take,
@@ -219,7 +222,7 @@ const h = {
     return fixture
   },
   async test(id, action) {
-    assert.ok(!ids.includes(id), id)
+    assert.ok(!activeIds.includes(id), id)
     w.resetStateForTesting()
     const before = snapshot()
     const observations = await action()
@@ -228,7 +231,7 @@ const h = {
       original,
     )
     appendFileSync(
-      join(destination, 'records.jsonl'),
+      join(destination, recordsFile),
       JSON.stringify({
         id,
         before: encode(before),
@@ -236,10 +239,14 @@ const h = {
         after: encode(snapshot()),
       }) + '\n',
     )
-    ids.push(id)
+    activeIds.push(id)
   },
 }
 await runCases(h)
 await runErrors(h)
 await runContext(h)
 save('complete.json', { ids })
+activeIds = []
+recordsFile = 'map-start-queues.jsonl'
+await runQueues(h, ['nonfunction-method', 'noncallable-next'])
+save('map-start-queues-complete.json', { ids: activeIds })

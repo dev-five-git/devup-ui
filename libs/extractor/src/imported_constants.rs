@@ -46,6 +46,8 @@ mod px_tests;
 #[path = "imported_css_root.rs"]
 mod imported_css_root;
 
+mod change_presence;
+
 #[derive(Clone, Debug)]
 enum Constant {
     String(String),
@@ -447,7 +449,7 @@ impl Changed {
                 None => return false,
             }
         }
-        value.change().is_some()
+        value.has_change()
     }
 
     /// The changes of the bindings `message` names, by the name the module
@@ -764,7 +766,7 @@ fn inline_in<'a>(
                     inlined.changed.whole.insert(name.clone(), change.clone());
                     continue;
                 }
-                Some(constant) if constant.change().is_some() => {
+                Some(constant) if constant.has_change() => {
                     inlined
                         .changed
                         .holding
@@ -980,7 +982,7 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
         scope.change(&mut modules, name).is_some()
             || scope
                 .lookup(&mut modules, name)
-                .is_some_and(|value| value.change().is_some())
+                .is_some_and(|value| value.has_change())
     }
 }
 

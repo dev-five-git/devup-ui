@@ -21,6 +21,7 @@ pub(crate) enum Operation {
     Field,
     Iter,
     Next,
+    MapStart,
 }
 impl From<Operation> for u32 {
     fn from(operation: Operation) -> Self {
@@ -41,6 +42,7 @@ impl From<Operation> for u32 {
             Operation::Field => 13,
             Operation::Iter => 14,
             Operation::Next => 15,
+            Operation::MapStart => 16,
         }
     }
 }

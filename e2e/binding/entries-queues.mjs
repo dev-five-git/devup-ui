@@ -5,6 +5,7 @@ import { pkg, source } from './corpus/extraction.mjs'
 import {
   indexed,
   iteratorFailure,
+  queueProbe,
   reserve,
   slot,
   wrappedPhases,
@@ -130,9 +131,9 @@ export async function runResolverOrder(h) {
   }
 }
 
-export async function runQueues(h) {
+export async function runQueues(h, phases = ['entries', 'iterator', 'enum']) {
   const { w } = h
-  for (const phase of ['entries', 'iterator', 'enum']) {
+  for (const phase of phases) {
     for (const queue of ['Promise', 'queueMicrotask', 'nextTick']) {
       await h.test(`queue-context-${phase}-${queue}`, async () => {
         const storage = new AsyncLocalStorage(),
@@ -175,14 +176,7 @@ export async function runQueues(h) {
           mark('index')
           return phase === 'enum' ? fixture.pair : ['a', 8]
         })
-        if (phase === 'iterator')
-          Object.defineProperty(target, Symbol.iterator, {
-            get() {
-              mark('iterator')
-              enqueue()
-              return undefined
-            },
-          })
+        const probe = queueProbe(target, { phase, mark, enqueue })
         storage.run('outer-context', () => {
           h.patch(
             {
@@ -190,7 +184,7 @@ export async function runQueues(h) {
                 if (value !== target)
                   return Reflect.apply(original, this, [value])
                 mark('entries')
-                if (phase !== 'iterator') enqueue()
+                if (probe === undefined) enqueue()
                 storage.run('nested-context', () => {
                   h.schema(() => w.setPrefix(false), slot.prefix)
                   assert.equal(storage.getStore(), 'nested-context')
@@ -204,7 +198,7 @@ export async function runQueues(h) {
           assert.deepEqual(
             events.map(([event]) => event),
             [
-              ...(phase === 'iterator' ? ['iterator'] : []),
+              ...(probe === undefined ? [] : [probe]),
               'entries',
               'length',
               'index',
@@ -216,7 +210,7 @@ export async function runQueues(h) {
         assert.deepEqual(
           events,
           [
-            ...(phase === 'iterator' ? ['iterator'] : []),
+            ...(probe === undefined ? [] : [probe]),
             'entries',
             'length',
             'index',

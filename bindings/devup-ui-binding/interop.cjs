@@ -18,6 +18,7 @@ const OP = {
   field: 13,
   iter: 14,
   next: 15,
+  mapStart: 16,
 }
 exports.OP = OP
 const schemaToken = class {}
@@ -139,20 +140,30 @@ exports.withAccess = function withAccess(target, value) {
           result = [field !== undefined || key in value, field]
           break
         }
-        case OP.iter: {
+        case OP.iter:
+        case OP.mapStart: {
           if (!boundary.shape(value)) return schemaToken
           const iteratorSymbol = Symbol.iterator
           wrapped = true
           const method = Reflect.get(value, iteratorSymbol)
-          if (typeof method !== 'function') break
-          const iterator = method.call(value)
-          wrapped = false
-          result =
-            typeof iterator === 'object' &&
-            iterator !== null &&
-            typeof iterator.next === 'function'
-              ? iterator
-              : undefined
+          if (typeof method === 'function') {
+            const iterator = method.call(value)
+            wrapped = false
+            result =
+              typeof iterator === 'object' &&
+              iterator !== null &&
+              typeof iterator.next === 'function'
+                ? iterator
+                : undefined
+          }
+          if (operation === OP.mapStart) {
+            wrapped = false
+            if (result !== undefined) result = [1, result]
+            else if (key === 1) {
+              const entries = Object.entries(value)
+              result = [2, entries, entries.length >>> 0]
+            } else result = [0]
+          }
           break
         }
         case OP.next: {
