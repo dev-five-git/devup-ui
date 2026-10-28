@@ -4,7 +4,8 @@ const { readFileSync, writeFileSync } = require('node:fs')
 const { isAbsolute, join } = require('node:path')
 const createBoundary = require('../argument-validation.cjs')
 const [addon, destination] = process.argv.slice(2)
-assert.ok(isAbsolute(addon) && isAbsolute(destination))
+const publicMode = addon === '--public'
+assert.ok((publicMode || isAbsolute(addon)) && isAbsolute(destination))
 const interop = readFileSync(join(__dirname, 'interop.cjs'), 'utf8')
 const adapter = readFileSync(join(__dirname, 'adapter.cjs'), 'utf8')
 const boundaryImport = "require('../argument-validation.cjs')()"
@@ -24,9 +25,13 @@ const source = [
   adapter.replace(interopImport, 'interop'),
   'return exports',
   '})()',
-  'const native = { exports: {} }',
-  `process.dlopen(native, ${JSON.stringify(addon)})`,
-  'module.exports = adapter.createBinding(native.exports)',
+  ...(publicMode
+    ? ["module.exports = adapter.createBinding(require('../loader.cjs'))"]
+    : [
+        'const native = { exports: {} }',
+        `process.dlopen(native, ${JSON.stringify(addon)})`,
+        'module.exports = adapter.createBinding(native.exports)',
+      ]),
 ].join('\n')
-assert.equal([...source.matchAll(/\brequire\(/g)].length, 0)
+assert.equal([...source.matchAll(/\brequire\(/g)].length, publicMode ? 1 : 0)
 writeFileSync(destination, source, 'utf8')

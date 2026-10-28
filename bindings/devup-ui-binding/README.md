@@ -1,6 +1,32 @@
-# Native build-host adapter (WIP)
+# @devup-ui/binding
 
-`adapter.cjs` privately exports `createBinding(raw)`; its returned object explicitly exposes the existing 29 WASM names. Raw addon helpers, positional requests and `interop.cjs` are not package ABI. No public loader or npm manifest is provided yet.
+Synchronous native build-time compiler for Node.js and Bun. Both
+`require('@devup-ui/binding')` and named ESM imports expose exactly the existing
+29 compiler names, with identical function/class identities and no default init.
+Authored CommonJS/ESM declarations are included; no WASM dependency is required.
+
+The private loader selects one optional platform sibling: Windows MSVC, macOS,
+or Linux GNU/musl, on x64/arm64. Install with optional dependencies enabled.
+Missing packages name the required sibling; genuine image/load errors propagate.
+There is no browser, WASI, download or silent WASM fallback. Only `.` is exported;
+raw addon helpers, positional requests, adapter and interop are not package ABI.
+
+From the repository, build an explicit target with
+`node bindings/devup-ui-binding/build.mjs --target x86_64-pc-windows-msvc`.
+The driver uses locked Cargo, optimized `native` profile and two jobs; removes
+the selected previous source/copy, then copies only that target's fresh image
+to its sibling. It also generates package-relative `pkg/index.cjs`.
+Linux cross builds may append `--zigbuild` (current cargo-zigbuild/Zig required;
+GNU compatibility floor glibc 2.28); musl uses dynamic linking, not crt-static.
+The canonical eight targets are in `e2e/binding/package/matrix.mjs`.
+The existing `node script.cjs <absolute-addon> <absolute-destination>` private
+producer remains unchanged in behavior; `--public <absolute-destination>` is
+the separate relocatable mode. Generated files and images are not source.
+
+All nine manifests seed 0.1.0 with same-release workspace optional edges;
+the release pipeline must build all targets and materialize exact versions.
+This foundation does not prove foreign images, release packing or publication.
+No install hooks are used.
 
 The synchronous Unknown-backed decoder calls the existing engine Serde implementations, without JSON preconversion. JSON.stringify is used only after invalid-type selection for the generated-WASM debug diagnostic. Resolver handles are per environment; replacement, both resets and teardown release them. Native state still does not support concurrent independent builds.
 
