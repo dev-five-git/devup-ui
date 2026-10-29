@@ -1,8 +1,9 @@
 'use client'
 import { Box, Center, css, Flex, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
 import { Fragment, useEffect, useState } from 'react'
 
+import { LocalizedLink as Link } from '@/components/LocalizedLink'
+import { useLocale } from '@/i18n/LocaleProvider'
 import { useQueryParam } from '@/utils/use-query-param'
 
 interface SearchResult {
@@ -45,6 +46,7 @@ function getHighlightedParts(text: string, query: string) {
 
 export function SearchContent() {
   const query = useQueryParam('query')
+  const locale = useLocale()
   const [data, setData] = useState<SearchResult[]>()
   useEffect(() => {
     if (!query) return
@@ -52,7 +54,9 @@ export function SearchContent() {
     const controller = new AbortController()
     const normalizedQuery = query.toLowerCase()
 
-    void fetch('/search.json', { signal: controller.signal })
+    void fetch(locale === 'en' ? '/search.json' : '/search.ko.json', {
+      signal: controller.signal,
+    })
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Search index request failed with ${response.status}`)
@@ -73,7 +77,7 @@ export function SearchContent() {
       })
 
     return () => controller.abort()
-  }, [query])
+  }, [query, locale])
   if (!query) return
   const inner = data ? (
     <>

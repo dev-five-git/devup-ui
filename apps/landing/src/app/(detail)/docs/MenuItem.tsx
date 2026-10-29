@@ -1,7 +1,10 @@
 'use client'
 import { Box, css, Flex, Text } from '@devup-ui/react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+
+import { LocalizedLink as Link } from '@/components/LocalizedLink'
+import { stripLocale } from '@/i18n/config'
+import { Message } from '@/i18n/Message'
 
 import { OpenMenuItem } from './OpenMenuItem'
 
@@ -16,7 +19,7 @@ export interface MenuItemProps {
 
 export function MenuItem(props: MenuItemProps) {
   const { children, to, subMenu } = props
-  const path = usePathname()
+  const path = stripLocale(usePathname())
   const selected = to
     ? path.startsWith(to)
     : !!subMenu?.some((item) => (item.to ? path.startsWith(item.to) : false))
@@ -47,7 +50,11 @@ export function MenuItem(props: MenuItemProps) {
         opacity={selected ? '1' : '0.8'}
         typography={selected ? 'buttonS' : 'buttonSmid'}
       >
-        {children}
+        {typeof children === 'string' ? (
+          <Message>{children}</Message>
+        ) : (
+          children
+        )}
       </Text>
     </Flex>
   )

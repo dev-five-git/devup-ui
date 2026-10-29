@@ -1,8 +1,11 @@
 'use client'
 import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Fragment, useReducer } from 'react'
+
+import { LocalizedLink as Link } from '@/components/LocalizedLink'
+import { stripLocale } from '@/i18n/config'
+import { Message } from '@/i18n/Message'
 
 import type { MenuItemProps } from './MenuItem'
 
@@ -11,7 +14,7 @@ export function OpenMenuItem({
   subMenu,
 }: Omit<MenuItemProps, 'subMenu' | 'to'> &
   Required<Pick<MenuItemProps, 'subMenu'>>) {
-  const path = usePathname()
+  const path = stripLocale(usePathname())
   const selected = subMenu.some((item) =>
     item.to ? path.startsWith(item.to) : false,
   )
@@ -37,7 +40,11 @@ export function OpenMenuItem({
           opacity={selected ? '1' : '0.8'}
           typography={selected ? 'buttonS' : 'buttonSmid'}
         >
-          {children}
+          {typeof children === 'string' ? (
+            <Message>{children}</Message>
+          ) : (
+            children
+          )}
         </Text>
         {subMenu && (
           <Image
@@ -76,7 +83,11 @@ export function OpenMenuItem({
                     opacity={selected ? '1' : '0.8'}
                     typography={selected ? 'buttonS' : 'buttonSmid'}
                   >
-                    {children}
+                    {typeof children === 'string' ? (
+                      <Message>{children}</Message>
+                    ) : (
+                      children
+                    )}
                   </Text>
                 </Flex>
               )

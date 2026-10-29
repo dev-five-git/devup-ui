@@ -1,5 +1,6 @@
 import { Box, css, Flex, Image, Text } from '@devup-ui/react'
-import Link from 'next/link'
+
+import { LocalizedLink as Link } from '@/components/LocalizedLink'
 
 export function GetStartedButton() {
   return (

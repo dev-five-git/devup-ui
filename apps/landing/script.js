@@ -1,6 +1,9 @@
 import { glob, readFile, writeFile } from 'node:fs/promises'
 
-const files = await glob('src/**/*.mdx')
+import { generateI18n } from './generate-i18n.js'
+import { COMPONENT_GROUPS } from './src/constants/index.ts'
+
+const files = await glob('src/app/(detail)/**/*.mdx')
 
 const q = []
 for await (const file of files) {
@@ -12,22 +15,39 @@ for await (const file of files) {
       if (content.trim().length === 0 || titleIndex === -1) {
         return null
       }
-      const fileName = file.split(/[/\\]/).pop()
+      const normalized = file.replaceAll('\\', '/')
+      const url = normalized
+        .replace('src/app/(detail)', '')
+        .replace('/[component]', '')
+        .replace(/\/(?:page|index|Api|Description)\.mdx$/u, '')
+      if (
+        url.startsWith('/components/') &&
+        url !== '/components/overview' &&
+        !Object.values(COMPONENT_GROUPS).flat().includes(url.split('/').at(-1))
+      )
+        return null
 
       return {
         text: content.toString().substring(titleIndex),
-        title: /(#)+ (.*)/.exec(content.toString())[1],
-        url: file
-          .replace(/src[/\\]app[/\\]\(detail\)[/\\]/, '')
-          .replace(fileName, ''),
+        title: /(#)+ (.*)/.exec(content.toString())[2],
+        url,
       }
     }),
   )
 }
 
-const res = await Promise.all(q)
+const res = (await Promise.all(q)).filter(Boolean)
+const search = new Map()
+for (const entry of res) {
+  const previous = search.get(entry.url)
+  search.set(
+    entry.url,
+    previous ? { ...previous, text: `${previous.text}\n${entry.text}` } : entry,
+  )
+}
 
-await writeFile('public/search.json', JSON.stringify(res))
+await writeFile('public/search.json', JSON.stringify([...search.values()]))
+await generateI18n()
 
 // Demo barrel.
 //

@@ -3,6 +3,7 @@ import type { MDXComponents } from 'mdx/types'
 import { isValidElement, type ReactNode } from 'react'
 
 import { Code } from './components/Code'
+import { LocalizedLink } from './components/LocalizedLink'
 
 interface MarkdownCodeProps extends React.ComponentProps<'code'> {
   inline?: boolean
@@ -32,6 +33,9 @@ function getHeadingId(children: ReactNode): string {
 }
 
 export const _components = {
+  a({ href, ...props }: React.ComponentProps<'a'>) {
+    return <LocalizedLink {...props} href={href ?? '#'} />
+  },
   code({ inline, className, children, ...props }: MarkdownCodeProps) {
     const match = /language-(\w+)/.exec(className || '')
     return !inline && match ? (

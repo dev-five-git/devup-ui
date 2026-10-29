@@ -1,8 +1,12 @@
 'use client'
 import { Box, css, Flex, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+
+import { LocalizedLink as Link } from '@/components/LocalizedLink'
+import { stripLocale } from '@/i18n/config'
+import { useLocale } from '@/i18n/LocaleProvider'
+import { translatedRoutes } from '@/i18n/routes.generated'
 
 function IndexMenu({
   children,
@@ -39,13 +43,15 @@ function IndexMenu({
 }
 
 export function RightIndex() {
-  const pathname = usePathname()
+  const pathname = stripLocale(usePathname())
+  const locale = useLocale()
+  const translated = locale === 'ko' && translatedRoutes.includes(pathname)
   const isDocs = pathname.startsWith('/docs/')
   const isComponents = pathname.startsWith('/components/')
   const editUrl = isDocs
-    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/docs${pathname.replace('/docs', '')}/page.mdx`
+    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${translated ? 'content/ko' : 'app/(detail)'}${pathname}/page.mdx`
     : isComponents
-      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/components${pathname.replace('/components', '')}/`
+      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${translated ? 'content/ko' : 'app/(detail)'}${pathname}/`
       : ''
   const [menus, setMenus] = useState<
     {
@@ -91,7 +97,7 @@ export function RightIndex() {
       clearTimeout(timeoutId)
       observer.disconnect()
     }
-  }, [])
+  }, [pathname, locale])
 
   return (
     <VStack gap="16px" p="20px 16px" w="200px">

@@ -2,13 +2,16 @@
 import { Text } from '@devup-ui/react'
 import { usePathname } from 'next/navigation'
 
+import { stripLocale } from '@/i18n/config'
+import { Message } from '@/i18n/Message'
+
 interface MenuProps {
   children?: React.ReactNode
   keyword: string
 }
 
 export function Menu({ children, keyword }: MenuProps) {
-  const path = usePathname()
+  const path = stripLocale(usePathname())
   const selected = path.startsWith(`/${keyword}`)
   return (
     <Text
@@ -23,7 +26,7 @@ export function Menu({ children, keyword }: MenuProps) {
       opacity={selected ? undefined : '0.6'}
       typography="buttonLsemiB"
     >
-      {children}
+      {typeof children === 'string' ? <Message>{children}</Message> : children}
     </Text>
   )
 }

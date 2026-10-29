@@ -1,0 +1,247 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
+export const metadata = {
+  title: 'Devup UI란?',
+  alternates: {
+    canonical: '/ko/docs/overview',
+    languages: {
+      en: '/docs/overview',
+      ko: '/ko/docs/overview',
+      'x-default': '/docs/overview',
+    },
+  },
+}
+
+## Devup UI란?
+
+**Devup UI는 단순히 또 하나의 CSS-in-JS 라이브러리가 아닙니다. CSS-in-JS의 미래를 제시합니다.**
+
+Devup UI는 Rust와 WebAssembly로 구현한 제로 런타임 CSS-in-JS 전처리기입니다. 빌드 시점에 모든 스타일을 변환하여 런타임 오버헤드를 완전히 없애면서 CSS-in-JS 문법을 폭넓게 지원합니다.
+
+### 기존 CSS-in-JS의 문제점
+
+기존 CSS-in-JS 솔루션에서는 다음 두 가지 중 하나를 선택해야 했습니다.
+
+- **개발자 경험**: 직관적인 API, 컴포넌트와 같은 위치에 작성하는 스타일, 동적 테마
+- **성능**: 런타임 오버헤드 제거, 빠른 페이지 로딩, 최적의 Core Web Vitals
+
+styled-components나 Emotion 같은 라이브러리는 뛰어난 개발자 경험을 제공하지만, 스타일을 생성하기 위해 런타임에 JavaScript를 실행합니다. Vanilla Extract 같은 제로 런타임 대안은 성능을 위해 유연성 일부를 포기합니다.
+
+### Devup UI의 해결 방식
+
+Devup UI는 이 둘을 모두 제공합니다. Rust 기반 전처리기가 빌드 시점에 코드를 분석하고, 정적으로 알 수 없는 값은 CSS 변수로 처리하거나 문제가 있는 위치를 알려 주는 빌드 오류를 발생시킵니다([지원 문법과 제한 사항](/docs/limitations)).
+
+- **변수** — 동적 값을 CSS 사용자 정의 속성으로 변환합니다.
+- **조건식** — 삼항 표현식을 정적으로 분석합니다.
+- **반응형 배열** — 브레이크포인트별 스타일을 미리 생성합니다.
+- **의사 선택자** — `_hover`, `_focus`, `_active`를 자연스럽게 사용할 수 있습니다.
+- **테마** — 타입이 안전한 테마 토큰과 추가 런타임 비용 없는 테마 전환을 제공합니다.
+
+### 주요 장점
+
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>기능</TableHeaderCell>
+      <TableHeaderCell>Devup UI</TableHeaderCell>
+      <TableHeaderCell>styled-components</TableHeaderCell>
+      <TableHeaderCell>Emotion</TableHeaderCell>
+      <TableHeaderCell>Vanilla Extract</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>제로 런타임</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>미지원</TableCell>
+      <TableCell>미지원</TableCell>
+      <TableCell>지원</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>동적 값</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>제한적</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>전체 문법 지원</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>미지원</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>타입이 안전한 테마</TableCell>
+      <TableCell>지원</TableCell>
+      <TableCell>제한적</TableCell>
+      <TableCell>제한적</TableCell>
+      <TableCell>지원</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>빌드 성능</TableCell>
+      <TableCell>가장 빠름</TableCell>
+      <TableCell>N/A</TableCell>
+      <TableCell>N/A</TableCell>
+      <TableCell>빠름</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+### 동작 원리
+
+```tsx
+// 익숙한 CSS-in-JS 문법으로 작성합니다.
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+
+// Devup UI가 빌드 시점에 변환합니다.
+const generated = <div className="a b c" />
+
+// 최적화된 원자적 CSS를 함께 생성합니다.
+// .a { background-color: red; }
+// .b { padding: 16px; }  /* 4 * 4 = 16px */
+// .c:hover { background-color: blue; }
+```
+
+> 숫자 값에는 4를 곱합니다. `p={4}`는 `padding: 16px`로 변환됩니다.
+
+클래스 이름에는 짧은 37진법 인코딩(`a`, `b`, ... `z`, `_`, `aa`, `ab`, ...)을 사용하여 CSS 출력 크기를 최소화합니다.
+
+### 익숙한 API
+
+styled-components나 Emotion을 사용해 봤다면 익숙하게 느껴질 것입니다.
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+const Card = styled('div', {
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  _hover: {
+    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
+  },
+})
+```
+
+### 검증된 성능
+
+다음은 `ubuntu-latest` 환경의 [GitHub Actions 실행 33254030962](https://github.com/dev-five-git/devup-ui/actions/runs/33254030962)에서 측정한 최신 Next.js 16.3.3 콜드 빌드 결과입니다.
+Devup 항목은 `@devup-ui/react` 1.0.40과 `@devup-ui/next-plugin` 1.0.83을 사용합니다.
+모든 Next.js 빌드는 타입 검사에 네이티브 TypeScript 7 CLI를 사용합니다.
+
+Webpack 수치는 콜드 빌드 한 번의 결과입니다.
+
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>라이브러리</TableHeaderCell>
+      <TableHeaderCell>버전</TableHeaderCell>
+      <TableHeaderCell>빌드 시간</TableHeaderCell>
+      <TableHeaderCell>빌드 크기</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>tailwindcss</TableCell>
+      <TableCell>4.3.3</TableCell>
+      <TableCell>12.81s</TableCell>
+      <TableCell>66,453,190 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>styleX</TableCell>
+      <TableCell>0.19.0</TableCell>
+      <TableCell>27.61s</TableCell>
+      <TableCell>95,413,403 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>vanilla-extract</TableCell>
+      <TableCell>1.21.2</TableCell>
+      <TableCell>11.96s</TableCell>
+      <TableCell>67,689,923 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>kuma-ui</TableCell>
+      <TableCell>1.6.4</TableCell>
+      <TableCell>13.07s</TableCell>
+      <TableCell>74,747,637 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>panda-css</TableCell>
+      <TableCell>1.12.0</TableCell>
+      <TableCell>13.20s</TableCell>
+      <TableCell>70,970,208 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>chakra-ui</TableCell>
+      <TableCell>3.37.0</TableCell>
+      <TableCell>19.98s</TableCell>
+      <TableCell>206,589,898 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>mui</TableCell>
+      <TableCell>9.4.0</TableCell>
+      <TableCell>13.78s</TableCell>
+      <TableCell>100,603,186 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (파일별 CSS)**</TableCell>
+      <TableCell>**1.0.40**</TableCell>
+      <TableCell>**10.73s**</TableCell>
+      <TableCell>66,535,095 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (단일 CSS)**</TableCell>
+      <TableCell>**1.0.40**</TableCell>
+      <TableCell>**10.81s**</TableCell>
+      <TableCell>**66,535,321 bytes**</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+Turbopack 수치는 순서를 번갈아 가며 수행한 콜드 빌드 여섯 번의 중앙값입니다. 빌드 크기는 같은 커밋의 대표 실행에서 나온 결과입니다.
+
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>라이브러리</TableHeaderCell>
+      <TableHeaderCell>버전</TableHeaderCell>
+      <TableHeaderCell>빌드 시간 중앙값</TableHeaderCell>
+      <TableHeaderCell>빌드 크기</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>tailwindcss</TableCell>
+      <TableCell>4.3.3</TableCell>
+      <TableCell>5.52s</TableCell>
+      <TableCell>38,425,132 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (직접 API, 단일 CSS)**</TableCell>
+      <TableCell>**1.0.40**</TableCell>
+      <TableCell>**5.46s**</TableCell>
+      <TableCell>**36,507,782 bytes**</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (정적 `.css.ts`)**</TableCell>
+      <TableCell>**1.0.40**</TableCell>
+      <TableCell>**5.41s**</TableCell>
+      <TableCell>36,586,883 bytes</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+Turbopack의 측정 범위는 서로 겹칩니다. 직접 API를 사용한 경우의 중앙값이 0.06초(1.1%) 빠르지만, 이 테스트 앱에서는 사실상 Tailwind와 동등한 수준입니다. 여섯 번의 콜드 빌드 측정값은 Tailwind가 `5.42, 5.56, 5.70, 5.53, 5.41, 5.52s`, 직접 API를 사용한 Devup UI가 `5.64, 5.40, 5.42, 5.46, 5.54, 5.46s`, 정적 `.css.ts`가 `5.42, 5.38, 5.42, 5.47, 5.40, 5.38s`였습니다. 테스트 앱의 구조는 비슷하지만 스타일이 픽셀 단위로 동일하지는 않습니다. Tailwind 쪽은 첫 문단과 버튼에 스타일을 더 많이 적용하고, Devup UI 쪽은 타입이 지정된 컴포넌트와 스타일 속성을 사용합니다. 따라서 이 결과는 개별 CSS 규칙의 마이크로벤치마크가 아닌 빌드 파이프라인의 측정 결과로 해석해야 합니다. 정적 `.css.ts` 항목은 정적 모듈에 사용하던 이전 `lite` 고속 처리 경로로 측정했습니다. 현재는 모든 `.css.ts` 모듈이 전체 Boa 평가기에서 실행되며, 첫 모듈에는 약 20ms, 이후 모듈마다 1ms 미만이 추가됩니다.
+
+### 시작하기
+
+CSS-in-JS의 미래를 경험할 준비가 되셨나요? [설치 가이드](/docs/installation)를 따라 몇 분 만에 시작해 보세요.

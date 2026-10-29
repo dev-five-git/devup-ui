@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { getLocale, stripLocale } from '../apps/landing/src/i18n/config'
+import { translatedRoutes } from '../apps/landing/src/i18n/routes.generated'
 import {
   EXPECTED_EXPORTED_HTML_FILES,
   EXPECTED_EXPORTED_ROUTES,
@@ -128,7 +130,7 @@ test.describe('Landing static export routes', () => {
           await expect(
             page.locator('html'),
             `${route} language`,
-          ).toHaveAttribute('lang', 'en')
+          ).toHaveAttribute('lang', getLocale(route))
           await expect(page.locator('html'), `${route} theme`).toHaveAttribute(
             'data-theme',
             theme,
@@ -174,7 +176,15 @@ test.describe('Landing static export routes', () => {
           expect(
             new URL(canonicalHref ?? '', 'https://devup-ui.com').href,
             `${route} canonical`,
-          ).toBe(new URL(route, 'https://devup-ui.com').href)
+          ).toBe(
+            new URL(
+              getLocale(route) === 'ko' &&
+                !translatedRoutes.includes(stripLocale(route))
+                ? stripLocale(route)
+                : route,
+              'https://devup-ui.com',
+            ).href,
+          )
           await expect(page.locator('link[rel~="icon"]')).toHaveAttribute(
             'href',
             '/favicon.ico',

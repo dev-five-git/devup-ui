@@ -1,5 +1,6 @@
 import { Box, css, Flex, Text } from '@devup-ui/react'
-import Link from 'next/link'
+
+import { LocalizedLink as Link } from '@/components/LocalizedLink'
 
 import { LeftMenu as LeftMenuComponents } from '../../app/(detail)/components/LeftMenu'
 import { LeftMenu as LeftMenuDocs } from '../../app/(detail)/docs/LeftMenu'
