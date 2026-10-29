@@ -6,8 +6,10 @@ URL, including without JavaScript. Unknown URLs still return 404.
 
 The site uses next-intl for locale context and navigation. Because deployment is
 a static export, it uses explicit App Router paths instead of middleware rewrites.
-The small Korean catch-all exports HTML redirects for untranslated public routes.
-Adding a Korean page automatically replaces its fallback; no registry is needed.
+The shared [locale] catch-all renders registered translations and exports HTML
+redirects for untranslated public routes. Translations sit beside their English
+source, such as page.mdx and page.ko.mdx. A small map in src/i18n/pages.ts connects
+each translated module to its public URL and shared layout.
 
 ## Contributing a Korean translation
 
@@ -19,30 +21,41 @@ to merge before opening a translation PR.
 
 ### Documentation and MDX pages
 
-1. Copy src/app/(detail)/docs/<path>/page.mdx to
-   src/app/ko/docs/<path>/page.mdx. The existing Korean Overview is the example.
+1. Copy src/app/(detail)/docs/<path>/page.mdx to page.ko.mdx in the same directory.
+   The existing Korean Overview is the example.
 2. Translate headings, prose, tables, explanatory comments, alt text and metadata.
    Preserve API/package names, code behavior, numbers, qualifications and external URLs.
 3. Keep internal links root-relative, such as /docs/installation. The shared
    next-intl Link adds the locale; untranslated targets redirect to English.
 4. Set the canonical URL to /ko/docs/<path> and language alternatives to the
    English and Korean URLs. Keep the corresponding English metadata in sync.
+5. Register the English pathname in src/i18n/pages.ts, following Overview:
 
-No generated files or routing configuration changes are needed. For the team
-page, add src/app/ko/team/page.mdx and reuse its English layout with a small
-layout.tsx wrapper, following src/app/ko/docs/layout.tsx.
+```ts
+'/docs/installation': {
+  load: () => import('@/app/(detail)/docs/installation/page.ko.mdx'),
+  Layout: DocsLayout,
+},
+```
+
+For the team page, add src/app/(detail)/team/page.ko.mdx and register /team with
+the existing team layout. Reuse layouts directly; no Korean directory or layout
+wrapper is needed. Unregistered pages retain the English redirect. Run node
+script.js to refresh search data; there is no generated translation registry.
 
 ### Component references and TSX pages
 
-For a component, add src/app/ko/components/<name>/page.tsx plus translated
-index.mdx and Api.mdx in that directory. Use the English component renderer at
+For a component, add page.ko.tsx, index.ko.mdx and Api.ko.mdx beside its English
+files in src/app/(detail)/components/[component]/<name>. Use the English renderer at
 src/app/(detail)/components/[component]/page.tsx as the composition reference;
 replace its computed MDX imports with imports from the translated files. Reuse
 getDemos and MdxCard, and import shared code through @/ paths. Do not copy demos.
-Add a Korean components/layout.tsx wrapper around the shared English layout.
+Register /components/<name> in src/i18n/pages.ts with its page.ko.tsx loader and
+the existing components layout.
 
-For home, showcase and components overview, add a page.tsx at the corresponding
-src/app/ko path (home is src/app/ko/page.tsx). Reuse the existing interactive
+For home, showcase and components overview, add page.ko.tsx beside page.tsx and
+register its pathname in src/i18n/pages.ts (home uses /). Translate the component
+overview's Description.mdx as Description.ko.mdx beside it. Reuse the interactive
 components. Introduce matching keys in src/i18n/messages/en.json and ko.json,
 and load catalogs in src/i18n/request.ts, merging English defaults with Korean
 overrides per namespace. In SiteLayout, pass getMessages({locale}) to

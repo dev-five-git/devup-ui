@@ -21,7 +21,10 @@ test('English remains the default and Korean overview is translated', async ({
   ).toBeVisible()
   await expect(
     page.getByRole('link', { name: 'Edit this page' }),
-  ).toHaveAttribute('href', /src\/app\/ko\/docs\/overview\/page.mdx$/u)
+  ).toHaveAttribute(
+    'href',
+    /src\/app\/\(detail\)\/docs\/overview\/page\.ko\.mdx$/u,
+  )
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
     'https://devup-ui.com/ko/docs/overview',
@@ -92,6 +95,8 @@ test('Korean routes render translated or English content without JavaScript', as
   ).toBeVisible()
   const response = await page.goto('/ko/docs/does-not-exist')
   expect(response?.status()).toBe(404)
+  const unsupportedLocale = await page.goto('/fr/docs/overview')
+  expect(unsupportedLocale?.status()).toBe(404)
   await context.close()
 })
 

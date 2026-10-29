@@ -6,6 +6,7 @@ const files = await glob('src/app/(detail)/**/*.mdx')
 
 const q = []
 for await (const file of files) {
+  if (file.endsWith('.ko.mdx')) continue
   q.push(
     readFile(file, {
       encoding: 'utf-8',
@@ -47,14 +48,15 @@ for (const entry of res) {
 
 await writeFile('public/search.json', JSON.stringify([...search.values()]))
 const koreanSearch = new Map(search)
-for await (const file of glob('src/app/ko/**/*.mdx')) {
+for await (const file of glob('src/app/(detail)/**/*.ko.mdx')) {
   const content = await readFile(file, 'utf8')
   const heading = /^#{1,6} (.+)$/mu.exec(content)
   if (!heading) continue
   const url = file
     .replaceAll('\\', '/')
-    .replace('src/app/ko', '')
-    .replace(/\/page\.mdx$/u, '')
+    .replace('src/app/(detail)', '')
+    .replace('/[component]', '')
+    .replace(/\/(?:page|index|Api|Description)\.ko\.mdx$/u, '')
   koreanSearch.set(url, {
     title: heading[1],
     text: content.slice(heading.index),

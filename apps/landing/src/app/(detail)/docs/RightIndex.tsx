@@ -45,9 +45,9 @@ export function RightIndex() {
   const isDocs = pathname.startsWith('/docs/')
   const isComponents = pathname.startsWith('/components/')
   const editUrl = isDocs
-    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${locale === 'ko' ? 'app/ko' : 'app/(detail)'}${pathname}/page.mdx`
+    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)${pathname}/page${locale === 'en' ? '' : '.' + locale}.mdx`
     : isComponents
-      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${locale === 'ko' ? 'app/ko' : 'app/(detail)'}${pathname}/`
+      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)${pathname}/`
       : ''
   const [menus, setMenus] = useState<
     {
