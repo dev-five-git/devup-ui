@@ -1,9 +1,9 @@
 'use client'
 import { Box, Center, css, Flex, Text, VStack } from '@devup-ui/react'
+import { useLocale } from 'next-intl'
 import { Fragment, useEffect, useState } from 'react'
 
-import { LocalizedLink as Link } from '@/components/LocalizedLink'
-import { useLocale } from '@/i18n/LocaleProvider'
+import { Link } from '@/i18n/navigation'
 import { useQueryParam } from '@/utils/use-query-param'
 
 interface SearchResult {

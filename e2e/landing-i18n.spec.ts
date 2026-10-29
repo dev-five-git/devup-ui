@@ -12,12 +12,16 @@ test('English remains the default and Korean overview is translated', async ({
   await page.getByRole('link', { name: 'Switch to Korean' }).click()
   await expect(page).toHaveURL(/\/ko\/docs\/overview$/u)
   await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
+  await expect(page.getByRole('link', { name: 'Storybook' })).toHaveAttribute(
+    'href',
+    '/storybook/index.html',
+  )
   await expect(
     page.getByRole('heading', { name: 'Devup UI란?', exact: true }),
   ).toBeVisible()
   await expect(
     page.getByRole('link', { name: 'Edit this page' }),
-  ).toHaveAttribute('href', /src\/content\/ko\/docs\/overview\/page.mdx$/u)
+  ).toHaveAttribute('href', /src\/app\/ko\/docs\/overview\/page.mdx$/u)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
     'https://devup-ui.com/ko/docs/overview',
@@ -27,8 +31,8 @@ test('English remains the default and Korean overview is translated', async ({
     .getByRole('link', { name: 'Installation', exact: true })
     .first()
     .click()
-  await expect(page).toHaveURL(/\/ko\/docs\/installation$/u)
-  await expect(page.locator('main [lang="en"]')).toBeVisible()
+  await expect(page).toHaveURL(/(?<!ko)\/docs\/installation$/u)
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
     'https://devup-ui.com/docs/installation',
@@ -76,10 +80,13 @@ test('Korean routes render translated or English content without JavaScript', as
     page.getByRole('heading', { name: 'Devup UI란?', exact: true }),
   ).toBeVisible()
   await page.goto('/ko/docs/installation')
-  await expect(page.locator('main [lang="en"]')).toBeVisible()
+  await expect(page).toHaveURL(/(?<!ko)\/docs\/installation$/u)
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await page.goto('/ko')
-  await expect(page.locator('main [lang="en"]')).toBeVisible()
+  await expect(page).toHaveURL('http://localhost:3099/')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await page.goto('/ko/components/button')
+  await expect(page).toHaveURL(/(?<!ko)\/components\/button$/u)
   await expect(
     page.getByRole('heading', { name: 'Button', exact: true }).first(),
   ).toBeVisible()
@@ -97,6 +104,10 @@ test('mobile menu exposes the language switcher', async ({ page }) => {
   await expect(
     page.locator('a[href="/ko/docs/installation"]').first(),
   ).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Storybook' })).toHaveAttribute(
+    'href',
+    '/storybook/index.html',
+  )
 })
 
 test('language navigation fits tablet screens', async ({ page }) => {

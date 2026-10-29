@@ -1,14 +1,13 @@
 import { Box, css, globalCss, ThemeScript } from '@devup-ui/react'
 import { resetCss } from '@devup-ui/reset-css'
 import ReactLenis from 'lenis/react'
+import { NextIntlClientProvider } from 'next-intl'
+import { setRequestLocale } from 'next-intl/server'
 
 import { AnchorScroll } from '@/components/AnchorScroll'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { SearchModal } from '@/components/SearchModal'
-import { siteMetadata } from '@/constants/site-metadata'
-import type { Locale } from '@/i18n/config'
-import { LocaleProvider } from '@/i18n/LocaleProvider'
 import {
   installStaticExportRscTransport,
   STATIC_EXPORT_DEPLOYMENT_ID,
@@ -38,7 +37,20 @@ j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
 f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','GTM-PSRKC4QZ')`)
 
-export const metadata = siteMetadata
+export const metadata = {
+  title: 'Devup UI',
+  description: 'Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor',
+  alternates: { canonical: 'https://devup-ui.com' },
+  metadataBase: new URL('https://devup-ui.com'),
+  openGraph: {
+    title: 'Devup UI',
+    description: 'Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor',
+    images: ['https://devup-ui.com/og-image.png'],
+    siteName: 'Devup UI',
+    type: 'website',
+    url: 'https://devup-ui.com',
+  },
+}
 
 resetCss()
 
@@ -111,8 +123,9 @@ export function SiteLayout({
   locale = 'en',
 }: Readonly<{
   children: React.ReactNode
-  locale?: Locale
+  locale?: 'en' | 'ko'
 }>) {
+  setRequestLocale(locale)
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
@@ -160,7 +173,7 @@ export function SiteLayout({
         <noscript>
           <span data-javascript-disabled="" hidden />
         </noscript>
-        <LocaleProvider locale={locale}>
+        <NextIntlClientProvider locale={locale} messages={{}}>
           <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
             <AnchorScroll />
             <SearchModal />
@@ -170,7 +183,7 @@ export function SiteLayout({
             </Box>
             <Footer />
           </ReactLenis>
-        </LocaleProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   )

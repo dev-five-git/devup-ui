@@ -1,6 +1,5 @@
 import { glob, readFile, writeFile } from 'node:fs/promises'
 
-import { generateI18n } from './generate-i18n.js'
 import { COMPONENT_GROUPS } from './src/constants/index.ts'
 
 const files = await glob('src/app/(detail)/**/*.mdx')
@@ -47,7 +46,25 @@ for (const entry of res) {
 }
 
 await writeFile('public/search.json', JSON.stringify([...search.values()]))
-await generateI18n()
+const koreanSearch = new Map(search)
+for await (const file of glob('src/app/ko/**/*.mdx')) {
+  const content = await readFile(file, 'utf8')
+  const heading = /^#{1,6} (.+)$/mu.exec(content)
+  if (!heading) continue
+  const url = file
+    .replaceAll('\\', '/')
+    .replace('src/app/ko', '')
+    .replace(/\/page\.mdx$/u, '')
+  koreanSearch.set(url, {
+    title: heading[1],
+    text: content.slice(heading.index),
+    url,
+  })
+}
+await writeFile(
+  'public/search.ko.json',
+  JSON.stringify([...koreanSearch.values()]),
+)
 
 // Demo barrel.
 //

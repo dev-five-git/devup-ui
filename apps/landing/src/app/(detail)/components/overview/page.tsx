@@ -2,8 +2,8 @@ import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react'
 import type { Metadata } from 'next'
 
 import { Icons } from '@/components/icons/components'
-import { LocalizedLink as Link } from '@/components/LocalizedLink'
 import { COMPONENT_GROUPS } from '@/constants'
+import { Link } from '@/i18n/navigation'
 
 import Card from '../Card'
 import Description from './Description.mdx'

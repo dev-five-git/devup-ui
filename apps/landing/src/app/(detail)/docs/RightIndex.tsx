@@ -1,12 +1,9 @@
 'use client'
 import { Box, css, Flex, Text, VStack } from '@devup-ui/react'
-import { usePathname } from 'next/navigation'
+import { useLocale } from 'next-intl'
 import { useEffect, useState } from 'react'
 
-import { LocalizedLink as Link } from '@/components/LocalizedLink'
-import { stripLocale } from '@/i18n/config'
-import { useLocale } from '@/i18n/LocaleProvider'
-import { translatedRoutes } from '@/i18n/routes.generated'
+import { Link, usePathname } from '@/i18n/navigation'
 
 function IndexMenu({
   children,
@@ -43,15 +40,14 @@ function IndexMenu({
 }
 
 export function RightIndex() {
-  const pathname = stripLocale(usePathname())
+  const pathname = usePathname()
   const locale = useLocale()
-  const translated = locale === 'ko' && translatedRoutes.includes(pathname)
   const isDocs = pathname.startsWith('/docs/')
   const isComponents = pathname.startsWith('/components/')
   const editUrl = isDocs
-    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${translated ? 'content/ko' : 'app/(detail)'}${pathname}/page.mdx`
+    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${locale === 'ko' ? 'app/ko' : 'app/(detail)'}${pathname}/page.mdx`
     : isComponents
-      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${translated ? 'content/ko' : 'app/(detail)'}${pathname}/`
+      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/${locale === 'ko' ? 'app/ko' : 'app/(detail)'}${pathname}/`
       : ''
   const [menus, setMenus] = useState<
     {

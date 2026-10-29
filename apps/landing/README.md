@@ -1,102 +1,75 @@
 # Devup UI website
 
-English is the source of truth and stays at the original URLs. Korean lives at
-`/ko`, for example `/ko/docs/overview`. There is no browser-language redirect.
-An untranslated Korean URL renders its English source, with an English `lang`
-attribute on that content and a canonical URL pointing to the English page.
-Unknown URLs still return 404. All routes work on a static host without a server
-or middleware.
+English stays at the original URLs; Korean pages live under /ko. Only the
+Overview is translated initially. Missing Korean pages redirect to the English
+URL, including without JavaScript. Unknown URLs still return 404.
+
+The site uses next-intl for locale context and navigation. Because deployment is
+a static export, it uses explicit App Router paths instead of middleware rewrites.
+The small Korean catch-all exports HTML redirects for untranslated public routes.
+Adding a Korean page automatically replaces its fallback; no registry is needed.
 
 ## Contributing a Korean translation
 
-Pick one open issue labeled **good first issue** and **documentation**, comment
-that you would like to work on it, and submit one page per PR. The current
-translation is `src/content/ko/docs/overview/page.mdx`; use it as a reference.
-Browse the [Korean translation issues](https://github.com/dev-five-git/devup-ui/issues?q=is%3Aissue+is%3Aopen+%22%5Bko%5D%22+label%3A%22good+first+issue%22).
+Choose an issue labeled **good first issue** and **documentation**, comment to
+claim it, and submit one page per PR. See the
+[Korean translation issues](https://github.com/dev-five-git/devup-ui/issues?q=is%3Aissue+is%3Aopen+%22%5Bko%5D%22+label%3A%22good+first+issue%22).
+Wait for [the infrastructure PR](https://github.com/dev-five-git/devup-ui/pull/881)
+to merge before opening a translation PR.
 
-### Documentation pages
+### Documentation and MDX pages
 
-1. Copy `src/app/(detail)/docs/<path>/page.mdx` to
-   `src/content/ko/docs/<path>/page.mdx`.
-2. Translate headings, prose, table labels, explanatory comments, image alt text,
-   and metadata title/description. Keep APIs, package names, code behavior,
-   numbers, benchmark qualifications, imports, and external URLs intact.
-3. Use root-relative internal links such as `/docs/installation`. The shared MDX
-   link component adds `/ko` while browsing Korean pages. Links to untranslated
-   pages automatically display the English source.
-4. Set the translation's canonical to `/ko/docs/<path>`. The route supplies
-   language alternatives and keeps English fallback pages canonicalized to English.
+1. Copy src/app/(detail)/docs/<path>/page.mdx to
+   src/app/ko/docs/<path>/page.mdx. The existing Korean Overview is the example.
+2. Translate headings, prose, tables, explanatory comments, alt text and metadata.
+   Preserve API/package names, code behavior, numbers, qualifications and external URLs.
+3. Keep internal links root-relative, such as /docs/installation. The shared
+   next-intl Link adds the locale; untranslated targets redirect to English.
+4. Set the canonical URL to /ko/docs/<path> and language alternatives to the
+   English and Korean URLs. Keep the corresponding English metadata in sync.
 
-No routing changes or manual translation registry entries are needed. The
-`dev`, `build`, and `build:next` scripts discover translated files automatically.
+No generated files or routing configuration changes are needed. For the team
+page, add src/app/ko/team/page.mdx and reuse its English layout with a small
+layout.tsx wrapper, following src/app/ko/docs/layout.tsx.
 
-### Component reference pages
+### Component references and TSX pages
 
-Copy both English MDX files from
-`src/app/(detail)/components/[component]/<name>/` into
-`src/content/ko/components/<name>/`:
+For a component, add src/app/ko/components/<name>/page.tsx plus translated
+index.mdx and Api.mdx in that directory. Use the English component renderer at
+src/app/(detail)/components/[component]/page.tsx as the composition reference;
+replace its computed MDX imports with imports from the translated files. Reuse
+getDemos and MdxCard, and import shared code through @/ paths. Do not copy demos.
+Add a Korean components/layout.tsx wrapper around the shared English layout.
 
-```text
-src/content/ko/components/button/index.mdx
-src/content/ko/components/button/Api.mdx
-```
+For home, showcase and components overview, add a page.tsx at the corresponding
+src/app/ko path (home is src/app/ko/page.tsx). Reuse the existing interactive
+components. Introduce matching keys in src/i18n/messages/en.json and ko.json,
+and load catalogs in src/i18n/request.ts, merging English defaults with Korean
+overrides per namespace. In SiteLayout, pass getMessages({locale}) to
+NextIntlClientProvider. Client components use useTranslations; server components
+use getTranslations({locale}) from next-intl/server with an explicit locale.
+These catalogs are introduced by the first TSX/shared-UI translation contribution;
+the current provider has no translated UI messages. Keep state identifiers and
+component/API names unchanged.
 
-Translate their prose, headings, table descriptions and explanatory comments.
-Preserve the MDX component overrides and API identifiers. Interactive examples
-and their source code are shared automatically; do not copy the `demo` folder.
-Each missing MDX file independently falls back to English. The Korean URL becomes
-canonical once both files are translated.
-
-### Shared UI and TSX pages
-
-`src/i18n/messages/ko.json` is intentionally empty initially. Its keys are the
-exact English source strings and its values are Korean translations. Missing
-keys display English. Navigation labels already use this dictionary. Wrap
-additional visible strings with `<Message>English source text</Message>` from
-`@/i18n/Message`; use `translateMessage(text, locale)` for attributes. Keep
-state values, filter identifiers and API names in English.
-
-For TSX pages (home, showcase, components overview), keep the shared interactive
-components, add dictionary entries and Message wrappers within the relevant
-components, then add `src/content/ko/<route>/page.tsx` with translated metadata
-that renders the shared page. For home the file is `src/content/ko/page.tsx`.
-Use absolute `@/` imports if copying a file containing relative imports. The
-team page follows the MDX convention at `src/content/ko/team/page.mdx`.
-
-Generated `src/i18n/*.generated.ts` files contain explicit imports for both
-bundlers; regenerate them rather than editing them by hand. Search uses Korean
-content where available and retains English entries for untranslated pages.
-The language switcher preserves the current page, query and fragment.
+Shared navigation, search labels and footer belong to their own issue. Search
+indexes are built by script.js: Korean MDX replaces its English entry, and other
+entries stay English. Use Link and usePathname from @/i18n/navigation for internal
+navigation; use next/link for static assets such as /storybook/index.html.
 
 ## Local validation
+
+From the repository root, run bun install and bun run build to build packages.
+Then run bun dev and bun run build from apps/landing. Verify the English and
+Korean URLs on desktop/mobile, including links, tables, code and search.
 
 From the repository root:
 
 ```sh
-bun install
-bun run build
-```
-
-Then from `apps/landing`:
-
-```sh
-bun dev
-# Open /docs/<path> and /ko/docs/<path> (or /ko/components/<name>).
-# Check desktop/mobile, headings, tables, links and code blocks.
-bun ../../node_modules/@typescript/native/bin/tsc --noEmit
-bun run build
-```
-
-From the repository root, format and run the focused checks:
-
-```sh
-bun run lint:fix
+bun ./node_modules/@typescript/native/bin/tsc --noEmit -p apps/landing/tsconfig.json
 bun run lint
-bun test ./packages/__tests__/landing-i18n.test.ts
 bunx playwright test e2e/landing-i18n.spec.ts
 ```
 
-The production build verifies HTML and RSC artifacts for every English and Korean
-route. CI also builds with Next.js/Turbopack and runs the route and browser tests.
-Keep the English page unchanged when contributing a translation; limit shared
-code changes to the Message wrappers required for the assigned TSX/UI scope.
+CI verifies both vinext and Next.js/Turbopack static exports. Limit translations
+to the assigned page or shared-UI scope.

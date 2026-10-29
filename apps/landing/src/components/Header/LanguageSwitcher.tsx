@@ -1,10 +1,9 @@
 'use client'
 
 import { css } from '@devup-ui/react'
-import { usePathname } from 'next/navigation'
+import { useLocale } from 'next-intl'
 
-import { localizeHref } from '@/i18n/config'
-import { useLocale } from '@/i18n/LocaleProvider'
+import { getPathname, usePathname } from '@/i18n/navigation'
 
 /** Use full navigation between root layouts so the document language is correct. */
 export function LanguageSwitcher() {
@@ -25,11 +24,11 @@ export function LanguageSwitcher() {
         px: 2,
         _hover: { color: '$primary' },
       })}
-      href={localizeHref(pathname, targetLocale)}
+      href={getPathname({ href: pathname, locale: targetLocale })}
       hrefLang={targetLocale}
       lang={targetLocale}
       onClick={(event) => {
-        event.currentTarget.href = `${localizeHref(pathname, targetLocale)}${window.location.search}${window.location.hash}`
+        event.currentTarget.href = `${getPathname({ href: pathname, locale: targetLocale })}${window.location.search}${window.location.hash}`
       }}
     >
       {targetLocale === 'ko' ? '한국어' : 'English'}

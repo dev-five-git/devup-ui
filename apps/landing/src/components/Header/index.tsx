@@ -1,7 +1,7 @@
 import { Box, Center, css, Flex } from '@devup-ui/react'
 import { Suspense } from 'react'
 
-import { LocalizedLink as Link } from '@/components/LocalizedLink'
+import { Link } from '@/i18n/navigation'
 
 import { Logo } from '../Logo'
 import { Discord } from './Discord'
@@ -156,7 +156,7 @@ export function Header() {
           </Link>
         </Flex>
         <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
-          <Link
+          <a
             className={css({
               textDecoration: 'none',
               display: 'flex',
@@ -165,7 +165,6 @@ export function Header() {
             })}
             data-group
             href="/storybook/index.html"
-            prefetch={false}
           >
             <Menu keyword="storybook">Storybook</Menu>
             <Box
@@ -184,7 +183,7 @@ export function Header() {
               maskSize="contain"
               opacity="0.6"
             />
-          </Link>
+          </a>
         </Flex>
         <HeaderInputWrap>
           <HeaderInput readOnly />

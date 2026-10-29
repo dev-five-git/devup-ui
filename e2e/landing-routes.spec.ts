@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test'
 
-import { getLocale, stripLocale } from '../apps/landing/src/i18n/config'
-import { translatedRoutes } from '../apps/landing/src/i18n/routes.generated'
 import {
   EXPECTED_EXPORTED_HTML_FILES,
   EXPECTED_EXPORTED_ROUTES,
@@ -124,13 +122,20 @@ test.describe('Landing static export routes', () => {
 
         for (const route of getExportedRoutes()) {
           activeRoute = route
+          const target =
+            route.startsWith('/ko') && route !== '/ko/docs/overview'
+              ? route.slice(3) || '/'
+              : route
           const response = await page.goto(route, { waitUntil: 'load' })
 
           expect(response?.status(), `${route} document status`).toBe(200)
+          await expect(page).toHaveURL(
+            new URL(target, 'http://localhost:3099').href,
+          )
           await expect(
             page.locator('html'),
             `${route} language`,
-          ).toHaveAttribute('lang', getLocale(route))
+          ).toHaveAttribute('lang', target.startsWith('/ko') ? 'ko' : 'en')
           await expect(page.locator('html'), `${route} theme`).toHaveAttribute(
             'data-theme',
             theme,
@@ -176,15 +181,7 @@ test.describe('Landing static export routes', () => {
           expect(
             new URL(canonicalHref ?? '', 'https://devup-ui.com').href,
             `${route} canonical`,
-          ).toBe(
-            new URL(
-              getLocale(route) === 'ko' &&
-                !translatedRoutes.includes(stripLocale(route))
-                ? stripLocale(route)
-                : route,
-              'https://devup-ui.com',
-            ).href,
-          )
+          ).toBe(new URL(target, 'https://devup-ui.com').href)
           await expect(page.locator('link[rel~="icon"]')).toHaveAttribute(
             'href',
             '/favicon.ico',
