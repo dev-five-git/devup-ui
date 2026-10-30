@@ -188,23 +188,36 @@ export async function runContext(h) {
             if (phase === 'code-throw')
               throw {
                 toString() {
-                  assert.fail('Resolver throw must be forgiven without String')
+                  assert.fail('Resolver cause formatting must not call String')
                 },
               }
             return resolved.code
           },
         }
       })
-      assert.equal(
+      const result = h.take(() =>
         w.hasDevupUI(`src/${phase}.tsx`, barrel, pkg, {}),
-        phase === 'valid',
       )
+      if (phase === 'valid') assert.equal(result.value, true)
+      else {
+        assert.equal(result.caught, true)
+        assert.equal(result.error.name, 'Error')
+        assert.ok(
+          result.error.message.startsWith(
+            `src/${phase}.tsx:1:19: module resolver failed`,
+          ),
+        )
+      }
       assert.deepEqual(events, [
         'callback',
         ...(phase === 'callback-throw' ? [] : ['path']),
         ...(['code-throw', 'valid'].includes(phase) ? ['code'] : []),
       ])
-      observations.push([phase, events])
+      observations.push([
+        phase,
+        events,
+        result.caught ? result.error.message : result.value,
+      ])
     }
     return observations
   })

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Keep 100000-level heap stress coverage while reducing fixture construction overhead. No new build errors or runtime behavior changes.",
+  "date": "2026-10-22T00:00:00.000Z"
+}

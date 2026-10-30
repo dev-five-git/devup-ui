@@ -75,8 +75,59 @@ if (group === 'raw-resolver-failure') {
       calls++
       return { path: 3, code: '' }
     })
-    assert.throws(() => call('hasDevupUi', request()), /Resolved.path/)
+    assert.throws(() => call('hasDevupUi', request()), {
+      code: 'InvalidArg',
+      message: 'Value is none of these types `String`, `Resolved`, ',
+    })
     assert.ok(calls > 0)
+  })
+  check('unwrapped-resolver-failure-blocks-publication', () => {
+    for (const maps of [true, false]) {
+      w.resetStateForTesting()
+      const baseline = w.codeExtract(
+        file,
+        `import {Box} from '${pkg}'; const x=<Box color='blue'/>`,
+        pkg,
+        'df',
+        false,
+        false,
+        false,
+        {},
+      )
+      baseline.free()
+      const before = w.exportSheet(),
+        marker = new Error('private publication failure')
+      raw.setResolver(() => {
+        throw marker
+      })
+      assert.throws(
+        () =>
+          call('extract', [
+            file,
+            code,
+            pkg,
+            'df',
+            false,
+            false,
+            false,
+            {},
+            maps,
+          ]),
+        (error) => error === marker,
+      )
+      assert.equal(w.exportSheet(), before)
+    }
+  })
+  check('private-textual-failure-payload', () => {
+    w.resetStateForTesting()
+    raw.setResolver(() => 'private formatted cause')
+    assert.throws(
+      () => call('hasDevupUi', request()),
+      /native-private.tsx:1:21: module resolver failed for `\.\/barrel` from `native-private.tsx`: private formatted cause/,
+    )
+    assert.doesNotThrow(() =>
+      call('reserve', [[[file, code, 'df']], pkg, false, false, false, {}]),
+    )
   })
 } else {
   for (const method of ['hasDevupUi', 'extract', 'reserve']) {

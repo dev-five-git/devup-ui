@@ -1661,6 +1661,31 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_compute_hoisted_atoms_skips_base_style_order() {
+        let _state = css::test_state::TestStateGuard::new();
+        css::atom_hoist::restore_atom_plan(None);
+        css::atom_hoist::set_atom_hoist(Some(1));
+        css::file_routes::set_file_routes(std::collections::HashMap::from([(
+            "test.tsx".to_string(),
+            std::collections::HashSet::from([0u32]),
+        )]));
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("base", "color", 0, "red", None, Some(0), Some("test.tsx"));
+        assert!(css::atom_hoist::is_hoisted_bucket("test.tsx"));
+
+        let global_css = sheet.create_css(None, false);
+        let file_css = sheet.create_css(Some("test.tsx"), false);
+
+        assert!(
+            global_css.contains(concat!("@layer b{.base{", "color:red", "}}")),
+            "{global_css}"
+        );
+        assert_eq!(global_css.matches("color:red").count(), 1, "{global_css}");
+        assert!(!file_css.contains("color:red"), "{file_css}");
+    }
+
+    #[test]
+    #[serial]
     fn create_css_atom_hoisting_emission() {
         use css::atom_hoist::set_atom_hoist;
         use css::file_routes::{reset_file_routes, set_file_routes};
@@ -4454,9 +4479,9 @@ mod tests {
         reset_class_map();
         reset_file_map();
         let mut sheet = StyleSheet::default();
-        let output = extract(
+        let mut output = extract(
             "test.tsx",
-            "import {Box} from '@devup-ui/core'\n<Box styleOrder={0} bg={color} />",
+            "import {Box} from '@devup-ui/core'\n<Box bg={color} />",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
                 css_dir: "@devup-ui/core".to_string(),
@@ -4466,6 +4491,14 @@ mod tests {
             },
         )
         .unwrap();
+        output.styles = output
+            .styles
+            .into_iter()
+            .map(|mut style| {
+                style.set_style_order(0);
+                style
+            })
+            .collect();
         assert_eq!(
             sheet.update_styles(&output.styles, "test.tsx", true),
             (true, true)

@@ -30,6 +30,8 @@ pub struct ExtractionMode<'a> {
     pub source_map: SourceMapMode,
     /// Borrow the host resolver only for this synchronous extraction.
     pub resolver: Option<&'a ModuleResolver>,
+    /// Refuse publication after extraction, before matching its result.
+    pub resolver_check: Option<&'a dyn Fn() -> Result<(), String>>,
     /// Import the main stylesheet from emitted file CSS.
     pub import_main_css_in_css: bool,
 }
@@ -113,6 +115,9 @@ pub fn code_extract(
         (None, SourceMapMode::Generate) => extract(filename, code, option),
         (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
     };
+    if let Some(check) = mode.resolver_check {
+        check()?;
+    }
     match extracted {
         Ok(output) => Ok(Output::new(output, filename.to_string(), css)),
         Err(error) => Err(error.to_string()),

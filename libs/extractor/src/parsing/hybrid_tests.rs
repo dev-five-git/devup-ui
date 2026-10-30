@@ -8,6 +8,60 @@ use serial_test::serial;
 use std::collections::HashMap;
 
 #[rstest]
+#[case::new_target("console.log(new.target);")]
+#[case::top_level_return("return 1;")]
+#[case::legacy_comment("<!-- legacy\nconsole.log(1);")]
+#[serial]
+fn public_extract_preserves_physical_commonjs_grammar(
+    #[case] statement: &str,
+    #[values(true, false)] single_css: bool,
+) {
+    // Given: the same physical-CJS statements accepted by the hybrid goal policy.
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = format!(
+        "import {{ css }} from '@devup-ui/react';\n{statement}\nexport const style = css({{ color: 'teal' }});"
+    );
+    // When: the public extraction path parses and compiles the hybrid module.
+    let output = extract(
+        "input.cjs",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    // Then: CommonJS grammar does not prevent actual style extraction.
+    assert!(output.styles.iter().any(|style| matches!(style, crate::extract_style::extract_style_value::ExtractStyleValue::Static(style) if style.property == "color" && style.value == "teal")));
+}
+
+#[rstest]
+#[case::nested_import("function f() { import 'nested'; }", "input.cjs:2:16:")]
+#[case::nested_export("function f() { export const nested = 2; }", "input.cjs:2:16:")]
+#[case::import_meta("console.log(import.meta.url);", "input.cjs:2:")]
+#[case::top_level_await("await Promise.resolve(1);", "input.cjs:2:")]
+#[serial]
+fn public_extract_rejects_real_commonjs_errors(#[case] statement: &str, #[case] location: &str) {
+    // Given: invalid CJS syntax beside a permitted top-level ES declaration.
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = format!(
+        "import {{ css }} from '@devup-ui/react';\n{statement}\nexport const style = css({{ color: 'teal' }});"
+    );
+    // When: public extraction, rather than the test-only parser, validates input.
+    let Err(error) = extract("input.cjs", &source, ExtractOption::default()) else {
+        panic!("expected syntax error");
+    };
+    let error = error.to_string();
+    // Then: the real error retains its physical location and #757 guidance.
+    assert!(error.starts_with(location), "{error}");
+    assert!(error.contains("Cannot parse source:"), "{error}");
+    assert!(
+        error.contains("Fix: correct the syntax at this location"),
+        "{error}"
+    );
+}
+
+#[rstest]
 #[case("console.log(new.target);")]
 #[case("return 1;")]
 #[case("<!-- legacy\nconsole.log(1);")]

@@ -1,5 +1,5 @@
 'use strict'
-const { boundary, withAccess } = require('./interop.cjs')
+const { boundary, withAccess, resolverCause } = require('./interop.cjs')
 exports.createBinding = function createBinding(raw) {
   raw.init()
   const call = withAccess
@@ -55,12 +55,20 @@ exports.createBinding = function createBinding(raw) {
         : (specifier, importer) => {
             try {
               const result = resolver.call(null, specifier, importer)
+              if (result == null) return undefined
+              if (typeof result !== 'object' || Array.isArray(result))
+                return 'malformed module resolver result: expected an object {path:string,code:string} or null/undefined'
               const path = Reflect.get(result, 'path')
-              if (typeof path !== 'string') return undefined
+              if (typeof path !== 'string')
+                return 'malformed module resolver result: `path` must be a string'
+              if (path.length === 0)
+                return 'malformed module resolver result: `path` must be a non-empty string'
               const code = Reflect.get(result, 'code')
-              return typeof code === 'string' ? { path, code } : undefined
-            } catch {
-              return undefined
+              if (typeof code !== 'string')
+                return 'malformed module resolver result: `code` must be a string'
+              return { path, code }
+            } catch (error) {
+              return resolverCause(error)
             }
           },
     )

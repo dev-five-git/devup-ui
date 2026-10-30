@@ -67,8 +67,8 @@ pub fn register_shorthands<'env>(
         schema_token,
         failure_token: access_token,
     };
-    core::register_shorthands_internal(decode::<BTreeMap<String, Vec<String>>>(value, &access, 0)?);
-    Ok(())
+    core::register_shorthands_internal(decode::<BTreeMap<String, Vec<String>>>(value, &access, 0)?)
+        .map_err(|error| Error::from_reason(error.to_string()))
 }
 #[doc = "Restore canonical bucket identities."]
 #[napi]

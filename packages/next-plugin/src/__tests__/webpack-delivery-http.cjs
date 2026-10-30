@@ -146,7 +146,7 @@ module.exports = async function deliveryHttp(base, parse) {
   const documents = []
   for (const page of pages)
     documents.push(await documentProof(base, parse, page))
-  console.info('W65-HTTP ' + JSON.stringify(documents))
+  console.info('HTTP ' + JSON.stringify(documents))
   // Compare semantic stylesheet contents/class bindings, never Next build-id URLs/manifests.
   return documents.map(({ sheets, ...document }) => ({
     ...document,

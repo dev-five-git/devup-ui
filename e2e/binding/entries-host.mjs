@@ -14,6 +14,7 @@ import { runCases } from './entries-cases.mjs'
 import { runContext } from './entries-context.mjs'
 import { runErrors } from './entries-errors.mjs'
 import { runQueues } from './entries-queues.mjs'
+import { runResolverContracts } from './entries-resolver.mjs'
 import { encode, hash } from './observation.mjs'
 
 const [entry, destination, host] = process.argv.slice(2)
@@ -65,6 +66,9 @@ save('provenance.json', {
     'entries-fixtures.mjs',
     'entries-slots.mjs',
     'entries-queues.mjs',
+    'entries-resolver.mjs',
+    'entries-resolver-publication.mjs',
+    'entries-resolver-fixtures.mjs',
     'observation.mjs',
     'corpus/extraction.mjs',
   ].map((name) => ({ name, sha256: hash(join(here, name)) })),
@@ -245,6 +249,7 @@ const h = {
 await runCases(h)
 await runErrors(h)
 await runContext(h)
+await runResolverContracts(h)
 save('complete.json', { ids })
 activeIds = []
 recordsFile = 'map-start-queues.jsonl'

@@ -2,6 +2,7 @@
 
 mod output;
 mod reservation;
+mod resolver_state;
 
 pub use css::atom_hoist::set_atom_hoist;
 pub use css::debug::{is_debug, set_debug};
@@ -11,6 +12,7 @@ pub use css::{get_prefix, set_custom_shorthands as register_shorthands_internal,
 pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};
 pub use reservation::{ReservationInput, reserve_class_slots_internal};
+pub use resolver_state::{ResolverRequest, ResolverState};
 
 use css::class_map::{set_class_map, with_class_map};
 use css::file_map::{set_canonical_map, set_file_map, with_canonical_map, with_file_map};

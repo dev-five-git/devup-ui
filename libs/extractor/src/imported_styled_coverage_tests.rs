@@ -90,3 +90,28 @@ fn imported_name_when_member_is_not_exact_does_not_select_a_definition(
     assert_eq!(name.as_deref(), expected);
     Ok(())
 }
+
+#[test]
+fn imported_evaluation_when_forbidden_helper_is_read_keeps_definition_opaque() {
+    // Given: a descriptor hides the locale-dependent read from the lexical check.
+    let allocator = Allocator::default();
+    let option = ExtractOption::default();
+    let resolver = |_: &str, _: &str| None;
+    let reader = Reader {
+        option: &option,
+        resolver: &resolver,
+        allocator: &allocator,
+        modules: FxHashMap::default(),
+        reading: Vec::new(),
+        dependencies: BTreeSet::new(),
+    };
+    let source = "import { styled } from '@devup-ui/react'; const compare = Object.getOwnPropertyDescriptor(String.prototype, 'localeCompare').value; export const Base = styled.div({ padding: compare('a', 'b') });";
+    // When: the imported-definition retry runs the actual deterministic sandbox.
+    let computed = reader.evaluate_values(
+        "/composition/forbidden.tsx",
+        source,
+        &crate::imported_constants::Unknown::default(),
+    );
+    // Then: the forbidden helper prevents a computed definition from being published.
+    assert_eq!(computed, None);
+}

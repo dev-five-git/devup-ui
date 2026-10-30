@@ -18,6 +18,7 @@ fn numbered_css_selects_its_file_when_other_files_exist() -> Result<(), String> 
     let mode = || ExtractionMode {
         source_map: SourceMapMode::Skip,
         resolver: None,
+        resolver_check: None,
         import_main_css_in_css: false,
     };
     let red = devup_ui_binding_core::code_extract(

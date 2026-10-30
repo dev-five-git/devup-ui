@@ -228,6 +228,9 @@ impl LibraryNumbers {
     }
 
     fn pixelify_value(&mut self, key: &str, value: &Expression) {
+        if key == "styleOrder" {
+            return;
+        }
         if let Some(number) = js_number_literal(value) {
             if number != 0.0 && !keeps_bare_number(key) {
                 let span = value.span();

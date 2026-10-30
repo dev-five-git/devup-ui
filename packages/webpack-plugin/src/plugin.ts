@@ -19,6 +19,7 @@ import {
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
+  normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
   seedFileNumbers,
@@ -90,6 +91,7 @@ export class DevupUIWebpackPlugin {
   classMapFile: string
   fileMapFile: string
   private importAliases: WasmImportAliases
+  private readonly normalizedShorthands: Record<string, readonly string[]>
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -106,7 +108,8 @@ export class DevupUIWebpackPlugin {
     productionPrewarmFiles,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
-    registerShorthands(shorthands ?? {})
+    this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
+    registerShorthands(this.normalizedShorthands)
     this.importAliases = mergeImportAliases(
       userImportAliases,
       readJsxImportSource(),
@@ -252,7 +255,7 @@ export class DevupUIWebpackPlugin {
   private initialize(compiler: Compiler) {
     setDebug(this.options.debug)
     setPrefix(this.options.prefix ?? null)
-    registerShorthands(this.options.shorthands ?? {})
+    registerShorthands(this.normalizedShorthands)
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))

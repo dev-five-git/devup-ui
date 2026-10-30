@@ -1,7 +1,8 @@
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::Program;
-use oxc_parser::Parser;
+use oxc_parser::{ParseOptions, Parser, ParserReturn};
 use oxc_span::{SourceType, UnknownExtension};
+#[cfg(test)]
 use std::error::Error;
 
 pub(super) mod goal_policy;
@@ -15,13 +16,71 @@ pub(super) fn source_type(filename: &str) -> Result<SourceType, UnknownExtension
         .map(|source_type| source_type.with_jsx(source_type.is_javascript()))
 }
 
+fn parse_physical<'a>(
+    allocator: &'a Allocator,
+    code: &'a str,
+    source_type: SourceType,
+) -> ParserReturn<'a> {
+    Parser::new(allocator, code, source_type)
+        .with_options(ParseOptions {
+            parse_regular_expression: true,
+            ..ParseOptions::default()
+        })
+        .parse()
+}
+
+/// Validate physical grammar while keeping validation's semantic IDs off the returned AST.
+pub(super) fn checked<'a>(
+    allocator: &'a Allocator,
+    code: &'a str,
+    source_type: SourceType,
+) -> Result<Program<'a>, Vec<(u32, String)>> {
+    let parsed = parse_physical(allocator, code, source_type);
+    let parser_error = parsed
+        .diagnostics
+        .errors()
+        .filter(|error| {
+            !goal_policy::accepts_declaration_goal(&parsed, &error.to_string(), &error.labels)
+        })
+        .min_by_key(|error| {
+            goal_policy::is_declaration_goal(&parsed, &error.to_string(), &error.labels)
+        });
+    let validation_allocator = Allocator::default();
+    let semantic_diagnostics = if parser_error.is_none() && !parsed.fatal_error {
+        let validation_program = parsed.program.clone_in(&validation_allocator);
+        oxc_semantic::SemanticBuilder::new()
+            .with_check_syntax_error(true)
+            .build(&validation_program)
+            .diagnostics
+    } else {
+        Default::default()
+    };
+    if let Some(error) = parser_error.or_else(|| semantic_diagnostics.errors().next()) {
+        let offset = error
+            .labels
+            .iter()
+            .find(|label| label.primary())
+            .or_else(|| error.labels.first())
+            .map_or(0, oxc_span::LabeledSpan::offset);
+        return Err(vec![(
+            offset,
+            format!(
+                "Cannot parse source: {}. Fix: correct the syntax at this location",
+                error.to_string().trim_end_matches('.')
+            ),
+        )]);
+    }
+    Ok(parsed.program)
+}
+
 /// Parse source, reporting syntax errors at their primary source locations.
+#[cfg(test)]
 pub(super) fn parse<'a>(
     allocator: &'a Allocator,
     filename: &str,
     code: &'a str,
 ) -> Result<Program<'a>, Box<dyn Error>> {
-    let parsed = Parser::new(allocator, code, source_type(filename)?).parse();
+    let parsed = parse_physical(allocator, code, source_type(filename)?);
     let mut errors: Vec<_> = parsed
         .diagnostics
         .errors()

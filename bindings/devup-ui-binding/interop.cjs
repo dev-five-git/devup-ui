@@ -72,6 +72,16 @@ function debugString(value) {
     return `${value.name}: ${value.message}\n${value.stack}`
   return name
 }
+exports.resolverCause = function resolverCause(error) {
+  if (typeof error === 'string') return error
+  try {
+    const message = Reflect.get(error, 'message')
+    if (typeof message === 'string') return message
+  } catch {
+    return `JsValue(${debugString(error)})`
+  }
+  return `JsValue(${debugString(error)})`
+}
 function bytes(value) {
   const source = instance(value, Uint8Array)
     ? value

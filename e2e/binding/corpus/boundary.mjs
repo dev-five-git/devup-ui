@@ -134,6 +134,14 @@ add('resolver-boundary-order-this-replacement', (h) => {
     () => undefined,
     () => null,
     () => 7,
+    () => Object.assign([], resolved),
+    () => ({
+      path: '',
+      get code() {
+        events.push('unexpected-code')
+        return ''
+      },
+    }),
     () => ({ path: resolved.path, code: 7 }),
     () => {
       throw new TypeError('resolver Ω')
@@ -183,6 +191,7 @@ add('resolver-boundary-order-this-replacement', (h) => {
     h.extract(dependent, { filename: `src/replaced-${i}.tsx` })
   }
   h.note('resolver-events', events)
+  assert.ok(!events.includes('unexpected-code'))
   h.call('setModuleResolver', null)
 })
 add('prefix-valid-and-malformed-boolean-strict', (h) => {
