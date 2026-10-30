@@ -57,7 +57,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -74,6 +75,7 @@ jobs:
           curl -fsSL https://ziglang.org/download/index.json -o "$RUNNER_TEMP/zig-index.json"
           version=$(jq -r 'keys[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$RUNNER_TEMP/zig-index.json" | sort -V | tail -1)
           jq --arg v "$version" '.[$v]["x86_64-linux"]' "$RUNNER_TEMP/zig-index.json" > "$RUNNER_TEMP/zig-asset.json"
+          cp "$RUNNER_TEMP/zig-asset.json" "$RUNNER_TEMP/native-build-${{ matrix.suffix }}/zig-asset.json"
           curl -fsSL "$(jq -r .tarball "$RUNNER_TEMP/zig-asset.json")" -o "$RUNNER_TEMP/zig.tar.xz"
           echo "$(jq -r .shasum "$RUNNER_TEMP/zig-asset.json")  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
           mkdir "$RUNNER_TEMP/zig"
@@ -95,7 +97,6 @@ jobs:
           flags=()
           if [[ "$RUNNER_OS" == Linux ]]; then flags+=(--zigbuild); fi
           node e2e/binding/package/provenance.mjs "$NATIVE_TARGET" "$RUNNER_TEMP/native-build-$NATIVE_SUFFIX/payload" "$GITHUB_RUN_ID/1" "${flags[@]}"
-          if [[ "$RUNNER_OS" == Linux ]]; then cp "$RUNNER_TEMP/zig-asset.json" "$RUNNER_TEMP/native-build-$NATIVE_SUFFIX/payload/zig-asset.json"; fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -123,7 +124,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -145,7 +147,7 @@ jobs:
           node e2e/binding/package/collect.mjs "$RUNNER_TEMP/native-artifacts" "$RUNNER_TEMP/native-bundle" "$GITHUB_RUN_ID/1"
           mkdir "$RUNNER_TEMP/native-controls"
           cp -R "$RUNNER_TEMP/native-artifacts/linux-x64-gnu" "$RUNNER_TEMP/native-controls/linux-x64-gnu"
-          NATIVE_PROOF_ARTIFACTS="$RUNNER_TEMP/native-controls" NATIVE_PROOF_BUNDLE="$RUNNER_TEMP/native-bundle" node --test e2e/binding/package/package.test.mjs e2e/binding/package/publish.test.mjs
+          NATIVE_PROOF_ARTIFACTS="$RUNNER_TEMP/native-controls" NATIVE_PROOF_BUNDLE="$RUNNER_TEMP/native-bundle" node --test e2e/binding/package/package.test.mjs e2e/binding/package/publish.test.mjs e2e/binding/package/elf.test.mjs
           sha256sum "$RUNNER_TEMP/native-bundle/"*.tgz "$RUNNER_TEMP/native-bundle/bundle.json" | tee "$RUNNER_TEMP/native-bundle/SHA256SUMS"
           du -b "$RUNNER_TEMP/native-bundle/"*
       - uses: actions/upload-artifact@v7
@@ -207,7 +209,8 @@ jobs:
         run: sudo softwareupdate --install-rosetta --agree-to-license
       - uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
           architecture: ${{ runner.os == 'Linux' && 'x64' || matrix.cpu }}
       - name: Download matching latest official Bun with digest
         shell: bash
@@ -873,7 +876,7 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: latest
-      - run: bun install
+      - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
@@ -1049,37 +1052,6 @@ jobs:
           bun-version: latest
         name: Install bun
 
-      - name: Verify release lock consistency
-        run: |
-          if ! bun -e '
-            import { isDeepStrictEqual } from "node:util";
-            const root = await Bun.file("package.json").json();
-            const lock = Bun.JSONC.parse(await Bun.file("bun.lock").text());
-            const paths = new Set([""]);
-            for (const pattern of root.workspaces) {
-              for (const file of new Bun.Glob(`${pattern}/package.json`).scanSync(".")) {
-                paths.add(file.replaceAll("\\", "/").slice(0, -13));
-              }
-            }
-            if (!isDeepStrictEqual(paths, new Set(Object.keys(lock.workspaces)))) {
-              throw new Error("bun.lock workspace membership differs from package.json");
-            }
-            // Frozen install alone does not reject workspace version changes.
-            for (const path of paths) {
-              const manifest = await Bun.file(`${path || "."}/package.json`).json();
-              const recorded = lock.workspaces[path];
-              for (const field of ["name", ...(path ? ["version"] : []),
-                "dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
-                if (!isDeepStrictEqual(manifest[field] ?? {}, recorded[field] ?? {})) {
-                  throw new Error(`${path || "."}: bun.lock ${field} differs from package.json`);
-                }
-              }
-            }
-          '; then
-            echo "::error::Run bun install on the Update Versions branch and commit bun.lock before release."
-            exit 1
-          fi
-
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
@@ -1109,7 +1081,7 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: latest
-      - run: bun install
+      - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist

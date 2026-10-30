@@ -159,21 +159,30 @@ function elfEvidence(bytes, row) {
     .map((value) => stringAt(strings, Number(value)))
     .sort()
   const musl = dependencies.some((name) => name.startsWith('libc.musl-'))
-  const expectedMusl = dependencies.includes(
-    `libc.musl-${row.cpu === 'x64' ? 'x86_64' : 'aarch64'}.so.1`,
+  const muslName = `libc.musl-${row.cpu === 'x64' ? 'x86_64' : 'aarch64'}.so.1`
+  const expectedMusl = dependencies.includes(muslName)
+  const conflictingMusl = dependencies.some(
+    (name) => name.startsWith('libc.musl-') && name !== muslName,
   )
+  const verneed = records.has(0x6ffffffen)
+  const verneednum = records.has(0x6fffffffn)
+  // Generic libc is only a candidate; trusted build hashes and matching Alpine
+  // Node/Bun consumers remain mandatory compatibility gates, not image identity.
+  const generic = dependencies.includes('libc.so') && !verneed && !verneednum
   const glibc = dependencies.includes('libc.so.6')
   assert.ok(
     row.libc === 'musl'
-      ? expectedMusl && !glibc
+      ? (expectedMusl || generic) && !glibc && !conflictingMusl
       : row.libc === 'glibc' && glibc && !musl,
-    'wrong libc',
+    `wrong libc: ${JSON.stringify({ dependencies, verneed, verneednum })}`,
   )
   return {
     format: 'ELF64',
     machine,
     cpu: machine === 62 ? 'x64' : machine === 183 ? 'arm64' : 'unsupported',
     dependencies,
+    verneed,
+    verneednum,
   }
 }
 function machoEvidence(bytes) {

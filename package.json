@@ -16,7 +16,7 @@
     "test:release": "node e2e/release/run.mjs",
     "build:native:artifact": "node e2e/binding/package/provenance.mjs",
     "pack:native": "node e2e/binding/package/collect.mjs",
-    "test:native:package": "node --test e2e/binding/package/package.test.mjs e2e/binding/package/publish.test.mjs",
+    "test:native:package": "node --test e2e/binding/package/package.test.mjs e2e/binding/package/publish.test.mjs e2e/binding/package/elf.test.mjs",
     "test:native:consumer": "node e2e/binding/package/consumer.mjs",
     "test:e2e:ui": "bunx playwright test --ui",
     "test:e2e:update": "bunx playwright test --update-snapshots",

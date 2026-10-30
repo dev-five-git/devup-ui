@@ -69,11 +69,10 @@ dependency ordering and release receipts; the dispatcher never adds siblings.
 Source validation happens inside each invocation, after the action's possible
 sourceSha checkout. Every recorded input byte/commit/tree must match; only its
 untracked `changepacks`/`changepacks.exe` tool is tolerated. Locks are neither
-hidden, restored nor regenerated during publication. Before installation, build
-or changepacks, every release (including JS-only) checks workspace membership,
-versions and dependency specifications against `bun.lock` without writing source
-or lock files. A mismatch fails: run `bun install` on the Update Versions branch
-and commit `bun.lock` before release.
+hidden, restored nor regenerated during publication. Repository installs before
+clean-source or raw-source checks use `bun install --frozen-lockfile`. Bun 1.4.4
+accepts workspace-version-only drift without rewriting `bun.lock`; there is no
+extra lock-consistency gate or manual Update Versions step.
 
 Artifacts retain seven days. A release-only retry reuses `native-packs-<run-id>`
 and original producer identity `<run-id>/1`, regardless of release run_attempt.
@@ -82,9 +81,12 @@ overwrite original payloads. A missing/expired or incomplete bundle needs a new
 fresh workflow run; older source intents fail closed rather than using current
 images. No retry may silently replace a partially published release's payloads.
 
-Before first automated0.1.1, the owner must register all nine exact npm names
-and configure direct npm publish permission/Trusted Publishers for this repo's
-`publish.yml`; workers never publish or consume that version. Foreign builds,
+Before first automated0.1.1, the owner will publish0.0.0 placeholders for all
+nine exact npm names, then configure direct npm publish permission/Trusted
+Publishers for this repo's `publish.yml`; npm requires each package to exist
+first. Workers never publish/register names or consume0.1.1. An unrelated0.0.0
+does not block target publication or satisfy exact target-version/integrity
+prerequisites. Foreign builds,
 full-nine runtime execution, OIDC and row timings are CI-only until actually run.
 No plugin/default-engine change is authorized by this integration.
 
