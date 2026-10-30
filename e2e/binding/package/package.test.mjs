@@ -184,7 +184,8 @@ test('rejects missing image bytes when a receipt is present', () => {
 test('rejects actual wrong CPU when inspecting the host image as another architecture', () => {
   // Given
   const other = targets.find(
-    (item) => item.os === row.os && item.cpu !== row.cpu,
+    (item) =>
+      item.os === row.os && item.libc === row.libc && item.cpu !== row.cpu,
   )
   // When / Then
   assert.throws(() => inspectImage(original.path, other), /wrong image machine/)

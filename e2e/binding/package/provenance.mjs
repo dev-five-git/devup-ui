@@ -133,6 +133,10 @@ export function buildArtifact(options) {
         'LIB',
       ].map((key) => [key, process.env[key] ?? null]),
     )
+    receipt.environment.CARGO_BUILD_JOBS = '2'
+    if (row.libc === 'musl')
+      receipt.environment.RUSTFLAGS =
+        `${process.env.RUSTFLAGS || ''} -C target-feature=-crt-static`.trim()
     receipt.identity = Object.fromEntries(
       [
         'GITHUB_SHA',

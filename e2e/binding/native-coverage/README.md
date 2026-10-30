@@ -35,3 +35,11 @@ performance measurement. Real-engine parity and optimized hosting measurements
 remain separate gates. Native line totals can differ across platforms and CI's
 wide source formatting; inspect the actual report rather than equating a local
 percentage with the Linux CI result.
+
+The retained coverage spike has been retired (exact workflow and eleven fixture
+files); production coverage above is unchanged. Standard Linux CI100% remains
+the final authority. The inherited Windows98.09% mapping is local evidence only,
+not a replacement for that gate. The parallel `native-build`/`native-packs`/
+`native-consumer` shipping lane in `publish.yml` tests optimized public packages,
+not instrumented coverage or native performance. Its results cannot waive the
+production Linux coverage gate.
