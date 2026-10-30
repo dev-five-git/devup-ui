@@ -638,6 +638,10 @@
     "packages/plugin-utils": {
       "name": "@devup-ui/plugin-utils",
       "version": "1.0.17",
+      "dependencies": {
+        "@devup-ui/binding": "workspace:^",
+        "@devup-ui/wasm": "workspace:^",
+      },
       "devDependencies": {
         "typescript": "^7.0.2",
       },

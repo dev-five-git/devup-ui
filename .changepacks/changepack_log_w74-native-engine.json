@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "Add shared native/WASM compiler selection, structural compiler types and exact native platform-load diagnostics for build plugins.",
+  "date": "2026-10-30T17:29:00.000Z"
+}

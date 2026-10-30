@@ -3,6 +3,12 @@ export {
   getBuildOwnership,
   type ResettableEngine,
 } from './build-session'
+export { loadCompiler } from './compiler'
+export type {
+  DevupCompiler,
+  DevupCompilerOutput,
+  DevupEngine,
+} from './compiler-types'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,
