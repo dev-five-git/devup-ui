@@ -543,6 +543,16 @@ Do not add `include`, `optimizeDeps.exclude` or `ssr.noExternal` entries for it.
 They are redundant, and writing them suggests to the next reader that a devup-ui
 package needs wiring when none does.
 
+This reset-css rule is not a blanket ban on diagnosing a different package's
+RSC optimizer warning. If `rsc:use-client` names `@devup-ui/react` hooks as
+"inconsistently optimized", record the exact versions and test that package's
+exclusion separately. An exclusion does not fix the dev-only race where CSS
+extraction writes `df/devup-ui/*.css` and triggers an SSR `program reload`
+during a request. Capture server logs with the runtime audit's `--server-log`
+option, stabilize the dev server and rerun affected screens before changing
+responsive page code. Do not disable generated CSS watching as a permanent
+fix; doing so also disables CSS hot updates.
+
 **It is a normalize, not a preflight.** It sets `box-sizing: border-box`
 globally and zeroes a few margins, but for form controls it does exactly two
 things:
