@@ -70,7 +70,10 @@ export function validateManifest(manifest, row, version) {
   }
 }
 export function verifyTarball(file, expected) {
-  const members = command('tar', ['-tf', file]).split(/\r?\n/).filter(Boolean)
+  const cwd = dirname(resolve(file))
+  const members = command('tar', ['-tf', basename(file)], { cwd })
+    .split(/\r?\n/)
+    .filter(Boolean)
   const wanted = [
     'package/package.json',
     ...(expected.row
@@ -78,13 +81,18 @@ export function verifyTarball(file, expected) {
       : [...rootFiles.map((name) => `package/${name}`), 'package/README.md']),
   ].sort()
   assert.deepEqual(members.slice().sort(), wanted, 'exact tar members')
-  const listing = command('tar', ['-tvf', file]).split(/\r?\n/)
+  const listing = command('tar', ['-tvf', basename(file)], { cwd }).split(
+    /\r?\n/,
+  )
   assert.ok(
     listing.every((line) => line.startsWith('-')),
     'only regular tar members',
   )
   const content = (member) =>
-    command('tar', ['-xOf', file, `package/${member}`], { encoding: 'buffer' })
+    command('tar', ['-xOf', basename(file), `package/${member}`], {
+      cwd,
+      encoding: 'buffer',
+    })
   const manifest = JSON.parse(content('package.json').toString())
   validateManifest(manifest, expected.row, expected.version)
   if (expected.row) {

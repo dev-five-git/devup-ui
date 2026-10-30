@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 
 import { loadArtifacts, verifyArtifacts } from './collect.mjs'
@@ -235,7 +235,9 @@ test('rejects unexpected tar members when checking a non-package archive', async
     mkdirSync(join(directory, 'package'))
     writeFileSync(join(directory, 'package/evil.cjs'), '')
     const file = join(directory, 'bad.tgz')
-    await child('tar', ['-czf', file, '-C', directory, 'package'])
+    await child('tar', ['-czf', basename(file), '-C', directory, 'package'], {
+      cwd: dirname(resolve(file)),
+    })
     // When / Then
     assert.throws(
       () => verifyTarball(file, { version: manifest.version }),
