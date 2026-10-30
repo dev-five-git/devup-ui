@@ -59,6 +59,13 @@ export {
   type SharedSlotReservation,
 } from './shared-slots'
 export {
+  type CustomShorthandTarget,
+  isCustomShorthandTarget,
+  normalizeShorthands,
+  ShorthandConfigError,
+  type ShorthandErrorLocation,
+} from './shorthands'
+export {
   createStateWriter,
   type StateWriter,
   writeFileAtomically,

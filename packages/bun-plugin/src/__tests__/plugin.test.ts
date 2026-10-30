@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
+import { ShorthandConfigError } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterAll,
@@ -17,6 +18,44 @@ import {
 import { bunRegistration } from '../../../../bun.setup'
 import { DevupUI, register } from '../plugin'
 import { captureBunHooks } from './captured-hooks.test-support'
+
+describe('shorthand creation boundary', () => {
+  it('registers canonical targets when the plugin is registered', async () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      await register({
+        shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
+      })
+      expect(registration.mock.calls).toEqual([
+        [
+          {
+            bgx: ['background-color', 'padding-top', 'padding-bottom', '--Gap'],
+          },
+        ],
+      ])
+    } finally {
+      registration.mockRestore()
+    }
+  })
+
+  it('rejects a typo before registration when runtime options bypass types', () => {
+    const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
+      undefined,
+    )
+    try {
+      expect(() =>
+        Reflect.apply(register, undefined, [
+          { shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(ShorthandConfigError)
+      expect(registration).not.toHaveBeenCalled()
+    } finally {
+      registration.mockRestore()
+    }
+  })
+})
 
 const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-bun-hooks-'))
 const scopedRoot = join(root, '@devup-ui/fixture')

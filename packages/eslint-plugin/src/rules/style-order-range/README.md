@@ -4,47 +4,58 @@ Ensures `styleOrder` prop is within valid range (0 < value < 255).
 
 ## Rule Details
 
-This rule enforces that the `styleOrder` prop must be a number greater than 0 and less than 255.
+An explicit `styleOrder` must be an integer from 1 to 254, or the canonical
+decimal string for that integer. Strings must not contain signs, whitespace,
+leading zeros, decimal points, exponents or suffixes. Numeric expressions such
+as `100.0` and `1e2` are integers and are accepted. The extractor reserves order
+0 for its internal global layer and 255 for unlayered styles.
 
 ### Examples of **incorrect** code for this rule:
 
 ```jsx
+import { Box } from '@devup-ui/react'
+
 // Zero and negative values
-<div styleOrder={0} />
-<div styleOrder={-1} />
-<div styleOrder="-5" />
+<Box styleOrder={0} />
+<Box styleOrder={-1} />
+<Box styleOrder="-5" />
 
 // Values greater than or equal to 255
-<div styleOrder={255} />
-<div styleOrder={256} />
-<div styleOrder="300" />
+<Box styleOrder={255} />
+<Box styleOrder={256} />
+<Box styleOrder="300" />
 
 // Non-numeric values
-<div styleOrder="abc" />
-<div styleOrder={undefined} />
+<Box styleOrder="100px" />
+<Box styleOrder="01" />
+<Box styleOrder=" 1" />
+<Box styleOrder="1e2" />
+<Box styleOrder={1.5} />
+<Box styleOrder={undefined} />
 ```
 
 ### Examples of **correct** code for this rule:
 
 ```jsx
+import { Box } from '@devup-ui/react'
+
 // Valid range values (0 < value < 255)
-<div styleOrder={1} />
-<div styleOrder={254} />
-<div styleOrder={128} />
-<div styleOrder="100" />
-<div styleOrder="1" />
-<div styleOrder="254" />
+<Box styleOrder={1} />
+<Box styleOrder={254} />
+<Box styleOrder={1e2} />
+<Box styleOrder="100" />
+<Box styleOrder={active ? 1 : 2} />
+<Box styleOrder={active && 2} />
 ```
 
 ## Where it applies
 
-The rule checks `styleOrder` where the build reads it: a prop of a Devup UI component and a top-level key of a style object passed to `css`, `globalCss` or `keyframes`. A `styleOrder` in nested data (`data-*` props, `props`, an element passed as a prop, nested style objects) is not checked.
+The rule checks Devup UI component props and top-level style-object keys of the
+recognized utilities and styled factories, including their supported import
+aliases. It does not inspect `.attrs()` data, pass-through props, native elements
+or vanilla-extract stylesheets (`.css.ts`, `.css.js`). Conditional branches use
+the same value contract. A native `<div styleOrder="100px" />` is not checked.
 
 ## When Not To Use It
 
 If you don't use `styleOrder` props or want to allow any value range, you can disable this rule.
-
-
-## Where it applies
-
-`styleOrder` is read as a prop of a Devup UI component and as a top-level key of a style object passed to `css`, `globalCss`, `keyframes` or `createGlobalStyle`, through the same import aliases the build compiles by default (`@emotion/react`, `@emotion/styled`, `styled-components`, `@vanilla-extract/css`), and in the rules of `styled` (`styled.div({ styleOrder: 1 })`, `styled('div', { styleOrder: 1 })`). It is not read in `.attrs()` or in vanilla-extract stylesheets (`.css.ts`, `.css.js`).

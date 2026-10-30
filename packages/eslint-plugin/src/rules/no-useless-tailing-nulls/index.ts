@@ -7,7 +7,7 @@ import {
 import type { RuleContext } from '@typescript-eslint/utils/ts-eslint'
 
 import { ImportStorage } from '../../utils/import-storage'
-import { styleValueRoot } from '../../utils/style-position'
+import { responsiveValueSite } from '../../utils/responsive-position'
 
 const createRule = ESLintUtils.RuleCreator(
   (name) =>
@@ -85,7 +85,7 @@ export const noUselessTailingNulls = createRule({
         importStorage.addImportByDeclaration(node)
       },
       ArrayExpression(node) {
-        if (styleValueRoot(node, importStorage))
+        if (responsiveValueSite(node, importStorage))
           checkUselessTailingNulls(node, context)
       },
     }

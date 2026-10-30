@@ -13,6 +13,7 @@ import {
   isProjectJsx,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
@@ -90,8 +91,8 @@ async function writeDataFiles(): Promise<string[]> {
 
 const watchTailwindCss = createTailwindWatcher(writeDataFiles)
 
-async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
-  registerShorthands(shorthands ?? {})
+async function initialize(shorthands: Record<string, readonly string[]>) {
+  registerShorthands(shorthands)
   setPrefix(null)
   setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
@@ -167,6 +168,7 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
  * Bun runtime ({@link register}).
  */
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
+  const shorthands = normalizeShorthands(options.shorthands ?? {})
   return {
     name: 'devup-ui',
 
@@ -177,7 +179,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild({ resetBuildState })
       build.onEnd?.(endBuild)
-      await initialize(options)
+      await initialize(shorthands)
       const debug = options.debug ?? !bundling
       setDebug(debug)
       const slots = createSharedSlotReservation({ reserveClassSlots })

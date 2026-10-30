@@ -75,10 +75,20 @@ mod retained_render_support;
 mod scope;
 #[cfg(test)]
 mod selector_array_units_tests;
+#[cfg(test)]
+mod shorthand_tests;
 mod source_map;
 #[cfg(test)]
 mod source_reconciliation_tests;
 mod style_collector;
+mod style_order;
+#[cfg(test)]
+mod style_order_css_prop_tests;
+#[cfg(test)]
+mod style_order_styled_tests;
+#[cfg(test)]
+mod style_order_tests;
+mod style_order_validation;
 mod style_values;
 mod styled_reads;
 #[cfg(test)]
@@ -7744,7 +7754,7 @@ export {
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
@@ -7758,8 +7768,9 @@ export {
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .unwrap_err()
+            .to_string()
+        );
     }
 
     #[test]
