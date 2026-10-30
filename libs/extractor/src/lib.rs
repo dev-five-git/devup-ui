@@ -3,6 +3,8 @@ mod barrel;
 #[cfg(test)]
 mod barrel_pipeline_tests;
 mod build_time_values;
+#[cfg(test)]
+mod ci_coverage_tests;
 mod class_arguments;
 #[cfg(test)]
 mod class_names_binding_tests;
@@ -26,9 +28,13 @@ mod css_prop;
 #[cfg(test)]
 mod css_prop_contract_tests;
 mod css_utils;
+#[cfg(test)]
+mod diagnostics_tests;
 mod emotion_namespace;
+mod evaluation_sandbox;
 pub mod extract_style;
 mod extractor;
+mod fresh_name;
 mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
@@ -37,9 +43,15 @@ mod imported_styled;
 mod jsx_import_source;
 mod jsx_pragmas;
 mod module_loader;
+pub mod module_reference;
 mod mutations;
 #[cfg(test)]
 mod numeric_template_tests;
+mod own_css_context;
+mod own_css_lower;
+mod own_css_merge;
+mod own_css_plan;
+mod package_specifier;
 mod parsing;
 #[cfg(test)]
 mod pragma_annotation_tests;
@@ -64,11 +76,36 @@ mod scope;
 #[cfg(test)]
 mod selector_array_units_tests;
 mod source_map;
+#[cfg(test)]
+mod source_reconciliation_tests;
 mod style_collector;
 mod style_values;
 mod styled_reads;
 #[cfg(test)]
 mod styled_source_tests;
+#[cfg(test)]
+mod stylesheet_coverage_contract_tests;
+#[cfg(test)]
+mod stylesheet_css_adapter_error_tests;
+#[cfg(test)]
+mod stylesheet_css_adapter_tests;
+#[cfg(test)]
+mod stylesheet_css_tag_parity_tests;
+#[cfg(test)]
+mod stylesheet_css_tag_terminal_tests;
+#[cfg(test)]
+mod stylesheet_deep_object_bridge_tests;
+#[cfg(test)]
+mod stylesheet_deep_object_r2_tests;
+#[cfg(test)]
+mod stylesheet_deep_object_tests;
+#[cfg(test)]
+mod stylesheet_gate_boundaries_deep_tests;
+#[cfg(test)]
+mod stylesheet_gate_boundaries_tests;
+mod stylesheet_policy;
+#[cfg(test)]
+mod stylesheet_regression_tests;
 mod stylex;
 mod tailwind;
 mod tailwind_children;
@@ -375,18 +412,6 @@ fn extract_with_source_map(
     source_map: bool,
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    if code.contains(&option.package)
-        || code.contains(STYLEX_PACKAGE)
-        || (css_prop::builds_jsx_with_emotion(&option.import_aliases)
-            && css_prop::is_jsx_file(filename))
-        || option
-            .import_aliases
-            .keys()
-            .any(|alias| code.contains(alias))
-    {
-        let allocator = Allocator::default();
-        parsing::parse(&allocator, filename, code)?;
-    }
     extract_source(filename, code, None, None, option, source_map, resolver)
 }
 
@@ -403,6 +428,28 @@ fn extract_source(
     resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     let _atom_mode = css::atom_hoist::AtomModeGuard::new(option.single_css);
+    let allocator = Allocator::default();
+    let original_program = if code.contains(&option.package)
+        || code.contains(STYLEX_PACKAGE)
+        || (css_prop::builds_jsx_with_emotion(&option.import_aliases)
+            && css_prop::is_jsx_file(filename))
+        || option
+            .import_aliases
+            .keys()
+            .any(|package| code.contains(package))
+    {
+        let source_type = parsing::source_type(filename).map_err(|error| {
+            format!("{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension")
+        })?;
+        Some(
+            parsing::checked(&allocator, code, source_type).map_err(|errors| {
+                let (source, edits) = evaluated.unwrap_or((code, &[]));
+                located_errors(filename, source, edits, errors)
+            })?,
+        )
+    } else {
+        None
+    };
     if evaluated.is_none() && option.import_aliases.contains_key("@vanilla-extract/css") {
         let errors = import_alias_visit::companion_errors(code, filename);
         if !errors.is_empty() {
@@ -511,14 +558,113 @@ fn extract_source(
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
-    let mut evaluation_error = None;
+    if utils::is_vanilla_extract_file(filename)
+        && values_run.is_none()
+        && stylesheet_policy::imports_plain(&transformed_code, filename, &option, resolver)
+        && let Some((computed, value_edits, read)) = build_time_values::evaluate_located(
+            &transformed_code,
+            filename,
+            &option,
+            resolver,
+            &imported_constants::Unknown::default(),
+        )
+        .map_err(|errors| {
+            let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+            errors
+                .into_iter()
+                .map(|(offset, message)| {
+                    let offset = [alias_edits.as_slice(), namespace_edits.as_slice()]
+                        .into_iter()
+                        .chain(earlier_edits.iter().copied())
+                        .fold(offset, |offset, edits| {
+                            import_alias_visit::source_offset(edits, offset)
+                        });
+                    format!(
+                        "{}: {message}. Fix: use a literal or a CSS variable",
+                        locate(filename, source, offset)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?
+    {
+        let (computed, number_edits) = if namespace_edits.is_empty() {
+            (std::borrow::Cow::Borrowed(computed.as_str()), Vec::new())
+        } else {
+            import_alias_visit::pixelify_emotion_values(&computed, filename, &namespace_code)
+        };
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
+            .into_iter()
+            .map(|(start, end)| {
+                let authored = |offset| {
+                    earlier_edits.iter().fold(offset, |offset, edits| {
+                        import_alias_visit::source_offset(edits, offset)
+                    })
+                };
+                (authored(start), authored(end))
+            })
+            .collect();
+        let layers: Vec<&[import_alias_visit::Edit]> = [
+            number_edits.as_slice(),
+            value_edits.as_slice(),
+            alias_edits.as_slice(),
+            namespace_edits.as_slice(),
+        ]
+        .into_iter()
+        .chain(earlier_edits.iter().copied())
+        .collect();
+        let mut output = extract_source(
+            filename,
+            &computed,
+            Some((source, &layers)),
+            Some(&calls),
+            option,
+            source_map,
+            resolver,
+        )?;
+        let mut files: std::collections::BTreeSet<String> =
+            output.dependencies.into_iter().collect();
+        files.extend(read);
+        output.dependencies = files.into_iter().collect();
+        return Ok(output);
+    }
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
-    let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename) {
-        // Use transformed code (with imports already pointing to @devup-ui/react)
-        match vanilla_extract::execute_stylesheet(code, filename, &option, resolver) {
+    let mut own_rules = FxHashMap::default();
+    let processed_code: Option<String> = if utils::is_vanilla_extract_file(filename)
+        && stylesheet_policy::plan(&transformed_code, filename, &option, resolver, &|_| false)
+            == stylesheet_policy::Plan::Run
+    {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        // Instrument the authored APIs before aliasing can change declaration units.
+        let stylesheet = vanilla_extract::Stylesheet {
+            filename,
+            code,
+            source,
+            edits: earlier_edits,
+        };
+        let executed = match values_run {
+            Some(calls) => vanilla_extract::execute_evaluated(
+                vanilla_extract::Evaluation {
+                    stylesheet,
+                    calls: Some(calls),
+                },
+                &option,
+                resolver,
+            ),
+            None => vanilla_extract::execute_located(stylesheet, &option, resolver),
+        };
+        match executed {
             Ok((collected, imports)) => {
+                own_rules = collected
+                    .styles
+                    .iter()
+                    .filter_map(|(name, entry)| {
+                        entry.own_plan.clone().map(|plan| (name.clone(), plan))
+                    })
+                    .collect();
                 dependencies = imports.dependencies;
                 // Keyframes names are generated, so extract the referenced ones
                 // first and substitute their names into the styles using them.
@@ -560,26 +706,7 @@ fn extract_source(
                     filename,
                 ))
             }
-            // A stylesheet another one imports must give its own values, and an
-            // import cycle read too early fails as it does in ES modules, so both
-            // are reported rather than hidden behind plain extraction
-            Err(error) if error.starts_with(dead_properties::ERROR_CHANNEL) => {
-                return Err(error
-                    .trim_start_matches(dead_properties::ERROR_CHANNEL)
-                    .into());
-            }
-            Err(error)
-                if module_loader::loading_for_stylesheet()
-                    || error.contains(module_loader::IMPORT_CYCLE) =>
-            {
-                return Err(error.into());
-            }
-            // Plain extraction still compiles Devup UI's own APIs; the error is
-            // reported when calls it cannot compile remain
-            Err(error) => {
-                evaluation_error = Some(error);
-                None
-            }
+            Err(error) => return Err(error.into()),
         }
     } else {
         None
@@ -597,6 +724,11 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
+    let source_type = parsing::source_type(filename).map_err(|error| {
+        format!(
+            "{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension"
+        )
+    })?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -607,9 +739,19 @@ fn extract_source(
         css_files.push(main_css_path(&option.css_dir));
     }
     css_files.push(css_file.clone());
-    let allocator = Allocator::default();
-
-    let mut program = parsing::parse(&allocator, filename, code_to_parse)?;
+    let mut program = if let Some(program) = original_program.filter(|_| code_to_parse == code) {
+        program
+    } else {
+        parsing::checked(&allocator, code_to_parse, source_type).map_err(|errors| {
+            let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+            let edits: Vec<&[import_alias_visit::Edit]> =
+                [alias_edits.as_slice(), namespace_edits.as_slice()]
+                    .into_iter()
+                    .chain(earlier_edits.iter().copied())
+                    .collect();
+            located_errors(filename, source, &edits, errors)
+        })?
+    };
     let header_pragmas = jsx_pragmas::HeaderPragmas::capture(&program);
     let styled_capability = extractor::styled_capability::StyledCapability::reserve(&program);
     let mut inlined = if processed_code.is_none() {
@@ -663,9 +805,13 @@ fn extract_source(
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
     visitor.reuse_scoping(inlined.scoping);
+    visitor.own_rules(own_rules, &program);
     visitor.import_styled(imported.components);
     visitor.reserve_styled(styled_capability);
     visitor.visit_program(&mut program);
+    if !visitor.own_failures.is_empty() {
+        return Err(visitor.own_failures.join("\n").into());
+    }
     if !has_relevant_import
         && alias_edits.is_empty()
         && namespace_edits.is_empty()
@@ -673,11 +819,6 @@ fn extract_source(
     {
         // No element took the `css` prop the text seemed to give
         return Ok(unchanged());
-    }
-    if let Some(error) = evaluation_error
-        && imports_uncompiled(&program, &option.package)
-    {
-        return Err(error.into());
     }
     // Run the code a value computes, or tell rules the module computes from a
     // class it composes
@@ -688,13 +829,32 @@ fn extract_source(
             .any(|(_, error)| dead_properties::terminal_error(error))
         && values_run.is_none()
         && !utils::is_vanilla_extract_file(filename)
-        && let Some((computed, value_edits, read)) = build_time_values::evaluate(
+        && let Some((computed, value_edits, read)) = build_time_values::evaluate_located(
             &transformed_code,
             filename,
             &option,
             resolver,
             &inlined.unknown,
         )
+        .map_err(|errors| {
+            let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+            errors
+                .into_iter()
+                .map(|(offset, message)| {
+                    let offset = [alias_edits.as_slice(), namespace_edits.as_slice()]
+                        .into_iter()
+                        .chain(earlier_edits.iter().copied())
+                        .fold(offset, |offset, edits| {
+                            import_alias_visit::source_offset(edits, offset)
+                        });
+                    format!(
+                        "{}: {message}. Fix: use a literal or a CSS variable",
+                        locate(filename, source, offset)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })?
     {
         let (computed, number_edits) = if namespace_edits.is_empty() {
             (std::borrow::Cow::Borrowed(computed.as_str()), Vec::new())
@@ -803,21 +963,6 @@ fn main_css_path(css_dir: &str) -> String {
 /// kept for parse/sourcemap. Global (shared-chunk) files are emitted like
 /// single-css: into devup-ui.css with prefix-less global naming, so styles
 /// shared across routes ship once.
-/// Whether `program` still imports a value from `package` that extraction did
-/// not compile away
-fn imports_uncompiled(program: &oxc_ast::ast::Program<'_>, package: &str) -> bool {
-    program.body.iter().any(|statement| {
-        matches!(statement, oxc_ast::ast::Statement::ImportDeclaration(import)
-        if import.source.value == package
-            && !import.import_kind.is_type()
-            && import.specifiers.iter().flatten().any(|specifier| matches!(
-                specifier,
-                oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier(named)
-                    if !named.import_kind.is_type()
-            )))
-    })
-}
-
 /// `errors` in source order, one per line, each led by `filename:line:column`
 /// of the code it is about; each layer of `edits`, last made first, maps the
 /// offsets back to `source`
@@ -850,12 +995,23 @@ fn located_errors(
 /// `filename:line:column` of `offset` in `source`
 fn locate(filename: &str, source: &str, offset: usize) -> String {
     let before = source.get(..offset).unwrap_or(source);
-    let line_start = before.rfind('\n').map_or(0, |index| index + 1);
-    format!(
-        "{filename}:{}:{}",
-        before.matches('\n').count() + 1,
-        before[line_start..].chars().count() + 1
-    )
+    let (mut line, mut column) = (1, 1);
+    let mut characters = before.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\r' => {
+                characters.next_if_eq(&'\n');
+                line += 1;
+                column = 1;
+            }
+            '\n' | '\u{2028}' | '\u{2029}' => {
+                line += 1;
+                column = 1;
+            }
+            _ => column += 1,
+        }
+    }
+    format!("{filename}:{line}:{column}")
 }
 
 /// A line for each binding `message` names that code changes, telling where
@@ -2337,7 +2493,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r"import {Box as C} from '@devup-ui/core'
-        <C padding={1} margin={2} />
+        <C padding={1} margin={2} className={null} />
         ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -5440,7 +5596,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string()
-            .starts_with("Unknown file extension")
+            .starts_with("test.wrong:1:1: Unknown file extension")
         );
 
         reset_class_map();
@@ -5459,7 +5615,7 @@ import clsx from 'clsx'
             )
             .unwrap_err()
             .to_string(),
-            "test.tsx:1:11: Expected `from` but found `string`"
+            "test.tsx:1:11: Cannot parse source: Expected `from` but found `string`. Fix: correct the syntax at this location"
         );
     }
 
@@ -8335,7 +8491,7 @@ export { c as Lib };"#,
             extract(
                 "test.jsx",
                 r"import {Box} from '@devup-ui/core'
-    <Box styleVars />
+    <Box styleVars={{}} />
             ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -14600,7 +14756,8 @@ globalCss({
         .map(|error| error.to_string())
         .unwrap_or_default();
         assert!(
-            error.starts_with("JS execution error: TypeError"),
+            error.starts_with("broken.css.ts:3:")
+                && error.contains(": JS execution error: TypeError"),
             "{error}"
         );
 
@@ -21046,7 +21203,7 @@ import orange from './tokens';
 import * as tokens from './tokens';
 import named from './named';
 import { handler } from './handler';
-import cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from './cjs-tokens';
+import cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC as CJS_DYNAMIC } from './cjs-tokens';
 import cjsObject, { OBJ, OVERRIDDEN, LATER } from './cjs-object';
 import twelve from './cjs-value';
 import twice from './cjs-twice';
@@ -21062,7 +21219,7 @@ export const f = { PRIMARY, unused, SIZE: tokens.SIZE };
 export const g = <div color={PRIMARY} />;
 export const h = <Devup.Inner.Box color={SIZE} />;
 export const i = Devup['css']({ color: SIZE });
-export const l = <Box color={COMPILED} bg={FROM_REQUIRE} borderColor={DESTRUCTURED} outlineColor={MUTATED} fill={cjs} stroke={OBJ} caretColor={OVERRIDDEN} accentColor={LATER} stopColor={cjsObject.OBJ} zIndex={twelve} floodColor={twice.A} lightingColor={DYNAMIC} columnRuleColor={marker} textDecorationColor={markerNamed} />;
+export const l = <Box color={COMPILED} bg={FROM_REQUIRE} borderColor={DESTRUCTURED} outlineColor={MUTATED} fill={cjs} stroke={OBJ} caretColor={OVERRIDDEN} accentColor={LATER} stopColor={cjsObject.OBJ} zIndex={twelve} floodColor={twice.A} lightingColor={CJS_DYNAMIC} columnRuleColor={marker} textDecorationColor={markerNamed} />;
 export const j = <Box zIndex={PRIMARY.length} order={PRIMARY['length']} />;
 export const k = styled('div')({ color: SIZE });",
             ExtractOption {
@@ -22593,7 +22750,6 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .is_ok()
         );
         for code in [
-            "const Math = { max: () => 1 };\nexport const a = css({ width: Math.max(1, 2) });",
             "const Math = { PI: 3 };\nexport const a = css({ width: Math.PI, height: Math.max(1, 2) });",
             "import Math from './math';\nexport const a = css({ width: Math.max(1, 2) });",
             "export const a = (Math) => css({ width: Math.max(1, 2) });",
@@ -22610,6 +22766,18 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
             .unwrap_or_default();
             assert!(message.contains("Math."), "{code}: {message}");
         }
+        reset_class_map();
+        reset_file_map();
+        let computed = extract(
+            "test.tsx",
+            "import { css } from '@devup-ui/react';\nconst Math = { max: () => 1 };\nexport const a = css({ width: Math.max(1, 2) });",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            static_values(&computed),
+            BTreeSet::from([("width".to_string(), "4px".to_string())])
+        );
     }
 
     #[test]
@@ -23493,7 +23661,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             ),
             (
                 "test.tsx",
-                "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /></>;"
+                "export const App = ({ c }) => <><div css=\"color: red; padding: 4px\" /><div css={`color: ${c};`} /><div css /><div css={null} /><div css={undefined} /><div css={{}} /><div css={''} /><div css={null} /></>;"
             ),
             (
                 "test.tsx",

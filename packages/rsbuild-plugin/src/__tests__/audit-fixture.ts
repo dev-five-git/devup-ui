@@ -12,9 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 export function fixture() {
-  const root = realpathSync.native(
-    mkdtempSync(join(tmpdir(), 'devup-w64c-audit-')),
-  )
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'devup-audit-')))
   return {
     root,
     put(path: string, code: string) {

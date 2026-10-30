@@ -109,6 +109,9 @@ use std::borrow::Cow;
 use std::rc::Rc;
 mod stylex_capture;
 
+#[path = "own_css_visit.rs"]
+mod own_css;
+
 /// What text among composed parts holds
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Text {
@@ -199,6 +202,8 @@ fn style_property_into_string(style_property: StyleProperty) -> String {
 }
 
 pub struct DevupVisitor<'a> {
+    own_rules: FxHashMap<(u32, u32), crate::own_css_plan::Plan>,
+    pub(crate) own_failures: Vec<String>,
     pub ast: AstBuilder<'a>,
     filename: String,
     /// The bindings the file declares for the APIs the build compiles
@@ -1147,6 +1152,8 @@ impl<'a> DevupVisitor<'a> {
         split_filename: Option<String>,
     ) -> Self {
         Self {
+            own_rules: FxHashMap::default(),
+            own_failures: Vec::new(),
             ast: AstBuilder::new(allocator),
             filename: filename.to_string(),
             bindings: Bindings::default(),
@@ -3261,6 +3268,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
         if !self.class_names_scope.is_empty() && self.compile_class_names_call(it) {
+            return;
+        }
+        if self.compile_own_rules(it) {
             return;
         }
         if let Expression::CallExpression(call) = &*it
