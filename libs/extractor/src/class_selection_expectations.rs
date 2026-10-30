@@ -33,7 +33,7 @@ fn atom(property: &str, value: &str) -> Declaration {
     }
 }
 
-pub fn expected(case: usize, state: State) -> Vec<Meaning> {
+pub fn expected(case: usize, state: State, single_css: bool) -> Vec<Meaning> {
     let on = state.on.truthy();
     let mut result = Vec::new();
     let color = match case {
@@ -163,7 +163,9 @@ pub fn expected(case: usize, state: State) -> Vec<Meaning> {
                 result.push(Meaning::Declaration(lookup));
             }
         }
-        30 => result.push(Meaning::Keyframes("k-525370705245237976".into())),
+        30 => result.push(Meaning::Keyframes(
+            if single_css { "a" } else { "a-a" }.into(),
+        )),
         _ => {}
     }
     result.sort();

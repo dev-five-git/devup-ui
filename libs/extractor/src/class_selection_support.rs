@@ -111,7 +111,7 @@ pub fn class(style: &ExtractStyleValue, filename: Option<&str>) -> Option<String
     }
 }
 
-pub fn meaning(style: &ExtractStyleValue, name: &str) -> Meaning {
+pub fn meaning(style: &ExtractStyleValue, name: &str, single_css: bool) -> Meaning {
     match style {
         ExtractStyleValue::Static(value) => Meaning::Declaration(Declaration {
             property: value.property.clone(),
@@ -126,7 +126,7 @@ pub fn meaning(style: &ExtractStyleValue, name: &str) -> Meaning {
             Meaning::Typography(value.clone())
         }
         ExtractStyleValue::Keyframes(value) => {
-            assert_eq!(name, "k-525370705245237976");
+            assert_eq!(name, if single_css { "a" } else { "a-a" });
             assert_eq!(value.keyframes.len(), 1);
             let from = &value.keyframes["from"];
             assert_eq!(from.len(), 1);
@@ -176,7 +176,7 @@ pub fn meanings(outputs: &Modules, tokens: &str, single_css: bool) -> Vec<Meanin
         .map(|token| {
             selected.iter().find(|(name, _)| name == token).map_or_else(
                 || Meaning::Opaque(token.into()),
-                |(name, style)| meaning(style, name),
+                |(name, style)| meaning(style, name, single_css),
             )
         })
         .collect();
