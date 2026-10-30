@@ -45,7 +45,6 @@ jobs:
       GIT_CONFIG_KEY_0: core.autocrlf
       GIT_CONFIG_VALUE_0: "false"
       CARGO_BUILD_JOBS: "2"
-      CARGO_TARGET_DIR: ${{ runner.temp }}/native-target-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.suffix }}
       RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Start durable build evidence
@@ -84,6 +83,7 @@ jobs:
       - name: Build fresh target and retain exact receipt
         shell: bash
         env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/native-target-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.suffix }}
           NATIVE_SUFFIX: ${{ matrix.suffix }}
           NATIVE_TARGET: ${{ matrix.target }}
         run: |
@@ -1030,7 +1030,6 @@ jobs:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.autocrlf
       GIT_CONFIG_VALUE_0: "false"
-      NATIVE_RELEASE_BUNDLE: ${{ runner.temp }}/native-release-bundle
     permissions:
       contents: write
       id-token: write
@@ -1120,8 +1119,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: native-packs-${{ github.run_id }}
-          path: ${{ env.NATIVE_RELEASE_BUNDLE }}
+          path: ${{ runner.temp }}/native-release-bundle
       - uses: changepacks/action@main
         id: changepacks
+        env:
+          NATIVE_RELEASE_BUNDLE: ${{ runner.temp }}/native-release-bundle
         with:
           publish: true
