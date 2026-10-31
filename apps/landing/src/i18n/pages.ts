@@ -10,6 +10,11 @@ interface TranslatedPage {
 
 // Keep translated content beside its English source; share the original layout.
 export const translatedPages: Record<string, TranslatedPage | undefined> = {
+  '/docs/migration/vanilla-extract': {
+    load: () =>
+      import('@/app/(detail)/docs/migration/vanilla-extract/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
   '/docs/overview': {
     load: () => import('@/app/(detail)/docs/overview/page.ko.mdx'),
     Layout: DocsLayout,
