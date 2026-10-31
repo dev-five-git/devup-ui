@@ -1,9 +1,12 @@
 import { glob, readFile, writeFile } from 'node:fs/promises'
 
-const files = await glob('src/**/*.mdx')
+import { COMPONENT_GROUPS } from './src/constants/index.ts'
+
+const files = await glob('src/app/(detail)/**/*.mdx')
 
 const q = []
 for await (const file of files) {
+  if (file.endsWith('.ko.mdx')) continue
   q.push(
     readFile(file, {
       encoding: 'utf-8',
@@ -12,22 +15,58 @@ for await (const file of files) {
       if (content.trim().length === 0 || titleIndex === -1) {
         return null
       }
-      const fileName = file.split(/[/\\]/).pop()
+      const normalized = file.replaceAll('\\', '/')
+      const url = normalized
+        .replace('src/app/(detail)', '')
+        .replace('/[component]', '')
+        .replace(/\/(?:page|index|Api|Description)\.mdx$/u, '')
+      if (
+        url.startsWith('/components/') &&
+        url !== '/components/overview' &&
+        !Object.values(COMPONENT_GROUPS).flat().includes(url.split('/').at(-1))
+      )
+        return null
 
       return {
         text: content.toString().substring(titleIndex),
-        title: /(#)+ (.*)/.exec(content.toString())[1],
-        url: file
-          .replace(/src[/\\]app[/\\]\(detail\)[/\\]/, '')
-          .replace(fileName, ''),
+        title: /(#)+ (.*)/.exec(content.toString())[2],
+        url,
       }
     }),
   )
 }
 
-const res = await Promise.all(q)
+const res = (await Promise.all(q)).filter(Boolean)
+const search = new Map()
+for (const entry of res) {
+  const previous = search.get(entry.url)
+  search.set(
+    entry.url,
+    previous ? { ...previous, text: `${previous.text}\n${entry.text}` } : entry,
+  )
+}
 
-await writeFile('public/search.json', JSON.stringify(res))
+await writeFile('public/search.json', JSON.stringify([...search.values()]))
+const koreanSearch = new Map(search)
+for await (const file of glob('src/app/(detail)/**/*.ko.mdx')) {
+  const content = await readFile(file, 'utf8')
+  const heading = /^#{1,6} (.+)$/mu.exec(content)
+  if (!heading) continue
+  const url = file
+    .replaceAll('\\', '/')
+    .replace('src/app/(detail)', '')
+    .replace('/[component]', '')
+    .replace(/\/(?:page|index|Api|Description)\.ko\.mdx$/u, '')
+  koreanSearch.set(url, {
+    title: heading[1],
+    text: content.slice(heading.index),
+    url,
+  })
+}
+await writeFile(
+  'public/search.ko.json',
+  JSON.stringify([...koreanSearch.values()]),
+)
 
 // Demo barrel.
 //

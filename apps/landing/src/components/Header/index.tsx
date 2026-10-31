@@ -1,6 +1,7 @@
 import { Box, Center, css, Flex } from '@devup-ui/react'
-import Link from 'next/link'
 import { Suspense } from 'react'
+
+import { Link } from '@/i18n/navigation'
 
 import { Logo } from '../Logo'
 import { Discord } from './Discord'
@@ -9,6 +10,7 @@ import { HeaderInput } from './HeaderInput'
 import { HeaderInputWrap } from './HeaderInputWrap'
 import { HeaderWrap } from './HeaderWrap'
 import { Kakao } from './Kakao'
+import { LanguageSwitcher } from './LanguageSwitcher'
 import { Menu } from './Menu'
 import { MobMenu } from './MobMenu'
 import { MobMenuButton } from './MobMenuButton'
@@ -33,6 +35,7 @@ function HeaderIconWrap({ children }: { children: React.ReactNode }) {
 export function Header() {
   const top = (
     <Flex alignItems="center">
+      <LanguageSwitcher />
       <Flex alignItems="center" px="10px">
         <Link
           className={css({
@@ -112,7 +115,7 @@ export function Header() {
         display={['none', null, null, 'flex']}
         gap={[null, null, '4px', '10px']}
       >
-        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+        <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -122,7 +125,7 @@ export function Header() {
             <Menu keyword="docs">Docs</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+        <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -132,7 +135,7 @@ export function Header() {
             <Menu keyword="components">Components</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+        <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -142,7 +145,7 @@ export function Header() {
             <Menu keyword="showcase">Showcase</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+        <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -152,8 +155,8 @@ export function Header() {
             <Menu keyword="team">Team</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px={[null, null, '0', '24px']}>
-          <Link
+        <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
+          <a
             className={css({
               textDecoration: 'none',
               display: 'flex',
@@ -162,7 +165,6 @@ export function Header() {
             })}
             data-group
             href="/storybook/index.html"
-            prefetch={false}
           >
             <Menu keyword="storybook">Storybook</Menu>
             <Box
@@ -181,7 +183,7 @@ export function Header() {
               maskSize="contain"
               opacity="0.6"
             />
-          </Link>
+          </a>
         </Flex>
         <HeaderInputWrap>
           <HeaderInput readOnly />

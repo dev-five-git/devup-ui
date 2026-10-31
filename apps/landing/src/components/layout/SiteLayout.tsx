@@ -1,16 +1,17 @@
 import { Box, css, globalCss, ThemeScript } from '@devup-ui/react'
 import { resetCss } from '@devup-ui/reset-css'
 import ReactLenis from 'lenis/react'
-import type { Metadata } from 'next'
+import { NextIntlClientProvider } from 'next-intl'
+import { setRequestLocale } from 'next-intl/server'
 
-import { AnchorScroll } from '../components/AnchorScroll'
-import { Footer } from '../components/Footer'
-import { Header } from '../components/Header'
-import { SearchModal } from '../components/SearchModal'
+import { AnchorScroll } from '@/components/AnchorScroll'
+import { Footer } from '@/components/Footer'
+import { Header } from '@/components/Header'
+import { SearchModal } from '@/components/SearchModal'
 import {
   installStaticExportRscTransport,
   STATIC_EXPORT_DEPLOYMENT_ID,
-} from '../utils/static-export-rsc-transport'
+} from '@/utils/static-export-rsc-transport'
 
 function escapeScriptClosingTag(script: string) {
   return script.replace(/<\/script/giu, '\\u003c/script')
@@ -36,12 +37,10 @@ j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
 f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','GTM-PSRKC4QZ')`)
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'Devup UI',
   description: 'Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor',
-  alternates: {
-    canonical: 'https://devup-ui.com',
-  },
+  alternates: { canonical: 'https://devup-ui.com' },
   metadataBase: new URL('https://devup-ui.com'),
   openGraph: {
     title: 'Devup UI',
@@ -119,13 +118,16 @@ globalCss({
   },
 })
 
-export default function RootLayout({
+export function SiteLayout({
   children,
+  locale = 'en',
 }: Readonly<{
   children: React.ReactNode
+  locale?: 'en' | 'ko'
 }>) {
+  setRequestLocale(locale)
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
         {needsStaticExportRscTransport && (
           <script data-vinext-static-rsc-transport="">
@@ -171,15 +173,17 @@ export default function RootLayout({
         <noscript>
           <span data-javascript-disabled="" hidden />
         </noscript>
-        <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
-          <AnchorScroll />
-          <SearchModal />
-          <Box bg="$background">
-            <Header />
-            <Box as="main">{children}</Box>
-          </Box>
-          <Footer />
-        </ReactLenis>
+        <NextIntlClientProvider locale={locale} messages={{}}>
+          <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
+            <AnchorScroll />
+            <SearchModal />
+            <Box bg="$background">
+              <Header />
+              <Box as="main">{children}</Box>
+            </Box>
+            <Footer />
+          </ReactLenis>
+        </NextIntlClientProvider>
       </body>
     </html>
   )

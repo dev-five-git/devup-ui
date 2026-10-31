@@ -1,5 +1,6 @@
 import { Box, css, Flex, Grid, Image, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
+
+import { Link } from '@/i18n/navigation'
 
 const FEATURES = [
   {
