@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "packages/webpack-plugin/package.json": "Patch",
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Accept JSX in .js, .mjs and .cjs throughout extraction without changing TypeScript dialects or plain JavaScript output, and pass parsed source-map objects to webpack callbacks for Next SWC compatibility. Malformed relevant source now fails with located parser diagnostics instead of unlocated parser-panic messages or silently recovered output.",
-  "date": "2026-10-15T00:00:00.000Z"
-}

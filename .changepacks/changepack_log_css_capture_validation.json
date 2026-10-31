@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Narrow CSS capture validation states and cover namespace tags, registered template composition, nested responsive rejection and bounded-call checker errors without changing runtime behavior.",
-  "date": "2026-10-22T00:00:00.000Z"
-}
