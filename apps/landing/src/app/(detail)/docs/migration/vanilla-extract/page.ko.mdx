@@ -1,0 +1,152 @@
+export const metadata = {
+  title: '마이그레이션',
+  alternates: {
+    canonical: '/ko/docs/migration/vanilla-extract',
+    languages: {
+      en: '/docs/migration/vanilla-extract',
+      ko: '/ko/docs/migration/vanilla-extract',
+      'x-default': '/docs/migration/vanilla-extract',
+    },
+  },
+}
+
+# vanilla-extract
+
+## 스타일시트 파일
+
+vanilla-extract가 자체 API를 허용하는 유일한 위치인 `.css.ts` / `.css.js` 파일에서 Devup UI는 모듈을 평가하고 모든 호출을 생성된 결과로 대체합니다. 이 파일에서는 다음 API를 모두 사용할 수 있습니다: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. 커스텀 속성, 컨테이너, 레이어, 테마 클래스, 폰트 패밀리처럼 생성된 이름은 스타일시트마다 고유하며, 레이어는 선언된 순서를 유지합니다.
+
+```ts
+// theme.css.ts
+import { createTheme, createThemeContract, style } from '@vanilla-extract/css'
+
+export const vars = createThemeContract({ colors: { bg: null }, space: null })
+export const light = createTheme(vars, {
+  colors: { bg: 'white' },
+  space: '8px',
+})
+export const box = style({ background: vars.colors.bg })
+export const base = style({ padding: 8 })
+```
+
+숫자는 스타일시트와 일반 모듈 모두에서 vanilla-extract와 같은 의미를 유지합니다. `padding: 8`은 `8px`이 되고, `lineHeight`나 `zIndex`처럼 단위가 없는 속성은 작성한 그대로 유지됩니다. vanilla-extract와 마찬가지로 시간 값에 숫자를 쓰면 `px`가 붙으므로(`transitionDuration: 300`은 `300px`이 되어 브라우저가 무시합니다) 시간은 `transitionDuration: '300ms'`처럼 단위와 함께 작성하세요.
+
+스타일시트는 다른 스타일시트와 일반 모듈(ES 모듈 또는 CommonJS)을 import할 수 있으며, 이들은 번들러와 같은 방식(상대 경로, `tsconfig` `paths`, 패키지)으로 해석됩니다. import된 스타일시트는 번들러가 추출하는 방식 그대로 추출되므로, 내보내는 클래스 이름과 커스텀 속성은 해당 스타일시트의 CSS에서 사용하는 것과 같습니다. 또한 그 CSS가 로드되도록 import하는 쪽의 import 구문은 유지됩니다.
+
+```ts
+// tokens.ts
+export const PRIMARY = 'blue'
+```
+
+```ts
+// button.css.ts
+import { style } from '@vanilla-extract/css'
+
+import { base, vars } from './theme.css'
+import { PRIMARY } from './tokens'
+
+export const button = style([base, { color: PRIMARY, margin: vars.space }])
+```
+
+import된 파일이 변경되면 해당 파일을 import하는 스타일시트가 다시 빌드됩니다. 순환 import는 ES 모듈과 동일하게 동작합니다. 어느 쪽도 상대 모듈이 평가되기 전에 값을 읽지 않으면 정상적으로 동작하고, 너무 일찍 읽으면 해당 바인딩과 모듈 이름을 알려 주는 빌드 오류가 발생합니다.
+
+해석할 수 없는 import나 `undefined`의 속성 읽기처럼 평가 중에 예외가 발생한 스타일시트는 런타임에 여전히 `style()`을 호출하는 결과물을 만드는 대신, 그 예외를 담은 빌드 오류를 발생시킵니다.
+
+## 일반 모듈
+
+`style`, `globalStyle`, `keyframes`의 named import는 `.ts` / `.tsx`에서도 해석되며, 각각 대응하는 Devup UI API로 매핑됩니다. 리터럴 규칙 객체는 모듈 전체를 평가하지 않고 컴파일됩니다:
+
+```tsx
+import { globalStyle, style } from '@vanilla-extract/css'
+
+export const a = style({ color: 'red' })
+globalStyle('body', { margin: 0 })
+```
+
+```text
+import "@devup-ui/react/devup-ui.css";
+export const a = "a";
+;
+```
+
+테마가 비어 있으면 같은 예제에서 다음 CSS가 생성됩니다:
+
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */@layer b;@layer b{body{margin:0}}.a{color:red}
+```
+
+생성되는 이름은 클래스 접두사와 추출 상태에 따라 달라집니다. vanilla-extract API import는 제거되지만, 생성된 CSS import는 남습니다.
+
+`globalStyle(selector, rules)`은 vanilla-extract의 두 인자 형태를 그대로 유지하며, 추출기가 선택자를 `globalCss`가 받는 객체 형태로 다시 합칩니다.
+
+조합되는 스타일을 빌드 시점에 알 수 있으면 `style([base, { ... }])`은 충돌하지 않는 선언을 유지하고, [지원 문법과 제한 사항](/docs/limitations)에서 설명하는 것처럼 속성, 선택자, 브레이크포인트, 레이어별로 뒤에 오는 값을 적용합니다. 예를 들면 다음과 같습니다:
+
+```ts
+import { style } from '@vanilla-extract/css'
+
+const base = style({ color: 'red', padding: 8 })
+export const button = style([base, { color: 'blue' }])
+```
+
+추출된 코드:
+
+```text
+import "@devup-ui/react/devup-ui.css";
+const base = "a b";
+export const button = "b c";
+```
+
+생성된 CSS:
+
+```text
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.c{color:blue}.a{color:red}.b{padding:8px}
+```
+
+`button`에는 충돌하는 red 클래스가 포함되지 않습니다. 빌드 시점에 알 수 없는 외부 클래스는 여전히 CSS 캐스케이드를 따르며, 클래스 이름 문자열의 순서가 덮어쓰기 규칙이 되지는 않습니다.
+
+일반 모듈 추출은 생성된 커스텀 속성을 알아내기 위해 vanilla-extract 테마 계약을 실행하지 **않습니다**. 계약과 이를 사용하는 스타일은 `.css.ts` / `.css.js`에 함께 두세요. 예를 들어 이 페이지 상단의 스타일시트 예제를 일반 `theme.ts` 모듈로 저장하면 유효하지 않습니다:
+
+```ts
+// theme.ts (스타일시트 파일이 아님)
+import { createTheme, createThemeContract, style } from '@vanilla-extract/css'
+
+const vars = createThemeContract({ colors: { bg: null } })
+export const light = createTheme(vars, { colors: { bg: 'white' } })
+export const box = style({ background: vars.colors.bg })
+```
+
+이 예제를 빌드하면 6번째 줄 20번째 열의 호출 위치와 함께 다음 메시지가 보고됩니다:
+
+```text
+`css()` cannot use `vars.colors.bg` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+마찬가지로 위의 두 파일 스타일시트 예제도 같은 import가 일반 `.ts` 모듈에서 동작한다고 보장하지 않습니다:
+
+```ts
+// button.ts (스타일시트 파일이 아님)
+import { style } from '@vanilla-extract/css'
+
+import { base, vars } from './theme.css'
+import { PRIMARY } from './tokens'
+
+export const button = style([base, { color: PRIMARY, margin: vars.space }])
+```
+
+`theme.css.ts`와 `tokens.ts`를 해석할 수 있더라도, 이 예제를 빌드하면 7번째 줄 23번째 열의 테마 변수 읽기 위치와 함께 다음 메시지가 보고됩니다:
+
+```text
+`css()` cannot use `vars.space` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+이 모듈을 `button.css.ts`로 옮기고, 스타일과 테마 값은 유효한 스타일시트 모듈에서 내보내세요. 일반 모듈은 해석할 수 있는 리터럴 상수를 읽을 수 있지만, 그렇다고 생성된 테마 객체가 일반 리터럴 상수가 되는 것은 아닙니다. 빌드 시점에 알 수 있는 조합과, 일반 모듈 경로에서 해석할 수 없는 테마 변수 읽기를 혼동하지 마세요.
+
+나머지 API는 스타일시트 파일 밖에서 `@vanilla-extract/css` import로 그대로 남습니다. 예를 들어 `createVar()`와 `styleVariants()`는 같은 모듈의 `style()` 호출이 변환되더라도 해당 패키지에 대한 호출로 남으며, 일반 모듈 추출 경로에서 평가되지 않습니다.
+
+이 호출들을 vanilla-extract가 원래 권장하는 위치인 `.css.ts` 파일로 옮기면 의존성이 사라집니다.
+
+## 네임스페이스 import
+
+네임스페이스는 여러 named export를 대표하는데, 이에 대응하는 Devup UI API는 이름이 다르고(`style` → `css`) 네임스페이스 접근으로는 이를 표현할 수 없으므로 변환하지 않고 그대로 둡니다.
+
+변환이 적용되도록 하려면 named import를 사용하세요.
