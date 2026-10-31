@@ -251,3 +251,15 @@ impl<'env> De<'_, 'env> {
 pub(crate) fn widen_index(value: u32) -> usize {
     usize::from_le_bytes(u64::from(value).to_le_bytes())
 }
+
+#[cfg(test)]
+#[test]
+fn transport_display_preserves_reason_when_formatted() {
+    // Given: a reason-only transport error without a JavaScript reference.
+    let reason = "transport reason";
+    let error = Error::Transport(napi::Error::from_reason(reason));
+    // When: the production wrapper is formatted through Display.
+    let rendered = error.to_string();
+    // Then: only the original reason is displayed, without a status prefix.
+    assert_eq!(rendered, reason);
+}
