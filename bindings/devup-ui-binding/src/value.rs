@@ -1,7 +1,22 @@
+use napi::bindgen_prelude::JsObjectValue;
 use napi::bindgen_prelude::{Array, Either, FnArgs, FromNapiValue, Function, Uint8Array, Unknown};
 use napi::{Env, ValueType};
 use serde::de::{self, DeserializeOwned, Error as _, Unexpected, Visitor};
 use std::fmt;
+
+/// Construct binding diagnostics in this realm, retaining the raw Error on return.
+pub(crate) fn binding_error(env: Env, message: impl AsRef<str>) -> napi::Error {
+    let create = || -> napi::Result<napi::Error> {
+        let constructor: Function<&str, Unknown<'_>> =
+            env.get_global()?.get_named_property("Error")?;
+        Ok(napi::Error::from_unknown_without_coercion(
+            constructor.new_instance(message.as_ref())?,
+        ))
+    };
+    match create() {
+        Ok(error) | Err(error) => error,
+    }
+}
 
 /// Private control tags; keys and original user values are never encoded here.
 pub(crate) enum Operation {
@@ -62,12 +77,14 @@ pub(crate) enum Error {
     Schema(String),
     Access,
     Host(String),
+    Transport(napi::Error),
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Schema(message) | Self::Host(message) => message.fmt(f),
             Self::Access => f.write_str("JavaScript access failed"),
+            Self::Transport(error) => error.reason.fmt(f),
         }
     }
 }
@@ -79,7 +96,7 @@ impl de::Error for Error {
 }
 impl From<napi::Error> for Error {
     fn from(error: napi::Error) -> Self {
-        Self::Host(error.reason)
+        Self::Transport(error)
     }
 }
 /// One original JS value; children retain the same scoped decoder and access seam.
@@ -96,7 +113,8 @@ pub(crate) fn decode<'env, T: DeserializeOwned>(
 ) -> napi::Result<T> {
     T::deserialize(De { value, access }).map_err(|error| match error {
         Error::Schema(_) => schema_error(value, access, slot),
-        Error::Access | Error::Host(_) => napi::Error::from_reason(format!("Error: {error}")),
+        Error::Access | Error::Host(_) => binding_error(access.env, format!("Error: {error}")),
+        Error::Transport(error) => error,
     })
 }
 /// Preflight forgives schema errors and converted caught imports, never raw access faults.
@@ -110,10 +128,16 @@ pub(crate) fn decode_preflight<'env, T: DeserializeOwned + Default>(
         Err(Error::Access) => {
             De { value, access }
                 .op::<Unknown<'env>>(Operation::PreflightFailure, None)
-                .map_err(|error| napi::Error::from_reason(format!("Error: {error}")))?;
+                .map_err(|error| match error {
+                    Error::Transport(error) => error,
+                    error @ (Error::Schema(_) | Error::Access | Error::Host(_)) => {
+                        binding_error(access.env, format!("Error: {error}"))
+                    }
+                })?;
             Ok(T::default())
         }
-        Err(error @ Error::Host(_)) => Err(napi::Error::from_reason(format!("Error: {error}"))),
+        Err(error @ Error::Host(_)) => Err(binding_error(access.env, format!("Error: {error}"))),
+        Err(Error::Transport(error)) => Err(error),
     }
 }
 /// Notify only on failure; the JS facade replays access failures before this token.
@@ -126,7 +150,7 @@ pub(crate) fn schema_error<'env>(
         .callback
         .call((u32::from(Operation::Schema), value, Some(Either::A(slot))).into())
     {
-        Ok(_) => napi::Error::from_reason("invalid argument"),
+        Ok(_) => binding_error(access.env, "invalid argument"),
         Err(error) => error,
     }
 }
@@ -226,4 +250,16 @@ impl<'env> De<'_, 'env> {
 /// Widen on approved native hosts, whose usize byte width is always eight.
 pub(crate) fn widen_index(value: u32) -> usize {
     usize::from_le_bytes(u64::from(value).to_le_bytes())
+}
+
+#[cfg(test)]
+#[test]
+fn transport_display_preserves_reason_when_formatted() {
+    // Given: a reason-only transport error without a JavaScript reference.
+    let reason = "transport reason";
+    let error = Error::Transport(napi::Error::from_reason(reason));
+    // When: the production wrapper is formatted through Display.
+    let rendered = error.to_string();
+    // Then: only the original reason is displayed, without a status prefix.
+    assert_eq!(rendered, reason);
 }

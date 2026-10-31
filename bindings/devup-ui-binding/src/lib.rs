@@ -11,10 +11,10 @@ pub use output::NativeOutput;
 use de::Wasm32Index;
 use devup_ui_binding_core as core;
 use napi::bindgen_prelude::{Either, Undefined, Unknown};
-use napi::{Env, Error, Result};
+use napi::{Env, Result};
 use napi_derive::napi;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use value::{Access, AccessCallback, decode, widen_index};
+use value::{Access, AccessCallback, binding_error, decode, widen_index};
 
 #[doc = "Restore a completely decoded sheet."]
 #[napi]
@@ -68,7 +68,7 @@ pub fn register_shorthands<'env>(
         failure_token: access_token,
     };
     core::register_shorthands_internal(decode::<BTreeMap<String, Vec<String>>>(value, &access, 0)?)
-        .map_err(|error| Error::from_reason(error.to_string()))
+        .map_err(|error| binding_error(env, error.to_string()))
 }
 #[doc = "Restore canonical bucket identities."]
 #[napi]
@@ -162,23 +162,23 @@ pub fn import_file_map<'env>(
 }
 #[doc = "Return the unchanged core serialization, without normalization."]
 #[napi]
-pub fn export_sheet() -> Result<String> {
-    core::export_sheet_internal().map_err(Error::from_reason)
+pub fn export_sheet(env: Env) -> Result<String> {
+    core::export_sheet_internal().map_err(|error| binding_error(env, error))
 }
 #[doc = "Return the unchanged core serialization, without normalization."]
 #[napi]
-pub fn export_class_map() -> Result<String> {
-    core::export_class_map_internal().map_err(Error::from_reason)
+pub fn export_class_map(env: Env) -> Result<String> {
+    core::export_class_map_internal().map_err(|error| binding_error(env, error))
 }
 #[doc = "Return the unchanged core serialization, without normalization."]
 #[napi]
-pub fn export_file_map() -> Result<String> {
-    core::export_file_map_internal().map_err(Error::from_reason)
+pub fn export_file_map(env: Env) -> Result<String> {
+    core::export_file_map_internal().map_err(|error| binding_error(env, error))
 }
 #[doc = "Return the unchanged core serialization, without normalization."]
 #[napi]
-pub fn export_canonical_map() -> Result<String> {
-    core::export_canonical_map_internal().map_err(Error::from_reason)
+pub fn export_canonical_map(env: Env) -> Result<String> {
+    core::export_canonical_map_internal().map_err(|error| binding_error(env, error))
 }
 /// Return the optional prefix as a string or undefined.
 #[napi]
@@ -228,10 +228,10 @@ pub fn get_unreserved_class_slot_count() -> u32 {
 }
 /// Generate declarations with the existing five interface-name slots.
 #[napi]
-pub fn get_theme_interface(package: String, names: Vec<String>) -> Result<String> {
+pub fn get_theme_interface(env: Env, package: String, names: Vec<String>) -> Result<String> {
     let [color, typography, length, shadows, theme]: [String; 5] = names
         .try_into()
-        .map_err(|_| Error::from_reason("invalid private interface-name request"))?;
+        .map_err(|_| binding_error(env, "invalid private interface-name request"))?;
     Ok(core::get_theme_interface(
         &package,
         [&color, &typography, &length, &shadows, &theme],

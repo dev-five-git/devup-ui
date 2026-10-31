@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
 
 import { runProtocol } from './private-protocol.mjs'
-import { runValues, withControl } from './private-values.mjs'
+import { privateError, runValues, withControl } from './private-values.mjs'
 
 const [entry, destination, group] = process.argv.slice(2)
 assert.equal(process.argv.length, 5)
@@ -172,11 +172,7 @@ if (group === 'raw-resolver-failure') {
             (op, value, key) =>
               op === OP.mapStart ? [] : access(op, value, key),
         ),
-      {
-        name: 'Error',
-        code: 'GenericFailure',
-        message: /^Error: missing private access result$/,
-      },
+      privateError('Error: missing private access result'),
     )
   })
   check('preflight-access-failure', () => {
@@ -195,6 +191,7 @@ if (group === 'raw-resolver-failure') {
   })
   check('preflight-failure-operation-host', () => {
     const target = raw.hasDevupUi
+    const marker = new Error('private preflight failure host')
     assert.throws(
       () =>
         withControl(
@@ -203,16 +200,11 @@ if (group === 'raw-resolver-failure') {
           ({ access, accessToken }) =>
             (op, value, key) => {
               if (op === OP.mapStart) return accessToken
-              if (op === OP.preflightFailure)
-                throw new Error('private preflight failure host')
+              if (op === OP.preflightFailure) throw marker
               return access(op, value, key)
             },
         ),
-      {
-        name: 'Error',
-        code: 'GenericFailure',
-        message: /^Error: (?:Error: )?private preflight failure host$/,
-      },
+      (error) => error === marker,
     )
   })
   check('reservation-row-arity', () => {

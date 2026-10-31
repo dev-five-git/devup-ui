@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join } from 'node:path'
 
 import { corpus, file, pkg, source } from './corpus.mjs'
 import { capturePatched } from './corpus/boundary.mjs'
+import { rawDiagnostics, runDiagnostics } from './diagnostics.mjs'
 import { capture, encode, hash } from './observation.mjs'
 
 export { encode } from './observation.mjs'
@@ -200,6 +201,7 @@ const h = {
 }
 assert.equal(corpus.length, 25)
 assert.equal(new Set(corpus.map((c) => c.name)).size, 25)
+h.note('public-error-inventory', runDiagnostics(w))
 for (const test of corpus) {
   scenario = test.name
   assert.equal(h.call('resetStateForTesting').tag, 'return')
@@ -247,4 +249,5 @@ for (const mode of ['unmodified', 'replaced', 'throwing']) {
 }
 save('number-userdata.json', { native, records: numberUserData })
 w.resetStateForTesting()
+save('diagnostics-raw.json', rawDiagnostics)
 if (abi.result.tag !== 'return') process.exitCode = 1

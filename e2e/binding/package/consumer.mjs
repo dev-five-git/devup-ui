@@ -29,6 +29,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { readFileSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { rawDiagnostics, runDiagnostics } from './diagnostics.mjs'
 import * as esm from '@devup-ui/binding'
 const require = createRequire(import.meta.url)
 const cjs = require('@devup-ui/binding')
@@ -63,7 +64,8 @@ const entry = require.resolve('@devup-ui/binding')
 const sha256 = createHash('sha256').update(readFileSync(image)).digest('hex')
 assert.equal(sha256, expected.imageHash)
 for (const path of [entry, image]) assert.ok(realpathSync(path).startsWith(realpathSync(new URL('.', import.meta.url))))
-console.log(JSON.stringify({ runtime: process.versions, executable: process.execPath, entry, image, sha256, names: expected.names.length, result: 'PASS' }))
+const diagnostics = runDiagnostics(cjs)
+console.log(JSON.stringify({ runtime: process.versions, executable: process.execPath, entry, image, sha256, names: expected.names.length, diagnostics, rawDiagnostics, result: 'PASS' }))
 `
 const declarations = `
 binding.setModuleResolver((specifier: string, importer: string) => ({ path: importer, code: specifier }))
@@ -183,6 +185,10 @@ export async function consume(options) {
           directory: realpathSync(fixture),
         })
         writeFileSync(join(fixture, 'probe.mjs'), probe)
+        writeFileSync(
+          join(fixture, 'diagnostics.mjs'),
+          readFileSync(join(root, 'e2e/binding/diagnostics.mjs')),
+        )
         for (const runtime of ['node', 'bun']) {
           const output = await child(runtime, ['probe.mjs'], {
             cwd: fixture,

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
+import { diagnostic } from './diagnostics.mjs'
+
 export function encode(value, seen = new Set()) {
   if (value === undefined) return { tag: 'undefined' }
   if (value === null) return { tag: 'null' }
@@ -67,6 +69,7 @@ const failure = (error) =>
         class: error.constructor.name,
         name: encode(error.name),
         message: encode(error.message),
+        diagnostic: diagnostic(error),
       }
     : { tag: 'thrown', value: encode(error) }
 export const capture = (action) => {
