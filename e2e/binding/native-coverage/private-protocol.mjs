@@ -5,18 +5,18 @@ const { OP } = createRequire(import.meta.url)(
   '../../../bindings/devup-ui-binding/interop.cjs',
 )
 
-import { runMapStart, withControl } from './private-values.mjs'
+import { privateError, runMapStart, withControl } from './private-values.mjs'
 
 export function runProtocol(raw, check, request) {
   runMapStart(raw, check, request)
-  for (const [name, target, input, operation, metadata, message] of [
+  for (const [name, target, input, operation, metadata, expected] of [
     [
       'empty',
       raw.importCanonicalMap,
       {},
       OP.mapStart,
       [],
-      /^Error: missing private access result$/,
+      privateError('Error: missing private access result'),
     ],
     [
       'missing-value',
@@ -24,7 +24,7 @@ export function runProtocol(raw, check, request) {
       { file: 'canonical' },
       OP.pair,
       ['file'],
-      /^Error: missing private access result$/,
+      privateError('Error: missing private access result'),
     ],
     [
       'missing-origin',
@@ -32,7 +32,7 @@ export function runProtocol(raw, check, request) {
       {},
       OP.field,
       [],
-      /^Error: missing private access result$/,
+      privateError('Error: missing private access result'),
     ],
     [
       'wrong-status',
@@ -40,7 +40,10 @@ export function runProtocol(raw, check, request) {
       new Map([['file', 'canonical']]),
       OP.next,
       ['yes', undefined],
-      /^Error: .*`bool`$/,
+      privateError(
+        'Failed to convert napi value into rust type `bool`',
+        'BooleanExpected',
+      ),
     ],
     [
       'wrong-value',
@@ -48,13 +51,16 @@ export function runProtocol(raw, check, request) {
       {},
       OP.mapStart,
       [2, [], 'length'],
-      /^Error: .*`u32`$/,
+      privateError(
+        'Failed to convert napi value String into rust type `u32`',
+        'NumberExpected',
+      ),
     ],
   ]) {
     check(`access-${name}`, () => {
       // Given: one malformed metadata packet; all other accesses stay authored.
       // When: native decoding consumes that packet.
-      // Then: metadata conversion reports Host, not Schema.
+      // Then: retain the binding diagnostic or exact transport status, not Schema.
       assert.throws(
         () =>
           withControl(
@@ -64,12 +70,12 @@ export function runProtocol(raw, check, request) {
               (op, value, key) =>
                 op === operation ? metadata : access(op, value, key),
           ),
-        { name: 'Error', code: 'GenericFailure', message },
+        expected,
       )
     })
   }
   check('access-wrong-origin', () => {
-    // Given: a Host throw whose text resembles an intrinsic Schema failure.
+    // Given: a raw throw whose text resembles an intrinsic Schema failure.
     const target = raw.hasDevupUi
     const marker = new Error('invalid intrinsic receiver')
     let resolverCalls = 0
@@ -79,18 +85,14 @@ export function runProtocol(raw, check, request) {
     })
     try {
       // When: preflight's callback throws outside the authored access catch.
-      // Then: Host propagates before selecting the resolver.
+      // Then: the original Error propagates before selecting the resolver.
       assert.throws(
         () =>
           withControl(target, request(), ({ access }) => (op, value, key) => {
             if (op === OP.mapStart) throw marker
             return access(op, value, key)
           }),
-        {
-          name: 'Error',
-          code: 'GenericFailure',
-          message: /^Error: (?:Error: )?invalid intrinsic receiver$/,
-        },
+        (error) => error === marker,
       )
       assert.equal(resolverCalls, 0)
     } finally {

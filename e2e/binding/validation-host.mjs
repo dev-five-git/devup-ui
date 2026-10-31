@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { isAbsolute, join } from 'node:path'
 
 import { dependent, pkg, theme } from './corpus.mjs'
+import { diagnostic, rawDiagnostics } from './diagnostics.mjs'
 import { capture, encode, hash } from './observation.mjs'
 import { cases, code } from './validation-cases.mjs'
 
@@ -111,6 +112,7 @@ save('record.json', {
   before,
   after,
 })
+save('diagnostics-raw.json', rawDiagnostics)
 // A resolver retention probe is deliberately OUTSIDE the mutation snapshot.
 let postprobe, resolvedOutput
 if (!trapped && test.fn === 'setModuleResolver') {
@@ -125,6 +127,7 @@ if (!trapped && test.fn === 'setModuleResolver') {
 assert.ok(actual instanceof TypeError, `${id}: TypeError required`)
 assert.equal(actual.constructor, TypeError)
 assert.equal(actual.message, test.expected)
+assert.deepEqual(diagnostic(actual), diagnostic(new TypeError(test.expected)))
 assert.ok(
   [...before.raw, ...before.config, before.interface, ...before.css].every(
     (value) => value.tag === 'return',

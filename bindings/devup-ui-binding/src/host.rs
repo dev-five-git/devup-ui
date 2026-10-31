@@ -1,5 +1,5 @@
 use crate::output::NativeOutput;
-use crate::value::{Access, AccessCallback, decode, decode_preflight, schema_error};
+use crate::value::{Access, AccessCallback, binding_error, decode, decode_preflight, schema_error};
 use devup_ui_binding_core as core;
 use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule};
 use napi::bindgen_prelude::{Array, Either, FnArgs, FromNapiValue, FunctionRef, Unknown};
@@ -34,7 +34,7 @@ pub fn set_resolver(env: Env, resolver: Option<Resolver>) -> Result<()> {
 }
 fn state(env: &Env) -> Result<&'static mut State> {
     env.get_instance_data()?
-        .ok_or_else(|| Error::from_reason("native facade is not initialized"))
+        .ok_or_else(|| binding_error(*env, "native facade is not initialized"))
 }
 /// Keep production and full-test reset effects distinct, clearing the resolver in both.
 #[napi]
@@ -150,7 +150,7 @@ pub fn has_devup_ui<'env>(
         core::ResolverState::new(&filename, &code),
         |resolver, check| {
             let result = core::has_devup_ui_with(&filename, &code, &package, &aliases, resolver);
-            check().map_err(Error::from_reason)?;
+            check().map_err(|error| binding_error(env, error))?;
             Ok(result)
         },
     )
@@ -200,7 +200,7 @@ pub fn extract<'env>(
                 },
             )
             .map(|output| NativeOutput(Some(output)))
-            .map_err(Error::from_reason)
+            .map_err(|error| binding_error(env, error))
         },
     )
 }

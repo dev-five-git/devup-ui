@@ -5,6 +5,19 @@ const { OP, withAccess } = createRequire(import.meta.url)(
   '../../../bindings/devup-ui-binding/interop.cjs',
 )
 
+export function privateError(message, code) {
+  return (error) => {
+    assert.equal(error.constructor, Error)
+    assert.equal(Object.getPrototypeOf(error), Error.prototype)
+    assert.equal(error.name, 'Error')
+    assert.equal(error.message, message)
+    assert.equal(Object.hasOwn(error, 'code'), code !== undefined)
+    if (code !== undefined) assert.equal(error.code, code)
+    else assert.equal(Object.hasOwn(error, 'cause'), false)
+    return true
+  }
+}
+
 export function withControl(target, input, intercept) {
   return withAccess(
     (value, access, schemaToken, accessToken) =>
@@ -24,32 +37,45 @@ export function runMapStart(raw, check, request) {
   const coercible = {
     valueOf: () => assert.fail('Metadata must not be coerced'),
   }
+  const arrayError = privateError('Failed to get Array length', 'ArrayExpected')
+  const missingError = privateError('Error: missing private access result')
+  const startError = privateError('Error: invalid private map start')
+  const iteratorError = privateError('Error: invalid private map iterator')
+  const tagError = (type) =>
+    privateError(
+      `Failed to convert napi value ${type} into rust type \`f64\``,
+      'NumberExpected',
+    )
+  const lengthError = privateError(
+    'Failed to convert napi value String into rust type `u32`',
+    'NumberExpected',
+  )
   const malformed = [
-    undefined,
-    null,
-    {},
-    callable,
-    [],
-    ['1', iterator],
-    [undefined],
-    [3],
-    [0.5],
-    [4294967296],
-    [NaN],
-    [Infinity],
-    [Object(1), iterator],
-    [coercible],
-    [0, 'extra'],
-    [1],
-    [1, iterator, 'extra'],
-    [2, []],
-    [2, [], 0, 'extra'],
-    [1, undefined],
-    [1, null],
-    [1, callable],
-    [2, [], 'length'],
+    [undefined, arrayError],
+    [null, arrayError],
+    [{}, arrayError],
+    [callable, arrayError],
+    [[], missingError],
+    [['1', iterator], tagError('String')],
+    [[undefined], tagError('Undefined')],
+    [[3], startError],
+    [[0.5], startError],
+    [[4294967296], startError],
+    [[NaN], startError],
+    [[Infinity], startError],
+    [[Object(1), iterator], tagError('Object')],
+    [[coercible], tagError('Object')],
+    [[0, 'extra'], startError],
+    [[1], startError],
+    [[1, iterator, 'extra'], startError],
+    [[2, []], startError],
+    [[2, [], 0, 'extra'], startError],
+    [[1, undefined], iteratorError],
+    [[1, null], iteratorError],
+    [[1, callable], iteratorError],
+    [[2, [], 'length'], lengthError],
   ]
-  for (const [index, packet] of malformed.entries()) {
+  for (const [index, [packet, expected]] of malformed.entries()) {
     check(`map-envelope-${index}`, () => {
       // Given: malformed metadata at the genuine addon's map-start boundary.
       let resolver = 0,
@@ -72,11 +98,8 @@ export function runMapStart(raw, check, request) {
           [raw.importCanonicalMap, {}],
           [raw.hasDevupUi, request()],
         ])
-          assert.throws(() => withControl(target, input, intercept), {
-            name: 'Error',
-            code: 'GenericFailure',
-          })
-        // Then: Host never notifies Schema, forgives, or selects the resolver.
+          assert.throws(() => withControl(target, input, intercept), expected)
+        // Then: Host/Transport never notify Schema, forgive, or select the resolver.
         assert.deepEqual([resolver, schema, forgiveness], [0, 0, 0])
       } finally {
         raw.setResolver(undefined)
