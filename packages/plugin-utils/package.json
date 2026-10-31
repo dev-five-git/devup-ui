@@ -18,8 +18,8 @@
   "version": "1.0.17",
   "scripts": {
     "lint": "eslint",
-    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --moduleResolution bundler --module esnext --target esnext --types bun src/__tests__/shorthands.test.ts",
-    "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
+    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck --moduleResolution bundler --module esnext --target esnext --types bun src/__tests__/shorthands.test.ts src/__tests__/compiler-types.test.ts src/__tests__/compiler.test.ts src/__tests__/native-platform.test.ts",
+    "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external --define import.meta.url=module.filename && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
@@ -37,6 +37,10 @@
   "files": [
     "dist"
   ],
+  "dependencies": {
+    "@devup-ui/binding": "workspace:^",
+    "@devup-ui/wasm": "workspace:^"
+  },
   "devDependencies": {
     "typescript": "^7.0.2"
   }

@@ -12,6 +12,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {
+  packHostEngines,
+  verifyHostInstall,
+} from '../plugins/engine-fixtures.mjs'
 import { prepareConsumer } from './consumer.mjs'
 import { CommandExitError, runGuarded } from './guarded-process.mjs'
 
@@ -155,6 +159,16 @@ try {
     assert.equal(files.length, 1)
     tarballs[name] = `file:${join(destination, files[0]).replaceAll('\\', '/')}`
   }
+  const native = await packHostEngines({ repository, root, bun }, run)
+  for (const [name, reference] of Object.entries(native.tarballs)) {
+    tarballs[name.slice('@devup-ui/'.length)] = reference
+  }
+  const installForHost = (command, args, options) =>
+    run(
+      command,
+      args[0] === 'install' ? [...args, ...native.host.installArgs] : args,
+      options,
+    )
   const targets = (
     process.env.RELEASE_TARGETS ??
     'vite,rsbuild,webpack,next-webpack,next-turbopack'
@@ -162,7 +176,12 @@ try {
   for (const name of targets) {
     for (const singleCss of [false, true]) {
       try {
-        const directory = await prepareConsumer(name, { root, tarballs }, run)
+        const directory = await prepareConsumer(
+          name,
+          { root, tarballs },
+          installForHost,
+        )
+        verifyHostInstall({ directory, tarballs, host: native.host, bun })
         for (const generated of ['df', 'dist', '.next', 'out'])
           await rm(join(directory, generated), { recursive: true, force: true })
         await buildAndCheck(name, directory, singleCss)
