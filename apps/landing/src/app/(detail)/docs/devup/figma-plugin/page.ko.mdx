@@ -1,0 +1,114 @@
+export const metadata = {
+  title: 'Figma 플러그인',
+  alternates: {
+    canonical: '/ko/docs/devup/figma-plugin',
+    languages: {
+      en: '/docs/devup/figma-plugin',
+      ko: '/ko/docs/devup/figma-plugin',
+      'x-default': '/docs/devup/figma-plugin',
+    },
+  },
+}
+
+# Figma 플러그인
+
+Devup UI는 디자인과 개발 사이의 간극을 줄여 주는 Figma 플러그인을 제공합니다. Figma 레이어를 Devup UI 코드로 직접 변환하고 디자인 토큰을 `devup.json`으로 내보낼 수 있습니다.
+
+## 설치
+
+1. Figma를 엽니다.
+2. **Plugins** > **Browse plugins in Community**로 이동합니다.
+3. "Devup UI"를 검색합니다.
+4. **Install**을 클릭합니다.
+
+또는 [Figma Community 페이지](https://www.figma.com/community/plugin/1446848873498976065/devup-ui)에서 직접 설치할 수 있습니다.
+
+## 주요 기능
+
+### 레이어를 코드로 변환
+
+Figma에서 원하는 레이어를 선택하여 Devup UI 컴포넌트 코드로 변환할 수 있습니다.
+
+1. 레이어(프레임, 사각형, 텍스트 등)를 선택합니다.
+2. Devup UI 플러그인을 실행합니다.
+3. "Convert to Code"를 클릭합니다.
+4. 생성된 코드를 복사합니다.
+
+**출력 예시:**
+
+```tsx
+<Box
+  bg="#ffffff"
+  borderRadius="8px"
+  boxShadow="0 4px 6px rgba(0, 0, 0, 0.1)"
+  p={4}
+  w="320px"
+>
+  <Text color="#000000" fontSize="24px" fontWeight={700}>
+    Card Title
+  </Text>
+</Box>
+```
+
+### 디자인 토큰 내보내기
+
+Figma 스타일을 `devup.json` 설정 파일로 내보낼 수 있습니다.
+
+1. Figma에서 색상 스타일과 텍스트 스타일을 정의합니다.
+2. Devup UI 플러그인을 실행합니다.
+3. "Export Tokens"를 클릭합니다.
+4. 생성된 `devup.json` 파일을 다운로드합니다.
+
+**지원하는 토큰 유형:**
+
+- **색상**: 채우기 색상, 선 색상
+- **타이포그래피**: 글꼴, 크기, 굵기, 줄 높이를 포함한 텍스트 스타일
+
+### 자동 감지
+
+플러그인은 다음 속성을 자동으로 감지합니다.
+
+- 레이아웃 속성(패딩, 간격, 정렬)
+- 모서리 둥글기와 그림자
+- 타이포그래피 설정
+- 자동 최적화가 적용되는 색상 값
+
+## 사용 팁
+
+### Figma 스타일 정리
+
+더 나은 결과를 얻으려면 Figma 스타일에 일관된 이름을 사용하세요.
+
+**색상:**
+
+- `primary`
+- `secondary`
+- `text`
+- `background`
+
+**타이포그래피:**
+
+- `heading/h1`
+- `heading/h2`
+- `body`
+- `caption`
+
+### 테마별 변형 사용
+
+테마별로 Figma 색상 스타일 컬렉션을 만듭니다.
+
+- **라이트 테마**: 기본 색상
+- **다크 테마**: 다크 모드 색상
+
+플러그인은 이를 `devup.json`의 개별 테마 변형으로 내보냅니다.
+
+## 권장 사항
+
+1. **Figma 스타일 사용**: 개별 색상을 직접 지정하는 대신 Figma 스타일을 사용하여 일관된 디자인 토큰을 내보냅니다.
+2. **레이어 이름을 명확하게 지정**: 코드의 가독성을 높이도록 레이어의 역할을 알 수 있는 이름을 사용합니다.
+3. **Auto Layout 사용**: 레이아웃을 코드로 더 정확하게 변환할 수 있도록 Auto Layout을 활용합니다.
+4. **디자인 구조를 단순하게 유지**: 중첩 구조가 복잡한 디자인은 수동 최적화가 필요할 수 있습니다.
+
+## 지원
+
+문제가 발생하거나 새로운 기능을 제안하려면 [GitHub 저장소](https://github.com/dev-five-git/devup-ui)를 방문하세요.
