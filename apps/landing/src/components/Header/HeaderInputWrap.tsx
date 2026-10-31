@@ -1,7 +1,8 @@
 'use client'
 import { Box } from '@devup-ui/react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
+import { usePathname } from '@/i18n/navigation'
 import { replaceQuery } from '@/utils/use-query-param'
 
 import { isRoot } from '../../utils/is-root'

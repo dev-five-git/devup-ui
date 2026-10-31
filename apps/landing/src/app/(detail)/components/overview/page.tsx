@@ -1,9 +1,9 @@
 import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react'
 import type { Metadata } from 'next'
-import Link from 'next/link'
 
 import { Icons } from '@/components/icons/components'
 import { COMPONENT_GROUPS } from '@/constants'
+import { Link } from '@/i18n/navigation'
 
 import Card from '../Card'
 import Description from './Description.mdx'

@@ -20,7 +20,7 @@ export const LANDING_OUTPUT_ROOT = resolve(
     ),
 )
 
-export const EXPECTED_EXPORTED_ROUTES = [
+const ENGLISH_EXPORTED_ROUTES = [
   '/',
   '/components/bottom-sheet',
   '/components/button',
@@ -91,6 +91,11 @@ export const EXPECTED_EXPORTED_ROUTES = [
   '/docs/quick-start',
   '/showcase',
   '/team',
+] as const
+
+export const EXPECTED_EXPORTED_ROUTES = [
+  ...ENGLISH_EXPORTED_ROUTES,
+  ...ENGLISH_EXPORTED_ROUTES.map((route) => `/ko${route === '/' ? '' : route}`),
 ] as const
 
 /**
