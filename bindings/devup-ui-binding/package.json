@@ -1,0 +1,46 @@
+{
+  "name": "@devup-ui/binding",
+  "version": "0.1.0",
+  "description": "Synchronous native Devup UI build-time compiler for Node.js and Bun",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./pkg/index.cjs",
+  "module": "./index.mjs",
+  "types": "./index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.cts",
+        "default": "./pkg/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "pkg/index.cjs",
+    "loader.cjs",
+    "index.mjs",
+    "index.d.cts",
+    "index.d.mts"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test loader.test.cjs"
+  },
+  "optionalDependencies": {
+    "@devup-ui/binding-linux-x64-gnu": "workspace:*",
+    "@devup-ui/binding-linux-arm64-gnu": "workspace:*",
+    "@devup-ui/binding-linux-x64-musl": "workspace:*",
+    "@devup-ui/binding-linux-arm64-musl": "workspace:*",
+    "@devup-ui/binding-darwin-x64": "workspace:*",
+    "@devup-ui/binding-darwin-arm64": "workspace:*",
+    "@devup-ui/binding-win32-x64-msvc": "workspace:*",
+    "@devup-ui/binding-win32-arm64-msvc": "workspace:*"
+  }
+}

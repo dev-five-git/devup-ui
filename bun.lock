@@ -509,6 +509,52 @@
         "vite": "^8.3.5",
       },
     },
+    "bindings/devup-ui-binding": {
+      "name": "@devup-ui/binding",
+      "version": "0.1.0",
+      "optionalDependencies": {
+        "@devup-ui/binding-darwin-arm64": "workspace:*",
+        "@devup-ui/binding-darwin-x64": "workspace:*",
+        "@devup-ui/binding-linux-arm64-gnu": "workspace:*",
+        "@devup-ui/binding-linux-arm64-musl": "workspace:*",
+        "@devup-ui/binding-linux-x64-gnu": "workspace:*",
+        "@devup-ui/binding-linux-x64-musl": "workspace:*",
+        "@devup-ui/binding-win32-arm64-msvc": "workspace:*",
+        "@devup-ui/binding-win32-x64-msvc": "workspace:*",
+      },
+    },
+    "bindings/devup-ui-binding-darwin-arm64": {
+      "name": "@devup-ui/binding-darwin-arm64",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-darwin-x64": {
+      "name": "@devup-ui/binding-darwin-x64",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-linux-arm64-gnu": {
+      "name": "@devup-ui/binding-linux-arm64-gnu",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-linux-arm64-musl": {
+      "name": "@devup-ui/binding-linux-arm64-musl",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-linux-x64-gnu": {
+      "name": "@devup-ui/binding-linux-x64-gnu",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-linux-x64-musl": {
+      "name": "@devup-ui/binding-linux-x64-musl",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-win32-arm64-msvc": {
+      "name": "@devup-ui/binding-win32-arm64-msvc",
+      "version": "0.1.0",
+    },
+    "bindings/devup-ui-binding-win32-x64-msvc": {
+      "name": "@devup-ui/binding-win32-x64-msvc",
+      "version": "0.1.0",
+    },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
       "version": "1.0.83",
@@ -900,6 +946,24 @@
     "@clack/prompts": ["@clack/prompts@1.7.0", "", { "dependencies": { "@clack/core": "1.4.3", "fast-string-width": "^3.0.2", "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A=="],
 
     "@code-hike/lighter": ["@code-hike/lighter@1.0.3", "", { "dependencies": { "ansi-sequence-parser": "1.1.1", "tm-grammars": "^1.22.0" } }, "sha512-LU0TbZfu3L3fQZ7y9tZHttnxyFm7ewU96arGMFnjLbvFj+onYfVkznhQOmU1ZsQtv9rpQzZ313GRz6hCGDrlJQ=="],
+
+    "@devup-ui/binding": ["@devup-ui/binding@workspace:bindings/devup-ui-binding"],
+
+    "@devup-ui/binding-darwin-arm64": ["@devup-ui/binding-darwin-arm64@workspace:bindings/devup-ui-binding-darwin-arm64"],
+
+    "@devup-ui/binding-darwin-x64": ["@devup-ui/binding-darwin-x64@workspace:bindings/devup-ui-binding-darwin-x64"],
+
+    "@devup-ui/binding-linux-arm64-gnu": ["@devup-ui/binding-linux-arm64-gnu@workspace:bindings/devup-ui-binding-linux-arm64-gnu"],
+
+    "@devup-ui/binding-linux-arm64-musl": ["@devup-ui/binding-linux-arm64-musl@workspace:bindings/devup-ui-binding-linux-arm64-musl"],
+
+    "@devup-ui/binding-linux-x64-gnu": ["@devup-ui/binding-linux-x64-gnu@workspace:bindings/devup-ui-binding-linux-x64-gnu"],
+
+    "@devup-ui/binding-linux-x64-musl": ["@devup-ui/binding-linux-x64-musl@workspace:bindings/devup-ui-binding-linux-x64-musl"],
+
+    "@devup-ui/binding-win32-arm64-msvc": ["@devup-ui/binding-win32-arm64-msvc@workspace:bindings/devup-ui-binding-win32-arm64-msvc"],
+
+    "@devup-ui/binding-win32-x64-msvc": ["@devup-ui/binding-win32-x64-msvc@workspace:bindings/devup-ui-binding-win32-x64-msvc"],
 
     "@devup-ui/bun-plugin": ["@devup-ui/bun-plugin@workspace:packages/bun-plugin"],
 

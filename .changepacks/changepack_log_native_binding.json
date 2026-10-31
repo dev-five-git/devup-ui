@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Exercise the production native adapter in the root Rust coverage report without preparation for plain Cargo tests, and deterministically order namespace resolver traversal and changed-constant diagnostics. Reduce native per-call control costs while preserving callbacks and public outputs; prevent private Number coercions, global String use for BigInts, Array.from use for byte diagnostics, and incorrect Symbol.iterator exception conversion. No newly rejected source or styling runtime.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

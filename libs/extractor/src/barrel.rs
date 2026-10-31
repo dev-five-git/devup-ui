@@ -413,10 +413,11 @@ impl Walker<'_, '_> {
         if !seen.insert(module.path.clone()) {
             return false;
         }
-        let sources = module
-            .named
-            .values()
-            .filter_map(|link| match link {
+        let mut named: Vec<_> = module.named.iter().collect();
+        named.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        let sources = named
+            .into_iter()
+            .filter_map(|(_, link)| match link {
                 Link::From { source, .. } => Some(source),
                 Link::Own => None,
             })
@@ -1132,3 +1133,75 @@ mod tests;
 
 #[cfg(test)]
 mod scope_tests;
+
+#[cfg(test)]
+mod order_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[test]
+    fn namespace_stops_at_lexical_first_package_export_when_names_are_unordered() {
+        // Given beta is declared first and alpha reaches the package through left.
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let observed = Rc::clone(&calls);
+        let resolver = move |source: &str, importer: &str| {
+            observed
+                .borrow_mut()
+                .push((source.to_string(), importer.to_string()));
+            Some(ResolvedModule {
+                path: "src/left.ts".into(),
+                code: "export { Box } from '@devup-ui/react';".into(),
+            })
+        };
+        let module = analyze(
+            &ResolvedModule {
+                path: "src/namespace.ts".into(),
+                code: "export { Box as beta } from './right'; export const own = 1; export { Box as alpha } from './left'; export * from './star';".into(),
+            },
+            "@devup-ui/react",
+        );
+        let mut walker = Walker {
+            resolver: &resolver,
+            package: "@devup-ui/react",
+            modules: FxHashMap::default(),
+            dependencies: BTreeSet::new(),
+        };
+        // When namespace discovery walks the real analyzed exports.
+        let found = walker.touches_package(&module, &mut FxHashSet::default());
+        // Then it never calls beta or the trailing star after alpha succeeds.
+        assert!(found);
+        assert_eq!(
+            *calls.borrow(),
+            [("./left".into(), "src/namespace.ts".into())]
+        );
+    }
+
+    #[test]
+    fn namespace_keeps_star_source_order_when_named_exports_do_not_reach_package() {
+        // Given an own export, an unresolved named link and two source-ordered stars.
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let observed = Rc::clone(&calls);
+        let resolver = move |source: &str, _: &str| {
+            observed.borrow_mut().push(source.to_string());
+            None
+        };
+        let module = analyze(
+            &ResolvedModule {
+                path: "src/namespace.ts".into(),
+                code: "export const own = 1; export { x as alpha } from './missing'; export * from './z'; export * from './a';".into(),
+            },
+            "@devup-ui/react",
+        );
+        let mut walker = Walker {
+            resolver: &resolver,
+            package: "@devup-ui/react",
+            modules: FxHashMap::default(),
+            dependencies: BTreeSet::new(),
+        };
+        // When every followed link fails to reach the package.
+        let found = walker.touches_package(&module, &mut FxHashSet::default());
+        // Then named links precede stars, whose source order is unchanged.
+        assert!(!found);
+        assert_eq!(*calls.borrow(), ["./missing", "./z", "./a"]);
+    }
+}

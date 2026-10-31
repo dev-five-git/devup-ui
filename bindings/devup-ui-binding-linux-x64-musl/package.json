@@ -1,0 +1,22 @@
+{
+  "name": "@devup-ui/binding-linux-x64-musl",
+  "version": "0.1.0",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "main": "binding.linux-x64-musl.node",
+  "files": [
+    "binding.linux-x64-musl.node"
+  ]
+}

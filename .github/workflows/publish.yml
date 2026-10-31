@@ -23,6 +23,269 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Independent read-only lane; no existing validation job waits on it.
+  native-build:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { suffix: linux-x64-gnu, target: x86_64-unknown-linux-gnu, runner: ubuntu-latest }
+          - { suffix: linux-arm64-gnu, target: aarch64-unknown-linux-gnu, runner: ubuntu-latest }
+          - { suffix: linux-x64-musl, target: x86_64-unknown-linux-musl, runner: ubuntu-latest }
+          - { suffix: linux-arm64-musl, target: aarch64-unknown-linux-musl, runner: ubuntu-latest }
+          - { suffix: darwin-x64, target: x86_64-apple-darwin, runner: macos-latest }
+          - { suffix: darwin-arm64, target: aarch64-apple-darwin, runner: macos-latest }
+          - { suffix: win32-x64-msvc, target: x86_64-pc-windows-msvc, runner: windows-latest }
+          # Windows ARM has no -latest alias; this is its newest exposed image, not a pin.
+          - { suffix: win32-arm64-msvc, target: aarch64-pc-windows-msvc, runner: windows-11-vs2026-arm }
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+      CARGO_BUILD_JOBS: "2"
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Start durable build evidence
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-build-${{ matrix.suffix }}"
+          printf '%s\n' "$GITHUB_SHA $RUNNER_OS $RUNNER_ARCH $ImageOS $ImageVersion" > "$RUNNER_TEMP/native-build-${{ matrix.suffix }}/runner.txt"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '*'
+          check-latest: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          cache: false
+      - name: Install latest stable Zig and cargo-zigbuild
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://ziglang.org/download/index.json -o "$RUNNER_TEMP/zig-index.json"
+          version=$(jq -r 'keys[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$RUNNER_TEMP/zig-index.json" | sort -V | tail -1)
+          jq --arg v "$version" '.[$v]["x86_64-linux"]' "$RUNNER_TEMP/zig-index.json" > "$RUNNER_TEMP/zig-asset.json"
+          cp "$RUNNER_TEMP/zig-asset.json" "$RUNNER_TEMP/native-build-${{ matrix.suffix }}/zig-asset.json"
+          curl -fsSL "$(jq -r .tarball "$RUNNER_TEMP/zig-asset.json")" -o "$RUNNER_TEMP/zig.tar.xz"
+          echo "$(jq -r .shasum "$RUNNER_TEMP/zig-asset.json")  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xf "$RUNNER_TEMP/zig.tar.xz" --strip-components=1 -C "$RUNNER_TEMP/zig"
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+          CARGO_TARGET_DIR="$RUNNER_TEMP/native-zigbuild-tool-target" cargo install cargo-zigbuild --locked --jobs 2
+      - name: Build fresh target and retain exact receipt
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/native-target-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.suffix }}
+          NATIVE_SUFFIX: ${{ matrix.suffix }}
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1 # Never replace original payloads on release-only retries.
+          test ! -e "$CARGO_TARGET_DIR"
+          if [[ "$RUNNER_OS" == macOS ]]; then export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"; fi
+          if [[ "$NATIVE_SUFFIX" == win32-arm64-msvc ]]; then node -e "require('node:assert/strict').equal(process.arch,'arm64')"; fi
+          flags=()
+          if [[ "$RUNNER_OS" == Linux ]]; then flags+=(--zigbuild); fi
+          node e2e/binding/package/provenance.mjs "$NATIVE_TARGET" "$RUNNER_TEMP/native-build-$NATIVE_SUFFIX/payload" "$GITHUB_RUN_ID/1" "${flags[@]}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-build-${{ matrix.suffix }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-build-${{ matrix.suffix }}/*
+          if-no-files-found: error
+          retention-days: 7
+
+  native-packs:
+    needs: [native-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - name: Start durable collector evidence
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-pack-evidence"
+          printf '%s\n' "$GITHUB_SHA $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $RUNNER_OS $RUNNER_ARCH $ImageOS $ImageVersion" > "$RUNNER_TEMP/native-pack-evidence/runner.txt"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '*'
+          check-latest: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-build-*-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-inputs
+      - name: Collect once from clean source and run real-artifact controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          mkdir "$RUNNER_TEMP/native-artifacts"
+          for suffix in $(node --input-type=module -e "import {targets} from './e2e/binding/package/matrix.mjs'; console.log(targets.map(r=>r.suffix).join(' '))"); do
+            mv "$RUNNER_TEMP/native-inputs/native-build-$suffix-$GITHUB_RUN_ID/payload" "$RUNNER_TEMP/native-artifacts/$suffix"
+          done
+          mkdir -p bindings/devup-ui-binding/pkg
+          node bindings/devup-ui-binding/script.cjs --public "$PWD/bindings/devup-ui-binding/pkg/index.cjs"
+          node e2e/binding/package/collect.mjs "$RUNNER_TEMP/native-artifacts" "$RUNNER_TEMP/native-bundle" "$GITHUB_RUN_ID/1"
+          mkdir "$RUNNER_TEMP/native-controls"
+          cp -R "$RUNNER_TEMP/native-artifacts/linux-x64-gnu" "$RUNNER_TEMP/native-controls/linux-x64-gnu"
+          NATIVE_PROOF_ARTIFACTS="$RUNNER_TEMP/native-controls" NATIVE_PROOF_BUNDLE="$RUNNER_TEMP/native-bundle" node --test e2e/binding/package/package.test.mjs e2e/binding/package/publish.test.mjs e2e/binding/package/elf.test.mjs
+          sha256sum "$RUNNER_TEMP/native-bundle/"*.tgz "$RUNNER_TEMP/native-bundle/bundle.json" | tee "$RUNNER_TEMP/native-bundle/SHA256SUMS"
+          du -b "$RUNNER_TEMP/native-bundle/"*
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-packs-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-bundle/*
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-pack-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-pack-evidence/*
+          if-no-files-found: error
+          retention-days: 7
+
+  native-consumer:
+    needs: [native-packs]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { suffix: linux-x64-gnu, runner: ubuntu-latest, cpu: x64, docker: amd64, image: "node:current", bun: bun-linux-x64.zip, mode: native-container }
+          - { suffix: linux-arm64-gnu, runner: ubuntu-latest, cpu: arm64, docker: arm64, image: "node:current", bun: bun-linux-aarch64.zip, mode: QEMU-emulated }
+          - { suffix: linux-x64-musl, runner: ubuntu-latest, cpu: x64, docker: amd64, image: "node:current-alpine", bun: bun-linux-x64-musl.zip, mode: native-container }
+          - { suffix: linux-arm64-musl, runner: ubuntu-latest, cpu: arm64, docker: arm64, image: "node:current-alpine", bun: bun-linux-aarch64-musl.zip, mode: QEMU-emulated }
+          - { suffix: darwin-x64, runner: macos-latest, cpu: x64, bun: bun-darwin-x64.zip, mode: Rosetta }
+          - { suffix: darwin-arm64, runner: macos-latest, cpu: arm64, bun: bun-darwin-aarch64.zip, mode: native }
+          - { suffix: win32-x64-msvc, runner: windows-latest, cpu: x64, bun: bun-windows-x64.zip, mode: native }
+          # Windows ARM has no -latest alias; this is its newest exposed image, not a pin.
+          - { suffix: win32-arm64-msvc, runner: windows-11-vs2026-arm, cpu: arm64, bun: bun-windows-aarch64.zip, mode: native }
+    env:
+      NATIVE_SUFFIX: ${{ matrix.suffix }}
+      NATIVE_CPU: ${{ matrix.cpu }}
+      NATIVE_MODE: ${{ matrix.mode }}
+    steps:
+      - name: Start durable consumer evidence
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          printf '%s\n' "$NATIVE_MODE $GITHUB_SHA $RUNNER_OS $RUNNER_ARCH" > "$RUNNER_TEMP/native-evidence/start.txt"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-packs-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-bundle
+      - name: Enable current ARM emulation
+        if: runner.os == 'Linux' && matrix.cpu == 'arm64'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - name: Enable Rosetta for both x64 runtimes
+        if: matrix.mode == 'Rosetta'
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '*'
+          check-latest: true
+          architecture: ${{ runner.os == 'Linux' && 'x64' || matrix.cpu }}
+      - name: Download matching latest official Bun with digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUN_ASSET: ${{ matrix.bun }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/native-tools"
+          gh api repos/oven-sh/bun/releases/latest > "$RUNNER_TEMP/native-evidence/bun-release.json"
+          node -e "const fs=require('node:fs'),r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+'/native-evidence/bun-release.json'));const a=r.assets.find(a=>a.name===process.env.BUN_ASSET);if(!a?.digest?.startsWith('sha256:'))throw Error('missing official digest');fs.writeFileSync(process.env.RUNNER_TEMP+'/native-evidence/bun-asset.json',JSON.stringify(a))"
+          url=$(node -p "JSON.parse(require('node:fs').readFileSync(process.env.RUNNER_TEMP+'/native-evidence/bun-asset.json')).browser_download_url")
+          curl -fsSL "$url" -o "$RUNNER_TEMP/native-tools/bun.zip"
+          node -e "const fs=require('node:fs'),c=require('node:crypto'),p=process.env.RUNNER_TEMP;require('node:assert/strict').equal('sha256:'+c.createHash('sha256').update(fs.readFileSync(p+'/native-tools/bun.zip')).digest('hex'),JSON.parse(fs.readFileSync(p+'/native-evidence/bun-asset.json')).digest)"
+          unzip -q "$RUNNER_TEMP/native-tools/bun.zip" -d "$RUNNER_TEMP/native-tools"
+          bun_dir="$RUNNER_TEMP/native-tools/${BUN_ASSET%.zip}"
+          echo "$bun_dir" >> "$GITHUB_PATH"
+          printf '%s\n' "$NATIVE_MODE" > "$RUNNER_TEMP/native-evidence/execution-mode.txt"
+          node -e "require('node:fs').writeFileSync(process.env.RUNNER_TEMP+'/native-evidence/runner.json',JSON.stringify(Object.fromEntries(['GITHUB_SHA','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','RUNNER_OS','RUNNER_ARCH','ImageOS','ImageVersion','NATIVE_MODE','NATIVE_SUFFIX'].map(k=>[k,process.env[k]]))))"
+      - name: Consume on matching macOS or Windows runtimes
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile --ignore-scripts
+          node --input-type=module <<'NODE' 2>&1 | tee "$RUNNER_TEMP/native-evidence/consumer.log"
+          import assert from 'node:assert/strict'
+          import { dirname, join } from 'node:path'
+          import { realpathSync } from 'node:fs'
+          import getExePath from './node_modules/@typescript/native/lib/getExePath.js'
+          import { command } from './e2e/binding/package/provenance.mjs'
+          import { consume } from './e2e/binding/package/consumer.mjs'
+          assert.equal(process.arch, process.env.NATIVE_CPU)
+          assert.equal(command('bun', ['-p', 'process.arch']), process.env.NATIVE_CPU)
+          const tsc = getExePath()
+          console.log({ mode: process.env.NATIVE_MODE, tsc, version: command(tsc, ['--version']) })
+          const npmCli = process.platform === 'win32' ? join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js') : realpathSync(command('which', ['npm']))
+          await consume({ bundle: join(process.env.RUNNER_TEMP, 'native-bundle'), suffix: process.env.NATIVE_SUFFIX, report: join(process.env.RUNNER_TEMP, 'native-evidence/consumer.json'), tsc, npmCli })
+          NODE
+      - name: Consume current GNU or musl container with matching Node and Bun
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CONTAINER_IMAGE: ${{ matrix.image }}
+          CONTAINER_CPU: ${{ matrix.docker }}
+          BUN_ASSET: ${{ matrix.bun }}
+        run: |
+          set -euo pipefail
+          docker pull --platform "linux/$CONTAINER_CPU" "$CONTAINER_IMAGE"
+          docker image inspect "$CONTAINER_IMAGE" > "$RUNNER_TEMP/native-evidence/container.json"
+          docker run --rm -i --platform "linux/$CONTAINER_CPU" -v "$PWD:/repo" -v "$RUNNER_TEMP:/evidence" -w /repo -e NATIVE_SUFFIX -e NATIVE_CPU -e NATIVE_MODE -e BUN_ASSET "$CONTAINER_IMAGE" sh -eu <<'SH' 2>&1 | tee "$RUNNER_TEMP/native-evidence/consumer.log"
+          if command -v apk >/dev/null; then apk add --no-cache libstdc++ tar; else apt-get update && apt-get install -y --no-install-recommends libatomic1; fi
+          export PATH="/evidence/native-tools/${BUN_ASSET%.zip}:$PATH"
+          bun install --frozen-lockfile --ignore-scripts
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { realpathSync } from 'node:fs'
+          import getExePath from './node_modules/@typescript/native/lib/getExePath.js'
+          import { command } from './e2e/binding/package/provenance.mjs'
+          import { consume } from './e2e/binding/package/consumer.mjs'
+          assert.equal(process.arch, process.env.NATIVE_CPU)
+          assert.equal(command('bun', ['-p', 'process.arch']), process.env.NATIVE_CPU)
+          const tsc = getExePath()
+          console.log({ mode: process.env.NATIVE_MODE, tsc, version: command(tsc, ['--version']) })
+          await consume({ bundle: '/evidence/native-bundle', suffix: process.env.NATIVE_SUFFIX, report: '/evidence/native-evidence/consumer.json', tsc, npmCli: realpathSync(command('which', ['npm'])) })
+          NODE
+          SH
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-consumer-${{ matrix.suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-evidence/*
+          if-no-files-found: error
+          retention-days: 7
+
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -613,7 +876,7 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: latest
-      - run: bun install
+      - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
@@ -624,6 +887,11 @@ jobs:
         run: |
           set -euo pipefail
           for manifest in bindings/*/package.json packages/*/package.json; do
+            # Exactly the nine native names delegate to native-packs/consumer.
+            name=$(node -p "require('./$manifest').name")
+            case "$name" in
+              @devup-ui/binding|@devup-ui/binding-linux-x64-gnu|@devup-ui/binding-linux-arm64-gnu|@devup-ui/binding-linux-x64-musl|@devup-ui/binding-linux-arm64-musl|@devup-ui/binding-darwin-x64|@devup-ui/binding-darwin-arm64|@devup-ui/binding-win32-x64-msvc|@devup-ui/binding-win32-arm64-msvc) continue ;;
+            esac
             package_dir="$(dirname "$manifest")"
             pack_dir="$RUNNER_TEMP/publish-verify/${package_dir//\//-}"
             mkdir -p "$pack_dir"
@@ -757,10 +1025,14 @@ jobs:
   # passed, and is the only job that can write contents, open pull requests or
   # mint an OIDC token for npm.
   release:
-    needs: [publish, landing-next-e2e, react-18, release-compat]
+    needs: [publish, landing-next-e2e, react-18, release-compat, native-consumer]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
     permissions:
       contents: write
       id-token: write
@@ -774,6 +1046,11 @@ jobs:
           # with "Could not find a merge-base" and the release never publishes.
           fetch-depth: 0
           fetch-tags: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+        name: Install bun
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
@@ -790,11 +1067,6 @@ jobs:
             target/
           key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-        name: Install bun
-
       - name: Cache bun dependencies
         uses: actions/cache@v6
         with:
@@ -809,13 +1081,20 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: latest
-      - run: bun install
+      - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
       - name: Verify clean publish checkout
         run: git diff --exit-code
+      # Stable artifact name deliberately survives a release-only run_attempt retry.
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-packs-${{ github.run_id }}
+          path: ${{ runner.temp }}/native-release-bundle
       - uses: changepacks/action@main
         id: changepacks
+        env:
+          NATIVE_RELEASE_BUNDLE: ${{ runner.temp }}/native-release-bundle
         with:
           publish: true
