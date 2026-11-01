@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { afterEach, expect, it, mock, spyOn } from 'bun:test'
 
 import { servedCss } from '../served-css'
 import { reconcileWatchCss } from '../watch-css'
+
+const wasm = loadCompiler('wasm')
 
 type CssModule = { readonly resource?: unknown }
 type Finish = (modules: Iterable<CssModule>) => Promise<void>
@@ -30,7 +32,7 @@ function compilation(error: Error | null = null) {
       callback(error)
     },
   }
-  reconcileWatchCss(owner)
+  reconcileWatchCss(owner, loadCompiler('wasm'))
   assert(finish)
   return { owner, finish, rebuilt }
 }
@@ -73,4 +75,17 @@ it('rejects module completion when native CSS rebuilding fails', async () => {
   const completion = finish([{ resource: '/devup-ui.css' }])
   // Then: the original failure propagates instead of publishing stale success.
   await expect(completion).rejects.toBe(error)
+})
+
+it('reads the retained namespace method when a delayed completion runs', async () => {
+  // Given
+  const selected = loadCompiler('wasm')
+  const { owner, finish, rebuilt } = compilation()
+  const method = spyOn(selected, 'getCss')
+  servedCss(owner).set('/devup-ui.css', 'stale')
+  // When
+  await finish([{ resource: '/devup-ui.css' }])
+  // Then
+  expect(method).toHaveBeenCalledTimes(1)
+  expect(rebuilt).toEqual([{ resource: '/devup-ui.css' }])
 })

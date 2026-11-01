@@ -5,7 +5,6 @@ import * as fsPromises from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
   beforeEach,
@@ -20,13 +19,64 @@ import type { Compiler } from 'webpack'
 import { DevupUIWebpackPlugin } from '../plugin'
 import { servedCss } from '../served-css'
 
+const native = pluginUtils.loadCompiler('native')
+const wasm = pluginUtils.loadCompiler('wasm')
+
 describe('shorthand creation boundary', () => {
+  it.each([undefined, 'native'] as const)(
+    'registers real native shorthands when engine=%s',
+    (engine) => {
+      // Given
+      native.resetStateForTesting()
+      // When
+      new DevupUIWebpackPlugin({
+        engine,
+        shorthands: { insetX: ['left', 'right'] },
+      })
+      const output = native.codeExtract(
+        'engine.tsx',
+        'import { Box } from "@devup-ui/react"; export const box = <Box insetX="19px" />',
+        '@devup-ui/react',
+        './df',
+        true,
+        false,
+        true,
+        {},
+      )
+      try {
+        // Then
+        expect(output.css).toContain('left:19px')
+        expect(output.css).toContain('right:19px')
+      } finally {
+        output.free()
+        native.resetStateForTesting()
+      }
+    },
+  )
+
+  it('rejects malformed shorthand before consulting the selector', () => {
+    // Given
+    const selection = spyOn(pluginUtils, 'loadCompiler')
+    try {
+      // When / Then
+      expect(() =>
+        Reflect.construct(DevupUIWebpackPlugin, [
+          { engine: 'invalid', shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(pluginUtils.ShorthandConfigError)
+      expect(selection).not.toHaveBeenCalled()
+    } finally {
+      selection.mockRestore()
+    }
+  })
+
   it('registers canonical targets when the plugin is constructed', () => {
     const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
       undefined,
     )
     try {
       new DevupUIWebpackPlugin({
+        engine: 'wasm',
         shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
       })
       expect(registration.mock.calls).toEqual([
@@ -65,6 +115,7 @@ describe('shorthand creation boundary', () => {
     try {
       // Given
       const plugin = new DevupUIWebpackPlugin({
+        engine: 'wasm',
         shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
       })
       registration.mockClear()
@@ -86,7 +137,7 @@ describe('shorthand creation boundary', () => {
   })
 })
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+type CodeExtractResult = pluginUtils.DevupCompilerOutput
 interface MockCompiler {
   options: {
     module: { rules: unknown[] }
@@ -120,10 +171,11 @@ function createCodeExtractResult(
     cssFile: '',
     map: undefined,
     updatedBaseStyle: false,
+    dependencies: [],
     free: mock(),
     [Symbol.dispose]: mock(),
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
 }
 
 function createStats(mtimeMs: number): Stats {
@@ -254,6 +306,76 @@ function createCompiler(): MockCompiler {
 }
 
 describe('devupUIWebpackPlugin', () => {
+  it.each([
+    ['complete', 'empty', false],
+    ['empty', 'complete', false],
+    ['complete', 'empty', true],
+    ['empty', 'complete', true],
+  ] as const)(
+    'finalizes served production buckets after %s then %s with failed=%s',
+    async (first, second, failed) => {
+      // Given
+      const compiler = createCompiler()
+      const compilation = {}
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm' })
+      plugin.apply(asCompiler(compiler))
+      const bucket = join(plugin.options.cssDir, 'devup-ui-23.css')
+      const other = join(plugin.options.cssDir, 'devup-ui-41.css')
+      const unserved = join(plugin.options.cssDir, 'devup-ui-99.css')
+      const complete = '.shared{color:red}'
+      const otherCss = '.other{color:blue}'
+      const disk = new Map<string, string>([
+        [other, otherCss],
+        [unserved, 'untouched'],
+      ])
+      for (const value of [first, second])
+        disk.set(bucket, value === 'complete' ? complete : '')
+      const before = [...disk]
+      servedCss(compilation).set(bucket, complete)
+      servedCss(compilation).set(other, otherCss)
+      servedCss(compilation).set(
+        join(plugin.options.cssDir, 'devup-ui.css'),
+        'base',
+      )
+      getCssSpy.mockImplementation((fileNumber: number | null) =>
+        fileNumber === 23 ? complete : fileNumber === 41 ? otherCss : 'base',
+      )
+      writeFileSpy.mockImplementation(
+        (
+          path: Parameters<typeof fsPromises.writeFile>[0],
+          content: unknown,
+        ) => {
+          assert(typeof content === 'string')
+          disk.set(String(path), content)
+          return Promise.resolve()
+        },
+      )
+      writeFileSpy.mockClear()
+      try {
+        // When
+        await compiler.hooks.done.tapPromise.mock.calls[0][1]({
+          compilation,
+          hasErrors: () => failed,
+        })
+        // Then
+        if (failed) {
+          expect([...disk]).toEqual(before)
+          expect(writeFileSpy).not.toHaveBeenCalled()
+        } else {
+          expect(Object.fromEntries(disk)).toEqual({
+            [bucket]: complete,
+            [other]: otherCss,
+            [unserved]: 'untouched',
+            [join(plugin.options.cssDir, 'devup-ui.css')]: 'base',
+          })
+        }
+      } finally {
+        for (const [, endBuild] of compiler.hooks.shutdown.tap.mock.calls)
+          endBuild()
+      }
+    },
+  )
+
   describe('deterministic file numbering', () => {
     it('numbers the files the scan finds and ends the build at shutdown', () => {
       const collectSpy = spyOn(pluginUtils, 'collectNumberedFiles')
@@ -265,9 +387,11 @@ describe('devupUIWebpackPlugin', () => {
           return ['src/a.tsx', 'src/b.tsx']
         })
         const compiler = createCompiler()
-        new DevupUIWebpackPlugin({ include: ['@acme/ui'], debug: true }).apply(
-          asCompiler(compiler),
-        )
+        new DevupUIWebpackPlugin({
+          engine: 'wasm',
+          include: ['@acme/ui'],
+          debug: true,
+        }).apply(asCompiler(compiler))
         expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx', 'src/b.tsx'])
         expect(collectSpy.mock.calls[0][0]).toMatchObject({
           roots: [resolve('src')],
@@ -278,7 +402,7 @@ describe('devupUIWebpackPlugin', () => {
         collectSpy.mockImplementation(() => {
           throw new Error('scan boom')
         })
-        new DevupUIWebpackPlugin({ debug: true }).apply(
+        new DevupUIWebpackPlugin({ engine: 'wasm', debug: true }).apply(
           asCompiler(createCompiler()),
         )
       } finally {
@@ -303,6 +427,7 @@ describe('devupUIWebpackPlugin', () => {
         watch: false,
         debug: false,
         singleCss: false,
+        engine: 'native',
         atomHoist: 2,
       })
     },
@@ -315,7 +440,7 @@ describe('devupUIWebpackPlugin', () => {
     }
     reservationSpy.mockReturnValue(manager)
     const compiler = createCompiler()
-    new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+    new DevupUIWebpackPlugin({ engine: 'wasm' }).apply(asCompiler(compiler))
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
     expect(manager.reserve).toHaveBeenCalledTimes(1)
   })
@@ -333,8 +458,11 @@ describe('devupUIWebpackPlugin', () => {
     }),
   )('options', (options) => {
     it('should apply options', () => {
-      expect(new DevupUIWebpackPlugin(options).options).toEqual({
+      expect(
+        new DevupUIWebpackPlugin({ ...options, engine: 'wasm' }).options,
+      ).toEqual({
         ...options,
+        engine: 'wasm',
         atomHoist: 2,
       })
     })
@@ -355,7 +483,7 @@ describe('devupUIWebpackPlugin', () => {
       getCssSpy.mockReturnValue(_options.getCss)
       writeFileSyncSpy.mockReturnValue(undefined)
 
-      const plugin = new DevupUIWebpackPlugin(options)
+      const plugin = new DevupUIWebpackPlugin({ ...options, engine: 'wasm' })
       await plugin.writeDataFiles()
 
       expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(options.devupFile)
@@ -417,6 +545,7 @@ describe('devupUIWebpackPlugin', () => {
     }),
   )('should set include', async (options) => {
     const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
       include: options.include.input,
     })
     existsSyncSpy.mockReturnValue(false)
@@ -439,7 +568,7 @@ describe('devupUIWebpackPlugin', () => {
       debug: [true, false],
     }),
   )('should set debug', async (options) => {
-    const plugin = new DevupUIWebpackPlugin(options)
+    const plugin = new DevupUIWebpackPlugin({ ...options, engine: 'wasm' })
 
     const compiler = createCompiler()
 
@@ -449,6 +578,7 @@ describe('devupUIWebpackPlugin', () => {
 
   it('should reset data files when load error', async () => {
     const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
       watch: true,
     })
     const compiler = createCompiler()
@@ -481,7 +611,7 @@ describe('devupUIWebpackPlugin', () => {
 
     it('registers the text of the Tailwind CSS and depends on its files', () => {
       mockTailwindCss()
-      const plugin = new DevupUIWebpackPlugin({})
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm' })
       const compiler = createCompiler()
 
       plugin.apply(asCompiler(compiler))
@@ -499,7 +629,7 @@ describe('devupUIWebpackPlugin', () => {
 
     it('reads it again when a file changes', async () => {
       mockTailwindCss()
-      const plugin = new DevupUIWebpackPlugin({ watch: true })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
       const compiler = createCompiler()
       statSpy.mockResolvedValueOnce(createStats(1))
       statSpy.mockResolvedValueOnce(createStats(1))
@@ -525,6 +655,7 @@ describe('devupUIWebpackPlugin', () => {
         path === tailwindFile ? '@import "tailwindcss";' : '{}',
       )
       const plugin = new DevupUIWebpackPlugin({
+        engine: 'wasm',
         watch: true,
         devupFile: 'missing.json',
       })
@@ -549,6 +680,7 @@ describe('devupUIWebpackPlugin', () => {
     }),
   )('should apply', async (options) => {
     const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
       watch: options.watch,
     })
     const compiler = createCompiler()
@@ -663,6 +795,7 @@ describe('devupUIWebpackPlugin', () => {
       )
 
       await compiler.hooks.done.tapPromise.mock.calls[0][1]({
+        compilation: {},
         hasErrors: () => false,
       })
       expect(writeFileSpy).toHaveBeenCalledWith(
@@ -676,7 +809,10 @@ describe('devupUIWebpackPlugin', () => {
   })
 
   it('should call setPrefix when prefix option is provided', async () => {
-    const plugin = new DevupUIWebpackPlugin({ prefix: 'my-prefix' })
+    const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
+      prefix: 'my-prefix',
+    })
     const compiler = createCompiler()
     existsSyncSpy.mockReturnValue(false)
     plugin.apply(asCompiler(compiler))
@@ -729,7 +865,7 @@ describe('devupUIWebpackPlugin', () => {
       buildCanonicalMapSpy.mockReturnValue({
         'src/child.tsx': 'src/parent.tsx',
       })
-      const plugin = new DevupUIWebpackPlugin({ atomHoist: 0 })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 })
       plugin.apply(asCompiler(createCompiler()))
       expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
         expect.objectContaining({ keyBy: 'cwd-relative' }),
@@ -757,7 +893,7 @@ describe('devupUIWebpackPlugin', () => {
         'matches explicit 2 on two routes when atomHoist is %s',
         (_label, options) => {
           // Given: explicit 2 installs a known two-route plan.
-          new DevupUIWebpackPlugin({ atomHoist: 2 }).apply(
+          new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
             asCompiler(createCompiler()),
           )
           const explicitReach = [...importFileRoutesSpy.mock.calls]
@@ -774,7 +910,9 @@ describe('devupUIWebpackPlugin', () => {
           importFileRoutesSpy.mockClear()
           setAtomHoistSpy.mockClear()
           // When: the public option is defaulted.
-          new DevupUIWebpackPlugin(options).apply(asCompiler(createCompiler()))
+          new DevupUIWebpackPlugin({ ...options, engine: 'wasm' }).apply(
+            asCompiler(createCompiler()),
+          )
           // Then: the same plan and threshold are installed.
           expect(importFileRoutesSpy.mock.calls).toEqual(explicitReach)
           expect(setAtomHoistSpy.mock.calls).toEqual([[2]])
@@ -786,7 +924,7 @@ describe('devupUIWebpackPlugin', () => {
         (atomHoist) => {
           // Given: two routes, not the single-route fallback.
           // When: a disabled numeric option is supplied.
-          new DevupUIWebpackPlugin({ atomHoist }).apply(
+          new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist }).apply(
             asCompiler(createCompiler()),
           )
           // Then: collapse still runs but reach and threshold are untouched.
@@ -800,7 +938,7 @@ describe('devupUIWebpackPlugin', () => {
       it('preserves a custom threshold above the minimum', () => {
         // Given: two routes and a custom threshold.
         // When: the plugin applies.
-        new DevupUIWebpackPlugin({ atomHoist: 3 }).apply(
+        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 3 }).apply(
           asCompiler(createCompiler()),
         )
         // Then: the threshold is not replaced by 2.
@@ -827,9 +965,11 @@ describe('devupUIWebpackPlugin', () => {
               a: { import: ['./src/a.tsx'] },
               b: { import: ['./src/b.tsx'] },
             }
-            new DevupUIWebpackPlugin({ ...policy, singleCss: true }).apply(
-              asCompiler(compiler),
-            )
+            new DevupUIWebpackPlugin({
+              ...policy,
+              engine: 'wasm',
+              singleCss: true,
+            }).apply(asCompiler(compiler))
             compiler.hooks.run.tap.mock.calls[0][1]()
             return compiler.options.module.rules
           }
@@ -878,6 +1018,7 @@ describe('devupUIWebpackPlugin', () => {
       ).mockReturnValue(undefined)
       try {
         const plugin = new DevupUIWebpackPlugin({
+          engine: 'wasm',
           package: '@devup-ui/react',
           singleCss: true,
         })
@@ -922,6 +1063,10 @@ describe('devupUIWebpackPlugin', () => {
         }
         expect(resolvedModules[1]).toEqual(resolvedModules[0])
         expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        for (const result of codeExtractSpy.mock.results) {
+          if (result.type === 'return')
+            expect(result.value.free).toHaveBeenCalledTimes(1)
+        }
         expect(codeExtractSpy).toHaveBeenCalledWith(
           'src/parent.tsx',
           'source',
@@ -954,6 +1099,7 @@ describe('devupUIWebpackPlugin', () => {
         undefined,
       )
       const plugin = new DevupUIWebpackPlugin({
+        engine: 'wasm',
         productionPrewarmFiles: [
           'src/z.tsx',
           resolve('node_modules/ui/a.tsx'),
@@ -993,6 +1139,7 @@ describe('devupUIWebpackPlugin', () => {
         // Given a reachable generic entry which an explicit set supersedes.
         computeReachableFilesSpy.mockReturnValue([resolve('src/parent.tsx')])
         const plugin = new DevupUIWebpackPlugin({
+          engine: 'wasm',
           watch,
           productionPrewarmFiles: watch ? ['src/parent.tsx'] : [],
         })
@@ -1024,6 +1171,7 @@ describe('devupUIWebpackPlugin', () => {
         if (stage === 'read') readFileSyncSpy.mockImplementation(fail)
         if (stage === 'extract') codeExtractSpy.mockImplementation(fail)
         const plugin = new DevupUIWebpackPlugin({
+          engine: 'wasm',
           debug: stage === 'numbering',
           productionPrewarmFiles: ['src/parent.tsx'],
         })
@@ -1052,7 +1200,7 @@ describe('devupUIWebpackPlugin', () => {
       buildCanonicalMapSpy.mockReturnValue({})
       const compiler = createCompiler()
       compiler.options.entry = () => ({})
-      new DevupUIWebpackPlugin({}).apply(asCompiler(compiler))
+      new DevupUIWebpackPlugin({ engine: 'wasm' }).apply(asCompiler(compiler))
       compiler.hooks.run.tap.mock.calls[0][1]()
       expect(computeReachableFilesSpy).toHaveBeenCalledWith(
         expect.objectContaining({ entries: [] }),
@@ -1067,7 +1215,7 @@ describe('devupUIWebpackPlugin', () => {
         resolve(process.cwd(), 'src', 'parent.tsx'),
       ])
       readFileSyncSpy.mockReturnValue('source')
-      const plugin = new DevupUIWebpackPlugin({ watch: true })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
       plugin.apply(asCompiler(createCompiler()))
       expect(codeExtractSpy).not.toHaveBeenCalled()
     })
@@ -1083,7 +1231,7 @@ describe('devupUIWebpackPlugin', () => {
       codeExtractSpy.mockImplementation(() => {
         throw new Error('extract boom')
       })
-      const plugin = new DevupUIWebpackPlugin({})
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm' })
       // apply must still complete without throwing
       const compiler = createCompiler()
       plugin.apply(asCompiler(compiler))
@@ -1102,7 +1250,7 @@ describe('devupUIWebpackPlugin', () => {
         'src/glob.tsx': [0, 1],
         'src/r1.tsx': [1],
       })
-      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
       plugin.apply(asCompiler(createCompiler()))
       // collapse runs with cwd-relative keys (webpack loader passes relative path)
       expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
@@ -1122,14 +1270,14 @@ describe('devupUIWebpackPlugin', () => {
         'src/a.tsx': [0],
         'src/b.tsx': [1],
       })
-      const plugin = new DevupUIWebpackPlugin({ atomHoist: 1 })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 1 })
       plugin.apply(asCompiler(createCompiler()))
       expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
     })
 
     it('stays off when fewer than two routes are reachable', () => {
       computeFileReachSpy.mockReturnValue({ 'src/a.tsx': [0] })
-      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
       plugin.apply(asCompiler(createCompiler()))
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
@@ -1139,7 +1287,7 @@ describe('devupUIWebpackPlugin', () => {
       buildCanonicalMapSpy.mockImplementation(() => {
         throw new Error('boom')
       })
-      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
       // apply must still complete without throwing
       plugin.apply(asCompiler(createCompiler()))
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
@@ -1155,7 +1303,7 @@ describe('devupUIWebpackPlugin', () => {
       setAtomHoistSpy.mockImplementation(() => {
         rulesLenAtSetAtomHoist = compiler.options.module.rules.length
       })
-      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
       plugin.apply(asCompiler(compiler))
       // pre-pass must run before module rules are pushed (single WASM instance)
       expect(rulesLenAtSetAtomHoist).toBe(0)
@@ -1166,7 +1314,7 @@ describe('devupUIWebpackPlugin', () => {
   describe('another pass for stylesheets built too early', () => {
     function compile(watch = false) {
       const compiler = createCompiler()
-      const plugin = new DevupUIWebpackPlugin({ watch })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch })
       plugin.apply(asCompiler(compiler))
       const taps: Record<string, (...args: unknown[]) => unknown> = {}
       const tap =
@@ -1195,7 +1343,7 @@ describe('devupUIWebpackPlugin', () => {
       return { compiler, plugin, compilation, taps, run, start }
     }
 
-    it('uses same-compilation reconciliation instead of another pass in watch mode', () => {
+    it('uses same-compilation reconciliation instead of another pass in watch mode', async () => {
       const { compiler } = compile(true)
       expect(compiler.hooks.run.tap.mock.calls.map(([name]) => name)).toEqual([
         'DevupUIWebpackPluginReservation',
@@ -1203,6 +1351,35 @@ describe('devupUIWebpackPlugin', () => {
       expect(
         compiler.hooks.thisCompilation.tap.mock.calls.map(([name]) => name),
       ).toEqual(['DevupUIWebpackPluginWatchCss'])
+      type Module = { readonly resource: string }
+      type Finish = (modules: Iterable<Module>) => Promise<void>
+      const completions: Finish[] = []
+      const rebuild = mock((_module: Module, done: () => void) => done())
+      const compilation = {
+        hooks: {
+          finishModules: {
+            tapPromise(
+              _options: { readonly name: string; readonly stage: number },
+              callback: Finish,
+            ) {
+              completions.push(callback)
+            },
+          },
+        },
+        rebuildModule: rebuild,
+      }
+      const setup = compiler.hooks.thisCompilation.tap.mock.calls[0]?.[1]
+      assert(typeof setup === 'function')
+      setup(compilation)
+      const [finish] = completions
+      assert(finish, 'watch setup must install reconciliation completion')
+      const module = { resource: '/df/devup-ui/devup-ui-1.css' }
+      servedCss(compilation).set(module.resource, 'before')
+      getCssSpy.mockClear()
+      getCssSpy.mockReturnValue('after')
+      await finish([module])
+      expect(getCssSpy).toHaveBeenCalledWith(1, true)
+      expect(rebuild).toHaveBeenCalledWith(module, expect.any(Function))
     })
 
     it('writes the shared base to disk when it does not hold it yet', () => {

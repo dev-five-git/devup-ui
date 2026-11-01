@@ -724,9 +724,6 @@
         "@types/webpack": "^5.28.5",
         "typescript": "^7.0.2",
       },
-      "peerDependencies": {
-        "@devup-ui/wasm": "*",
-      },
     },
   },
   "packages": {

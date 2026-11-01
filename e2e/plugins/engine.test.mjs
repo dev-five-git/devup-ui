@@ -6,19 +6,396 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, sep } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
 
 import {
+  assertErrorParity,
+  assertRawParity,
+  assertWebpackDist,
+  errorEvidence,
+  initialLayerGate,
+  webpackDistFiles,
+} from './engine-consumer.mjs'
+import {
   HostPackError,
+  hostPackRealpath,
   hostPackSelection,
   verifyHostInstall,
 } from './engine-fixtures.mjs'
+
+test('host path policy equates short, expanded and junction spellings exactly', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'devup host realpath '))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const target = join(root, 'target')
+  const alias = join(root, 'alias')
+  mkdirSync(target)
+  symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  const expanded = realpathSync.native(target)
+  assert.equal(hostPackRealpath(target), expanded)
+  assert.equal(hostPackRealpath(expanded), expanded)
+  assert.equal(hostPackRealpath(alias), expanded)
+})
+
+test('host path policy retries only EISDIR with the exact same input', () => {
+  const calls = []
+  const result = hostPackRealpath('same-input', {
+    native(filename) {
+      calls.push(['native', filename])
+      throw Object.assign(new Error('native EISDIR'), { code: 'EISDIR' })
+    },
+    regular(filename) {
+      calls.push(['regular', filename])
+      return 'physical-path'
+    },
+  })
+  assert.equal(result, 'physical-path')
+  assert.deepEqual(calls, [
+    ['native', 'same-input'],
+    ['regular', 'same-input'],
+  ])
+})
+
+for (const code of ['ENOENT', 'EACCES']) {
+  test(`host path policy preserves ${code} without fallback`, () => {
+    const failure = Object.assign(new Error('native failure'), { code })
+    assert.throws(
+      () =>
+        hostPackRealpath('same-input', {
+          native() {
+            throw failure
+          },
+          regular() {
+            assert.fail('Only EISDIR may retry')
+          },
+        }),
+      (error) => error === failure,
+    )
+  })
+}
+
+for (const format of ['require', 'import']) {
+  test(`built ${format} shorthand error uses its public constructor, not the other format`, async () => {
+    // Given
+    const cjs = createRequire(import.meta.url)(
+      '../../packages/plugin-utils/dist/index.cjs',
+    )
+    const esm = await import('../../packages/plugin-utils/dist/index.mjs')
+    const selected = format === 'require' ? cjs : esm
+    const other = format === 'require' ? esm : cjs
+    const invalid = () =>
+      selected.normalizeShorthands({ bad: ['backgroundColour'] })
+    // When / Then
+    assert.throws(invalid, selected.ShorthandConfigError)
+    assert.throws(
+      () => assert.throws(invalid, other.ShorthandConfigError),
+      assert.AssertionError,
+    )
+  })
+}
+
+for (const order of ['AB', 'BA']) {
+  for (const releaseAt of [0, 1, 2]) {
+    test(`initial gate releases ${order} admissions in filename order with CSS signal at ${releaseAt}`, () => {
+      // Given
+      const module = { exports: {} }
+      runInNewContext(initialLayerGate, { module }, { timeout: 1000 })
+      const loader = module.exports
+      const released = []
+      // When
+      for (let index = 0; index <= order.length; index++) {
+        if (index === releaseAt) loader.release()
+        if (index < order.length) {
+          const name = order[index]
+          loader.call(
+            {
+              resourcePath: `C:/fixture/src/${name}.css.ts`,
+              async: () => (error, source) => {
+                assert.equal(error, null)
+                released.push(source)
+              },
+            },
+            name,
+          )
+        }
+        // Then
+        assert.deepEqual(
+          released,
+          index >= releaseAt && index >= 1 ? ['A', 'B'] : [],
+        )
+      }
+      assert.equal(
+        loader.call({ resourcePath: 'C:/fixture/src/B.css.ts' }, 'edited'),
+        'edited',
+      )
+    })
+  }
+}
+
+test('built Webpack entry and both loader formats use only the shared selector', () => {
+  // Given
+  const dist = fileURLToPath(
+    new URL('../../packages/webpack-plugin/dist/', import.meta.url),
+  )
+  // When / Then
+  assertWebpackDist(dist)
+})
+
+for (const name of webpackDistFiles) {
+  test(`rejects a direct backend import in ${name}`, (t) => {
+    // Given
+    const root = mkdtempSync(join(tmpdir(), 'devup-dist-guard-'))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    for (const file of webpackDistFiles) {
+      writeFileSync(join(root, file), 'import "@devup-ui/plugin-utils";')
+    }
+    writeFileSync(
+      join(root, name),
+      'import "@devup-ui/plugin-utils"; require("@devup-ui/wasm");',
+    )
+    // When / Then
+    assert.throws(() => assertWebpackDist(root), assert.AssertionError)
+  })
+}
+
+for (const field of ['code', 'css', 'map', 'dependencies', 'sheet', 'error']) {
+  test(`raw parity rejects a changed ${field} without normalizing it`, () => {
+    // Given
+    const expected = {
+      code: 'x\r\n',
+      css: '/* retained */.a{}',
+      map: undefined,
+      dependencies: ['a', 'b'],
+      sheet: '{"x":1}',
+      error: { name: 'Error', message: 'file.tsx:1:2' },
+    }
+    const actual = {
+      ...expected,
+      [field]: field === 'dependencies' ? ['b', 'a'] : 'different',
+    }
+    // When / Then
+    assert.throws(
+      () => assertRawParity(expected, actual),
+      assert.AssertionError,
+    )
+  })
+}
+
+test('error parity rejects a difference only in a non-enumerable value', () => {
+  // Given
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  Object.defineProperty(expected, 'detail', { value: 'before' })
+  Object.defineProperty(actual, 'detail', { value: 'after' })
+  // When / Then
+  assert.throws(
+    () => assertErrorParity(expected, actual),
+    assert.AssertionError,
+  )
+})
+
+test('only Bun permits optional original creation-field presence', () => {
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  for (const key of ['originalLine', 'originalColumn']) {
+    Object.defineProperty(expected, key, {
+      value: 1,
+      configurable: true,
+      enumerable: false,
+      writable: true,
+    })
+    Reflect.deleteProperty(actual, key)
+  }
+  for (const compare of [
+    () => assertErrorParity(expected, actual),
+    () => assertRawParity(errorEvidence(expected), errorEvidence(actual)),
+  ]) {
+    if (process.versions.bun) assert.doesNotThrow(compare)
+    else assert.throws(compare, assert.AssertionError)
+  }
+})
+
+for (const side of ['expected', 'actual']) {
+  test(`error parity rejects an unrelated key present only on ${side}`, () => {
+    const expected = new Error('same diagnostic')
+    const actual = new Error('same diagnostic')
+    Object.defineProperty(side === 'expected' ? expected : actual, 'other', {
+      value: 1,
+    })
+    assert.throws(
+      () => assertErrorParity(expected, actual),
+      assert.AssertionError,
+    )
+    assert.throws(
+      () => assertRawParity(errorEvidence(expected), errorEvidence(actual)),
+      assert.AssertionError,
+    )
+  })
+}
+
+test('optional creation fields retain their descriptor contract', () => {
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  for (const [error, writable] of [
+    [expected, true],
+    [actual, false],
+  ]) {
+    Reflect.ownKeys(error)
+    Reflect.get(error, 'stack')
+    Object.defineProperty(error, 'originalLine', {
+      value: 1,
+      configurable: true,
+      enumerable: false,
+      writable,
+    })
+  }
+  assert.equal(
+    Object.getOwnPropertyDescriptor(actual, 'originalLine').writable,
+    false,
+  )
+  assert.throws(
+    () => assertErrorParity(expected, actual),
+    assert.AssertionError,
+  )
+  assert.throws(
+    () => assertRawParity(errorEvidence(expected), errorEvidence(actual)),
+    assert.AssertionError,
+  )
+})
+
+test('error parity retains the order of every other own key', () => {
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  for (const key of ['a', 'b'])
+    Object.defineProperty(expected, key, { value: 1 })
+  for (const key of ['b', 'a']) Object.defineProperty(actual, key, { value: 1 })
+  assert.throws(
+    () => assertErrorParity(expected, actual),
+    assert.AssertionError,
+  )
+  assert.throws(
+    () => assertRawParity(errorEvidence(expected), errorEvidence(actual)),
+    assert.AssertionError,
+  )
+})
+
+test('error parity rejects a difference only in a descriptor flag', () => {
+  // Given
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  Object.defineProperty(expected, 'detail', { value: 1, writable: false })
+  Object.defineProperty(actual, 'detail', { value: 1, writable: true })
+  // When / Then
+  assert.throws(
+    () => assertErrorParity(expected, actual),
+    assert.AssertionError,
+  )
+})
+
+for (const difference of ['value', 'writable']) {
+  test(`packed error receipts reject a non-enumerable ${difference} difference`, () => {
+    // Given
+    const expected = new Error('same diagnostic')
+    const actual = new Error('same diagnostic')
+    Object.defineProperty(expected, 'detail', { value: 1, writable: false })
+    Object.defineProperty(actual, 'detail', {
+      value: difference === 'value' ? 2 : 1,
+      writable: difference === 'writable',
+    })
+    const before = errorEvidence(expected)
+    const after = errorEvidence(actual)
+    // When / Then
+    assert.throws(() => assertRawParity(before, after), assert.AssertionError)
+  })
+}
+
+test('error parity retains native-only public fields rather than excluding them', () => {
+  // Given
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  Object.defineProperty(actual, 'code', { value: 'GenericFailure' })
+  // When / Then
+  assert.throws(
+    () => assertErrorParity(expected, actual),
+    assert.AssertionError,
+  )
+})
+
+test('error parity compares cause diagnostics recursively', () => {
+  // Given
+  const expected = new Error('outer', { cause: new Error('before') })
+  const actual = new Error('outer', { cause: new Error('after') })
+  // When / Then
+  assert.throws(
+    () => assertErrorParity(expected, actual),
+    assert.AssertionError,
+  )
+})
+
+for (const kind of ['symbol', 'function', 'accessor']) {
+  test(`error parity rejects different live ${kind} identities with equal text`, () => {
+    // Given
+    const expected = new Error('same diagnostic')
+    const actual = new Error('same diagnostic')
+    const descriptor = () => {
+      switch (kind) {
+        case 'symbol':
+          return { value: Symbol('same') }
+        case 'function':
+          return { value: function same() {} }
+        case 'accessor':
+          return {
+            get: function same() {
+              return 1
+            },
+          }
+        default:
+          assert.fail(`Unknown identity control ${kind}`)
+      }
+    }
+    Object.defineProperty(expected, 'detail', descriptor())
+    Object.defineProperty(actual, 'detail', descriptor())
+    // When / Then
+    assert.throws(
+      () => assertErrorParity(expected, actual),
+      assert.AssertionError,
+    )
+  })
+}
+
+test('error parity accepts shared live symbol keys and accessor identities', () => {
+  // Given
+  const key = Symbol('detail')
+  const get = () => 1
+  const expected = new Error('same diagnostic')
+  const actual = new Error('same diagnostic')
+  Object.defineProperty(expected, key, { get })
+  Object.defineProperty(actual, key, { get })
+  // When / Then
+  assertErrorParity(expected, actual)
+})
+
+test('saved error evidence retains complete raw stack values', () => {
+  // Given
+  const error = new Error('raw stack')
+  const stack = error.stack
+  // When
+  const evidence = errorEvidence(error)
+  // Then
+  const property = evidence.raw.properties.find(
+    ({ key }) => key.type === 'string' && key.value === 'stack',
+  )
+  assert.equal(property.observed.value, stack)
+})
 
 function fixture(t, archiveMarker) {
   const root = mkdtempSync(join(tmpdir(), 'devup host guard '))

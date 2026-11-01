@@ -248,6 +248,18 @@ describe('DevupUINextPlugin', () => {
   })
 
   describe('webpack', () => {
+    it('keeps delegation on wasm when native is requested before the Next migration', () => {
+      // Given
+      delete process.env.TURBOPACK
+      const config = DevupUI({}, { engine: 'native' })
+      // When
+      config.webpack?.(createWebpackConfig(), createWebpackContext())
+      // Then
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ engine: 'wasm' }),
+      )
+    })
+
     it.each([
       ['omitted', {}],
       ['undefined', { atomHoist: undefined }],
@@ -265,6 +277,7 @@ describe('DevupUINextPlugin', () => {
         // Then: explicit zero/thresholds and singleCss reach the real adapter seam.
         expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
           ...options,
+          engine: 'wasm',
           singleCss: true,
           cssDir: resolve('.next/cache', 'devup-ui'),
           productionPrewarmFiles: [],
@@ -279,6 +292,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('.next/cache', 'devup-ui'),
+        engine: 'wasm',
         productionPrewarmFiles: [],
       })
     })
@@ -290,6 +304,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('df', 'devup-ui_tmpBuildId'),
+        engine: 'wasm',
         watch: true,
       })
     })
@@ -306,6 +321,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
+        engine: 'wasm',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
       })
@@ -326,6 +342,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
+        engine: 'wasm',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
       })

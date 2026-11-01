@@ -2,10 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import { DevupUIWebpackPlugin } from '../plugin'
+
+const wasm = loadCompiler('wasm')
 
 it('clears the theme and creates the CSS directory when configuration cannot be read', () => {
   const root = mkdtempSync(join(tmpdir(), 'devup-webpack-config-'))
@@ -18,6 +20,7 @@ it('clears the theme and creates the CSS directory when configuration cannot be 
   const logged = spyOn(console, 'error').mockReturnValue(undefined)
   try {
     const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
       devupFile: config,
       distDir: join(root, 'dist'),
       cssDir,

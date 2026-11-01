@@ -653,6 +653,7 @@ export function DevupUI(
     config.plugins.push(
       new DevupUIWebpackPlugin({
         ...options,
+        engine: 'wasm',
         watch: _options.dev,
         productionPrewarmFiles: _options.dev
           ? undefined

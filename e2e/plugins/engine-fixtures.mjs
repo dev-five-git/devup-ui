@@ -26,6 +26,24 @@ import { fileURLToPath } from 'node:url'
 import { selectHostTarget } from '../binding/package/build-host.mjs'
 import { targets } from '../binding/package/matrix.mjs'
 
+export function hostPackRealpath(
+  filename,
+  realpath = { native: realpathSync.native, regular: realpathSync },
+) {
+  try {
+    return realpath.native(filename)
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'EISDIR'
+    )
+      return realpath.regular(filename)
+    throw error
+  }
+}
+
 export class HostPackError extends Error {
   constructor(category, packageName, cause) {
     super(
@@ -102,7 +120,7 @@ export async function packHostEngines(context, run) {
         'expected one host tarball',
       )
     tarballs[name] =
-      `file:${realpathSync(join(destination, files[0])).split(sep).join('/')}`
+      `file:${hostPackRealpath(join(destination, files[0])).split(sep).join('/')}`
   }
   return { host, tarballs }
 }
@@ -111,7 +129,7 @@ function archivePath(reference, base) {
   if (typeof reference !== 'string' || !reference.startsWith('file:')) {
     throw new TypeError('Expected a local file tarball reference')
   }
-  return realpathSync(
+  return hostPackRealpath(
     reference.startsWith('file://')
       ? fileURLToPath(reference)
       : resolve(base, reference.slice('file:'.length)),
@@ -231,7 +249,7 @@ function installedNodes(directory) {
   const packages = new Map()
   while (pending.length) {
     const path = pending.pop()
-    const physical = realpathSync(path)
+    const physical = hostPackRealpath(path)
     if (!statSync(physical).isDirectory()) continue
     const parent = dirname(path)
     const slot =
@@ -298,7 +316,7 @@ function verifySource(name, reference, context) {
         throw new TypeError('non-file Bun package source')
       }
       const source = record[0].slice(name.length + 1)
-      if (!isAbsolute(source) || realpathSync(source) !== expected) {
+      if (!isAbsolute(source) || hostPackRealpath(source) !== expected) {
         throw new TypeError(
           "Bun package source is not this run's canonical tarball",
         )
@@ -312,7 +330,7 @@ function verifySource(name, reference, context) {
 
 export function verifyHostInstall(options) {
   const host = hostPackSelection()
-  const directory = realpathSync(options.directory)
+  const directory = hostPackRealpath(options.directory)
   const tarballs = new Map(
     Object.entries(options.tarballs).map(([name, reference]) => [
       name.startsWith('@devup-ui/') ? name : `@devup-ui/${name}`,
@@ -339,7 +357,7 @@ export function verifyHostInstall(options) {
   )) {
     try {
       const require = createRequire(join(binding.path, 'package.json'))
-      const sibling = realpathSync(
+      const sibling = hostPackRealpath(
         dirname(require.resolve(`${host.name}/package.json`)),
       )
       if (
