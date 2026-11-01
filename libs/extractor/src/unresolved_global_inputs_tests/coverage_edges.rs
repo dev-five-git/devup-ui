@@ -224,3 +224,154 @@ fn evaluated_shadowed_undefined_is_value_proof_but_unresolved_shadow_is_not(
     assert!(output.styles.iter().any(|style| matches!(style, ExtractStyleValue::Static(style) if style.selector.as_ref().is_some_and(|selector| selector.to_string() == "&:hover"))));
     Ok(())
 }
+
+#[rstest]
+#[case("_nthChild", "[]", None)]
+#[case("_nthChild", "['']", None)]
+#[case("_nthChild", "['2n']", Some("&:nth-child(2n)"))]
+#[case("_host", "[]", Some("&:host"))]
+#[case("_host", "['.scope']", Some("&:host(.scope)"))]
+#[serial]
+fn media_and_layer_wrappers_preserve_native_params_requiredness(
+    #[case] target: &str,
+    #[case] params: &str,
+    #[case] selector: Option<&str>,
+    #[values(false, true)] single_css: bool,
+) -> Result<(), String> {
+    // Given: media and layer frames wrap, rather than replace, the pending target.
+    let _state = crate::test_state::TestStateGuard::new();
+    let compile = |source: &str| {
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        crate::extract_without_source_map(
+            "/wrapped-params.css.ts",
+            source,
+            crate::ExtractOption {
+                single_css,
+                ..crate::ExtractOption::default()
+            },
+        )
+        .map_err(|error| error.to_string())
+    };
+    let source = format!(
+        "import{{css}}from'@devup-ui/react';let data=0;for(let i=0;i<16;i++)data={{payload:data}};export const card=css({{props:data,{target}:{{'@media':{{screen:{{'@layer':{{card:{{params:{params},p:2}}}}}}}}}}}});"
+    );
+    let expected = selector.map(|selector| compile(&format!(
+        "import{{css}}from'@devup-ui/react';export const card=css({{'@layer':{{card:{{'@media':{{screen:{{selectors:{{'{selector}':{{p:2}}}}}}}}}}}}}});"
+    ))).transpose()?;
+    // When
+    let actual = compile(&source);
+    // Then
+    if let Some(expected) = expected {
+        assert_eq!(actual?.styles, expected.styles);
+    } else {
+        let witness = if params == "[]" { "[]" } else { "''" };
+        let offset = source.find(witness).ok_or("missing empty params")?;
+        let location = crate::locate("/wrapped-params.css.ts", &source, offset);
+        let error = actual
+            .err()
+            .ok_or("wrapped required selector accepted empty params")?;
+        let printed = if params == "[]" { "[]" } else { "\"\"" };
+        assert_eq!(
+            error,
+            format!(
+                "{location}: {}",
+                crate::utils::build_time_error(
+                    "css",
+                    printed,
+                    crate::extractor::selector_params::SELECTOR_PARAMS
+                )
+            )
+        );
+    }
+    Ok(())
+}
+
+#[rstest]
+#[case((
+    "",
+    "_nthChild:{selectors:{'& &':{params:['2n'],selectors:{'&':{params:['3n'],_host:{params:[],p:2},_cue:{params:[],w:3}}}}}}",
+    concat!("selectors:{'&:nth-child(3n) &:nth-child(2n):host':{", "p:2},'&:nth-child(3n) &:nth-child(2n)::cue':{", "w:3}}")
+))]
+#[case((
+    "",
+    "_host:{selectors:{'&-context':{params:['.scope'],_hover:{params:[],p:2}}}}",
+    concat!("selectors:{'&:host-context(.scope):hover':{", "p:2}}")
+))]
+#[case((
+    "let left={params:[],p:2};left={_host:left};left={params:['3n'],...left};left={selectors:{'&':left}};left={params:['2n'],...left};let right={params:[],w:3};right={_host:right};right={params:['5n'],...right};right={selectors:{'&':right}};right={params:['4n'],...right};let forks={selectors:{'&':left,'.copy &':right}};",
+    "_nthChild:{selectors:{'& &':forks}}",
+    concat!("selectors:{'&:nth-child(3n) &:nth-child(2n):host':{", "p:2},'.copy &:nth-child(5n) &:nth-child(4n):host':{", "w:3}}")
+))]
+#[serial]
+fn native_pending_target_joins_and_lexical_replacement_match_flat_selectors(
+    #[case] fixture: (&str, &str, &str),
+    #[values(false, true)] single_css: bool,
+) -> Result<(), String> {
+    // Given: independent flat selectors specify argument attachment and lexical replacement.
+    let _state = crate::test_state::TestStateGuard::new();
+    let (setup, nested, flat) = fixture;
+    let compile = |body: &str| {
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        crate::extract_without_source_map(
+            "/pending-params.css.ts",
+            &format!("import{{css}}from'@devup-ui/react';{body}"),
+            crate::ExtractOption {
+                single_css,
+                ..crate::ExtractOption::default()
+            },
+        )
+        .map_err(|error| error.to_string())
+    };
+    let expected = compile(&format!("export const card=css({{{flat}}});"))?;
+    let body = format!(
+        "let data=0;for(let i=0;i<16;i++)data={{payload:data}};{setup}export const card=css({{props:data,{nested}}});"
+    );
+    // When
+    let actual = compile(&body)?;
+    // Then
+    assert_eq!(actual.styles, expected.styles);
+    assert_eq!(actual.code, expected.code);
+    Ok(())
+}
+
+#[rstest]
+#[serial]
+fn native_cached_join_tail_preserves_required_error_in_second_fork(
+    #[values(false, true)] single_css: bool,
+) -> Result<(), String> {
+    // Given: the first fork consumes both targets; the second must retain one required target.
+    let _state = crate::test_state::TestStateGuard::new();
+    let rule = "export const card=css({props:data,_nthChild:{selectors:{'& &':forks}}});";
+    let source = format!(
+        "import{{css}}from'@devup-ui/react';\nlet data=0;for(let i=0;i<16;i++)data={{payload:data}};let left={{params:[],p:2}};left={{_host:left}};left={{params:['3n'],...left}};left={{selectors:{{'&':left}}}};left={{params:['2n'],...left}};let right={{params:[],w:3}};right={{selectors:{{'&':right}}}};right={{params:['4n'],...right}};let forks={{selectors:{{'&':left,'.copy &':right}}}};\n{rule}"
+    );
+    let column = rule.find("css(").ok_or("missing native css call")? + 1;
+    // When
+    let error = crate::extract_without_source_map(
+        "/cached-required.css.ts",
+        &source,
+        crate::ExtractOption {
+            single_css,
+            ..crate::ExtractOption::default()
+        },
+    )
+    .err()
+    .ok_or("cached pop discarded the remaining required target")?
+    .to_string();
+    // Then
+    assert!(
+        error.starts_with(&format!("/cached-required.css.ts:3:{column}:")),
+        "{error}"
+    );
+    assert!(
+        error.contains(&crate::utils::build_time_error(
+            "css",
+            "_nthChild -> selectors -> & & -> selectors -> .copy & -> selectors -> & -> params",
+            crate::extractor::selector_params::SELECTOR_PARAMS,
+        )),
+        "{error}"
+    );
+    Ok(())
+}

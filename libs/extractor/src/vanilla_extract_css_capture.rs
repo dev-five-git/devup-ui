@@ -259,6 +259,19 @@ pub(super) fn validate(plan: &Plan, root: usize) -> Vec<(String, &'static str)> 
             Step::Key(property, kind, entry, mut context_path) => {
                 path.push(property.name.clone());
                 pending.push(Step::Pop);
+                let mut push = |frame| {
+                    if let Some(frame) = frame
+                        && plan.has_params
+                    {
+                        context_path = Some(contexts.push(context_path, frame));
+                    }
+                    pending.push(Step::Value(
+                        property.value,
+                        ObjectKind::Styles,
+                        entry,
+                        context_path,
+                    ));
+                };
                 match kind {
                     ObjectKind::Styles => {
                         if let Some(requirement) =
@@ -292,30 +305,14 @@ pub(super) fn validate(plan: &Plan, root: usize) -> Vec<(String, &'static str)> 
                             pending.push(Step::Value(property.value, kind, entry, context_path));
                         }
                     }
-                    ObjectKind::Selectors | ObjectKind::At(_) | ObjectKind::Layers => {
-                        let frame = match kind {
-                            ObjectKind::Selectors => crate::own_css_context::under(&property.name),
-                            ObjectKind::At(kind) => Some(crate::own_css_context::Frame::At(
-                                kind,
-                                property.name.clone(),
-                            )),
-                            ObjectKind::Layers => {
-                                Some(crate::own_css_context::Frame::Layer(property.name.clone()))
-                            }
-                            ObjectKind::Styles => None,
-                        };
-                        if let Some(frame) = frame
-                            && plan.has_params
-                        {
-                            context_path = Some(contexts.push(context_path, frame));
-                        }
-                        pending.push(Step::Value(
-                            property.value,
-                            ObjectKind::Styles,
-                            entry,
-                            context_path,
-                        ));
-                    }
+                    ObjectKind::Selectors => push(crate::own_css_context::under(&property.name)),
+                    ObjectKind::At(kind) => push(Some(crate::own_css_context::Frame::At(
+                        kind,
+                        property.name.clone(),
+                    ))),
+                    ObjectKind::Layers => push(Some(crate::own_css_context::Frame::Layer(
+                        property.name.clone(),
+                    ))),
                 }
             }
             Step::Value(id, kind, entry, mut context_path) => match &plan.nodes[id] {

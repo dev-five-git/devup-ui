@@ -138,9 +138,9 @@ struct Branch {
 }
 
 enum TargetsNode {
-    Item,
-    Join(usize, usize),
-    Unknown,
+    Item(Option<usize>),
+    Join(usize, usize, usize),
+    Unknown(Option<usize>),
 }
 
 #[derive(Default)]
@@ -154,8 +154,7 @@ pub(crate) struct Targets {
 impl Targets {
     fn item(&mut self, required: bool, parent: Option<usize>) -> usize {
         let id = self.nodes.len();
-        self.nodes.push(TargetsNode::Item);
-        self.tails.push(std::cell::OnceCell::from(parent));
+        self.nodes.push(TargetsNode::Item(parent));
         self.required.push(Some(required));
         id
     }
@@ -165,7 +164,8 @@ impl Targets {
             (None, other) | (other, None) => other,
             (Some(left), Some(right)) => {
                 let id = self.nodes.len();
-                self.nodes.push(TargetsNode::Join(left, right));
+                self.nodes
+                    .push(TargetsNode::Join(left, right, self.tails.len()));
                 self.tails.push(std::cell::OnceCell::new());
                 self.required.push(self.required[right]);
                 Some(id)
@@ -177,16 +177,15 @@ impl Targets {
         let mut pending = Vec::new();
         let mut cursor = root?;
         let mut tail = loop {
-            if let Some(tail) = self.tails[cursor].get().copied() {
-                break tail;
-            }
             match self.nodes[cursor] {
-                TargetsNode::Join(left, right) => {
-                    pending.push((cursor, left));
+                TargetsNode::Item(tail) | TargetsNode::Unknown(tail) => break tail,
+                TargetsNode::Join(left, right, cache) => {
+                    if let Some(tail) = self.tails[cache].get().copied() {
+                        break tail;
+                    }
+                    pending.push((cache, left));
                     cursor = right;
                 }
-                TargetsNode::Item => break None,
-                TargetsNode::Unknown => break Some(cursor),
             }
         };
         for (id, left) in pending.into_iter().rev() {
@@ -217,8 +216,7 @@ impl Targets {
 
     pub fn uncertain(&mut self) -> usize {
         let id = self.nodes.len();
-        self.nodes.push(TargetsNode::Unknown);
-        self.tails.push(std::cell::OnceCell::from(Some(id)));
+        self.nodes.push(TargetsNode::Unknown(Some(id)));
         self.required.push(None);
         self.save(vec![Branch {
             targets: Some(id),

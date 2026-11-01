@@ -702,3 +702,90 @@ fn nonparams_matrix_keeps_exact_legacy_materialization() -> Result<(), String> {
     }
     Ok(())
 }
+
+#[rstest::rstest]
+#[case(
+    "_nthChild",
+    "get params(){reads++;return ['2n']}",
+    "&:nth-child(2n):hover",
+    1
+)]
+#[case("_host", "set params(value){reads++}", "&:host:hover", 0)]
+#[case("_nthChild", "params:[...values()]", "&:nth-child(2n):hover", 1)]
+#[serial]
+fn coverage_contract_partial_authored_params_use_native_values_once(
+    #[case] selector: &str,
+    #[case] metadata: &str,
+    #[case] expected_selector: &str,
+    #[case] reads: usize,
+    #[values(false, true)] single_css: bool,
+) -> Result<(), String> {
+    // Given: valid native metadata sits beside an independently valid sibling.
+    let _state = crate::test_state::TestStateGuard::new();
+    let expected = compile(&format!(
+        "export const card=css({{color:'red',selectors:{{'{expected_selector}':{{p:2}}}}}});"
+    ))?;
+    let source = format!(
+        "import{{css}}from'@devup-ui/react';let reads=0;function values(){{reads++;return ['2n']}}let data=0;for(let i=0;i<16;i++)data={{payload:data}};export const card=css({{props:data,color:'red',{selector}:{{{metadata},_hover:{{params:[],p:2}}}}}});export const count=reads;"
+    );
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    // When
+    let actual = extract_without_source_map(
+        "/partial-params.css.ts",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    // Then
+    assert_eq!(actual.styles, expected.styles);
+    assert!(
+        actual
+            .code
+            .contains(&format!("export const count = {reads};")),
+        "{}",
+        actual.code
+    );
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case("get params(){return ['2n']},_is:{params:['a',{}],p:2}", "{}")]
+#[case("set params(value){},_is:{params:['a',{}],p:2}", "{}")]
+#[case("params:[...values(),{}],p:2", "{}")]
+#[case("get params(){return ['2n']},_nthChild:{params:[],p:2}", "[]")]
+#[case("params:[...values()],_nthChild:{params:[],p:2}", "[]")]
+fn coverage_contract_partial_params_preserve_known_leaf_and_required_errors(
+    #[case] rules: &str,
+    #[case] witness: &str,
+) -> Result<(), String> {
+    // Given: uncertain parent params cannot hide a known bad leaf or a fresh required target.
+    let source = format!(
+        "import{{css}}from'@devup-ui/react';function values(){{return ['2n']}}export const card=css({{color:'red',_nthChild:{{{rules}}}}});"
+    );
+    let offset = source
+        .rfind(witness)
+        .ok_or("missing authored refusal witness")?;
+    let location = crate::locate("/partial-errors.css.ts", &source, offset);
+    // When
+    let error =
+        crate::dead_properties::instrument(&source, "/partial-errors.css.ts", "@devup-ui/react")
+            .err()
+            .ok_or("known bad params were deferred")?;
+    // Then
+    assert_eq!(
+        error,
+        format!(
+            "{location}: {}",
+            crate::utils::build_time_error(
+                "css",
+                witness,
+                crate::extractor::selector_params::SELECTOR_PARAMS
+            )
+        )
+    );
+    Ok(())
+}

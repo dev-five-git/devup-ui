@@ -107,6 +107,8 @@ fn capture_validation_rejects_responsive_arrays_across_entry_objects(
 #[case(("_is", "['a',[]]"))]
 #[case(("_is", "['a',undefined]"))]
 #[case(("_is", "['a',null]"))]
+#[case(("_is", "['a',1n]"))]
+#[case(("_is", "['a',Infinity]"))]
 #[case(("_is", "['a',Object.defineProperty({},'payload',{enumerable:true,get(){throw Error('descendant')}})]"))]
 #[case(("_is", "['a',Object.defineProperty([],0,{enumerable:true,get(){throw Error('descendant')}})]"))]
 #[case(("_is", "['a',(()=>{const entry={};entry.self=entry;return entry})()]"))]
@@ -685,6 +687,103 @@ fn evaluated_template_placement_owns_params_validation(
         );
     } else {
         assert_eq!(collector.declaration_errors, Vec::<String>::new());
+    }
+    Ok(())
+}
+
+#[test]
+fn capture_preserves_root_and_nested_array_order_with_once_only_getters() -> Result<(), String> {
+    // Given: native array getters expose both repeated reads and traversal order.
+    let names = FxHashMap::default();
+    let collector = Rc::new(RefCell::new(Collector::default()));
+    let mut values = Values {
+        names: &names,
+        collector: &collector,
+        active: FxHashSet::default(),
+        key_slots: FxHashMap::default(),
+        plan: Plan::default(),
+    };
+    let mut context = Context::default();
+    let value = context
+        .eval(Source::from_bytes(concat!(
+            "let reads=[];const nested=Object.defineProperties([],{",
+            "0:{get(){reads.push('nested:0');return 2}},",
+            "1:{get(){reads.push('nested:1');return 'last'}}});",
+            "Object.defineProperties([],{",
+            "0:{get(){reads.push('root:0');return 'first'}},",
+            "1:{get(){reads.push('root:1');return nested}},",
+            "2:{get(){reads.push('root:2');return null}}})"
+        )))
+        .map_err(|error| error.to_string())?;
+    // When
+    let root = values
+        .capture(&value, &mut context)
+        .map_err(|error| error.to_string())?;
+    // Then: the array graph and values survive without duplicate getter evaluation.
+    assert_eq!(values.plan.code(root), r#"["first",[2,"last"],null]"#);
+    let reads = context
+        .eval(Source::from_bytes("reads.join(',')"))
+        .map_err(|error| error.to_string())?;
+    assert_eq!(
+        reads.as_string().map(|text| text.to_std_string_escaped()),
+        Some("root:0,root:1,root:2,nested:0,nested:1".into())
+    );
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case("{}", false)]
+#[case("'not-a-list'", false)]
+#[case("['2n']", true)]
+#[serial]
+fn bridge_rejects_invalid_params_roots_inside_data_named_layers(
+    #[case] value: &str,
+    #[case] accepted: bool,
+    #[values(false, true)] single_css: bool,
+) -> Result<(), String> {
+    // Given: props is a layer name, and its captured descendants retain their real node shapes.
+    let _state = crate::test_state::TestStateGuard::new();
+    let rule = "export const card=css(rules);";
+    let source = format!(
+        "import{{css}}from'@devup-ui/react';\nlet data=0;for(let i=0;i<16;i++)data={{payload:data}};const rules={{props:data,'@layer':{{props:{{_nthChild:{{params:{value},p:2}}}}}}}};\n{rule}"
+    );
+    let column = rule.find("css(").ok_or("missing real css call")? + 1;
+    // When
+    let result = extract_without_source_map(
+        "/layer-params.css.ts",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    );
+    // Then
+    if accepted {
+        let output = result.map_err(|error| error.to_string())?;
+        assert_eq!(output.styles.len(), 2);
+        assert!(
+            output.styles.iter().any(|entry| matches!(entry, crate::ExtractStyleValue::Static(style)
+                if style.property() == "padding" && style.value() == "8px"
+                    && style.layer.as_deref() == Some("props")
+                    && style.selector.as_ref().is_some_and(|selector| selector.to_string() == "&:nth-child(2n)")))
+        );
+        assert!(output.styles.iter().any(|entry| matches!(entry,
+            crate::ExtractStyleValue::LayerOrder(order)
+                if order.file == "/layer-params.css.ts" && order.layers == vec!["props".to_string()]
+        )));
+    } else {
+        let error = result
+            .err()
+            .ok_or("invalid params root scheduled a declaration")?
+            .to_string();
+        assert!(
+            error.starts_with(&format!("/layer-params.css.ts:3:{column}:")),
+            "{error}"
+        );
+        assert!(
+            error.contains(crate::extractor::selector_params::SELECTOR_PARAMS),
+            "{error}"
+        );
     }
     Ok(())
 }

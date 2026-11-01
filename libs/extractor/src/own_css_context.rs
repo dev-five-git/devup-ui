@@ -17,12 +17,11 @@ pub(crate) enum Frame {
     At(AtRuleKind, String),
     Layer(String),
     Params(String),
-    UncertainParams,
 }
 
 struct Link {
     parent: Option<usize>,
-    frame: Frame,
+    frame: Option<Frame>,
     selected: bool,
     target: std::cell::OnceCell<Option<usize>>,
 }
@@ -39,7 +38,7 @@ impl Contexts {
         let id = self.links.len();
         self.links.push(Link {
             parent,
-            frame,
+            frame: Some(frame),
             selected,
             target: std::cell::OnceCell::new(),
         });
@@ -51,7 +50,14 @@ impl Contexts {
     }
 
     pub fn uncertain(&mut self, path: Option<usize>) -> usize {
-        self.push(path, Frame::UncertainParams)
+        let id = self.links.len();
+        self.links.push(Link {
+            parent: path,
+            frame: None,
+            selected: self.selected(path),
+            target: std::cell::OnceCell::from(Some(self.targets.uncertain())),
+        });
+        id
     }
 
     pub fn requires_argument(&mut self, path: Option<usize>) -> bool {
@@ -67,12 +73,13 @@ impl Contexts {
             cursor = self.links[id].parent;
         }
         for id in pending.into_iter().rev() {
-            target = match &self.links[id].frame {
-                Frame::At(..) | Frame::Layer(_) => target,
-                Frame::Selector(template) => Some(self.targets.nest(target, template)),
-                Frame::Params(_) => self.targets.consume(target),
-                Frame::UncertainParams => Some(self.targets.uncertain()),
-            };
+            for frame in self.links[id].frame.as_slice() {
+                target = match frame {
+                    Frame::At(..) | Frame::Layer(_) => target,
+                    Frame::Selector(template) => Some(self.targets.nest(target, template)),
+                    Frame::Params(_) => self.targets.consume(target),
+                };
+            }
             self.links[id].target = std::cell::OnceCell::from(target);
         }
         self.targets.required(target)
@@ -85,7 +92,7 @@ impl Contexts {
         let mut links = Vec::new();
         let mut cursor = path;
         while let Some(id) = cursor {
-            links.push(&self.links[id].frame);
+            links.extend(self.links[id].frame.as_ref());
             cursor = self.links[id].parent;
         }
         let mut selector = selector::SelectorText::default();
@@ -113,7 +120,6 @@ impl Contexts {
                 }
                 Frame::Layer(layer) => layers.push(layer.as_str()),
                 Frame::Params(params) => selector.params(params),
-                Frame::UncertainParams => {}
             }
         }
         let selector = selector.text();

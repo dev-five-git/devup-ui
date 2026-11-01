@@ -125,8 +125,12 @@ pub(super) fn errors(
                     }
                 }
                 for (name, property) in properties {
-                    let mut child_path = path;
-                    let child = match kind {
+                    let mut push = |kind, frame: Option<Frame>| {
+                        let child_path =
+                            frame.map_or(path, |frame| Some(contexts.push(path, frame)));
+                        pending.push((&property.value, kind, child_path));
+                    };
+                    match kind {
                         Kind::Styles => {
                             if matches!(
                                 name.as_str(),
@@ -135,40 +139,35 @@ pub(super) fn errors(
                             {
                                 continue;
                             }
-                            if name == "selectors" {
-                                Kind::Selectors
+                            let child = if name == "selectors" {
+                                (Kind::Selectors, None)
                             } else if name == "@layer" {
-                                Kind::Layers
+                                (Kind::Layers, None)
                             } else if let Some(kind) =
                                 crate::extractor::extract_style_from_expression::at_rule_record_kind(
                                     &name,
                                 )
                             {
-                                Kind::At(kind)
+                                (Kind::At(kind), None)
                             } else {
-                                if (name.starts_with([':', '.', '#', '[', '*', '>', '+', '~', '_'])
+                                let frame = (name
+                                    .starts_with([':', '.', '#', '[', '*', '>', '+', '~', '_'])
                                     || name.contains('&')
                                     || css::at_rule::split_at_rule_key(&name).is_some())
-                                    && let Some(frame) = under(&name)
-                                {
-                                    child_path = Some(contexts.push(path, frame));
-                                }
-                                Kind::Styles
+                                .then(|| under(&name))
+                                .flatten();
+                                (Kind::Styles, frame)
+                            };
+                            push(child.0, child.1);
+                        }
+                        Kind::Selectors => {
+                            if let Some(frame) = under(&name) {
+                                push(Kind::Styles, Some(frame));
                             }
                         }
-                        Kind::Selectors | Kind::At(_) | Kind::Layers => {
-                            let frame = match kind {
-                                Kind::Selectors => under(&name),
-                                Kind::At(kind) => Some(Frame::At(kind, name)),
-                                Kind::Layers => Some(Frame::Layer(name)),
-                                Kind::Styles => None,
-                            };
-                            let Some(frame) = frame else { continue };
-                            child_path = Some(contexts.push(path, frame));
-                            Kind::Styles
-                        }
-                    };
-                    pending.push((&property.value, child, child_path));
+                        Kind::At(kind) => push(Kind::Styles, Some(Frame::At(kind, name))),
+                        Kind::Layers => push(Kind::Styles, Some(Frame::Layer(name))),
+                    }
                 }
             }
             _ => {}
