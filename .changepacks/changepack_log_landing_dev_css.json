@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Use a Devup-specific generated CSS revision query instead of Vite's immutable dependency version query, preventing cached stylesheet responses from breaking development module imports. No new build errors.",
+  "date": "2026-11-01T00:00:00.000Z"
+}
