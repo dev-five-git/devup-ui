@@ -1351,8 +1351,8 @@ describe('devupUIVitePlugin', () => {
       await plugin.transform('const addedStyles = true', 'layout.tsx')
       const second = plugin.resolveId('devup-ui.css', importer)
 
-      expect(first).toMatch(/\?v=\d+$/)
-      expect(second).toMatch(/\?v=\d+$/)
+      expect(first).toMatch(/\?devup-revision=\d+$/)
+      expect(second).toMatch(/\?devup-revision=\d+$/)
       expect(second).not.toBe(first)
     })
   })
