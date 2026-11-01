@@ -154,4 +154,27 @@ mod tests {
         identifier.reference_id.set(None);
         assert!(!values.is_unbound_undefined(&statement.expression));
     }
+
+    #[test]
+    fn recording_requires_reference_metadata_when_scoping_is_supplied() {
+        // Given real scoping whose authored reference ID was cleared before recording.
+        let arena = Allocator::default();
+        let parsed = Parser::new(&arena, "undefined;", SourceType::tsx()).parse();
+        let scoping = SemanticBuilder::new()
+            .build(&parsed.program)
+            .semantic
+            .into_scoping();
+        let mut values = StyleValues::new(std::rc::Rc::new(scoping));
+        let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+            panic!("expected expression");
+        };
+        let Expression::Identifier(identifier) = &statement.expression else {
+            panic!("expected identifier");
+        };
+        identifier.reference_id.set(None);
+        // When recording sees the spelling but has no reference metadata to prove it.
+        values.record_absence(&parsed.program);
+        // Then neither a recorded span nor the retained scoping fabricates absence.
+        assert!(!values.is_unbound_undefined(&statement.expression));
+    }
 }

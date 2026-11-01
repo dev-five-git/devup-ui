@@ -6,15 +6,12 @@ use oxc_span::{GetSpan, LabeledSpan};
 mod tests;
 
 /// Recognize only Oxc 0.154's goal mismatch on a direct hybrid-CJS declaration.
-pub(crate) fn accepts_declaration_goal(
+pub(crate) fn is_declaration_goal(
     parsed: &ParserReturn<'_>,
     message: &str,
     labels: &[LabeledSpan],
 ) -> bool {
-    if parsed.fatal_error
-        || !parsed.program.source_type.is_javascript()
-        || !parsed.program.source_type.is_commonjs()
-    {
+    if !parsed.program.source_type.is_javascript() || !parsed.program.source_type.is_commonjs() {
         return false;
     }
     let keyword = match message {
@@ -28,7 +25,7 @@ pub(crate) fn accepts_declaration_goal(
     if label.primary() || label.label().is_some() || label.len() != 6 {
         return false;
     }
-    parsed.program.body.iter().any(|statement| {
+    let matches_ast = parsed.program.body.iter().any(|statement| {
         let declaration_keyword = match statement {
             Statement::ImportDeclaration(_) => "import",
             Statement::ExportDeclaration(_)
@@ -45,7 +42,20 @@ pub(crate) fn accepts_declaration_goal(
                 usize::try_from(start).unwrap_or(usize::MAX)
                     ..usize::try_from(label.span().end).unwrap_or(usize::MAX),
             ) == Some(keyword.as_bytes())
-    })
+    });
+    matches_ast
+        || (parsed.fatal_error
+            && parsed.program.body.is_empty()
+            && label.offset() == 0
+            && parsed.program.source_text.as_bytes().get(..6) == Some(keyword.as_bytes()))
+}
+
+pub(crate) fn accepts_declaration_goal(
+    parsed: &ParserReturn<'_>,
+    message: &str,
+    labels: &[LabeledSpan],
+) -> bool {
+    !parsed.fatal_error && is_declaration_goal(parsed, message, labels)
 }
 
 /// Check without modifying stock diagnostics, AST nodes or source-type metadata.

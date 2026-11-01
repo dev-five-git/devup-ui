@@ -6,7 +6,7 @@ use crate::utils::is_same_expression;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
     ComputedMemberExpression, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, Str,
-    StringLiteral, TemplateElement, TemplateElementValue,
+    StringLiteral, TemplateElement,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
@@ -181,8 +181,10 @@ pub fn merge_expression_for_class_name<'a>(
     let mut unknown_expr: Vec<Expression<'a>> = Vec::new();
     let mut class_name = String::new();
     for expr in expressions {
-        if let Expression::StringLiteral(str) = &expr {
-            let value = str.value.trim();
+        if let Expression::StringLiteral(str) = &expr
+            && let Some(value) = str.value.as_str()
+        {
+            let value = value.trim();
             if !value.is_empty() {
                 if class_name.is_empty() {
                     // First fragment: reserve up front so appending the initial static
@@ -225,19 +227,16 @@ pub fn merge_expression_for_class_name<'a>(
         let mut qu = oxc_allocator::Vec::new_in(ast_builder);
         for idx in 0..=unknown_expr.len() {
             let tail = idx == unknown_expr.len();
-            let t = TemplateElementValue {
-                raw: Str::from_in(
-                    if idx == 0 {
-                        head
-                    } else if tail {
-                        ""
-                    } else {
-                        " "
-                    },
-                    ast_builder.allocator(),
-                ),
-                cooked: None,
-            };
+            let t = crate::utils::template_element_value(
+                if idx == 0 {
+                    head
+                } else if tail {
+                    ""
+                } else {
+                    " "
+                },
+                ast_builder,
+            );
             qu.push(TemplateElement::new(SPAN, t, tail, ast_builder));
         }
 

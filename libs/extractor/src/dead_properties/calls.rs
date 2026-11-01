@@ -1,25 +1,37 @@
 //! Authored styling-call metadata carried through stylesheet execution.
 
+use super::analysis::Analysis;
 use super::objects::{ObjectKind, authored_errors};
-use oxc_ast::ast::{CallExpression, Expression, ImportDeclarationSpecifier, Statement};
-use oxc_ast_visit::{Visit, walk::walk_call_expression};
+use oxc_ast::ast::{
+    CallExpression, Expression, ImportDeclarationSpecifier, Statement, TaggedTemplateExpression,
+};
+use oxc_ast_visit::{
+    Visit,
+    walk::{walk_call_expression, walk_tagged_template_expression},
+};
+use oxc_span::GetSpan;
 use rustc_hash::FxHashMap;
 
-pub(crate) struct Instrumented {
-    pub code: String,
-    pub calls: Vec<(u32, u32)>,
-}
+#[path = "params.rs"]
+mod params;
 
-pub(crate) fn instrument(
-    code: &str,
-    filename: &str,
+pub(super) fn collect(
+    stylesheet: crate::vanilla_extract::Stylesheet<'_>,
     package: &str,
-) -> Result<Instrumented, String> {
+) -> Analysis {
+    let crate::vanilla_extract::Stylesheet {
+        filename,
+        code,
+        source,
+        edits,
+    } = stylesheet;
     let allocator = oxc_allocator::Allocator::default();
     let parsed = oxc_parser::Parser::new(
         &allocator,
         code,
-        oxc_span::SourceType::from_path(filename).unwrap_or_else(|_| oxc_span::SourceType::ts()),
+        oxc_span::SourceType::from_path(filename)
+            .unwrap_or_else(|_| oxc_span::SourceType::ts())
+            .with_module(true),
     )
     .parse();
     let semantic = oxc_semantic::SemanticBuilder::new()
@@ -45,8 +57,9 @@ pub(crate) fn instrument(
         }
     }
     let mut visitor = Calls {
-        code,
         filename,
+        source,
+        edits,
         imports,
         scoping: semantic.scoping(),
         insertions: Vec::new(),
@@ -61,32 +74,21 @@ pub(crate) fn instrument(
         }
     }
     visitor.visit_program(&parsed.program);
-    if !visitor.errors.is_empty() {
-        return Err(visitor.errors.join("\n"));
+    Analysis {
+        insertions: visitor.insertions,
+        errors: visitor.errors,
+        ranges: visitor.ranges,
     }
-    visitor.insertions.sort_by_key(|(offset, _)| *offset);
-    let mut output = String::new();
-    let mut copied = 0;
-    for (offset, insertion) in visitor.insertions {
-        let offset = usize::try_from(offset).map_err(|error| error.to_string())?;
-        output.push_str(&code[copied..offset]);
-        output.push_str(&insertion);
-        copied = offset;
-    }
-    output.push_str(&code[copied..]);
-    Ok(Instrumented {
-        code: output,
-        calls: visitor.ranges,
-    })
 }
 
 struct Calls<'s> {
-    code: &'s str,
     filename: &'s str,
+    source: &'s str,
+    edits: &'s [&'s [crate::import_alias_visit::Edit]],
     imports: FxHashMap<oxc_syntax::symbol::SymbolId, String>,
     scoping: &'s oxc_semantic::Scoping,
     insertions: Vec<(u32, String)>,
-    errors: Vec<String>,
+    errors: Vec<(u32, String)>,
     ranges: Vec<(u32, u32)>,
 }
 
@@ -111,12 +113,19 @@ impl<'a> Visit<'a> for Aliases<'_, '_> {
 
 impl Calls<'_> {
     fn api(&self, expression: &Expression<'_>) -> Option<String> {
-        let (identifier, member) = match expression {
+        let (identifier, member) = match crate::utils::unwrap_syntax_only(expression) {
             Expression::Identifier(identifier) => (identifier.as_ref(), None),
             Expression::StaticMemberExpression(member) => match &member.object {
                 Expression::Identifier(identifier) => {
-                    (identifier.as_ref(), Some(member.property.name.as_str()))
+                    (identifier.as_ref(), Some(member.property.name.to_string()))
                 }
+                _ => return None,
+            },
+            Expression::ComputedMemberExpression(member) => match &member.object {
+                Expression::Identifier(identifier) => (
+                    identifier.as_ref(),
+                    Some(member.static_property_name()?.as_str()?.to_string()),
+                ),
                 _ => return None,
             },
             _ => return None,
@@ -127,7 +136,7 @@ impl Calls<'_> {
             .symbol_id()?;
         let imported = self.imports.get(&symbol)?;
         match (imported.as_str(), member) {
-            ("*", Some(member)) => Some(member.to_string()),
+            ("*", Some(member)) => Some(member),
             ("styled", Some(_)) => Some("styled".to_string()),
             (_, None) => Some(imported.clone()),
             _ => None,
@@ -135,14 +144,74 @@ impl Calls<'_> {
     }
 
     fn location(&self, offset: u32) -> String {
-        let prefix = &self.code[..usize::try_from(offset).unwrap_or(0)];
-        let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
-        let column = prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1;
-        format!("{}:{line}:{column}", self.filename)
+        let offset = self
+            .edits
+            .iter()
+            .fold(usize::try_from(offset).unwrap_or(0), |offset, edits| {
+                crate::import_alias_visit::source_offset(edits, offset)
+            });
+        crate::locate(self.filename, self.source, offset)
+    }
+
+    fn params(&mut self, expression: &Expression<'_>) {
+        for (offset, leaf) in params::errors(expression, self.scoping) {
+            self.errors.push((
+                offset,
+                crate::utils::build_time_error(
+                    "css",
+                    &leaf,
+                    crate::extractor::selector_params::SELECTOR_PARAMS,
+                ),
+            ));
+        }
     }
 }
 
 impl<'a> Visit<'a> for Calls<'_> {
+    fn visit_tagged_template_expression(&mut self, tagged: &TaggedTemplateExpression<'a>) {
+        let tag = crate::utils::unwrap_syntax_only(&tagged.tag);
+        if self.api(tag).as_deref() == Some("css") {
+            let mut before = String::new();
+            for (index, quasi) in tagged.quasi.quasis.iter().enumerate() {
+                before.push_str(&quasi.value.raw);
+                if let Some(expression) = tagged.quasi.expressions.get(index) {
+                    match crate::css_utils::interpolation_place(
+                        &before,
+                        &tagged.quasi.quasis[index + 1..],
+                    ) {
+                        crate::css_utils::Place::Statement => self.params(expression),
+                        crate::css_utils::Place::Value => {
+                            before.push_str("__EXPR__");
+                            continue;
+                        }
+                        crate::css_utils::Place::Other => {}
+                    }
+                    if let Some(text) = crate::utils::get_string_by_literal_expression(expression) {
+                        before.push_str(&text);
+                    }
+                }
+            }
+            // Keep the template site and its eval/await/yield expressions outside the forwarding closure.
+            let receiver = match tag {
+                Expression::StaticMemberExpression(member) => {
+                    crate::utils::readable_code(&member.object)
+                }
+                Expression::ComputedMemberExpression(member) => {
+                    crate::utils::readable_code(&member.object)
+                }
+                _ => "undefined".to_string(),
+            };
+            self.ranges.push((tagged.span.start, tagged.span.end));
+            self.insertions.push((tagged.tag.span().start, format!(
+                "((__receiver, __tag) => (...__args) => __vanilla_extract__.__at({:?}, \"css\", __tag, __receiver, __args))({receiver}, (",
+                self.location(tagged.span.start),
+            )));
+            self.insertions
+                .push((tagged.tag.span().end, "))".to_string()));
+        }
+        walk_tagged_template_expression(self, tagged);
+    }
+
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         if let Some(api) = self.api(&call.callee) {
             let shape = match api.as_str() {
@@ -155,6 +224,15 @@ impl<'a> Visit<'a> for Calls<'_> {
             };
             if let Some((argument, kind)) = shape {
                 self.ranges.push((call.span.start, call.span.end));
+                if api == "css" {
+                    for argument in &call.arguments {
+                        if let Some(expression) = argument.as_expression() {
+                            self.params(expression);
+                        } else if let oxc_ast::ast::Argument::SpreadElement(spread) = argument {
+                            self.params(&spread.argument);
+                        }
+                    }
+                }
                 if !(api == "styleVariants" && call.arguments.len() > 1)
                     && let Some(expression) = call
                         .arguments
@@ -162,10 +240,9 @@ impl<'a> Visit<'a> for Calls<'_> {
                         .and_then(|argument| argument.as_expression())
                 {
                     for (offset, path, requirement) in authored_errors(expression, kind) {
-                        self.errors.push(format!(
-                            "{}: {}",
-                            self.location(offset),
-                            crate::utils::build_time_error(&api, &path, requirement)
+                        self.errors.push((
+                            offset,
+                            crate::utils::build_time_error(&api, &path, requirement),
                         ));
                     }
                 }

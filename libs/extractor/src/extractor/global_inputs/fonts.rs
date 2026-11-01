@@ -203,4 +203,45 @@ mod tests {
             BTreeMap::from([("font-family".to_string(), "Face".to_string())])
         );
     }
+
+    #[rstest::rstest]
+    #[case::object("[{boxAlign:'center',src:'face.woff2'}]", 2, "boxAlign")]
+    #[case::template("[`src:url(a); box-align:center`]", 14, "box-align")]
+    fn font_collection_rejects_dead_declarations_when_called_directly(
+        #[case] source: &str,
+        #[case] offset: u32,
+        #[case] code: &str,
+    ) {
+        // Given a descriptor array before any public-call prevalidation.
+        let arena = Allocator::default();
+        let ast = AstBuilder::new(&arena);
+        let mut expression = Parser::new(&arena, source, SourceType::tsx())
+            .parse_expression()
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        let values = crate::style_values::StyleValues::default();
+        let inputs = GlobalInputs {
+            file: "font.tsx",
+            values: &values,
+        };
+        // When the font collector itself validates the authored declaration.
+        let styles = font_faces(&ast, &mut expression, &inputs);
+        // Then the dead key owns the refusal and no partial font-face escapes.
+        let [
+            ExtractStyleProp::Unreadable {
+                offset: actual,
+                code: rejected,
+                requirement,
+                ..
+            },
+        ] = styles.as_slice()
+        else {
+            panic!("expected only a dead-declaration refusal: {styles:?}")
+        };
+        assert_eq!((*actual, rejected.as_str()), (offset, code));
+        assert_eq!(
+            *requirement,
+            crate::dead_properties::requirement("box-align")
+        );
+        assert!(requirement.is_some());
+    }
 }

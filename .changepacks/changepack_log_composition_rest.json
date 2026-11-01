@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Compose namespace-imported styled components, inline tagged CSS and exact CSS spreads with later styles winning, and compile conditional props rule objects and read-only function-local style shapes without a styling runtime. Local function captures keep lexical hygiene, so user names like rest, style or className never collide with generated code. Styled callbacks bound to read-only const arrow or function declarations compile like inline callbacks while keeping the original exports and live bindings. Emotion numbers on the left operand of OR and nullish whole-rule choices become px like the right operand. Preserve Emotion numeric units and captured values, read exact imported computations, and retain named CSS layer metadata through composition. Unknowable shapes and spreads keep located build errors, including an unknown whole-rule shape held by a local or shadowing binding named undefined; namespace css props report the same non-inlineable overlap error as named imports, and anonymous layers, invalid layer names, and component layer-order statements report located errors directing users to named layers and globalCss.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

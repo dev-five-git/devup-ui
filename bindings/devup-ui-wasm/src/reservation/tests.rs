@@ -51,7 +51,7 @@ pub(super) fn transform(
     )
 }
 
-const A: &str = "import {Box,keyframes,globalCss} from '@devup-ui/react'; const spin=keyframes({from:{opacity:0},to:{opacity:1}}); globalCss({body:{margin:0}}); export const A=(value:string)=><Box color='red' gap={value} styleOrder={0} animation={`${spin} 1s`} />;";
+const A: &str = "import {Box,keyframes,globalCss} from '@devup-ui/react'; const spin=keyframes({from:{opacity:0},to:{opacity:1}}); globalCss({body:{margin:0}}); export const A=(value:string)=><Box color='red' gap={value} styleOrder={1} animation={`${spin} 1s`} />;";
 const B: &str = "import {Box,keyframes} from '@devup-ui/react'; const fade=keyframes({from:{opacity:1},to:{opacity:0}}); export const B=(value:string)=><Box bg='blue' w={value} animation={`${fade} 2s`} />;";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -123,7 +123,7 @@ fn reservation_preserves_nonempty_sheet_theme_and_unchanged_registries() -> Test
     )?;
     theme.tailwind_css = "@theme { --color-custom: #123; }".into();
     register_theme_internal(theme);
-    css::set_custom_shorthands(BTreeMap::from([("customGap".into(), vec!["gap".into()])]));
+    css::set_custom_shorthands(BTreeMap::from([("customGap".into(), vec!["gap".into()])]))?;
     css::set_prefix(Some("du-".into()));
     transform(&input("live.tsx", A), &option)?;
     with_style_sheet_mut(|sheet| {
@@ -390,7 +390,6 @@ fn debug_configuration_stays_unchanged_when_reserving() -> TestResult {
     // Given
     let (_reset, option) = setup(true);
     css::debug::set_debug(true);
-    let before = css::class_map::get_class_map();
     // When
     reserve_class_slots_internal(
         &[input("z.tsx", B), input("a.tsx", A)],
@@ -399,13 +398,16 @@ fn debug_configuration_stays_unchanged_when_reserving() -> TestResult {
     );
     // Then
     assert!(css::debug::is_debug());
-    assert_eq!(css::class_map::get_class_map(), before);
+    let reserved = css::class_map::get_class_map();
+    assert_eq!(reserved[""].len(), 2);
     assert_eq!(get_unreserved_class_slot_count(), 0);
     assert!(
         transform(&input("a.tsx", A), &option)?
             .code
             .contains("color-0-red")
     );
+    assert_eq!(css::class_map::get_class_map(), reserved);
+    assert_eq!(get_unreserved_class_slot_count(), 0);
     Ok(())
 }
 

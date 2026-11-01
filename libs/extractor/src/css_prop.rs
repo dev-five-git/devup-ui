@@ -157,7 +157,9 @@ impl<'s> CssTakers<'s> {
         let mut class_names = FxHashSet::default();
         for statement in &program.body {
             if let Statement::ImportDeclaration(import) = statement {
-                let source = import.source.value.as_str();
+                let Some(source) = import.source.value.as_str() else {
+                    continue;
+                };
                 for specifier in import.specifiers.iter().flatten() {
                     let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
                         continue;
@@ -277,11 +279,9 @@ pub(crate) fn may_take_css_prop(code: &str) -> bool {
 
 /// Whether importing `source` shows a file uses Emotion
 pub(crate) fn is_emotion(source: &str) -> bool {
-    [EMOTION_REACT, "@emotion/styled"].iter().any(|package| {
-        source
-            .strip_prefix(package)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-    })
+    [EMOTION_REACT, "@emotion/styled"]
+        .iter()
+        .any(|package| crate::package_specifier::is_package(source, package))
 }
 
 /// Where the JSX pragma in the comment text `comment` names `@emotion/react`
@@ -469,7 +469,7 @@ pub(crate) fn class_names_params(params: &FormalParameters<'_>) -> Option<ClassN
                 ) else {
                     return None;
                 };
-                let slot = match key.as_ref() {
+                let slot = match key.as_str()? {
                     "css" => &mut names.css,
                     "cx" => &mut names.cx,
                     "theme" => &mut names.theme,
@@ -576,7 +576,7 @@ fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<ThemeRoot<'a>>> 
                             Some(ThemeRoot {
                                 name: local.name.as_str(),
                                 symbol: local.symbol_id.get(),
-                                key: Some(key.to_string()),
+                                key: Some(key.into_cow_str()?.into_owned()),
                             })
                         }
                         _ => None,

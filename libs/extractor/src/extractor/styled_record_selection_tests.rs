@@ -78,8 +78,9 @@ fn selection_rejects_without_mutation_or_capture_when_object_is_unsupported(#[ca
     let mut member = member.clone_in(&allocator);
     let original = format!("{member:?}");
     let mut preparation = Preparation {
-        reads: Evaluations::new(&builder, source.to_string()),
+        reads: &mut Evaluations::new(&builder, source.to_string()),
         affected: false,
+        origin: super::super::Origin::Values,
     };
     let guard = preparation.reads.boolean(true);
 

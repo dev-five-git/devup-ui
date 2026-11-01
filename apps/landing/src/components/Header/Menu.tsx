@@ -1,6 +1,7 @@
 'use client'
 import { Text } from '@devup-ui/react'
-import { usePathname } from 'next/navigation'
+
+import { usePathname } from '@/i18n/navigation'
 
 interface MenuProps {
   children?: React.ReactNode

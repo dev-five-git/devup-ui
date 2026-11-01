@@ -52,7 +52,7 @@ export default defineConfig({
   },
   plugins: [
     DevupUI({ singleCss: process.env.DEVUP_SINGLE_CSS === '1' }),
-    mdx({ providerImportSource: '@/mdx-components' }),
+    { ...mdx({ providerImportSource: '@/mdx-components' }), enforce: 'pre' },
     vinext(),
     omitDevupCssProxyPreloads(),
   ],

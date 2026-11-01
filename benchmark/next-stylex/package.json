@@ -14,12 +14,12 @@
     "@stylexjs/open-props": "^0.11.1",
     "@stylexjs/stylex": "^0.19.1",
     "bright": "^1.0.0",
-    "next": "~16.4.2",
+    "next": "~16.4.3",
     "react": "~19.3.1",
     "react-dom": "~19.3.1"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.7",
+    "@babel/core": "^8.0.9",
     "@babel/plugin-syntax-flow": "^8.0.1",
     "@babel/plugin-syntax-jsx": "^8.0.1",
     "@babel/plugin-syntax-typescript": "^8.0.3",

@@ -10,7 +10,12 @@ use wasm_bindgen::prelude::*;
 use crate::with_style_sheet_mut;
 mod rows;
 #[cfg(not(tarpaulin_include))]
-use crate::{MODULE_RESOLVER, call_module_resolver, import_aliases_from_js, js_error};
+use crate::{
+    MODULE_RESOLVER, call_module_resolver, import_aliases_from_js, js_error,
+    resolver_state::ResolverState,
+};
+#[cfg(not(tarpaulin_include))]
+use std::{cell::RefCell, rc::Rc};
 
 /// Prepared physical input, keyed exactly as its later real transform.
 pub struct ReservationInput {
@@ -105,7 +110,14 @@ pub fn reserve_class_slots(
         ..ExtractOption::default()
     };
     let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
+        let state = Rc::new(RefCell::new(ResolverState::default()));
+        for input in &inputs {
+            state.borrow_mut().add_source(&input.filename, &input.code);
+        }
+        move |specifier: &str, importer: &str| {
+            let request = state.borrow().request(specifier, importer)?;
+            call_module_resolver(&resolver, request, &state)
+        }
     });
     reserve_class_slots_internal(
         &inputs,

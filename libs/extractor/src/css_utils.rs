@@ -25,6 +25,25 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast::{TemplateElement, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 
+mod component_layer_objects;
+#[cfg(test)]
+mod component_layer_policy_tests;
+#[cfg(test)]
+mod component_layer_tests;
+mod component_layers;
+mod layer_blocks;
+mod layer_names;
+pub(crate) use component_layer_objects::object_layer_errors;
+pub(crate) use component_layers::{expression_layer_errors, nest_layer, template_layer_errors};
+pub(crate) use layer_names::parse as parse_layer_name;
+#[path = "implicit_props_theme.rs"]
+mod implicit_props_theme;
+
+#[path = "theme_callback.rs"]
+mod theme_callback;
+
+pub(crate) use implicit_props_theme::reads as reads_implicit_props_theme;
+
 use crate::extract_style::{
     extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
     extract_style_value::ExtractStyleValue,
@@ -57,24 +76,43 @@ pub fn rm_last_semi_colon(code: &str) -> &str {
 /// style static; left alone the arrow would be called with the element's props,
 /// which carry no `theme`, and silently evaluate to `undefined`.
 pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
-    let Expression::ArrowFunctionExpression(arrow) = expr else {
-        return None;
-    };
-    let [param] = arrow.params.items.as_slice() else {
-        return None;
-    };
-    let root = match &param.pattern {
-        BindingPattern::BindingIdentifier(ident) => ThemeRoot::Props(ident.name.as_str()),
-        BindingPattern::ObjectPattern(pattern) => pattern
-            .properties
-            .iter()
-            .any(|p| get_str_by_property_key(&p.key).is_some_and(|key| key == "theme"))
-            .then_some(ThemeRoot::Theme)?,
+    use oxc_ast_visit::Visit;
+    struct Defaults(bool);
+    impl<'a> Visit<'a> for Defaults {
+        fn visit_assignment_pattern(&mut self, _: &oxc_ast::ast::AssignmentPattern<'a>) {
+            self.0 = true;
+        }
+    }
+    let (params, body) = match expr {
+        Expression::ArrowFunctionExpression(arrow) if !arrow.r#async => {
+            (&arrow.params, arrow.body.as_expression()?)
+        }
+        Expression::FunctionExpression(function) if !function.r#async && !function.generator => (
+            &function.params,
+            crate::css_prop::returned(function.body.as_deref()?)?,
+        ),
         _ => return None,
     };
+    let [param] = params.items.as_slice() else {
+        return None;
+    };
+    let mut defaults = Defaults(false);
+    defaults.visit_binding_pattern(&param.pattern);
+    if params.rest.is_some() || param.initializer.is_some() || defaults.0 {
+        return None;
+    }
+    theme_leaf_reference(params, body)
+}
+
+/// Map a leaf without erasing its enclosing callback's parameter evaluation.
+pub(crate) fn theme_leaf_reference(
+    params: &oxc_ast::ast::FormalParameters<'_>,
+    body: &Expression<'_>,
+) -> Option<String> {
+    let root = theme_root(&params.items.first()?.pattern)?;
 
     let mut path: Vec<Cow<'_, str>> = Vec::new();
-    let mut cursor = arrow.body.as_expression()?;
+    let mut cursor = body;
     loop {
         match cursor {
             Expression::StaticMemberExpression(member) => {
@@ -88,8 +126,7 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
             }
             Expression::Identifier(ident) => {
                 let matches_root = match root {
-                    ThemeRoot::Props(name) => ident.name.as_str() == name,
-                    ThemeRoot::Theme => ident.name.as_str() == "theme",
+                    ThemeRoot::Props(name) | ThemeRoot::Theme(name) => ident.name.as_str() == name,
                 };
                 if !matches_root {
                     return None;
@@ -116,7 +153,7 @@ pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
 pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
     use oxc_ast_visit::{Visit, walk};
     struct ThemeReads<'n> {
-        props: Option<&'n str>,
+        root: ThemeRoot<'n>,
         found: bool,
     }
     impl<'a> Visit<'a> for ThemeReads<'_> {
@@ -125,48 +162,61 @@ pub(crate) fn reads_unmapped_theme(expr: &Expression<'_>) -> bool {
             it: &oxc_ast::ast::StaticMemberExpression<'a>,
         ) {
             if it.property.name == "theme"
-                && matches!(&it.object, Expression::Identifier(object) if Some(object.name.as_str()) == self.props)
+                && matches!(self.root, ThemeRoot::Props(name)
+                    if matches!(&it.object, Expression::Identifier(object) if object.name == name))
             {
                 self.found = true;
             }
             walk::walk_static_member_expression(self, it);
         }
+        fn visit_computed_member_expression(
+            &mut self,
+            it: &oxc_ast::ast::ComputedMemberExpression<'a>,
+        ) {
+            if get_string_by_literal_expression(&it.expression).is_some_and(|key| key == "theme")
+                && matches!(self.root, ThemeRoot::Props(name)
+                    if matches!(&it.object, Expression::Identifier(object) if object.name == name))
+            {
+                self.found = true;
+            }
+            walk::walk_computed_member_expression(self, it);
+        }
         fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
-            if self.props.is_none() && it.name == "theme" {
+            if matches!(self.root, ThemeRoot::Theme(name) if it.name == name) {
                 self.found = true;
             }
         }
     }
-    let Expression::ArrowFunctionExpression(arrow) = expr else {
+    if reads_implicit_props_theme(expr) {
+        return true;
+    }
+    let Some(theme_callback::Callback { params, body }) = theme_callback::Callback::read(expr)
+    else {
         return false;
     };
-    let [param] = arrow.params.items.as_slice() else {
+    let Some(param) = params.items.first() else {
         return false;
     };
-    let props = match &param.pattern {
-        BindingPattern::BindingIdentifier(ident) => Some(ident.name.as_str()),
-        BindingPattern::ObjectPattern(pattern)
-            if pattern
-                .properties
-                .iter()
-                .any(|p| get_str_by_property_key(&p.key).is_some_and(|key| key == "theme")) =>
-        {
-            None
-        }
-        _ => return false,
+    let Some(root) = theme_root(&param.pattern) else {
+        return false;
     };
     if theme_var_reference(expr).is_some() {
         return false;
     }
-    let mut reads = ThemeReads {
-        props,
-        found: false,
-    };
-    match &arrow.body {
-        oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => reads.visit_function_body(body),
-        body => {
-            if let Some(expression) = body.as_expression() {
-                reads.visit_expression(expression);
+    let mut reads = ThemeReads { root, found: false };
+    reads.visit_formal_parameters(params);
+    match body {
+        theme_callback::Body::Arrow(body) => match body {
+            oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => reads.visit_function_body(body),
+            body => {
+                if let Some(expression) = body.as_expression() {
+                    reads.visit_expression(expression);
+                }
+            }
+        },
+        theme_callback::Body::Function(body) => {
+            if let Some(body) = body {
+                reads.visit_function_body(body);
             }
         }
     }
@@ -185,9 +235,32 @@ pub(crate) fn unmapped_theme_error(api: &str, expr: &Expression<'_>) -> (u32, St
     )
 }
 
+#[derive(Clone, Copy)]
 enum ThemeRoot<'a> {
     Props(&'a str),
-    Theme,
+    Theme(&'a str),
+}
+
+/// The props parameter or the local binding destructured from its theme.
+fn theme_root<'p>(pattern: &'p BindingPattern<'_>) -> Option<ThemeRoot<'p>> {
+    match pattern {
+        BindingPattern::BindingIdentifier(identifier) => {
+            Some(ThemeRoot::Props(identifier.name.as_str()))
+        }
+        BindingPattern::ObjectPattern(object) => object.properties.iter().find_map(|property| {
+            let mut value = &property.value;
+            while let BindingPattern::AssignmentPattern(default) = value {
+                value = &default.left;
+            }
+            let BindingPattern::BindingIdentifier(identifier) = value else {
+                return None;
+            };
+            get_str_by_property_key(&property.key)
+                .is_some_and(|key| key == "theme")
+                .then_some(ThemeRoot::Theme(identifier.name.as_str()))
+        }),
+        _ => None,
+    }
 }
 
 /// Convert a dynamic template-literal expression into identifier code,
@@ -513,12 +586,15 @@ pub fn css_to_style_template(
                 }
                 static_value.push_str(&value[cursor..]);
                 // Create a new static style with the evaluated value
-                styles.push(CssToStyleResult::Static(ExtractStaticStyle::new(
-                    style.property(),
-                    &static_value,
-                    style.level(),
-                    style.selector().cloned(),
-                )));
+                styles.push(CssToStyleResult::Static(
+                    ExtractStaticStyle::new_with_layer(
+                        style.property(),
+                        &static_value,
+                        style.level(),
+                        style.selector().cloned(),
+                        style.layer.clone(),
+                    ),
+                ));
             } else {
                 // Not all expressions are literals - need to create dynamic style
                 // Check if value is just a placeholder (no surrounding text)
@@ -530,12 +606,7 @@ pub fn css_to_style_template(
                     // Value is just the expression - use expression code directly
                     let identifier = dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(component_layers::dynamic_from(&style, &identifier));
                 } else {
                     // Value has surrounding text - need to create template literal
                     // Reconstruct the template literal by replacing placeholders with ${expr} syntax
@@ -604,12 +675,7 @@ pub fn css_to_style_template(
                     // Wrap in template literal backticks
                     let final_identifier = format!("`{template_literal}`");
 
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &final_identifier,
-                        style.selector().cloned(),
-                    )));
+                    styles.push(component_layers::dynamic_from(&style, &final_identifier));
                 }
             }
         }
@@ -628,7 +694,7 @@ pub fn css_to_style(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
-    collect_css_block(&rm_css_comment(css), level, selector, &mut styles);
+    collect_css_block(css, level, selector, &mut styles);
 
     // A single declaration (or none) is trivially ordered, so skip the comparison
     // sort's setup entirely for the very common single-property case. The multi-source
@@ -650,29 +716,39 @@ fn collect_css_block(
     styles: &mut Vec<ExtractStaticStyle>,
 ) {
     let mut rest = css;
-    while let Some(open) = find_unquoted(rest, b'{') {
+    while let Some((open, _)) =
+        layer_blocks::boundaries(rest).find(|(_, character)| *character == '{')
+    {
         let head = &rest[..open];
-        let (declarations, prelude) = rfind_unquoted(head, b';')
-            .map_or(("", head), |index| (&head[..index], &head[index + 1..]));
+        let (declarations, prelude) = layer_blocks::boundaries(head)
+            .filter(|(_, character)| *character == ';')
+            .last()
+            .map_or(("", head), |(at, _)| (&head[..at], &head[at + 1..]));
         styles.extend(css_to_style_block(declarations, level, selector));
 
         let body_start = open + 1;
         let mut depth = 1usize;
-        let body_end = unquoted_bytes(&rest[body_start..])
-            .find_map(|(index, byte)| {
-                match byte {
-                    b'{' => depth += 1,
-                    b'}' => depth -= 1,
+        let body_end = layer_blocks::boundaries(&rest[body_start..])
+            .find_map(|(index, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
                     _ => {}
                 }
                 (depth == 0).then_some(body_start + index)
             })
             .unwrap_or(rest.len());
         let body = &rest[body_start..body_end];
-        let prelude = trim_css(prelude);
+        let prelude = trim_css(component_layers::trim_trivia(prelude));
         if prelude.is_empty() || prelude == "&" {
             collect_css_block(body, level, selector, styles);
-        } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
+        } else if let Some(layer) = component_layers::named_layer(prelude) {
+            let from = styles.len();
+            collect_css_block(body, level, selector, styles);
+            for style in &mut styles[from..] {
+                nest_layer(&layer, &mut style.layer);
+            }
+        } else if let Some(nested) = nest_prelude(selector.as_ref(), &rm_css_comment(prelude)) {
             collect_css_block(body, level, &Some(nested), styles);
         }
         rest = rest.get(body_end + 1..).unwrap_or_default();
@@ -1773,9 +1849,7 @@ mod tests {
         "color: red;;invalid;display: block;",
         vec![("color", "red", None), ("display", "block", None)]
     )]
-    // Blocks that can never apply produce nothing: unknown at-rules and
-    // mutually exclusive media types.
-    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![])]
+    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![("color", "red", None)])]
     fn test_css_to_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,

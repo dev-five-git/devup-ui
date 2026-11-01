@@ -1,8 +1,8 @@
 'use client'
 import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { Fragment, useReducer } from 'react'
+
+import { Link, usePathname } from '@/i18n/navigation'
 
 import type { MenuItemProps } from './MenuItem'
 

@@ -2,7 +2,7 @@ import { expect, it } from 'bun:test'
 
 import { runAvailabilityIntegration } from './availability-harness'
 
-it('W66 availability: keeps distinct shared buckets byte-stable through Next live loaders in AB/BA/BA/AB', () => {
+it('availability: keeps distinct shared buckets byte-stable through Next live loaders in AB/BA/BA/AB', () => {
   // Given: two physical shared suppliers, both reached by two private pages.
   // When: actual built adapter callbacks run in fresh processes at one fixed root.
   const [ab, ba, baAgain, abAgain] = runAvailabilityIntegration('next')

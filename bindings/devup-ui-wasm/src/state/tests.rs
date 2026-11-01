@@ -27,7 +27,10 @@ fn reset_returns_fresh_extraction_when_engine_is_dirty() {
     set_prefix(Some("dirty".into()));
     set_debug(true);
     set_atom_hoist(Some(2));
-    register_shorthands_internal(BTreeMap::from([("alias".into(), vec!["left".into()])]));
+    assert_eq!(
+        register_shorthands_internal(BTreeMap::from([("alias".into(), vec!["left".into()])])),
+        Ok(())
+    );
     register_theme_internal(
         serde_json::from_str(
             r#"{
@@ -47,10 +50,7 @@ fn reset_returns_fresh_extraction_when_engine_is_dirty() {
     )]));
     extract_fixture();
     reset_state_for_testing();
-    assert_eq!(
-        export_sheet_internal().unwrap(),
-        empty_sheet
-    );
+    assert_eq!(export_sheet_internal().unwrap(), empty_sheet);
     assert_eq!(get_default_theme().unwrap(), None);
     assert!(MODULE_RESOLVER.with_borrow(Option::is_none));
     assert_eq!(get_prefix(), None);

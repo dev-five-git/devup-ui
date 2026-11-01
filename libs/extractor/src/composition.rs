@@ -4,48 +4,21 @@
 //! cannot express that, because which of two classes wins depends on their
 //! order in the stylesheet, not on the order they were composed in.
 
-use css::style_selector::StyleSelector;
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::Expression;
 use oxc_ast::builder::AstBuilder;
 
 use crate::{ExtractStyleProp, ExtractStyleValue};
 
-/// What a declaration competes on: property, selector, breakpoint and layer
-#[derive(Clone, PartialEq, Eq)]
-struct CascadeKey {
-    property: String,
-    selector: Option<StyleSelector>,
-    level: u8,
-    layer: Option<String>,
-}
+#[path = "composition_keys.rs"]
+mod key_query;
+#[path = "composition_residual.rs"]
+mod residual;
+pub(crate) use residual::{CascadeKey, Coverage, coverage};
 
-impl CascadeKey {
-    fn of(value: &ExtractStyleValue) -> Self {
-        let (property, selector, level, layer) = match value {
-            ExtractStyleValue::Static(style) => (
-                style.property(),
-                style.selector(),
-                style.level(),
-                style.layer(),
-            ),
-            ExtractStyleValue::Dynamic(style) => (
-                style.property(),
-                style.selector(),
-                style.level(),
-                style.layer(),
-            ),
-            // A preset: the only other value a style prop holds
-            _ => ("typography", None, 0, None),
-        };
-        Self {
-            property: property.to_string(),
-            selector: selector.cloned(),
-            level,
-            layer: layer.map(ToString::to_string),
-        }
-    }
-}
+#[cfg(test)]
+#[path = "layer_registration_tests.rs"]
+mod layer_registration_tests;
 
 /// What a key resolves to
 enum Choice<'a> {
@@ -75,6 +48,7 @@ enum Overlay<'a> {
 #[derive(Default)]
 pub struct Composition<'a> {
     entries: Vec<(CascadeKey, Choice<'a>)>,
+    registrations: Vec<ExtractStyleValue>,
     /// Styles whose properties the build cannot pair up, kept as they are
     unkeyed: Vec<ExtractStyleProp<'a>>,
 }
@@ -115,6 +89,11 @@ impl<'a> Composition<'a> {
         overlays: &mut Vec<(CascadeKey, Overlay<'a>)>,
     ) {
         match prop {
+            ExtractStyleProp::Static(value @ ExtractStyleValue::LayerOrder(_)) => {
+                if !self.registrations.contains(&value) {
+                    self.registrations.push(value);
+                }
+            }
             ExtractStyleProp::Static(value) => {
                 push_overlay(overlays, CascadeKey::of(&value), Overlay::Atom(value));
             }
@@ -176,17 +155,26 @@ impl<'a> Composition<'a> {
     /// A class applying after the composed parts, whose styles `values` the
     /// build knows: what it sets replaces what they set
     pub fn cover(&mut self, values: &[ExtractStyleValue]) {
-        let keys: Vec<CascadeKey> = values.iter().map(CascadeKey::of).collect();
+        let keys: Vec<CascadeKey> = values
+            .iter()
+            .filter(|value| !matches!(value, ExtractStyleValue::LayerOrder(_)))
+            .map(CascadeKey::of)
+            .collect();
         self.entries.retain(|(key, _)| !keys.contains(key));
     }
 
     /// The composed styles, for class names and the stylesheet
     #[must_use]
     pub fn into_props(self) -> Vec<ExtractStyleProp<'a>> {
-        self.entries
+        self.registrations
             .into_iter()
-            .filter_map(|(_, choice)| into_prop(choice))
-            .chain(self.unkeyed)
+            .map(ExtractStyleProp::Static)
+            .chain(
+                self.entries
+                    .into_iter()
+                    .filter_map(|(_, choice)| into_prop(choice))
+                    .chain(self.unkeyed),
+            )
             .collect()
     }
 
@@ -196,7 +184,7 @@ impl<'a> Composition<'a> {
         if !self.unkeyed.is_empty() {
             return None;
         }
-        let mut values = Vec::new();
+        let mut values = self.registrations.clone();
         for (_, choice) in &self.entries {
             match choice {
                 Choice::Atom(value) => values.push(value.clone()),
@@ -271,36 +259,7 @@ pub fn set_prop_order(prop: &mut ExtractStyleProp<'_>, order: u8) {
 /// Whether `later` may set what `earlier` sets, so the order of their classes
 /// decides which applies: a style whose key the build cannot tell may
 pub fn overlaps(earlier: &[ExtractStyleProp<'_>], later: &[ExtractStyleProp<'_>]) -> bool {
-    match (keys(earlier), keys(later)) {
-        (Some(earlier), Some(later)) => later.iter().any(|key| earlier.contains(key)),
-        _ => true,
-    }
-}
-
-/// The keys `props` set, `None` when a style chosen at runtime has none;
-/// classes only the runtime gives compose at runtime, so they set none here
-fn keys(props: &[ExtractStyleProp<'_>]) -> Option<Vec<CascadeKey>> {
-    let mut keys = Vec::new();
-    for prop in props {
-        match prop {
-            ExtractStyleProp::Static(value) => keys.push(CascadeKey::of(value)),
-            ExtractStyleProp::StaticArray(props) => keys.extend(self::keys(props)?),
-            ExtractStyleProp::Conditional {
-                consequent,
-                alternate,
-                ..
-            } => {
-                for side in [consequent, alternate].into_iter().flatten() {
-                    keys.extend(self::keys(std::slice::from_ref(side.as_ref()))?);
-                }
-            }
-            ExtractStyleProp::Expression { .. } | ExtractStyleProp::Unreadable { .. } => {}
-            ExtractStyleProp::Enum { .. } | ExtractStyleProp::MemberExpression { .. } => {
-                return None;
-            }
-        }
-    }
-    Some(keys)
+    coverage(earlier).overlaps(later)
 }
 
 /// Whether every style `prop` holds has a key, so a condition around it can be
