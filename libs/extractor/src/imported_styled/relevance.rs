@@ -2,6 +2,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::Visit;
 use rustc_hash::FxHashSet;
+use std::rc::Rc;
 
 use super::{Reading, Used};
 use crate::css_prop::{CssProp, CssTakers};
@@ -21,24 +22,33 @@ pub(crate) fn read<'a>(
     if resolver.is_none() || !candidate(code) {
         return Reading::default();
     }
-    let Ok(program) = crate::parsing::parse(allocator, filename, code) else {
+    let Ok(source_type) = crate::parsing::source_type(filename) else {
         return Reading::default();
     };
-    let scoping = oxc_semantic::SemanticBuilder::new()
-        .build(&program)
-        .semantic
-        .into_scoping();
-    let mut used = Used {
-        styled: FxHashSet::default(),
-        css_prop: false,
-        css: CssTakers::new(&program, &scoping, CssProp::Off, ""),
-        names: FxHashSet::default(),
-        scoping: &scoping,
+    let Ok(program) = crate::parsing::checked(allocator, code, source_type) else {
+        return Reading::default();
     };
-    used.visit_program(&program);
-    if used.names.is_empty() {
+    let scoping = Rc::new(
+        oxc_semantic::SemanticBuilder::new()
+            .build(&program)
+            .semantic
+            .into_scoping(),
+    );
+    let names = {
+        let mut used = Used {
+            styled: FxHashSet::default(),
+            css_prop: false,
+            css_takers: CssTakers::new(&program, &scoping, CssProp::Off, ""),
+            names: FxHashSet::default(),
+            scoping: &scoping,
+        };
+        used.visit_program(&program);
+        used.names
+    };
+    if names.is_empty() {
         return Reading::default();
     }
+    let mut scoping = Some(scoping);
     let mut reading = super::read(
         &AstBuilder::new(allocator),
         &program,
@@ -46,9 +56,10 @@ pub(crate) fn read<'a>(
         option,
         resolver,
         CssProp::Off,
+        &mut scoping,
     );
     reading
         .components
-        .retain(|name, component| used.names.contains(name) && component.definition.is_some());
+        .retain(|name, component| names.contains(name) && component.definition.is_some());
     reading
 }

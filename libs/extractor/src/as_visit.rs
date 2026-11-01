@@ -71,13 +71,14 @@ fn element_name<'a>(
         )
     };
     match unwrap_syntax_only(value) {
-        Expression::StringLiteral(literal) => Some(tag(&literal.value)),
+        Expression::StringLiteral(literal) => literal.value.as_str().map(tag),
         Expression::TemplateLiteral(template) if template.expressions.is_empty() => template.quasis
             [0]
         .value
         .cooked
         .as_ref()
-        .map(|text| tag(text)),
+        .and_then(|text| text.as_str())
+        .map(tag),
         Expression::NullLiteral(_) => Some(tag("")),
         Expression::BooleanLiteral(literal) if !literal.value => Some(tag("")),
         Expression::Identifier(identifier) if identifier.name == "undefined" => Some(tag("")),

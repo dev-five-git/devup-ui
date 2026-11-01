@@ -176,6 +176,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         pl={icon ? '36px' : '12px'}
         pr={allowClear ? '36px' : '12px'}
         py="12px"
+        readOnly={readOnly}
         styleOrder={1}
         transition="all 0.1s ease-in-out"
         typography={typography}

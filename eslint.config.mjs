@@ -64,6 +64,22 @@ export default [
     ignores: ['**/*.md'],
   },
   ...devupUi.configs.recommended,
+  // Published APIs and React 18 fixtures must not migrate to React 19-only APIs.
+  // https://eslint-react.xyz/docs/configuration/configure-analyzer#version
+  {
+    files: [
+      'packages/react/**',
+      'packages/components/**',
+      'apps/react-18/**',
+      // These examples document supported input for the dual-major library.
+      'apps/landing/src/app/(detail)/docs/migration/styled-components/page.mdx/**',
+    ],
+    settings: {
+      'react-x': {
+        version: '18.0.0',
+      },
+    },
+  },
   // the snippets of this page are .css.ts stylesheets, which the build runs as they are
   {
     files: ['apps/landing/src/app/(detail)/docs/migration/vanilla-extract/**'],

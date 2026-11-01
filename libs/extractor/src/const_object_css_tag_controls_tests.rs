@@ -49,12 +49,12 @@ fn card_links_expected_styles_when_own_tags_take_recognition_or_fast_paths(
     else {
         panic!("expected compiled class string, not an object or tagged template");
     };
-    for class in classes.value.split_whitespace() {
+    for class in classes.value.as_str().unwrap().split_whitespace() {
         assert!(output.styles.iter().any(|style| {
             matches!(style.extract((!single_css).then_some(filename)), Some(StyleProperty::ClassName(name)) if name == class)
         }), "selected card class {class} has no emitted style: {output:?}");
     }
-    assert_eq!(classes.value.split_whitespace().count(), expected.len());
+    assert_eq!(classes.value.as_str().unwrap().split_whitespace().count(), expected.len());
 }
 
 #[rstest]

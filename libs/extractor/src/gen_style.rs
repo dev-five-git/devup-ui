@@ -142,9 +142,9 @@ fn gen_style<'a>(
             // instead of the old O(C*A) nested `iter().any(..)` key comparisons. The map
             // stores each key's FIRST index in `collect_a` (only inserting on the first
             // sight of a key), exactly reproducing the previous "first matching q wins"
-            // ternary. `key.name()` is a borrowed `Cow<str>` for the common static-ident
+            // ternary. `key.name()` is a borrowed `StaticPropertyName` for static-ident
             // props, so keys are cheap to hash and don't allocate.
-            let mut a_by_key: FxHashMap<std::borrow::Cow<str>, usize> =
+            let mut a_by_key: FxHashMap<oxc_ast::StaticPropertyName<'_>, usize> =
                 FxHashMap::with_capacity_and_hasher(collect_a.len(), FxBuildHasher);
             for (j, q) in collect_a.iter().enumerate() {
                 if let ObjectPropertyKind::ObjectProperty(q) = q
@@ -156,7 +156,7 @@ fn gen_style<'a>(
             // Set of consequent keys: an alternate entry is emitted alone (a-side pass
             // below) iff NO consequent shares its key — identical to the old
             // `collect_c.iter().any(..)` probe, now a single O(1) set lookup.
-            let mut c_keys: FxHashSet<std::borrow::Cow<str>> =
+            let mut c_keys: FxHashSet<oxc_ast::StaticPropertyName<'_>> =
                 FxHashSet::with_capacity_and_hasher(collect_c.len(), FxBuildHasher);
 
             for p in &collect_c {
@@ -316,9 +316,16 @@ fn gen_style<'a>(
     properties
 }
 
-fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Cow<'k, str>> {
+fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Cow<'k, [u8]>> {
     if let ObjectPropertyKind::ObjectProperty(p) = p {
-        p.key.name()
+        p.key.name().map(|name| match name {
+            oxc_ast::StaticPropertyName::Borrowed(name) => {
+                std::borrow::Cow::Borrowed(name.as_bytes())
+            }
+            oxc_ast::StaticPropertyName::Owned(name) => {
+                std::borrow::Cow::Owned(name.into_string().into_bytes())
+            }
+        })
     } else {
         None
     }
@@ -401,5 +408,43 @@ mod tests {
 
         assert!(code.contains("enabledColor"));
         assert!(code.contains("disabledBackground"));
+    }
+
+    #[test]
+    fn property_sort_keys_preserve_numeric_and_utf16_identity_when_spreads_are_present() {
+        // Given numeric, surrogate and replacement keys mixed with opaque properties.
+        let allocator = Allocator::default();
+        let expression = oxc_parser::Parser::new(
+            &allocator,
+            r"({2: second, '\uDC00': low, ...rest, [key]: dynamic, 1: first, '\uD800': high, '\uFFFD': replacement})",
+            oxc_span::SourceType::mjs(),
+        ).parse_expression().unwrap();
+        let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(&expression)
+        else {
+            panic!("object fixture")
+        };
+        // When generated property ordering caches the actual property identity.
+        let mut properties: Vec<_> = object.properties.iter().collect();
+        properties.sort_by_cached_key(|property| std::cmp::Reverse(object_property_key(property)));
+        let values: Vec<_> = properties
+            .into_iter()
+            .map(|property| match property {
+                ObjectPropertyKind::ObjectProperty(property) => expression_to_code(&property.value),
+                ObjectPropertyKind::SpreadProperty(spread) => expression_to_code(&spread.argument),
+            })
+            .collect();
+        // Then distinct UTF-16 keys sort independently; opaque keys retain their order.
+        assert_eq!(
+            values,
+            vec![
+                "replacement;",
+                "low;",
+                "high;",
+                "second;",
+                "first;",
+                "rest;",
+                "dynamic;"
+            ]
+        );
     }
 }

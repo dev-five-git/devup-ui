@@ -1,7 +1,8 @@
 'use client'
 
 import { Box, Flex } from '@devup-ui/react'
-import { usePathname } from 'next/navigation'
+
+import { usePathname } from '@/i18n/navigation'
 
 import { isRoot } from '../../utils/is-root'
 

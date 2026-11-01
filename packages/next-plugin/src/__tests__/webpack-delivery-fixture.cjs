@@ -12,7 +12,7 @@ module.exports = function deliveryFixture(put) {
       experimental: { cpus: 1, webpackBuildWorker: true },
       transpilePackages: ['delivery-library'],
       webpack(config, context) {
-        console.info('W65-TOPOLOGY ' + JSON.stringify({ pid: process.pid, threadId: require('node:worker_threads').threadId, isServer: context.isServer, nextRuntime: context.nextRuntime || 'client' }));
+        console.info('TOPOLOGY ' + JSON.stringify({ pid: process.pid, threadId: require('node:worker_threads').threadId, isServer: context.isServer, nextRuntime: context.nextRuntime || 'client' }));
         return config;
       }
     }, { singleCss: ${singleCss}, include: ['delivery-library'] });

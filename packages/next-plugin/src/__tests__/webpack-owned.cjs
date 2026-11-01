@@ -5,7 +5,7 @@ const { join } = require('node:path')
 const { setTimeout: delay } = require('node:timers/promises')
 
 const root = mkdtempSync(
-  join(process.env.DEVUP_NEXT_FIXTURE_DIR || tmpdir(), 'w65-next-webpack-'),
+  join(process.env.DEVUP_NEXT_FIXTURE_DIR || tmpdir(), 'next-webpack-'),
 )
 const driver = join(__dirname, 'webpack-production.cjs')
 const fault = process.argv[2] || ''
@@ -17,7 +17,7 @@ for (const stream of [process.stdout, process.stderr])
   })
 const record = (event, data) => {
   if (!outputClosed)
-    console.info(`W65-LIFECYCLE ${JSON.stringify({ event, data })}`)
+    console.info(`NEXT-EVENT ${JSON.stringify({ event, data })}`)
 }
 
 async function main() {

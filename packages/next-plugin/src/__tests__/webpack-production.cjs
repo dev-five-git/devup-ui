@@ -69,7 +69,7 @@ async function run() {
         env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
       },
     )
-    console.info(`W65-BUILD-PID ${build.pid}`)
+    console.info(`BUILD-PID ${build.pid}`)
     const status = await new Promise((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error('Next build deadline exceeded')),
@@ -105,7 +105,7 @@ async function run() {
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )
-    console.info(`W65-SERVER-PID ${server.pid}`)
+    console.info(`SERVER-PID ${server.pid}`)
     const base = await new Promise((resolve, reject) => {
       let output = ''
       const timeout = setTimeout(
@@ -169,7 +169,7 @@ async function run() {
       { 'border-color': 'goldenrod' },
     )
     console.info(
-      'W65-API-DISK ' +
+      'API-DISK ' +
         JSON.stringify({
           classes: edgeBody.edge,
           scope: 'emitted CSS only; API has no HTML stylesheet contract',
@@ -197,15 +197,12 @@ async function run() {
   }
 }
 async function main() {
-  // Fixture shape and dependency junctions credit W64c's physical Next evidence.
+  // Fixture shape and dependency junctions credit the physical Next evidence.
   for (const name of ['next', 'react', 'react-dom'])
     link(name, dirname(fromNext.resolve(`${name}/package.json`)))
   for (const name of ['react', 'next-plugin'])
     link(`@devup-ui/${name}`, join(repository, 'packages', name))
-  put(
-    'package.json',
-    JSON.stringify({ name: 'w65-next-webpack', private: true }),
-  )
+  put('package.json', JSON.stringify({ name: 'next-webpack', private: true }))
   put(
     'src/app/edge/route.js',
     `import { css } from '@devup-ui/react'; export const runtime = 'edge'; const edge = css({ borderColor: 'goldenrod' }); export function GET() { return Response.json({ edge }); }`,
@@ -217,7 +214,7 @@ async function main() {
       rmSync(join(root, '.next'), { recursive: true, force: true })
       rmSync(join(root, 'df'), { recursive: true, force: true })
     }
-    console.info('W65-CACHE ' + cache)
+    console.info('CACHE ' + cache)
     if (cache === 'warm') {
       const directory = join(root, '.next/cache/webpack')
       const files = readdirSync(directory, { recursive: true })
@@ -227,7 +224,7 @@ async function main() {
         files.some(({ bytes }) => bytes > 0),
         'warm run requires populated webpack cache',
       )
-      console.info('W65-WARM-CACHE ' + JSON.stringify(files))
+      console.info('WARM-CACHE ' + JSON.stringify(files))
     } else
       assert.equal(
         existsSync(join(root, '.next')),

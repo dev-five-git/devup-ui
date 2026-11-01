@@ -19,6 +19,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
+mod resolver_state;
+use resolver_state::ResolverState;
 
 mod state;
 #[cfg(test)]
@@ -416,6 +418,7 @@ pub fn code_extract_internal(
         import_aliases,
         SourceMapMode::Generate,
         None,
+        None,
     )
 }
 
@@ -440,6 +443,7 @@ pub fn code_extract_without_source_map_internal(
         import_main_css_in_css,
         import_aliases,
         SourceMapMode::Skip,
+        None,
         None,
     )
 }
@@ -469,6 +473,7 @@ pub fn code_extract_with_modules_internal(
         import_aliases,
         SourceMapMode::Generate,
         Some(resolver),
+        None,
     )
 }
 
@@ -484,6 +489,7 @@ fn code_extract_internal_impl(
     import_aliases: HashMap<String, ImportAlias>,
     source_map: SourceMapMode,
     resolver: Option<&ModuleResolver>,
+    resolver_state: Option<&RefCell<ResolverState>>,
 ) -> Result<Output, String> {
     let option = ExtractOption {
         package: package.to_string(),
@@ -504,6 +510,9 @@ fn code_extract_internal_impl(
         (None, SourceMapMode::Skip) => extract_without_source_map(filename, code, option),
     };
 
+    if let Some(state) = resolver_state {
+        state.borrow().check()?;
+    }
     match extracted {
         Ok(output) => Ok(Output::new(
             output.code,
@@ -532,29 +541,69 @@ pub fn set_module_resolver(resolver: Option<js_sys::Function>) {
 #[cfg(not(tarpaulin_include))]
 fn call_module_resolver(
     resolver: &js_sys::Function,
-    specifier: &str,
-    importer: &str,
+    request: resolver_state::ResolverRequest,
+    state: &RefCell<ResolverState>,
 ) -> Option<ResolvedModule> {
-    let module = resolver
-        .call2(&JsValue::NULL, &specifier.into(), &importer.into())
-        .ok()?;
-    let field = |name: &str| {
-        js_sys::Reflect::get(&module, &name.into())
-            .ok()?
-            .as_string()
+    let specifier = request.specifier();
+    let importer = request.importer();
+    let message = |error: JsValue| {
+        if let Some(message) = error.as_string() {
+            return message;
+        }
+        match js_sys::Reflect::get(&error, &"message".into()) {
+            Ok(value) => value.as_string().unwrap_or_else(|| format!("{error:?}")),
+            Err(_) => format!("{error:?}"),
+        }
     };
-    Some(ResolvedModule {
-        path: field("path")?,
-        code: field("code")?,
-    })
+    let resolved = (|| -> Result<Option<ResolvedModule>, String> {
+        let module = resolver
+            .call2(&JsValue::NULL, &specifier.into(), &importer.into())
+            .map_err(message)?;
+        if module.is_null() || module.is_undefined() {
+            return Ok(None);
+        }
+        if !module.is_object() || js_sys::Array::is_array(&module) {
+            return Err("malformed module resolver result: expected an object {path:string,code:string} or null/undefined".to_string());
+        }
+        let field = |name: &str| -> Result<String, String> {
+            js_sys::Reflect::get(&module, &name.into())
+                .map_err(message)?
+                .as_string()
+                .ok_or_else(|| {
+                    format!("malformed module resolver result: `{name}` must be a string")
+                })
+        };
+        let path = field("path")?;
+        if path.is_empty() {
+            return Err(
+                "malformed module resolver result: `path` must be a non-empty string".to_string(),
+            );
+        }
+        Ok(Some(ResolvedModule {
+            path,
+            code: field("code")?,
+        }))
+    })();
+    match resolved {
+        Ok(Some(module)) => {
+            state.borrow_mut().cache(&module, &request);
+            Some(module)
+        }
+        Ok(None) => None,
+        Err(cause) => {
+            state.borrow_mut().record(&request, &cause);
+            None
+        }
+    }
 }
 
 /// The resolver set by `setModuleResolver`, if any
 #[cfg(not(tarpaulin_include))]
-fn resolver_from_js() -> Option<Box<ModuleResolver>> {
+fn resolver_from_js(state: std::rc::Rc<RefCell<ResolverState>>) -> Option<Box<ModuleResolver>> {
     let resolver = MODULE_RESOLVER.with_borrow(Clone::clone)?;
     Some(Box::new(move |specifier: &str, importer: &str| {
-        call_module_resolver(&resolver, specifier, importer)
+        let request = state.borrow().request(specifier, importer)?;
+        call_module_resolver(&resolver, request, &state)
     }))
 }
 
@@ -573,9 +622,8 @@ fn code_extract_js(
     source_map: SourceMapMode,
 ) -> Result<Output, JsValue> {
     let import_aliases = import_aliases_from_js(import_aliases)?;
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
-    });
+    let state = std::rc::Rc::new(RefCell::new(ResolverState::new(filename, code)));
+    let resolver = resolver_from_js(std::rc::Rc::clone(&state));
     code_extract_internal_impl(
         filename,
         code,
@@ -586,9 +634,8 @@ fn code_extract_js(
         import_main_css_in_css,
         import_aliases,
         source_map,
-        resolver
-            .as_ref()
-            .map(|resolver| resolver as &ModuleResolver),
+        resolver.as_deref(),
+        Some(&state),
     )
     .map_err(js_error)
 }
@@ -678,16 +725,17 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 }
 
 /// Internal function to register custom style-property shorthands.
-pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
-    css::set_custom_shorthands(shorthands);
+pub fn register_shorthands_internal(
+    shorthands: BTreeMap<String, Vec<String>>,
+) -> Result<(), css::shorthand::InvalidShorthandTarget> {
+    css::set_custom_shorthands(shorthands)
 }
 
 #[wasm_bindgen(js_name = "registerShorthands")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_shorthands(shorthands: JsValue) -> Result<(), JsValue> {
     let shorthands = serde_wasm_bindgen::from_value(shorthands).map_err(js_error)?;
-    register_shorthands_internal(shorthands);
-    Ok(())
+    register_shorthands_internal(shorthands).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "getDefaultTheme")]
@@ -737,21 +785,18 @@ pub fn get_theme_interface(
 
 #[wasm_bindgen(js_name = "hasDevupUI")]
 #[cfg(not(tarpaulin_include))]
-#[must_use]
 pub fn has_devup_ui_wasm(
     filename: &str,
     code: &str,
     package: &str,
     import_aliases: JsValue,
-) -> bool {
+) -> Result<bool, JsValue> {
     let aliases = import_aliases_from_js(import_aliases).unwrap_or_default();
-    has_devup_ui_with(
-        filename,
-        code,
-        package,
-        &aliases,
-        resolver_from_js().as_deref(),
-    )
+    let state = std::rc::Rc::new(RefCell::new(ResolverState::new(filename, code)));
+    let resolver = resolver_from_js(std::rc::Rc::clone(&state));
+    let result = has_devup_ui_with(filename, code, package, &aliases, resolver.as_deref());
+    state.borrow().check().map_err(js_error)?;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -1209,7 +1254,7 @@ mod tests {
     #[serial]
     fn test_get_theme_interface() {
         let _state = TestStateGuard::new();
-        register_shorthands_internal(BTreeMap::new());
+        assert_eq!(register_shorthands_internal(BTreeMap::new()), Ok(()));
         let sheet = StyleSheet::default();
         assert_eq!(
             sheet.create_interface(
@@ -1231,7 +1276,8 @@ mod tests {
         register_shorthands_internal(BTreeMap::from([(
             "insetX".to_string(),
             vec!["left".to_string(), "right".to_string()],
-        )]));
+        )]))
+        .unwrap();
         assert_eq!(
             get_theme_interface(
                 "package",
@@ -1245,7 +1291,7 @@ mod tests {
         );
 
         // test wrong case
-        register_shorthands_internal(BTreeMap::new());
+        register_shorthands_internal(BTreeMap::new()).unwrap();
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
@@ -1904,7 +1950,7 @@ mod tests {
         )]);
 
         register_theme_internal(theme);
-        register_shorthands_internal(shorthands);
+        register_shorthands_internal(shorthands).unwrap();
 
         // Verify the theme was registered
         let default_theme = GLOBAL_STYLE_SHEET.lock().unwrap().theme.get_default_theme();
@@ -1913,6 +1959,45 @@ mod tests {
             css::disassemble_property("insetX").collect::<Vec<_>>(),
             ["left", "right"]
         );
-        register_shorthands_internal(BTreeMap::new());
+        register_shorthands_internal(BTreeMap::new()).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_shorthands_internal_rejects_targets_atomically() {
+        register_shorthands_internal(BTreeMap::from([("old".into(), vec!["py".into()])])).unwrap();
+        let error = register_shorthands_internal(BTreeMap::from([
+            ("aValid".into(), vec!["width".into()]),
+            ("bad".into(), vec!["height".into(), "widht".into()]),
+        ]))
+        .unwrap_err();
+        assert_eq!(error.alias, "bad");
+        assert_eq!(error.target, "widht");
+        assert_eq!(error.index, 1);
+        assert_eq!(css::get_custom_shorthand_names(), ["old"]);
+        assert_eq!(
+            css::disassemble_property("old").collect::<Vec<_>>(),
+            ["padding-top", "padding-bottom"]
+        );
+        register_shorthands_internal(BTreeMap::new()).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_shorthands_internal_normalizes_vendor_targets() {
+        register_shorthands_internal(BTreeMap::from([(
+            "maskAlias".into(),
+            vec![
+                "WebkitMaskImage".into(),
+                "-webkit-mask-image".into(),
+                "--Mask".into(),
+            ],
+        )]))
+        .unwrap();
+        assert_eq!(
+            css::disassemble_property("maskAlias").collect::<Vec<_>>(),
+            ["-webkit-mask-image", "-webkit-mask-image", "--Mask"]
+        );
+        register_shorthands_internal(BTreeMap::new()).unwrap();
     }
 }

@@ -6,6 +6,51 @@ use oxc_semantic::SemanticBuilder;
 use oxc_transformer::{TransformOptions, Transformer};
 use serde_json::Value;
 
+#[path = "call_choice_execution.rs"]
+mod call_choice_execution;
+
+#[path = "call_mixin_source_execution.rs"]
+mod call_mixin_source_execution;
+
+#[path = "template_binding_execution.rs"]
+mod template_binding_execution;
+
+#[path = "direct_template_execution.rs"]
+mod direct_template_execution;
+
+#[path = "callback_discarded_execution.rs"]
+mod callback_discarded_execution;
+
+#[path = "d1_projection_execution.rs"]
+mod d1_projection_execution;
+
+#[path = "d1_boundary_execution.rs"]
+mod d1_boundary_execution;
+
+#[path = "layer_transport_execution.rs"]
+mod layer_transport_execution;
+
+#[path = "callback_provenance_execution.rs"]
+mod callback_provenance_execution;
+
+#[path = "value_transport_execution.rs"]
+mod value_transport_execution;
+
+#[path = "ordinary_property_execution.rs"]
+mod ordinary_property_execution;
+
+#[path = "binding_execution.rs"]
+mod binding_execution;
+
+#[path = "scoping_execution.rs"]
+mod scoping_execution;
+
+#[path = "namespace_css_slots.rs"]
+mod namespace_css_slots;
+
+#[path = "css_boundary_forwarding.rs"]
+mod css_boundary_forwarding;
+
 pub(super) const CAPTURED: &str = "const trace=[];let selected=true;const Card=styled.article({...((trace.push('controller'),selected)?{color:(trace.push('leaf'),'red')}:{}),color:'green'});";
 
 pub(super) fn element(filename: &str, props: &str) -> String {
@@ -25,27 +70,41 @@ pub(super) fn css_props(filename: &str, css: &str, extra: &str) -> String {
 }
 
 pub(super) fn execute(filename: &str, source: &str, observation: &str) -> Value {
+    execute_in_mode(filename, source, observation, true)
+}
+
+fn execute_in_mode(filename: &str, source: &str, observation: &str, single_css: bool) -> Value {
     let _state = crate::test_state::TestStateGuard::new();
     reset_class_map();
     reset_file_map();
+    let option = ExtractOption {
+        single_css,
+        import_aliases: std::collections::HashMap::from([(
+            "@emotion/react".to_string(),
+            crate::ImportAlias::NamedToNamed,
+        )]),
+        ..ExtractOption::default()
+    };
+    let bucket = crate::css_bucket(filename, &option);
     let output = extract(
         filename,
         &format!("import {{styled,css}} from '@devup-ui/react';import {{jsx}} from '@emotion/react';{source}"),
-        ExtractOption {
-            single_css: true,
-            import_aliases: std::collections::HashMap::from([(
-                "@emotion/react".to_string(),
-                crate::ImportAlias::NamedToNamed,
-            )]),
-            ..ExtractOption::default()
-        },
+        option,
     )
     .unwrap_or_else(|error| panic!("{filename}\n{source}\n{error}"));
+    execute_extracted((filename, bucket.as_deref()), &output, observation)
+}
+
+pub(super) fn execute_extracted(
+    (filename, bucket): (&str, Option<&str>),
+    output: &crate::ExtractOutput,
+    observation: &str,
+) -> Value {
     let mut rules = std::collections::BTreeMap::new();
     for style in &output.styles {
         let rule = match style {
             crate::ExtractStyleValue::Static(style) => {
-                let StyleProperty::ClassName(name) = style.extract(None) else {
+                let StyleProperty::ClassName(name) = style.extract(bucket) else {
                     panic!("static atom must have a class")
                 };
                 Some((
@@ -67,7 +126,7 @@ pub(super) fn execute(filename: &str, source: &str, observation: &str) -> Value 
                     class_name,
                     variable_name,
                     ..
-                } = style.extract(None)
+                } = style.extract(bucket)
                 else {
                     panic!("dynamic atom must have a variable")
                 };
@@ -127,9 +186,11 @@ pub(super) fn execute(filename: &str, source: &str, observation: &str) -> Value 
             }
         }
     }
-    program
-        .body
-        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    program.body.retain(|statement| {
+        !matches!(statement, Statement::ImportDeclaration(_))
+            && !matches!(statement, Statement::ExportNamedDeclaration(export)
+                if export.specifiers.is_empty())
+    });
     let code = Codegen::new().build(&program).code;
     let rules = serde_json::to_string(&rules)
         .unwrap_or_else(|error| panic!("atom map must serialize: {error}"));
@@ -154,3 +215,62 @@ function slots(element){{return Object.keys(element.props).filter(key=>key.start
         .to_std_string_escaped();
     serde_json::from_str(&json).unwrap_or_else(|error| panic!("{error}\n{json}\n{code}"))
 }
+
+#[rstest]
+#[case::emotion("emotionCss", false, "1px")]
+#[case::native("css", false, "4px")]
+#[case::styled("styled.div", true, "4px")]
+#[serial]
+fn conditional_rule_arrays_keep_one_getter_read_and_consistent_branches(
+    #[case] factory: &str,
+    #[case] styled: bool,
+    #[case] margin: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!(
+        "import {{css as emotionCss}} from '@emotion/react';const trace=[];const state={{get on(){{trace.push('read');return trace.length===1;}}}};const f=()=>{factory}(state.on?[{{color:'red'}},{{margin:1}}]:[{{color:'blue'}}]);"
+    );
+    let call = if styled {
+        "render({target:f(),props:{}})"
+    } else {
+        "({target:'div',props:{className:f()}})"
+    };
+    let observation = format!(
+        "const first={call};const firstTrace=trace.slice();const second={call};JSON.stringify([firstTrace,trace,values(first,'color'),values(first,'margin'),values(second,'color'),values(second,'margin')]);"
+    );
+    let observed = execute_in_mode("test.ts", &source, &observation, single_css);
+    assert_eq!(
+        observed,
+        serde_json::json!([["read"], ["read", "read"], ["red"], [margin], ["blue"], []]),
+    );
+}
+
+#[path = "controller_evaluation.rs"]
+mod controller_evaluation;
+
+#[path = "props_function_evaluation.rs"]
+mod props_function_evaluation;
+
+#[path = "props_function_bindings.rs"]
+mod props_function_bindings;
+
+#[path = "props_function_order.rs"]
+mod props_function_order;
+
+#[path = "props_function_theme.rs"]
+mod props_function_theme;
+
+#[path = "implicit_theme_scope.rs"]
+mod implicit_theme_scope;
+
+#[path = "local_member_guard.rs"]
+mod local_member_guard;
+
+#[path = "callback_choice_execution.rs"]
+mod callback_choice_execution;
+
+#[path = "integration_semantics.rs"]
+mod integration_semantics;
+
+#[path = "integration_execution.rs"]
+mod integration_execution;

@@ -92,14 +92,14 @@ impl Normalizer<'_, '_> {
 
     fn string(&self, expression: &Expression<'_>) -> Option<String> {
         match expression.get_inner_expression() {
-            Expression::StringLiteral(string) => Some(string.value.to_string()),
+            Expression::StringLiteral(string) => string.value.as_str().map(str::to_string),
             Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
                 .quasis
                 .first()?
                 .value
-                .cooked
-                .as_ref()
-                .map(ToString::to_string),
+                .cooked?
+                .as_str()
+                .map(str::to_string),
             expression => match self.bindings.get(&self.symbol(expression)?)? {
                 Binding::String(string) => Some(string.clone()),
                 Binding::Namespace(_) | Binding::Macro(_) => None,

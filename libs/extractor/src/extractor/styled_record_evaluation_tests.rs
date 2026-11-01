@@ -8,6 +8,29 @@ use rstest::rstest;
 use super::*;
 use crate::utils::readable_code;
 
+#[test]
+fn repair_745_empty_captures_keep_the_callers_arguments() {
+    // Given: an expression whose arguments belong to its enclosing function.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let body = Parser::new(&allocator, "arguments[0]", SourceType::mjs())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("{error:?}"));
+
+    // When: bind no captures, then execute the emitted expression in its authored scope.
+    let render = bind_render(&builder, Vec::new(), body);
+    let script = format!("(function(){{return {};}})(7)", readable_code(&render));
+    let result = Context::default()
+        .eval(Source::from_bytes(script.as_bytes()))
+        .unwrap_or_else(|error| panic!("{error}"));
+
+    // Then: no zero-argument wrapper steals the caller's arguments object.
+    assert_eq!(
+        result.as_number().map(f64::to_bits),
+        Some(7.0_f64.to_bits())
+    );
+}
+
 #[rstest]
 #[case::equal_true(true, true)]
 #[case::equal_false(false, false)]
