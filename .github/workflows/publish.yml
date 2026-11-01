@@ -300,6 +300,10 @@ jobs:
         run: bunx playwright install chromium --with-deps
       - name: Run E2E Tests (Next)
         run: bun run test:e2e:next
+      - name: Run Landing dev navigation tests (Next)
+        env:
+          LANDING_BUILD_MODE: next
+        run: bunx playwright test -c playwright.landing-dev.config.ts
       - name: Build Landing (Next, singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -706,6 +710,8 @@ jobs:
           fi
       - name: Run E2E Tests
         run: bun run test:e2e
+      - name: Run Landing dev navigation tests
+        run: bunx playwright test -c playwright.landing-dev.config.ts
       - name: Build Landing (singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
