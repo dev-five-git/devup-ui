@@ -13,8 +13,11 @@ import {
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  type DevupCompiler,
+  type DevupUIBasePluginOptions,
   getFileNumByFilename,
   type ImportAliases,
+  loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
@@ -23,28 +26,16 @@ import {
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import {
-  codeExtract,
-  getCss,
-  getDefaultTheme,
-  getThemeInterface,
-  importCanonicalMap,
-  importFileRoutes,
-  registerShorthands,
-  registerTheme,
-  resetBuildState,
-  setAtomHoist,
-  setDebug,
-  setModuleResolver,
-  setPrefix,
-} from '@devup-ui/wasm'
 import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
 
 import { createReservation, staticEntries } from './reservation'
 
 const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
-export interface DevupUIRsbuildPluginOptions {
+export interface DevupUIRsbuildPluginOptions extends Pick<
+  DevupUIBasePluginOptions,
+  'engine'
+> {
   package: string
   cssDir: string
   devupFile: string
@@ -84,15 +75,16 @@ async function writeDataFiles(
     DevupUIRsbuildPluginOptions,
     'extractCss' | 'debug' | 'include'
   >,
+  compiler: DevupCompiler,
 ): Promise<string[]> {
   let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    registerTheme(withTailwindCss(theme, config))
+    compiler.registerTheme(withTailwindCss(theme, config))
     tailwindFiles = tailwindCssFiles(config)
-    const interfaceCode = getThemeInterface(
+    const interfaceCode = compiler.getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
 
@@ -105,14 +97,17 @@ async function writeDataFiles(
     }
   } catch (error) {
     console.error(error)
-    registerTheme({})
+    compiler.registerTheme({})
   }
   await Promise.all([
     !existsSync(options.cssDir)
       ? mkdir(options.cssDir, { recursive: true })
       : Promise.resolve(),
     !options.singleCss
-      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+      ? writeFile(
+          join(options.cssDir, 'devup-ui.css'),
+          compiler.getCss(null, false),
+        )
       : Promise.resolve(),
   ])
   return tailwindFiles
@@ -139,10 +134,13 @@ export const DevupUI = ({
   singleCss = false,
   prefix,
   shorthands,
+  engine,
   atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
-  registerShorthands(normalizeShorthands(shorthands ?? {}))
+  const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const compiler = loadCompiler(engine)
+  compiler.registerShorthands(normalizedShorthands)
   const importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
@@ -156,10 +154,10 @@ export const DevupUI = ({
     async setup(api) {
       // A build starts from its own options, not from what an earlier build
       // in this process left in the engine
-      const endBuild = beginBuild({ resetBuildState })
+      const endBuild = beginBuild(compiler)
       api.onCloseBuild?.(endBuild)
-      setDebug(debug)
-      setPrefix(prefix ?? null)
+      compiler.setDebug(debug)
+      compiler.setPrefix(prefix ?? null)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -169,13 +167,16 @@ export const DevupUI = ({
         'utf-8',
       )
 
-      let tailwindFiles = await writeDataFiles({
-        package: libPackage,
-        cssDir,
-        devupFile,
-        distDir,
-        singleCss,
-      })
+      let tailwindFiles = await writeDataFiles(
+        {
+          package: libPackage,
+          cssDir,
+          devupFile,
+          distDir,
+          singleCss,
+        },
+        compiler,
+      )
       if (!extractCss) return
 
       // The project's Tailwind CSS defines what a Tailwind class compiles to:
@@ -183,7 +184,7 @@ export const DevupUI = ({
       api.modifyRspackConfig((config) => {
         config.plugins ??= []
         config.plugins.push({
-          apply(compiler: {
+          apply(owner: {
             hooks: {
               watchRun: {
                 tapPromise: (name: string, fn: () => Promise<void>) => void
@@ -191,7 +192,7 @@ export const DevupUI = ({
             }
           }) {
             let stamp: string | undefined
-            compiler.hooks.watchRun.tapPromise(
+            owner.hooks.watchRun.tapPromise(
               'DevupUIRsbuildPlugin',
               async () => {
                 const current = (
@@ -205,13 +206,16 @@ export const DevupUI = ({
                   )
                 ).join()
                 if (stamp !== undefined && stamp !== current) {
-                  tailwindFiles = await writeDataFiles({
-                    package: libPackage,
-                    cssDir,
-                    devupFile,
-                    distDir,
-                    singleCss,
-                  })
+                  tailwindFiles = await writeDataFiles(
+                    {
+                      package: libPackage,
+                      cssDir,
+                      devupFile,
+                      distDir,
+                      singleCss,
+                    },
+                    compiler,
+                  )
                 }
                 stamp = current
               },
@@ -229,7 +233,7 @@ export const DevupUI = ({
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
       const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
-      setModuleResolver(
+      compiler.setModuleResolver(
         createModuleResolver({
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
         }),
@@ -245,7 +249,7 @@ export const DevupUI = ({
             cwd: root,
             keyBy: 'absolute',
           })
-          importCanonicalMap(canonicalMap)
+          compiler.importCanonicalMap(canonicalMap)
           const fileReach = computeFileReach({
             srcDir,
             tsconfigPath,
@@ -254,8 +258,8 @@ export const DevupUI = ({
           })
           const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
           if (plan) {
-            importFileRoutes(plan.reachByBucket)
-            setAtomHoist(plan.threshold)
+            compiler.importFileRoutes(plan.reachByBucket)
+            compiler.setAtomHoist(plan.threshold)
           } else {
             console.info(
               '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
@@ -266,15 +270,18 @@ export const DevupUI = ({
         }
       }
 
-      const reservation = createReservation({
-        root: api.context.rootPath,
-        package: libPackage,
-        include,
-        cssDir,
-        singleCss,
-        atomMode,
-        importAliases,
-      })
+      const reservation = createReservation(
+        {
+          root: api.context.rootPath,
+          package: libPackage,
+          include,
+          cssDir,
+          singleCss,
+          atomMode,
+          importAliases,
+        },
+        compiler,
+      )
       const entryFiles = new Set<string>()
       // Extract the source files under `src` that the entries reach, in path
       // order, the same way the transform does, so that a stylesheet built on
@@ -294,7 +301,7 @@ export const DevupUI = ({
             )
             if (!extractCssDir.startsWith('./'))
               extractCssDir = `./${extractCssDir}`
-            codeExtract(
+            compiler.codeExtract(
               atomMode ? file.replaceAll('\\', '/') : file,
               readFileSync(file, 'utf-8'),
               libPackage,
@@ -324,7 +331,7 @@ export const DevupUI = ({
         // where the entry code imports the base itself so that hoisted atoms
         // load once (the injected splitChunks cacheGroup, see
         // modifyRsbuildConfig, emits the base once)
-        getCss(getFileNumByFilename(basename(resourcePath)), !atomMode)
+        compiler.getCss(getFileNumByFilename(basename(resourcePath)), !atomMode)
 
       api.transform(
         {
@@ -339,8 +346,8 @@ export const DevupUI = ({
 
       // A stylesheet module is built on its first import, which can come before
       // the modules whose styles it holds are extracted. When one was, compile
-      // once more: every module is extracted by then. The dev server rebuilds it
-      // through the stylesheet files the transforms write instead.
+      // once more: every module is extracted by then. Keep the consumed CSS
+      // across watch revisions so cached stylesheet modules are checked too.
       api.modifyRspackConfig((config, { environment }) => {
         for (const request of staticEntries(environment.entry))
           entryFiles.add(resolve(api.context.rootPath, request))
@@ -348,6 +355,8 @@ export const DevupUI = ({
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
             reservation.trackCompiler(environment.name, compiler)
+            const served = new Map<string, string>()
+            servedCss.set(environment.name, served)
             let passes = 0
             compiler.hooks.run.tap(PLUGIN_NAME, () => {
               passes = 0
@@ -355,17 +364,15 @@ export const DevupUI = ({
             })
             compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
             compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
+              passes = 0
               reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
-              const served = new Map<string, string>()
-              servedCss.set(environment.name, served)
               const basePath = join(cssDir, 'devup-ui.css')
               const base = stylesheet(basePath)
               writeChanged(basePath, base)
               let stale: string[] = []
               compilation.hooks.finishModules.tap(PLUGIN_NAME, () => {
-                if (compiler.watchMode) return
                 const changed = new Set(
                   [...served]
                     .filter(([path, css]) => stylesheet(path) !== css)
@@ -394,6 +401,10 @@ export const DevupUI = ({
                 passes += 1
                 for (const path of stale)
                   writeFileSync(path, stylesheet(path), 'utf-8')
+                compiler.modifiedFiles = new Set([
+                  ...(compiler.modifiedFiles ?? []),
+                  ...stale,
+                ])
                 return true
               })
             })
@@ -402,12 +413,13 @@ export const DevupUI = ({
       })
 
       api.modifyRsbuildConfig((config) => {
-        const theme = getDefaultTheme()
+        const theme = compiler.getDefaultTheme()
         if (theme) {
           config.source ??= {}
           config.source.define = {
-            'process.env.DEVUP_UI_DEFAULT_THEME':
-              JSON.stringify(getDefaultTheme()),
+            'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(
+              compiler.getDefaultTheme(),
+            ),
             ...config.source.define,
           }
         }
@@ -482,7 +494,7 @@ export const DevupUI = ({
             cssFile,
             updatedBaseStyle,
             dependencies = [],
-          } = codeExtract(
+          } = compiler.codeExtract(
             extractName,
             code,
             libPackage,
@@ -499,7 +511,7 @@ export const DevupUI = ({
             promises.push(
               stateWriter.write(
                 join(cssDir, 'devup-ui.css'),
-                getCss(null, false),
+                compiler.getCss(null, false),
                 'utf-8',
               ),
             )
@@ -509,7 +521,7 @@ export const DevupUI = ({
             promises.push(
               stateWriter.write(
                 join(cssDir, basename(cssFile)),
-                `/* ${resourcePath} ${Date.now()} */`,
+                stylesheet(cssFile),
                 'utf-8',
               ),
             )

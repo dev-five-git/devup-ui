@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { writeFileSync } = require('node:fs')
 const { basename } = require('node:path')
 const { createRsbuild } = require('@rsbuild/core')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { put } = require('./reservation-fixture.cjs')
 const { runDev } = require('./reservation-dev.cjs')
 const { runWatch } = require('./reservation-watch.cjs')
@@ -101,7 +101,7 @@ async function main() {
     config: {
       mode: mode === 'dev' ? 'development' : 'production',
       plugins: [
-        DevupUI({ singleCss: true, include: ['included-ui'] }),
+        DevupUI({ engine: 'wasm', singleCss: true, include: ['included-ui'] }),
         observer,
       ],
       source: { entry: { main: './src/entry.js' } },

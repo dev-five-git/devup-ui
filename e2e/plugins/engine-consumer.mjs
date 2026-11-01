@@ -56,8 +56,45 @@ export function assertWebpackDist(directory) {
   }
 }
 
+export function assertRsbuildDist(directory) {
+  for (const name of ['index.cjs', 'index.mjs']) {
+    const code = readFileSync(join(directory, name), 'utf8')
+    assert.doesNotMatch(code, /['"]@devup-ui\/(?:wasm|binding)(?:['"/])/)
+    assert.match(code, /@devup-ui\/plugin-utils/)
+  }
+}
+
 export function assertRawParity(expected, actual) {
   assert.deepEqual(comparisonData(actual), comparisonData(expected))
+}
+
+// Native/native AND WASM/WASM A/A reproduce this intermediate drift.
+// Only extraction-return CSS at generations[*].outputs[*], never published CSS.
+const rsbuildIntermediateFields = {
+  receipt: 'compilationProofs',
+  output: 'css',
+}
+
+export function assertRsbuildParity(expected, actual) {
+  const omit = (record, field) => {
+    assert(Object.hasOwn(record, field), `Missing raw Rsbuild ${field}`)
+    return Object.fromEntries(
+      Object.entries(record).filter(([key]) => key !== field),
+    )
+  }
+  const project = (receipt) => ({
+    ...omit(receipt, rsbuildIntermediateFields.receipt),
+    generations: receipt.generations.map((generation) => ({
+      ...generation,
+      outputs: Object.fromEntries(
+        Object.entries(generation.outputs).map(([file, output]) => [
+          file,
+          omit(output, rsbuildIntermediateFields.output),
+        ]),
+      ),
+    })),
+  })
+  assertRawParity(project(expected), project(actual))
 }
 
 // Identity tokens are process-local proofs, never function source or symbol text.
@@ -373,6 +410,578 @@ function tree(directory) {
   )
 }
 
+async function consumeRsbuild(context) {
+  const {
+    directory,
+    scenario,
+    selection,
+    singleCss,
+    destination,
+    require,
+    create,
+    selected,
+    outputs,
+    calls,
+    utils,
+  } = context
+  const { createRsbuild } = require('@rsbuild/core')
+  const sourcePath = join(directory, 'src/entry.js')
+  const received = []
+  const callbacks = []
+  const served = new Map()
+  const generations = []
+  const compilationProofs = []
+  const proofs = new WeakMap()
+  let handledSource, pendingSource, failure, port, watchReady
+  let owner, closeBuild, lastCompilation
+  let additionalPasses = 0
+  let deleted = 0
+  let layersReleased = false
+  let completed
+  const nextCompile = (
+    source = readFileSync(join(directory, 'src/B.css.ts'), 'utf8'),
+  ) => {
+    pendingSource = source
+    return new Promise((resolve, reject) => {
+      completed = { resolve, reject }
+      if (failure) reject(failure)
+    })
+  }
+  const hold = scenario === 'additional'
+  const ordered = hold || scenario === 'dev'
+  const sourceOrder = ['base.css.ts', 'A.css.ts', 'B.css.ts'].map((name) =>
+    join(directory, 'src', name),
+  )
+  const stages = new Map(
+    sourceOrder.map((path) => [path, Promise.withResolvers()]),
+  )
+  const pendingCss = new Set()
+  const unblock = () => {
+    for (const stage of stages.values()) stage.resolve()
+    if (hold) require(gateFile).release()
+  }
+  const gateFile = join(directory, 'hold.cjs')
+  put(gateFile, initialLayerGate)
+  if (hold) put(join(directory, 'src/empty.js'), 'export const empty = 1;')
+  const saveFailure = (error, stats) => {
+    const compilations = stats
+      ? (stats.stats ?? [stats]).map((child) => child.compilation)
+      : lastCompilation
+        ? [lastCompilation]
+        : []
+    put(
+      destination,
+      JSON.stringify(
+        {
+          failure: errorEvidence(error),
+          compilationProofs,
+          received: received.map(errorEvidence),
+          bundlerDiagnostics: compilations.map((compilation) =>
+            compilation.errors.map(errorEvidence),
+          ),
+        },
+        null,
+        2,
+      ),
+    )
+  }
+  const assetsOf = (compilation) =>
+    Object.fromEntries(
+      compilation
+        .getAssets()
+        .map(({ name, source }) => [name, String(source.source())])
+        .sort(([a], [b]) => a.localeCompare(b)),
+    )
+  const snapshot = (stats, source = handledSource, boundary = true) => {
+    const revisionColor = source.match(/borderColor:\s*["']([^"']+)["']/)[1]
+    if (stats.hasErrors()) saveFailure(undefined, stats)
+    assert(!stats.hasErrors(), stats.toString({ all: false, errors: true }))
+    const children = stats.stats ?? [stats]
+    assert.equal(children.length, 1)
+    const assets = assetsOf(children[0].compilation)
+    const css = selected.getCss(null, false)
+    assert.match(css, /cyan/)
+    assert.match(
+      css,
+      revisionColor === 'goldenrod' ? /goldenrod/ : /rebeccapurple/,
+    )
+    for (const [path, value] of served) {
+      assert.equal(
+        value,
+        selected.getCss(utils.getFileNumByFilename(path), true),
+      )
+    }
+    if (boundary) assert(served.size > 0)
+    const shippedCss = Object.entries(assets)
+      .filter(([name]) => name.endsWith('.css'))
+      .map(([, value]) => value)
+      .join('\n')
+    assert.match(shippedCss, /border-color:\s*#0ff\b/)
+    const border = {
+      goldenrod: '#daa520',
+      rebeccapurple: '#639',
+      teal: '(?:teal|#008080)',
+    }[revisionColor]
+    assert.match(shippedCss, new RegExp(`border-color:\\s*${border}\\b`))
+    assert.match(
+      shippedCss,
+      new RegExp(
+        `body\\s*\\{[^}]*background-color:\\s*${revisionColor === 'goldenrod' ? '#daa520' : '#639'}\\b`,
+      ),
+    )
+    const b = outputs
+      .get(join(directory, 'src/B.css.ts'))
+      .code.match(/\blayer\s*=\s*["']([^"']+)["']/)
+    assert(b)
+    for (const cls of b[1].split(' ')) {
+      assert.match(
+        shippedCss,
+        new RegExp(`\\.${cls}\\s*\\{[^}]*border-color:\\s*${border}\\b`),
+      )
+      assert(
+        Object.entries(assets).some(
+          ([name, code]) => name.endsWith('.js') && code.includes(cls),
+        ),
+      )
+    }
+    for (const [name, value] of Object.entries(assets)) {
+      if (name.endsWith('.js')) {
+        assert.doesNotMatch(
+          value,
+          /Cannot run on the runtime|@devup-ui\/(?:binding|wasm)/,
+        )
+      }
+    }
+    if (!boundary) return
+    return {
+      assets,
+      outputs: Object.fromEntries(
+        [...outputs].sort(([a], [b]) => a.localeCompare(b)),
+      ),
+      css,
+      served: [...served].sort(([a], [b]) => a.localeCompare(b)),
+      sheet: selected.exportSheet(),
+      classes: selected.exportClassMap(),
+      files: selected.exportFileMap(),
+      canonical: selected.exportCanonicalMap(),
+      disk: tree(join(directory, 'df')),
+      residual: selected.getUnreservedClassSlotCount(),
+    }
+  }
+  const compiled = ({ stats }) => {
+    try {
+      assert(!stats.hasErrors(), stats.toString({ all: false, errors: true }))
+      const compilation = stats.compilation
+      const proof = proofs.get(compilation)
+      proof.needAdditionalPass = compilation.needAdditionalPass
+      proof.remaining = assetsOf(compilation)
+      if (compilation.needAdditionalPass) {
+        assert(Object.values(proof.removed).some((bytes) => bytes.length > 0))
+        assert.deepEqual(proof.remaining, {})
+        assert.deepEqual(proof.emitted, {})
+        return
+      }
+      const boundary = Boolean(
+        completed && !watchReady && proof.source === pendingSource && !failure,
+      )
+      const generation = snapshot(stats, proof.source, boundary)
+      assert.deepEqual(proof.remaining, proof.emitted)
+      if (!boundary) return
+      watchReady = () => {
+        completed.resolve({
+          ...generation,
+          source: proof.source,
+          emitted: proof.emitted,
+        })
+        completed = undefined
+        watchReady = undefined
+      }
+    } catch (error) {
+      failure ??= error
+      saveFailure(failure, stats)
+      if (!completed) throw failure
+      completed.reject(failure)
+    }
+  }
+  const configure = async (options) => {
+    const instance = create(options)
+    return createRsbuild({
+      cwd: directory,
+      config: {
+        mode: scenario === 'dev' ? 'development' : 'production',
+        plugins: [
+          {
+            ...instance,
+            async setup(api) {
+              await instance.setup({
+                ...api,
+                onCloseBuild(fn) {
+                  closeBuild = fn
+                  api.onCloseBuild(fn)
+                },
+                transform(options, handler) {
+                  callbacks.push(handler)
+                  api.transform(options, async (input) => {
+                    try {
+                      const path = input.resourcePath
+                      const index = sourceOrder.indexOf(path)
+                      if (ordered && index > 0)
+                        await stages.get(sourceOrder[index - 1]).promise
+                      if (ordered && path.endsWith('.css'))
+                        await stages.get(
+                          sourceOrder[hold && !layersReleased ? 0 : 2],
+                        ).promise
+                      const result = await handler(input)
+                      if (
+                        hold &&
+                        !layersReleased &&
+                        (path === sourcePath || index === 0)
+                      )
+                        pendingCss.add(
+                          resolve(dirname(path), outputs.get(path).cssFile),
+                        )
+                      stages.get(path)?.resolve()
+                      if (
+                        input.resourcePath === join(directory, 'src/B.css.ts')
+                      ) {
+                        handledSource = input.code
+                        proofs.get(lastCompilation).source = handledSource
+                      }
+                      if (input.resourcePath.endsWith('.css')) {
+                        served.set(input.resourcePath, result)
+                      }
+                      return result
+                    } catch (error) {
+                      unblock()
+                      received.push(error)
+                      saveFailure(error)
+                      throw error
+                    }
+                  })
+                },
+              })
+            },
+          },
+          {
+            name: 'engine-proof',
+            setup(api) {
+              api.modifyRspackConfig((config) => {
+                if (hold) {
+                  config.entry = () => ({ main: { import: [sourcePath] } })
+                  config.module.rules.push({
+                    test: /\.css\.ts$/,
+                    enforce: 'pre',
+                    use: [gateFile],
+                  })
+                }
+                config.plugins.push({
+                  apply(compiler) {
+                    owner = compiler
+                    const watchFileSystem = compiler.watchFileSystem
+                    const watch = watchFileSystem.watch.bind(watchFileSystem)
+                    watchFileSystem.watch = (...args) => {
+                      const result = watch(...args)
+                      watchReady?.()
+                      return result
+                    }
+                    if (scenario !== 'errors')
+                      compiler.hooks.done.tap('EngineProof', (stats) =>
+                        compiled({ stats }),
+                      )
+                    compiler.hooks.failed.tap('EngineProof', (error) => {
+                      unblock()
+                      failure ??= error
+                      saveFailure(failure)
+                      completed?.reject(failure)
+                    })
+                    compiler.hooks.afterEmit.tap(
+                      'EngineProof',
+                      (compilation) => {
+                        proofs.get(compilation).emitted = Object.freeze(
+                          assetsOf(compilation),
+                        )
+                      },
+                    )
+                    compiler.hooks.additionalPass.tap('EngineProof', () => {
+                      additionalPasses++
+                      proofs.get(lastCompilation).additionalPass = true
+                    })
+                    compiler.hooks.thisCompilation.tap(
+                      'EngineProof',
+                      (compilation) => {
+                        lastCompilation = compilation
+                        const proof = { source: handledSource, removed: {} }
+                        proofs.set(compilation, proof)
+                        compilationProofs.push(proof)
+                        served.clear()
+                        const deleteAsset =
+                          compilation.deleteAsset.bind(compilation)
+                        compilation.deleteAsset = (name) => {
+                          deleted++
+                          Object.assign(proof.removed, assetsOf(compilation))
+                          deleteAsset(name)
+                        }
+                        compilation.hooks.succeedModule.tap(
+                          'EngineProof',
+                          (module) => {
+                            if (
+                              hold &&
+                              !layersReleased &&
+                              module
+                                .identifier()
+                                .includes(
+                                  compiler.rspack.CssExtractRspackPlugin.loader,
+                                ) &&
+                              pendingCss.delete(module.resource) &&
+                              !pendingCss.size
+                            ) {
+                              layersReleased = true
+                              require(gateFile).release()
+                            }
+                          },
+                        )
+                      },
+                    )
+                  },
+                })
+              })
+            },
+          },
+        ],
+        source: { entry: { main: hold ? './src/empty.js' : './src/entry.js' } },
+        output: {
+          distPath: { root: 'dist' },
+          minify: false,
+          filenameHash: false,
+          sourceMap: { js: 'source-map', css: true },
+        },
+        performance: { printFileSize: false },
+        html: { template: false },
+        server: { port: 0, host: '127.0.0.1', printUrls: false },
+        dev: { hmr: false, liveReload: false, lazyCompilation: false },
+        tools: {
+          rspack: {
+            cache: false,
+            // df exclusion isolates main follow-up (l), not a product fix.
+            watchOptions: { ignored: /[\\/](?:df|node_modules)[\\/]/ },
+            optimization: { minimize: false, concatenateModules: false },
+          },
+        },
+      },
+    })
+  }
+  if (scenario === 'errors') {
+    const userCause = new Error('user resolver callback failure', {
+      cause: new Error('nested user resolver cause'),
+    })
+    Object.defineProperty(userCause, 'hidden', {
+      value: 'user resolver detail',
+    })
+    const pairs = []
+    for (const callbackFailure of [false, true]) {
+      const errors = []
+      const invoked = []
+      const bundlerDiagnostics = []
+      for (const engine of ['native', 'wasm']) {
+        const backend = utils.loadCompiler(engine)
+        backend.resetStateForTesting()
+        const setResolver = backend.setModuleResolver
+        let compiler
+        let callbackCalls = 0
+        received.length = 0
+        try {
+          if (callbackFailure) {
+            backend.setModuleResolver = () =>
+              setResolver(() => {
+                callbackCalls++
+                throw userCause
+              })
+          }
+          put(
+            sourcePath,
+            callbackFailure
+              ? 'import { css } from "@devup-ui/react"; import { color } from "./throws.js"; export const x = css({ color });'
+              : 'import { Box } from "@devup-ui/react"; export const x = <Box color={}/>;',
+          )
+          const rsbuild = await configure({ engine, singleCss, atomHoist: 0 })
+          compiler = await rsbuild.createCompiler()
+          const stats = await new Promise((resolve, reject) =>
+            compiler.run((error, stats) =>
+              error ? reject(error) : resolve(stats),
+            ),
+          )
+          saveFailure(undefined, stats)
+          bundlerDiagnostics.push(
+            (stats.stats ?? [stats]).map((child) =>
+              child.compilation.errors.map(errorEvidence),
+            ),
+          )
+          assert(stats.hasErrors())
+          assert.equal(received.length, 1)
+          errors.push(received[0])
+          invoked.push(callbackCalls)
+        } catch (error) {
+          saveFailure(error)
+          throw error
+        } finally {
+          try {
+            if (compiler)
+              await new Promise((resolve, reject) =>
+                compiler.close((error) => (error ? reject(error) : resolve())),
+              )
+          } finally {
+            closeBuild?.()
+            backend.setModuleResolver = setResolver
+            backend.resetStateForTesting()
+          }
+        }
+      }
+      pairs.push({
+        callbackFailure,
+        invoked,
+        bundlerDiagnostics,
+        native: errorEvidence(errors[0]),
+        wasm: errorEvidence(errors[1]),
+        nativeThrownIdentity: errors[0] === userCause,
+        wasmThrownIdentity: errors[1] === userCause,
+        nativeCauseIdentity: errors[0]?.cause === userCause,
+        wasmCauseIdentity: errors[1]?.cause === userCause,
+      })
+      put(
+        destination,
+        JSON.stringify({ pairs, userCause: errorEvidence(userCause) }, null, 2),
+      )
+      assertErrorParity(errors[0], errors[1])
+      if (callbackFailure) {
+        for (const count of invoked) assert(count > 0)
+      }
+    }
+    return { pairs, userCause: errorEvidence(userCause) }
+  }
+  let result, server
+  const cleanup = async () => {
+    try {
+      try {
+        if (server) await server.close()
+      } finally {
+        try {
+          if (result) await result.close()
+        } finally {
+          closeBuild?.()
+        }
+      }
+    } catch (error) {
+      saveFailure(error)
+      throw error
+    }
+  }
+  try {
+    const rsbuild = await configure({ ...selection, singleCss, atomHoist: 0 })
+    if (scenario === 'dev' || scenario === 'watch') {
+      const first = nextCompile()
+      if (scenario === 'dev') {
+        server = await rsbuild.createDevServer()
+        ;({ port } = await server.listen())
+        generations.push(await first)
+        const cssAssets = Object.keys(generations[0].assets).filter((name) =>
+          name.endsWith('.css'),
+        )
+        for (const name of cssAssets) {
+          const response = await fetch(`http://127.0.0.1:${port}/${name}`, {
+            signal: AbortSignal.timeout(15000),
+          })
+          assert.equal(response.status, 200)
+          assert.equal(await response.text(), generations[0].assets[name])
+        }
+      } else {
+        result = await rsbuild.build({ watch: true })
+        generations.push(await first)
+      }
+      for (const color of ['rebeccapurple', 'teal']) {
+        const source = `import { globalCss, css } from "@devup-ui/react"; globalCss({ body: { backgroundColor: "rebeccapurple" } }); export const layer = css({ borderColor: "${color}" });`
+        const before = compilationProofs.length
+        const revision = nextCompile(source)
+        put(join(directory, 'src/B.css.ts'), source)
+        const generation = await revision
+        generations.push(generation)
+        const suppressed = compilationProofs
+          .slice(before)
+          .filter(
+            (proof) => proof.source === source && proof.needAdditionalPass,
+          )
+        assert.equal(suppressed.length, scenario === 'dev' ? 1 : 0)
+        for (const proof of suppressed) assert(proof.additionalPass)
+        if (scenario === 'dev') {
+          generation.http = {}
+          for (const [name, bytes] of Object.entries(generation.emitted)) {
+            if (!/\.(?:js|css)$/.test(name)) continue
+            const response = await fetch(`http://127.0.0.1:${port}/${name}`, {
+              signal: AbortSignal.timeout(15000),
+            })
+            assert.equal(response.status, 200)
+            generation.http[name] = await response.text()
+            assert.equal(generation.http[name], bytes)
+          }
+        }
+      }
+    } else {
+      result = await rsbuild.build()
+      generations.push(snapshot(result.stats))
+    }
+    assert.equal(owner.watchMode, scenario === 'dev' || scenario === 'watch')
+  } catch (error) {
+    saveFailure(error)
+    throw error
+  } finally {
+    await cleanup()
+  }
+  try {
+    if (hold) {
+      assert(layersReleased)
+      assert(additionalPasses > 0)
+      assert(deleted > 0)
+    }
+    if (scenario === 'late') {
+      create({ engine: selection.engine === 'wasm' ? 'native' : 'wasm' })
+      const before = calls.getCss
+      const css = await callbacks[0]({
+        resourcePath: join(directory, 'df/devup-ui/devup-ui.css'),
+        environment: { name: 'web' },
+      })
+      assert.equal(css, selected.getCss(null, true))
+      assert(calls.getCss > before)
+    }
+    for (const name of [
+      'registerShorthands',
+      'registerTheme',
+      'reserveClassSlots',
+      'setModuleResolver',
+      'codeExtract',
+      'getCss',
+    ])
+      assert(calls[name] > 0, name)
+    const local = []
+    for (const code of [
+      'export const plain = 1;',
+      readFileSync(sourcePath, 'utf8'),
+    ]) {
+      const dependencies = []
+      const output = await callbacks[1]({
+        code,
+        resourcePath: sourcePath,
+        addDependency: (file) => dependencies.push(file),
+      })
+      local.push({ ...output, dependencies })
+    }
+    assert.equal(owner.watchMode, false)
+    if (failure) throw failure
+    return { generations, local, additionalPasses, deleted, compilationProofs }
+  } catch (error) {
+    saveFailure(error)
+    throw error
+  }
+}
+
 export async function consume({
   directory,
   scenario,
@@ -380,14 +989,16 @@ export async function consume({
   format,
   singleCss,
   destination,
+  adapter = 'webpack',
 }) {
   const require = createRequire(join(directory, 'package.json'))
   const selection = mode === 'default' ? {} : { engine: mode }
   const resolvedEngine = mode === 'wasm' ? 'wasm' : 'native'
+  const packageName = `@devup-ui/${adapter}-plugin`
   const entry =
     format === 'require'
-      ? require.resolve('@devup-ui/webpack-plugin')
-      : fileURLToPath(import.meta.resolve('@devup-ui/webpack-plugin'))
+      ? require.resolve(packageName)
+      : fileURLToPath(import.meta.resolve(packageName))
   const utilsRequire = createRequire(entry)
   const utils = utilsRequire('@devup-ui/plugin-utils')
   const utilsRoot = dirname(
@@ -401,7 +1012,9 @@ export async function consume({
   )
   const entryUtils = format === 'import' ? fromEsm : utils
   const pluginRoot = realpathSync(dirname(dirname(entry)))
-  assertWebpackDist(join(pluginRoot, 'dist'))
+  const assertDist =
+    adapter === 'rsbuild' ? assertRsbuildDist : assertWebpackDist
+  assertDist(join(pluginRoot, 'dist'))
   const manifest = JSON.parse(
     readFileSync(join(pluginRoot, 'package.json'), 'utf8'),
   )
@@ -441,12 +1054,14 @@ export async function consume({
   let watching
   try {
     process.chdir(directory)
-    Date.now = () => 1700000000000
+    if (adapter === 'webpack') Date.now = () => 1700000000000
     const plugin =
-      format === 'require'
-        ? require('@devup-ui/webpack-plugin')
-        : await import('@devup-ui/webpack-plugin')
-    if (scenario === 'errors') {
+      format === 'require' ? require(packageName) : await import(packageName)
+    const create = (options) =>
+      adapter === 'rsbuild'
+        ? plugin.DevupUI(options)
+        : new plugin.DevupUIWebpackPlugin(options)
+    if (scenario === 'errors' && adapter === 'webpack') {
       const sourceModule =
         format === 'import'
           ? await import('@devup-ui/webpack-plugin/loader')
@@ -552,31 +1167,28 @@ export async function consume({
       }
       assert.throws(
         () =>
-          capture(
-            () =>
-              new plugin.DevupUIWebpackPlugin({
-                shorthands: { bad: ['backgroundColour'] },
-              }),
+          capture(() =>
+            create({
+              shorthands: { bad: ['backgroundColour'] },
+            }),
           ),
         entryUtils.ShorthandConfigError,
       )
       assert.throws(
         () =>
-          capture(
-            () =>
-              new plugin.DevupUIWebpackPlugin({
-                engine: 'invalid',
-              }),
+          capture(() =>
+            create({
+              engine: 'invalid',
+            }),
           ),
         { name: 'InvalidEngineError' },
       )
       assert.throws(
         () =>
-          capture(
-            () =>
-              new plugin.DevupUIWebpackPlugin({
-                engine: 'native',
-              }),
+          capture(() =>
+            create({
+              engine: 'native',
+            }),
           ),
         (error) => {
           assert.equal(error.name, 'NativeCompilerLoadError')
@@ -587,7 +1199,7 @@ export async function consume({
           return true
         },
       )
-      new plugin.DevupUIWebpackPlugin({ engine: 'wasm' })
+      create({ engine: 'wasm' })
       return { guards: true, diagnostics, denied: errorEvidence(denied) }
     }
     const selected = utils.loadCompiler(selection.engine)
@@ -626,7 +1238,6 @@ export async function consume({
         return result
       }
     }
-    const { webpack } = require('webpack')
     rmSync(join(directory, 'df'), { recursive: true, force: true })
     rmSync(join(directory, 'dist'), { recursive: true, force: true })
     put(
@@ -648,6 +1259,22 @@ export async function consume({
       join(directory, 'src/entry.js'),
       'import { css, keyframes } from "@devup-ui/react"; import { color } from "./tokens.js"; import { base } from "./base.css.ts"; import { layer as a } from "./A.css.ts"; import { layer as b } from "./B.css.ts"; const spin = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } }); export const cls = css({ color, p: [1, null, 3], animation: `${spin} 1s linear` }); console.log(cls, base, a, b);',
     )
+    if (adapter === 'rsbuild') {
+      return await consumeRsbuild({
+        directory,
+        scenario,
+        selection,
+        singleCss,
+        destination,
+        require,
+        create,
+        selected,
+        outputs,
+        calls,
+        utils,
+      })
+    }
+    const { webpack } = require('webpack')
     const gateFile = join(directory, 'hold.cjs')
     put(gateFile, initialLayerGate)
     const watch = scenario === 'watch'
@@ -976,7 +1603,8 @@ if (
   realpathSync(resolve(process.argv[1])) ===
     realpathSync(fileURLToPath(import.meta.url))
 ) {
-  const [scenario, mode, format, css, destination] = process.argv.slice(2)
+  const [scenario, mode, format, css, destination, adapter = 'webpack'] =
+    process.argv.slice(2)
   assert(
     [
       'build',
@@ -986,6 +1614,7 @@ if (
       'guards',
       'wrong-loader',
       'errors',
+      'dev',
     ].includes(scenario),
   )
   assert(['default', 'native', 'wasm'].includes(mode))
@@ -997,6 +1626,7 @@ if (
     format,
     singleCss: css === 'single',
     destination,
+    adapter,
   })
   writeFileSync(
     destination,

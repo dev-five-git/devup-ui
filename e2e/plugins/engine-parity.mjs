@@ -18,7 +18,12 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { assertRawParity, assertWebpackDist } from './engine-consumer.mjs'
+import {
+  assertRawParity,
+  assertRsbuildDist,
+  assertRsbuildParity,
+  assertWebpackDist,
+} from './engine-consumer.mjs'
 import { packHostEngines, verifyHostInstall } from './engine-fixtures.mjs'
 
 let artifactRoot
@@ -41,16 +46,16 @@ function run(binary, args, options) {
   return result.stdout.toString('utf8')
 }
 
-export async function webpackParity() {
+export async function webpackParity(adapter = 'webpack') {
   const repository = fileURLToPath(new URL('../../', import.meta.url))
   const parent = process.env.DEVUP_ENGINE_ARTIFACT_PARENT ?? tmpdir()
-  const root = mkdtempSync(join(parent, 'devup-webpack-engine-'))
+  const root = mkdtempSync(join(parent, `devup-${adapter}-engine-`))
   artifactRoot = root
-  console.info(`Webpack engine evidence: ${root}`)
+  console.info(`${adapter} engine evidence: ${root}`)
   const bun = process.env.BUN_BINARY ?? 'bun'
   const context = { repository, root, bun }
   const { host, tarballs } = await packHostEngines(context, run)
-  for (const name of ['wasm', 'plugin-utils', 'react', 'webpack-plugin']) {
+  for (const name of ['wasm', 'plugin-utils', 'react', `${adapter}-plugin`]) {
     const source = join(
       repository,
       name === 'wasm' ? 'bindings/devup-ui-wasm' : `packages/${name}`,
@@ -76,9 +81,12 @@ export async function webpackParity() {
     tarballs[`@devup-ui/${name}`] =
       `file:${realpathSync(join(destination, packs[0])).split(sep).join('/')}`
   }
-  assertWebpackDist(join(repository, 'packages/webpack-plugin/dist'))
+  const assertDist =
+    adapter === 'rsbuild' ? assertRsbuildDist : assertWebpackDist
+  assertDist(join(repository, `packages/${adapter}-plugin/dist`))
+  const bundler = adapter === 'rsbuild' ? '@rsbuild/core' : 'webpack'
   const versions = {}
-  for (const name of ['webpack', 'react', 'csstype-extra']) {
+  for (const name of [bundler, 'react', 'csstype-extra']) {
     const response = await fetch(`https://registry.npmjs.org/${name}/latest`, {
       signal: AbortSignal.timeout(30000),
     })
@@ -93,12 +101,13 @@ export async function webpackParity() {
     join(directory, 'package.json'),
     JSON.stringify(
       {
-        name: 'webpack-engine-consumer',
+        name: `${adapter}-engine-consumer`,
         private: true,
         type: 'module',
         dependencies: {
           ...versions,
-          '@devup-ui/webpack-plugin': tarballs['@devup-ui/webpack-plugin'],
+          [`@devup-ui/${adapter}-plugin`]:
+            tarballs[`@devup-ui/${adapter}-plugin`],
           '@devup-ui/react': tarballs['@devup-ui/react'],
         },
         overrides: tarballs,
@@ -114,7 +123,7 @@ export async function webpackParity() {
   )
   const beforeRelocation = verifyHostInstall({ directory, tarballs, host, bun })
   const relocated = join(root, 'relocated consumer')
-  const entryLink = join(directory, 'node_modules/webpack')
+  const entryLink = join(directory, 'node_modules', bundler)
   assert(lstatSync(entryLink).isSymbolicLink())
   const target = readlinkSync(entryLink)
   const reinstall = isAbsolute(target)
@@ -199,6 +208,7 @@ export async function webpackParity() {
         'require',
         'per-file',
         aliasReceipt,
+        adapter,
       ],
       { cwd: relocated, evidenceBase: aliasControl },
     )
@@ -222,18 +232,26 @@ export async function webpackParity() {
           format,
           css,
           destination,
+          adapter,
         ],
         { cwd: relocated, evidenceBase: base },
       )
       return JSON.parse(readFileSync(destination, 'utf8'))
     }
-    for (const scenario of ['build', 'additional', 'watch']) {
+    for (const scenario of [
+      'build',
+      'additional',
+      'watch',
+      ...(adapter === 'rsbuild' ? ['dev'] : []),
+    ]) {
       for (const css of ['per-file', 'single']) {
         let expected
         for (const format of ['require', 'import']) {
           for (const mode of ['default', 'native', 'wasm']) {
             const actual = cell(scenario, mode, format, css)
             if (expected === undefined) expected = actual
+            else if (adapter === 'rsbuild')
+              assertRsbuildParity(expected, actual)
             else assertRawParity(expected, actual)
           }
         }
@@ -244,19 +262,24 @@ export async function webpackParity() {
         cell('late', mode, format, 'per-file')
       }
       cell('guards', 'wasm', format, 'per-file')
-      cell('wrong-loader', 'default', format, 'per-file')
+      if (adapter === 'webpack')
+        cell('wrong-loader', 'default', format, 'per-file')
       for (const css of ['per-file', 'single']) {
         cell('errors', 'native', format, css)
       }
     }
   }
-  console.info(`Webpack engine evidence: ${root}`)
+  console.info(`${adapter} engine evidence: ${root}`)
   return root
 }
+
+export const rsbuildParity = () => webpackParity('rsbuild')
 
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  await webpackParity()
+  const adapter = process.argv[2] ?? 'webpack'
+  assert(['webpack', 'rsbuild'].includes(adapter))
+  await webpackParity(adapter)
 }

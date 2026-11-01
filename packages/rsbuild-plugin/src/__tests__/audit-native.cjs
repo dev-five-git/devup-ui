@@ -53,7 +53,7 @@ async function native() {
       plugins:
         mode === 'reachable-native'
           ? []
-          : [DevupUI({ singleCss: true }), observer],
+          : [DevupUI({ engine: 'wasm', singleCss: true }), observer],
       source: { entry: { main: './src/entry.js' } },
       output: {
         distPath: { root: 'out' },

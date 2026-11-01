@@ -4,7 +4,6 @@ import * as fsPromises from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import {
   afterAll,
   afterEach,
@@ -16,9 +15,58 @@ import {
   spyOn,
 } from 'bun:test'
 
-import { DevupUI } from '../plugin'
+import { DevupUI as createPlugin } from '../plugin'
+
+const wasm = pluginUtils.loadCompiler('wasm')
+const DevupUI = (options: Parameters<typeof createPlugin>[0] = {}) =>
+  createPlugin({ ...options, engine: 'wasm' })
 
 describe('shorthand creation boundary', () => {
+  it.each([undefined, 'native'] as const)(
+    'registers real native shorthands when engine=%s',
+    (engine) => {
+      // Given
+      const native = pluginUtils.loadCompiler('native')
+      native.resetStateForTesting()
+      // When
+      createPlugin({ engine, shorthands: { insetX: ['left', 'right'] } })
+      const output = native.codeExtract(
+        'engine.tsx',
+        'import { Box } from "@devup-ui/react"; export const box = <Box insetX="19px" />',
+        '@devup-ui/react',
+        './df',
+        true,
+        false,
+        true,
+        {},
+      )
+      try {
+        // Then
+        expect(output.css).toContain('left:19px')
+        expect(output.css).toContain('right:19px')
+      } finally {
+        output.free()
+        native.resetStateForTesting()
+      }
+    },
+  )
+
+  it('rejects malformed shorthand before consulting the selector', () => {
+    // Given
+    const selection = spyOn(pluginUtils, 'loadCompiler')
+    try {
+      // When / Then
+      expect(() =>
+        Reflect.apply(createPlugin, undefined, [
+          { engine: 'invalid', shorthands: { bgx: ['backgroundColour'] } },
+        ]),
+      ).toThrow(pluginUtils.ShorthandConfigError)
+      expect(selection).not.toHaveBeenCalled()
+    } finally {
+      selection.mockRestore()
+    }
+  })
+
   it('registers canonical targets when the plugin is created', () => {
     const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
       undefined,
@@ -54,7 +102,7 @@ describe('shorthand creation boundary', () => {
   })
 })
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+type CodeExtractResult = pluginUtils.DevupCompilerOutput
 type RsbuildPlugin = ReturnType<typeof DevupUI>
 type RsbuildSetupContext = Parameters<RsbuildPlugin['setup']>[0]
 
@@ -66,11 +114,12 @@ function createCodeExtractResult(
     css: '',
     cssFile: 'devup-ui.css',
     map: undefined,
+    dependencies: [],
     updatedBaseStyle: false,
     free: mock(),
     [Symbol.dispose]: mock(),
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
 }
 
 function createSetupContext(
@@ -473,7 +522,7 @@ const App = () => <Box></Box>`,
 
     expect(writeFileSpy).toHaveBeenCalledWith(
       resolve('df', 'devup-ui', 'devup-ui.css'),
-      expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
+      wasm.getCss(null, false),
       'utf-8',
     )
 
@@ -516,6 +565,7 @@ const App = () => <Box></Box>`,
     await watchRun()
     expect(registerThemeSpy).not.toHaveBeenCalled()
     statSpy.mockResolvedValueOnce({ mtimeMs: 2 } as fs.Stats)
+    createPlugin({ engine: 'native' })
     await watchRun()
     expect(registerThemeSpy).toHaveBeenCalledWith({
       tailwindCss: '@theme { --color-brand: #0af; }',
@@ -1048,6 +1098,7 @@ const App = () => <Box></Box>`,
       const compiler = {
         options: {},
         watchMode: false,
+        modifiedFiles: new Set<string>(),
         rspack: { Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 } },
         hooks: {
           run: { tap: tap('run') },
@@ -1071,8 +1122,43 @@ const App = () => <Box></Box>`,
           resourcePath,
           environment: { name: 'web' },
         })
-      return { onBeforeBuild, compiler, compilation, taps, serve }
+      return {
+        onBeforeBuild,
+        compiler,
+        compilation,
+        taps,
+        serve,
+        transform,
+      }
     }
+
+    it.each([
+      ['A', 'B'],
+      ['B', 'A'],
+    ])(
+      'writes stylesheet bytes when sources run %s then %s',
+      async (first, second) => {
+        // Given
+        const { transform } = await setup({ singleCss: true })
+        const css = '.a{color:red}.b{color:blue}'
+        getCssSpy.mockReturnValue(css)
+        writeFileSpy.mockClear()
+        // When
+        for (const name of [first, second]) {
+          await transform.mock.calls[1][1]({
+            code: 'source',
+            resourcePath: resolve('src', `${name}.tsx`),
+            addDependency: mock(),
+          })
+        }
+        // Then
+        expect(writeFileSpy.mock.calls.at(-1)).toEqual([
+          resolve('df', 'devup-ui', 'devup-ui.css'),
+          css,
+          'utf-8',
+        ])
+      },
+    )
 
     it('extracts the files the entries reach before building', async () => {
       const { onBeforeBuild } = await setup({ atomHoist: 0 })
@@ -1185,11 +1271,40 @@ const App = () => <Box></Box>`,
       taps.run!()
       expect(taps.needAdditionalPass!()).toBe(true)
 
-      // the dev server rebuilds through the files the transforms write
+      // Given: watch revisions cache the previously consumed stylesheet.
       compiler.watchMode = true
-      taps.start!(compilation)
-      taps.finishModules!()
-      expect(taps.needAdditionalPass!()).toBe(false)
+      const { watchRun, start } = taps
+      assert(watchRun && start)
+      const source = resolve('src', 'App.tsx')
+      const perFile = resolve('df', 'devup-ui', 'devup-ui-1.css')
+      const base = resolve('df', 'devup-ui', 'devup-ui.css')
+      for (const css of ['watch-one', 'watch-two']) {
+        // When: a new watchRun changes styles without serving the cached CSS again.
+        watchRun()
+        const original = new Set([source])
+        compiler.modifiedFiles = original
+        start(compilation)
+        getCssSpy.mockImplementation((fileNum: number | null) =>
+          fileNum === null ? 'watch-one' : css,
+        )
+        taps.finishModules?.()
+        compilation.deleteAsset.mockClear()
+        taps.processAssets?.()
+        // Then: each edit invalidates stale CSS while preserving the modified source.
+        expect(compilation.deleteAsset).toHaveBeenCalledWith('index.js')
+        expect(taps.needAdditionalPass?.()).toBe(true)
+        expect(compiler.modifiedFiles).not.toBe(original)
+        expect(original).toEqual(new Set([source]))
+        expect(compiler.modifiedFiles).toEqual(
+          new Set([source, perFile, ...(css === 'watch-one' ? [base] : [])]),
+        )
+        compilation.deleteAsset.mockClear()
+        start(compilation)
+        taps.finishModules?.()
+        taps.processAssets?.()
+        expect(compilation.deleteAsset).not.toHaveBeenCalled()
+        expect(taps.needAdditionalPass?.()).toBe(false)
+      }
     })
 
     it('keeps the pass when every stylesheet is current', async () => {

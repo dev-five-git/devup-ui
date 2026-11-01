@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { writeFileSync } = require('node:fs')
 const { join } = require('node:path')
 const { createRsbuild } = require('@rsbuild/core')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { put } = require('./reservation-fixture.cjs')
 
 const [root, scenario, receipt] = process.argv.slice(2)
@@ -41,7 +41,11 @@ wasm.setAtomHoist = (value) => {
 const { DevupUI } = require('../../dist/index.cjs')
 put(root, 'devup.json', '{}')
 const atom = scenario === 'atom' || scenario === 'noop'
-const options = { singleCss: !atom, atomHoist: atom ? 2 : undefined }
+const options = {
+  engine: 'wasm',
+  singleCss: !atom,
+  atomHoist: atom ? 2 : undefined,
+}
 const config = {
   mode: 'production',
   plugins: [DevupUI(options)],

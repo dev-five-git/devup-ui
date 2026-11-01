@@ -21,6 +21,8 @@ import { runInNewContext } from 'node:vm'
 import {
   assertErrorParity,
   assertRawParity,
+  assertRsbuildDist,
+  assertRsbuildParity,
   assertWebpackDist,
   errorEvidence,
   initialLayerGate,
@@ -165,6 +167,24 @@ for (const name of webpackDistFiles) {
     // When / Then
     assert.throws(() => assertWebpackDist(root), assert.AssertionError)
   })
+}
+
+for (const name of ['index.cjs', 'index.mjs']) {
+  for (const backend of ['wasm', 'binding']) {
+    test(`rejects a direct ${backend} import in Rsbuild ${name}`, (t) => {
+      const root = mkdtempSync(join(tmpdir(), 'devup-rsbuild-dist-guard-'))
+      t.after(() => rmSync(root, { recursive: true, force: true }))
+      for (const file of ['index.cjs', 'index.mjs']) {
+        writeFileSync(join(root, file), 'import "@devup-ui/plugin-utils";')
+      }
+      assertRsbuildDist(root)
+      writeFileSync(
+        join(root, name),
+        `import "@devup-ui/plugin-utils"; require("@devup-ui/${backend}");`,
+      )
+      assert.throws(() => assertRsbuildDist(root), assert.AssertionError)
+    })
+  }
 }
 
 for (const field of ['code', 'css', 'map', 'dependencies', 'sheet', 'error']) {
@@ -752,4 +772,87 @@ for (const withMarker of [false, true]) {
       packageName,
     })
   })
+}
+
+function rsbuildReceipt() {
+  return {
+    compilationProofs: [],
+    generations: [{ outputs: { file: { css: 'early' } } }],
+  }
+}
+
+for (const [scope, fields] of [
+  ['receipt', ['local', 'additionalPasses', 'deleted', 'errors', 'future']],
+  [
+    'generation',
+    [
+      'assets',
+      'emitted',
+      'http',
+      'css',
+      'served',
+      'sheet',
+      'classes',
+      'files',
+      'canonical',
+      'disk',
+      'residual',
+      'source',
+      'errors',
+      'future',
+    ],
+  ],
+  [
+    'output',
+    ['code', 'map', 'cssFile', 'dependencies', 'updatedBaseStyle', 'future'],
+  ],
+]) {
+  for (const field of fields) {
+    test(`Rsbuild rejects changed ${scope}.${field} outside its named exclusions`, () => {
+      // Given
+      const expected = rsbuildReceipt()
+      const actual = rsbuildReceipt()
+      for (const [receipt, value] of [
+        [expected, 'before'],
+        [actual, 'after'],
+      ]) {
+        const targets = {
+          receipt,
+          generation: receipt.generations[0],
+          output: receipt.generations[0].outputs.file,
+        }
+        targets[scope][field] = value
+      }
+      // When / Then
+      assert.throws(
+        () => assertRsbuildParity(expected, actual),
+        assert.AssertionError,
+      )
+    })
+  }
+}
+
+for (const [scope, field] of [
+  ['receipt', 'compilationProofs'],
+  ['output', 'css'],
+]) {
+  for (const missing of [false, true]) {
+    test(`Rsbuild ${scope}.${field} variation has missing raw field ${missing}`, () => {
+      // Given
+      const expected = rsbuildReceipt()
+      const actual = rsbuildReceipt()
+      const parent = {
+        receipt: actual,
+        output: actual.generations[0].outputs.file,
+      }[scope]
+      if (missing) delete parent[field]
+      else parent[field] = 'different intermediate observation'
+      const raw = structuredClone(actual)
+      // When / Then
+      const compare = () => assertRsbuildParity(expected, actual)
+      if (missing) assert.throws(compare, assert.AssertionError)
+      else assert.doesNotThrow(compare)
+      assert.deepEqual(actual, raw)
+    })
+  }
 }

@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { type DevupCompilerOutput, loadCompiler } from '@devup-ui/plugin-utils'
 import {
   afterAll,
   beforeAll,
@@ -15,7 +15,8 @@ import {
 
 import { DevupUI } from '../plugin'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+const wasm = loadCompiler('wasm')
+type CodeExtractResult = DevupCompilerOutput
 type RsbuildPlugin = ReturnType<typeof DevupUI>
 type RsbuildSetupContext = Parameters<RsbuildPlugin['setup']>[0]
 
@@ -45,10 +46,11 @@ beforeAll(() => {
     css: '',
     cssFile: 'devup-ui-0.css',
     map: undefined,
+    dependencies: [],
     updatedBaseStyle: false,
     free: mock(),
     [Symbol.dispose]: mock(),
-  } as unknown as CodeExtractResult)
+  } satisfies CodeExtractResult)
 })
 
 afterAll(() => {
@@ -63,6 +65,7 @@ afterAll(() => {
 async function extractedCssDirIn(checkout: string) {
   const transform = mock()
   const plugin = DevupUI({
+    engine: 'wasm',
     distDir: join(checkout, 'df'),
     cssDir: join(checkout, 'df', 'devup-ui'),
   })
