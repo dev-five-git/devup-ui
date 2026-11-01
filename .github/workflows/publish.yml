@@ -54,14 +54,29 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-benchmark-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - &install-wasm-pack
+        name: Install and verify latest stable wasm-pack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+          cargo binstall wasm-pack --no-confirm --force
+          latest="$(curl -fsSL -A 'devup-ui CI (https://github.com/dev-five-git/devup-ui)' https://crates.io/api/v1/crates/wasm-pack | jq -er '.crate.max_stable_version | select(type == "string" and length > 0)')"
+          installed="$(wasm-pack --version)"
+          echo "Installed $installed; crates.io latest stable: $latest"
+          test "$installed" = "wasm-pack $latest"
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: latest
+          # `latest` can select alphas from https://nodejs.org/dist/index.json;
+          # see https://github.com/actions/setup-node/issues/1657.
+          # The stable manifest can briefly trail nodejs.org after a stable release.
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       # Every row is the median of the same number of cold samples taken in
@@ -115,12 +130,11 @@ jobs:
           bun-version: latest
       - uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - name: Resolve and report exact WASM comparison sources
         run: node resolve-wasm-size-sources.js
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Cache registry downloads only
         uses: actions/cache@v6
         with:
@@ -129,17 +143,18 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
           key: cargo-wasm-size-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install the latest shared installer and optimizer once
+      - name: Install the latest shared optimizer once
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
           mkdir -p "$RUNNER_TEMP/wasm-size-tools/binaryen"
           gh release download --repo WebAssembly/binaryen --pattern '*-x86_64-linux.tar.gz' --dir "$RUNNER_TEMP/wasm-size-tools"
           tar -xzf "$RUNNER_TEMP"/wasm-size-tools/*.tar.gz --strip-components=1 -C "$RUNNER_TEMP/wasm-size-tools/binaryen"
           echo "$RUNNER_TEMP/wasm-size-tools/binaryen/bin" >> "$GITHUB_PATH"
       - name: Build exact sources with shared tools and lock-matched bindgen
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           export SIZE_ROOT="$RUNNER_TEMP/wasm-size"
@@ -261,13 +276,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Build Landing (Next)
@@ -336,13 +350,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Type-check and build the React 18 app
@@ -399,13 +412,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Cache Playwright Browsers
@@ -455,12 +467,11 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-release-compat-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - name: Test exited-process memory sampling
         run: node --test e2e/release/process-memory.test.mjs
@@ -522,13 +533,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-webpack-extends-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - name: Build fresh WASM
         working-directory: bindings/devup-ui-wasm
@@ -579,9 +589,10 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
-      - name: Install cargo-binstall
-        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+      - *install-wasm-pack
       - name: Install cargo-tarpaulin
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: cargo binstall cargo-tarpaulin --no-confirm --force
 
       - name: Cache cargo registry + target
@@ -605,14 +616,12 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
 
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Verify built package entry points
@@ -801,15 +810,14 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-release-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
 
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: latest
-      - run: bun install
+          node-version: '*'
+          check-latest: true
+      - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist

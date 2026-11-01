@@ -9,6 +9,7 @@ describe('export index', () => {
       cssUtilsLiteralOnly: expect.any(Object),
       noDuplicateValue: expect.any(Object),
       noRuntimeRead: expect.any(Object),
+      noUnknownStyleSpread: expect.any(Object),
       noUselessResponsive: expect.any(Object),
       styleOrderRange: expect.any(Object),
       noTypographyTokenPrefix: expect.any(Object),

@@ -12,7 +12,10 @@ fn seed() {
     let _file_num = file_map::get_file_num_by_filename("outer.tsx");
     file_map::set_canonical_map(HashMap::from([("member".into(), "root".into())]));
     file_routes::set_file_routes(HashMap::from([("outer.tsx".into(), HashSet::from([2]))]));
-    crate::set_custom_shorthands(BTreeMap::from([("insetX".into(), vec!["left".into()])]));
+    assert_eq!(
+        crate::set_custom_shorthands(BTreeMap::from([("insetX".into(), vec!["left".into()])])),
+        Ok(())
+    );
     theme_tokens::set_theme_token_levels(
         BTreeMap::from([("space".into(), vec![0, 2])]),
         BTreeMap::from([("card".into(), vec![0, 3])]),

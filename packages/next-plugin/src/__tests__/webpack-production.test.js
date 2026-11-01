@@ -13,7 +13,7 @@ function assertTreeExit(tree, output, platform = process.platform) {
   expect(tree.data.active).toEqual([])
   if (platform === 'win32') {
     expect(tree.data.pids.length).toBeGreaterThan(1)
-    for (const match of output.matchAll(/W65-FAULT-PID (\d+)/g))
+    for (const match of output.matchAll(/FAULT-PID (\d+)/g))
       expect(tree.data.pids).toContain(Number(match[1]))
   }
 }
@@ -48,7 +48,7 @@ function withHistoricalPidLookup(reusedPid, assertion) {
 it('accepts a Windows job receipt when a historical PID belongs to an unrelated process', () => {
   // Given a reaped job whose historical ID 101 now identifies an unrelated process.
   const tree = { data: { active: [], pids: [101, 202] } }
-  const output = 'W65-FAULT-PID 202'
+  const output = 'FAULT-PID 202'
   withHistoricalPidLookup(101, () => {
     // When the same receipt assertion used by real Next scenarios runs as Windows.
     // Then unrelated global PID reuse must not invalidate completed job ownership.
@@ -62,9 +62,7 @@ it('accepts a Windows job receipt when all historical PIDs are absent', () => {
   withHistoricalPidLookup(undefined, () => {
     // When the shared receipt assertion runs as Windows.
     // Then the completed job and observed fault descendant are accepted.
-    expect(() =>
-      assertTreeExit(tree, 'W65-FAULT-PID 202', 'win32'),
-    ).not.toThrow()
+    expect(() => assertTreeExit(tree, 'FAULT-PID 202', 'win32')).not.toThrow()
   })
 })
 
@@ -85,7 +83,7 @@ for (const { condition, active, pids, output } of [
     condition: 'a fault descendant was not observed',
     active: [],
     pids: [101, 202],
-    output: 'W65-FAULT-PID 303',
+    output: 'FAULT-PID 303',
   },
 ])
   it(`rejects a Windows job receipt when ${condition}`, () => {
@@ -142,8 +140,8 @@ for (const fault of [
     console.info(output)
     const events = output
       .split(/\r?\n/)
-      .filter((line) => line.startsWith('W65-LIFECYCLE '))
-      .map((line) => JSON.parse(line.slice(14)))
+      .filter((line) => line.startsWith('NEXT-EVENT '))
+      .map((line) => JSON.parse(line.slice('NEXT-EVENT '.length)))
     const tree = events.find((entry) => entry.event === 'tree_exit')
     const cleanup = events.find((entry) => entry.event === 'cleanup')
     assertTreeExit(tree, output)
@@ -153,9 +151,9 @@ for (const fault of [
       expect(result.status).not.toBe(0)
       expect(output).not.toContain('webpack production proof passed')
       if (fault === 'build-timeout') {
-        expect(output.match(/W65-FAULT-PID \d+/g)?.length).toBe(2)
+        expect(output.match(/FAULT-PID \d+/g)?.length).toBe(2)
         expect(output).toContain('Next build deadline exceeded')
-      } else expect(output).toContain('W65-SERVER-PID ')
+      } else expect(output).toContain('SERVER-PID ')
       if (fault === 'post-start-timeout')
         expect(tree.data.reason).toBe('deadline')
     } else {

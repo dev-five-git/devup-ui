@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "lib": ["ES5"],
+    "types": []
+  },
+  "files": ["case.tsx"]
+}

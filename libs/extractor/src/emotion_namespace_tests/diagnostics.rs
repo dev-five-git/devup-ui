@@ -11,7 +11,7 @@ fn syntax_errors_are_reported_before_namespace_normalization() {
     let error = compile(source).unwrap_err();
 
     // Then
-    assert_eq!(error, "namespace.tsx:2:27: Missing initializer in const declaration");
+    assert_eq!(error, "namespace.tsx:2:27: Cannot parse source: Missing initializer in const declaration. Fix: correct the syntax at this location");
 }
 
 #[test]
@@ -27,6 +27,22 @@ fn restoration_preserves_the_diagnostic_when_its_source_is_malformed() {
     assert_eq!(error.lines().next(), Some(message.as_str()));
     assert!(error.contains("Emotion diagnostic restoration failed:"));
     assert!(error.contains("Missing initializer in const declaration"));
+}
+
+#[test]
+#[serial]
+fn emotion_restoration_reports_malformed_source_when_normalization_rejects_a_read() {
+    // Given: restoration receives a located namespace diagnostic and malformed source.
+    let source = "import * as E from '@emotion/css';\nE.__emotion_user(); const broken;";
+    let message = format!("namespace.tsx:2:1: {}", utils::build_time_error("@emotion/css", "E.__emotion_user", "use a supported styling API or a runtime-only Emotion export"));
+
+    // When
+    let error = emotion_namespace::original_error_code(source, source.find("E.__emotion_user").unwrap(), message, SourceType::tsx());
+
+    // Then
+    assert!(error.starts_with("namespace.tsx:2:1:"), "{error}");
+    assert!(error.contains("E.__emotion_user"), "{error}");
+    assert!(error.contains("Emotion diagnostic restoration failed:"), "{error}");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # @devup-ui/eslint-plugin
 
-ESLint rules that check code the way the Devup UI build reads it. A rule reports and fixes only what the build reads as styles, and reports what the build rejects before the build does.
+ESLint checks for Devup UI. Syntax-only rules follow the build's style positions and refusals. The opt-in typed spread guard additionally warns when style-capable runtime props would be passed through rather than styled.
 
 ## Usage
 
@@ -11,12 +11,39 @@ import devupUi from '@devup-ui/eslint-plugin'
 export default [...devupUi.configs.recommended]
 ```
 
+For the opt-in [type-aware unknown-spread guard](src/rules/no-unknown-style-spread/README.md),
+use `configs.recommendedTypeChecked` and configure your lint project's parser services:
+
+```js
+export default [
+  ...devupUi.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+]
+```
+
+The typed rule uses the separate `@devup-ui/type-checked` namespace so the presets
+compose without redefining the existing plugin. `recommended` remains syntax-only.
+
+The guard follows verified build value flow: style-capable runtime defaults and
+runtime-first `rest || fallback` / `rest ?? fallback` spreads report because they
+pass through without extracting styles. Known-first imported controls compose and
+remain allowed. Mixed conditionals already refused by the build receive no extra
+typed-spread diagnostic; unclassified expressions remain the build's decision.
+
 ## Rules
 
 | Rule                                                                           | Checks                                                                                                                                                                         | Fix |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- |
 | [`css-utils-literal-only`](src/rules/css-utils-literal-only/README.md)         | values of `css`, `globalCss`, `keyframes`, `createGlobalStyle` and `<Global styles>` are known at build time, and `.css.ts` stylesheets read no global that does not exist there | no  |
 | [`no-runtime-read`](src/rules/no-runtime-read/README.md)                       | what the build compiles away (`css`, `keyframes`, `styled`, `Box`...) is read only where it is called or rendered                                                              | no  |
+| [`no-unknown-style-spread`](src/rules/no-unknown-style-spread/README.md)       | opt-in typed guard for runtime-rooted spreads whose types can carry Devup styles; concrete DOM-only props remain allowed                                                        | no  |
 | [`no-duplicate-value`](src/rules/no-duplicate-value/README.md)                 | consecutive duplicate values of a responsive array                                                                                                                             | yes |
 | [`no-useless-responsive`](src/rules/no-useless-responsive/README.md)           | responsive arrays with a single value                                                                                                                                          | yes |
 | [`no-useless-tailing-nulls`](src/rules/no-useless-tailing-nulls/README.md)     | trailing `null`s of a responsive array                                                                                                                                         | yes |

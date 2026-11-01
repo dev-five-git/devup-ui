@@ -48,7 +48,7 @@ fn test_css_composes_known_classes(#[case] case: usize, #[values(false, true)] s
         // Then: exact metadata keys/values and opaque tokens match authored intent.
         assert_eq!(
             support::meanings(&outputs, &tokens, single_css),
-            intent::expected(case, state),
+            intent::expected(case, state, single_css),
             "case{case} {state:?} single_css={single_css}\n{outputs:?}\n{tokens}"
         );
     }

@@ -39,7 +39,7 @@ impl Shape {
             Self::Array => "className: ['flex', OWN].join(' ')",
             Self::Object => "className: clsx({ 'flex': OWN })",
             Self::TailwindTemplate => "className: `flex ${OWN}`",
-            Self::StyleOrder => "className: OWN, color: 'red', styleOrder: h ? 1 : 0",
+            Self::StyleOrder => "className: OWN, color: 'red', styleOrder: h ? 1 : 2",
         }
     }
 }

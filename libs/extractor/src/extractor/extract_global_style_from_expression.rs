@@ -37,6 +37,24 @@ pub fn extract_global_style_from_expression<'a>(
     expression: &mut Expression<'a>,
     file: &str,
 ) -> GlobalExtractResult<'a> {
+    let invalid: Vec<_> = crate::dead_properties::authored_errors(
+        expression,
+        crate::dead_properties::ObjectKind::Globals,
+    )
+    .into_iter()
+    .map(|(offset, code, requirement)| ExtractStyleProp::Unreadable {
+        offset,
+        code,
+        prop: false,
+        requirement: Some(requirement),
+    })
+    .collect();
+    if !invalid.is_empty() {
+        return GlobalExtractResult {
+            styles: invalid,
+            style_order: None,
+        };
+    }
     let mut styles = vec![];
     collect_global_styles(ast_builder, expression, file, &[], &mut styles);
     GlobalExtractResult {

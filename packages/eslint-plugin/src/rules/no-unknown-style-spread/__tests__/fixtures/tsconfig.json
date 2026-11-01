@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "paths": {
+      "@devup-ui/react": ["../../../../../../react/src/index.ts"],
+      "@devup-ui/react/compat": ["../../../../../../react/src/compat/index.ts"],
+      "react": ["../../../../../../react/node_modules/@types/react/index.d.ts"],
+      "react/*": ["../../../../../../react/node_modules/@types/react/*"]
+    }
+  },
+  "files": ["case.tsx"]
+}

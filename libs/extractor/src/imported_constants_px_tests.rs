@@ -75,6 +75,68 @@ fn folded_template_keeps_complete_static_text(
 }
 
 #[test]
+fn namespace_css_tag_materializes_record_when_inlined_without_alias_normalization() {
+    // Given: authored namespace syntax reaches the parsed-source seam unchanged.
+    let source = concat!(
+        "import * as UI from '@devup-ui/react';",
+        "const rules={p:2,color:'tomato'};",
+        "export const card=UI.css`${rules}`;",
+    );
+    let allocator = Allocator::default();
+    let mut program = crate::parsing::parse(&allocator, "/src/namespace.ts", source)
+        .unwrap_or_else(|error| panic!("invalid namespace fixture: {error}"));
+
+    // When: inline real constants with semantic binding resolution and no px marks.
+    inline_constants(
+        &AstBuilder::new(&allocator),
+        &mut program,
+        "/src/namespace.ts",
+        &ExtractOption::default(),
+        None,
+        CssProp::Off,
+        &crate::import_alias_visit::PxMarks::default(),
+    );
+
+    // Then: the exported namespace tag contains the actual materialized record.
+    let Some(Statement::ExportDeclaration(export)) = program.body.last() else {
+        panic!("expected exported card");
+    };
+    let oxc_ast::ast::Declaration::VariableDeclaration(declaration) = &export.declaration else {
+        panic!("expected card declaration");
+    };
+    let Some(Expression::TaggedTemplateExpression(tagged)) =
+        declaration.declarations[0].init.as_ref()
+    else {
+        panic!("expected namespace css tag");
+    };
+    let Expression::StaticMemberExpression(member) = &tagged.tag else {
+        panic!("expected namespace member");
+    };
+    let Expression::Identifier(namespace) = &member.object else {
+        panic!("expected namespace binding");
+    };
+    assert_eq!(namespace.name, "UI");
+    assert_eq!(member.property.name, "css");
+    let [Expression::ObjectExpression(object)] = tagged.quasi.expressions.as_slice() else {
+        panic!("expected materialized record interpolation");
+    };
+    let [
+        ObjectPropertyKind::ObjectProperty(p),
+        ObjectPropertyKind::ObjectProperty(color),
+    ] = object.properties.as_slice()
+    else {
+        panic!("expected two record properties");
+    };
+    assert!(p.key.static_name().is_some_and(|name| name == "p"));
+    assert_eq!(crate::utils::js_number_literal(&p.value), Some(2.0));
+    assert!(color.key.static_name().is_some_and(|name| name == "color"));
+    let Expression::StringLiteral(value) = &color.value else {
+        panic!("expected materialized color string");
+    };
+    assert_eq!(value.value, "tomato");
+}
+
+#[test]
 fn own_css_record_keeps_fallback_order_when_authored_px_mark_is_inlined() {
     // Given: Emotion-style fallback arrays, not responsive breakpoints.
     let source = "import { css } from '@devup-ui/react';

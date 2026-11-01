@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Type every compiled StyleX API with opaque styles, dynamic function arguments, conditional variables, partial themes and static null/string theme contract placeholders. Unsupported runtime shapes are rejected by TypeScript; no new build errors in this change.",
+  "date": "2026-10-01T00:00:00.000Z"
+}

@@ -1,5 +1,6 @@
 import { Box, css, Flex, Image, Text } from '@devup-ui/react'
-import Link from 'next/link'
+
+import { Link } from '@/i18n/navigation'
 
 export function GetStartedButton() {
   return (

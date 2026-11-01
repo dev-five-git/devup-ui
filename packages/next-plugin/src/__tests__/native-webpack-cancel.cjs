@@ -71,7 +71,7 @@ async function main() {
     const readyEnd = Date.now() + 10000
     while (pids.size !== 2) {
       if (!closed) stdout = readFileSync(output, 'utf8')
-      for (const match of stdout.matchAll(/W65-FAULT-PID (\d+)/g))
+      for (const match of stdout.matchAll(/FAULT-PID (\d+)/g))
         pids.add(Number(match[1]))
       assert(Date.now() < readyEnd, 'Fault descendants did not become ready')
       if (pids.size !== 2) await Promise.race([delay(20), timeout])
