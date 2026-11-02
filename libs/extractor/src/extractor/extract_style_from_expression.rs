@@ -1,3 +1,4 @@
+use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
     css_utils::{css_to_style, css_to_style_literal, theme_var_reference},
@@ -14,7 +15,6 @@ use crate::{
     },
 };
 use css::{
-    add_selector_params,
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property, get_enum_property_map, get_enum_property_value, is_enum_property,
     is_special_property::is_special_property,
@@ -221,7 +221,7 @@ fn create_static_styles<'a>(
 }
 
 pub fn extract_style_from_expression<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
@@ -229,7 +229,7 @@ pub fn extract_style_from_expression<'a>(
     literal_handling: LiteralHandling,
 ) -> ExtractResult<'a> {
     extract_with_policy::<false>(
-        ast_builder,
+        inputs,
         name,
         expression,
         level,
@@ -241,7 +241,7 @@ pub fn extract_style_from_expression<'a>(
 
 /// Extract styles, optionally retaining authored locations of dynamic object leaves.
 pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
@@ -250,7 +250,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
     extract_projected::<LOCATE>(
-        ast_builder,
+        inputs,
         name,
         expression,
         (level, selector),
@@ -261,7 +261,7 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
 }
 
 pub(super) fn extract_projected<'a, const LOCATE: bool>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     (level, selector): (u8, &Option<StyleSelector>),
@@ -269,6 +269,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
     projection: &mut super::style_order_projection::Projection<'a>,
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
+    let ast_builder = inputs.ast;
     let mut typo = false;
     let expression = unwrap_syntax_only_mut(expression);
     let offset = expression.span().start;
@@ -352,7 +353,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                                         let ExtractResult {
                                             styles, tag: _tag, ..
                                         } = projection.extract::<LOCATE>(
-                                            ast_builder,
+                                            inputs,
                                             Some(disassembled),
                                             sibling.as_mut().unwrap_or(&mut prop.value),
                                             (0, &None),
@@ -372,7 +373,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             let ExtractResult {
                                 styles, tag: _tag, ..
                             } = projection.extract::<LOCATE>(
-                                ast_builder,
+                                inputs,
                                 None,
                                 &mut prop.argument,
                                 (0, &None),
@@ -405,7 +406,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                             projection
                                 .extract::<LOCATE>(
-                                    ast_builder,
+                                    inputs,
                                     None,
                                     &mut conditional.consequent,
                                     (level, &None),
@@ -417,7 +418,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         alternate: Some(Box::new(ExtractStyleProp::StaticArray(
                             projection
                                 .extract::<LOCATE>(
-                                    ast_builder,
+                                    inputs,
                                     None,
                                     &mut conditional.alternate,
                                     (level, selector),
@@ -461,7 +462,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
         let mut styles = vec![];
         for part in split_selector_list(name) {
             styles.extend(extract_under_key::<LOCATE>(
-                ast_builder,
+                inputs,
                 (part, offset),
                 &mut expression.clone_in_with_semantic_ids(ast_builder.allocator()),
                 (level, selector),
@@ -508,7 +509,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     let offset = o.key.span().start;
                     for part in split_selector_list(key_name.trim()) {
                         props.extend(extract_under_key::<LOCATE>(
-                            ast_builder,
+                            inputs,
                             (part, offset),
                             &mut o.value.clone_in_with_semantic_ids(ast_builder.allocator()),
                             (level, selector),
@@ -536,7 +537,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 {
                     let mut styles = projection
                         .extract::<LOCATE>(
-                            ast_builder,
+                            inputs,
                             None,
                             &mut o.value,
                             (level, selector),
@@ -569,7 +570,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     props.extend(
                         projection
                             .extract::<LOCATE>(
-                                ast_builder,
+                                inputs,
                                 None,
                                 &mut o.value,
                                 (level, &Some(at_selector)),
@@ -590,7 +591,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
             let offset = expression.span().start;
             return ExtractResult {
                 styles: extract_under_key::<LOCATE>(
-                    ast_builder,
+                    inputs,
                     (name, offset),
                     expression,
                     (level, selector),
@@ -718,7 +719,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 None => unreadable(expression),
             },
             Expression::ComputedMemberExpression(mem) => {
-                extract_member::<LOCATE>(ast_builder, name, mem, level, selector, prepare)
+                extract_member::<LOCATE>(inputs, name, mem, level, selector, prepare)
             }
             Expression::TemplateLiteral(_) => {
                 let Some(name) = name else {
@@ -871,7 +872,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     LogicalOperator::Coalesce => nullish,
                 };
                 projection.extract::<LOCATE>(
-                    ast_builder,
+                    inputs,
                     name,
                     if takes_right {
                         &mut logical.right
@@ -888,7 +889,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
             {
                 let consequent = literal_truthiness(&conditional.test) == Some(true);
                 projection.extract::<LOCATE>(
-                    ast_builder,
+                    inputs,
                     name,
                     if consequent {
                         &mut conditional.consequent
@@ -905,7 +906,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
                     projection
                         .extract::<LOCATE>(
-                            ast_builder,
+                            inputs,
                             name,
                             &mut logical.right,
                             (level, selector),
@@ -955,7 +956,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 projection
                                     .extract::<LOCATE>(
-                                        ast_builder,
+                                        inputs,
                                         name,
                                         &mut logical.left,
                                         (level, selector),
@@ -988,7 +989,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         props.extend(
                             projection
                                 .extract::<LOCATE>(
-                                    ast_builder,
+                                    inputs,
                                     name,
                                     element,
                                     (idx as u8, selector),
@@ -1010,7 +1011,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
             Expression::ConditionalExpression(conditional) => {
                 if is_same_expression(&conditional.consequent, &conditional.alternate) {
                     projection.extract::<LOCATE>(
-                        ast_builder,
+                        inputs,
                         name,
                         &mut conditional.consequent,
                         (level, selector),
@@ -1025,7 +1026,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 projection
                                     .extract::<LOCATE>(
-                                        ast_builder,
+                                        inputs,
                                         name,
                                         &mut conditional.consequent,
                                         (level, selector),
@@ -1037,7 +1038,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             alternate: Some(Box::new(ExtractStyleProp::StaticArray(
                                 projection
                                     .extract::<LOCATE>(
-                                        ast_builder,
+                                        inputs,
                                         name,
                                         &mut conditional.alternate,
                                         (level, selector),
@@ -1054,48 +1055,15 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
             Expression::ObjectExpression(obj) => {
                 flatten_spreads(ast_builder, obj);
                 let mut props = vec![];
-                let params = obj.properties.iter().find_map(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(o) = p
-                        && o.key.name().is_some_and(|name| name == "params")
-                        && selector.is_some()
-                        && let Expression::ArrayExpression(array) = &o.value
-                    {
-                        let arr = array.elements.iter();
-                        let arr = arr.filter_map(|e| {
-                            if let Some(e) = e.as_expression()
-                                && let Some(s) = get_string_by_literal_expression(e)
-                                && !s.is_empty()
-                            {
-                                Some(s)
-                            } else {
-                                None
-                            }
-                        });
-                        // Fold the filter-mapped literals directly into one
-                        // `String` (prefix `,` after the first) instead of
-                        // collecting into a throwaway `Vec<String>` and
-                        // `join`ing it — same bytes, one fewer heap Vec and no
-                        // per-element re-copy in `join`.
-                        let mut params = String::new();
-                        for s in arr {
-                            if !params.is_empty() {
-                                params.push(',');
-                            }
-                            params.push_str(&s);
-                        }
-                        Some(params)
-                    } else {
-                        None
+                let selector = match super::selector_params::resolve(inputs, obj, selector) {
+                    Ok(selector) => selector,
+                    Err(error) => {
+                        return ExtractResult {
+                            styles: vec![*error],
+                            ..ExtractResult::default()
+                        };
                     }
-                });
-
-                let selector = selector.clone().map(|s| {
-                    if let Some(params) = params {
-                        add_selector_params(s, &params)
-                    } else {
-                        s
-                    }
-                });
+                };
 
                 for p in &mut obj.properties {
                     let o = match p {
@@ -1104,7 +1072,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             props.extend(
                                 projection
                                     .extract::<LOCATE>(
-                                        ast_builder,
+                                        inputs,
                                         None,
                                         &mut spread.argument,
                                         (level, &selector),
@@ -1145,7 +1113,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         props.extend(
                             projection
                                 .extract::<LOCATE>(
-                                    ast_builder,
+                                    inputs,
                                     Some(name),
                                     sibling.as_mut().unwrap_or(&mut o.value),
                                     (level, &selector),
@@ -1409,7 +1377,7 @@ impl From<Option<StyleSelector>> for Nested {
 }
 
 fn extract_under_key<'a, const LOCATE: bool>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     (key, offset): (&str, u32),
     expression: &mut Expression<'a>,
     (level, selector): (u8, &Option<StyleSelector>),
@@ -1421,7 +1389,7 @@ fn extract_under_key<'a, const LOCATE: bool>(
         Nested::Under(nested) => {
             projection
                 .extract::<LOCATE>(
-                    ast_builder,
+                    inputs,
                     None,
                     expression,
                     (level, &Some(nested)),
@@ -1610,7 +1578,7 @@ mod tests {
         };
 
         let result = extract_style_from_expression(
-            &AstBuilder::new(&allocator),
+            (&AstBuilder::new(&allocator)).into(),
             Some("selectors"),
             &mut statement.expression,
             0,
@@ -1644,7 +1612,7 @@ mod tests {
         };
 
         let result = extract_style_from_expression(
-            &AstBuilder::new(&allocator),
+            (&AstBuilder::new(&allocator)).into(),
             None,
             &mut statement.expression,
             0,

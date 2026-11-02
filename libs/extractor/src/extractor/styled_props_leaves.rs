@@ -48,6 +48,9 @@ impl<'a> Leaves<'_, '_, 'a> {
                 return Err(PropsRulesError::Rules);
             }
             let key = get_str_by_property_key(&property.key).ok_or(PropsRulesError::Rules)?;
+            if key == "params" {
+                continue;
+            }
             if let Expression::ObjectExpression(inner) = unwrap_syntax_only_mut(&mut property.value)
             {
                 self.object_inner(inner)?;

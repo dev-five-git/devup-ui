@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Compile known imported styled withComponent calls without requiring an unused styling-package import; preserve semantic import boundaries and share relevance with plugin filtering. No new build errors.",
+  "date": "2026-10-24T00:00:00.000Z"
+}
