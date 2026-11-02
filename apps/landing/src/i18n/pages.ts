@@ -14,4 +14,8 @@ export const translatedPages: Record<string, TranslatedPage | undefined> = {
     load: () => import('@/app/(detail)/docs/overview/page.ko.mdx'),
     Layout: DocsLayout,
   },
+  '/docs/quick-start': {
+    load: () => import('@/app/(detail)/docs/quick-start/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
 }
