@@ -39,6 +39,7 @@ async function main() {
       oxc: { jsx: { runtime: 'classic' } },
       plugins: [
         DevupUI({
+          engine: 'wasm',
           distDir: resolve(root, 'df'),
           cssDir: resolve(root, 'df/devup-ui'),
           devupFile: resolve(root, 'devup.json'),

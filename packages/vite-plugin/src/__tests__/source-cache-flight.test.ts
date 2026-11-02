@@ -43,6 +43,7 @@ it('shares one real extraction when identical callers overlap a real write', asy
 it('propagates a real filesystem write rejection and extracts again on retry', async () => {
   // Given: writing CSS onto a directory causes the actual platform write error.
   using state = await cacheFixture()
+  rmSync(state.cssFile)
   mkdirSync(state.cssFile)
   using extracts = extractionObserver()
   using write = writeGate(state.cssFile)
@@ -69,6 +70,7 @@ it('propagates a real filesystem write rejection and extracts again on retry', a
 it('keeps a newer same-ID flight when the older real write rejects', async () => {
   // Given: A's actual failed write is settled internally but held at its boundary.
   using state = await cacheFixture()
+  rmSync(state.cssFile)
   mkdirSync(state.cssFile)
   using extracts = extractionObserver()
   using write = writeGate(state.cssFile)

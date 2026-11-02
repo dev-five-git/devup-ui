@@ -14,6 +14,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { createServer as createPortLease } from 'node:net'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,7 +23,12 @@ import {
   assertRawParity,
   assertRsbuildDist,
   assertRsbuildParity,
+  assertViteParity,
   assertWebpackDist,
+  collectViteCases,
+  completedReceipt,
+  errorEvidence,
+  viteRealpath,
 } from './engine-consumer.mjs'
 import { packHostEngines, verifyHostInstall } from './engine-fixtures.mjs'
 
@@ -44,6 +50,154 @@ function run(binary, args, options) {
   if (result.error) throw result.error
   assert.equal(result.status, 0, `Command failed; raw streams: ${base}`)
   return result.stdout.toString('utf8')
+}
+
+async function viteCells(context) {
+  const { root, relocated, link, bun } = context
+  const lease = createPortLease()
+  const port = await new Promise((resolve, reject) => {
+    lease.once('error', reject)
+    lease.listen(0, '127.0.0.1', () => {
+      const address = lease.address()
+      assert(address && typeof address === 'object')
+      lease.close((error) => (error ? reject(error) : resolve(address.port)))
+    })
+  })
+  const summary = []
+  for (const runtime of [process.execPath, bun]) {
+    const name = runtime === bun ? 'bun' : 'node'
+    const cells = []
+    for (const css of ['per-file', 'single']) {
+      for (const format of ['require', 'import']) {
+        for (const mode of ['default', 'native', 'wasm'])
+          cells.push(['lifecycle', mode, format, css])
+        cells.push(['errors', 'native', format, css])
+      }
+      for (const mode of ['native', 'wasm']) {
+        for (const scenario of ['repeat', 'opposite'])
+          cells.push([scenario, mode, 'import', css])
+      }
+    }
+    for (const format of ['require', 'import']) {
+      cells.push(['guards', 'wasm', format, 'per-file'])
+      for (const mode of ['default', 'native', 'wasm'])
+        cells.push(['late', mode, format, 'per-file'])
+    }
+    cells.push(['guards', 'wasm', 'require', 'alias'])
+    const receipts = new Map()
+    const completed = new Set()
+    const results = await collectViteCases(
+      cells.map((cell) => cell.join('-')),
+      async (id) => {
+        const cell = cells.find((cell) => cell.join('-') === id)
+        const base = join(root, `${name}-${id}`)
+        const destination = `${base}.json`
+        try {
+          const args = [
+            join(link, 'engine-consumer.mjs'),
+            ...cell.slice(0, 3),
+            cell[3] === 'alias' ? 'per-file' : cell[3],
+            destination,
+            'vite',
+          ]
+          run(runtime, args, {
+            cwd: relocated,
+            evidenceBase: base,
+            env: { ...process.env, DEVUP_ENGINE_VITE_PORT: String(port) },
+          })
+        } finally {
+          if (existsSync(destination))
+            receipts.set(id, JSON.parse(readFileSync(destination, 'utf8')))
+        }
+        assert(
+          receipts.has(id),
+          'Every alias/cell CLI must execute and save its receipt',
+        )
+        if (cell[0] === 'guards') assert.equal(receipts.get(id).guards, true)
+        completed.add(id)
+        return destination
+      },
+    )
+    const comparisons = cells
+      .filter(([scenario]) =>
+        ['lifecycle', 'repeat', 'opposite'].includes(scenario),
+      )
+      .map((cell) => cell.join('-'))
+      .filter((id) => !id.startsWith('lifecycle-default-require-'))
+    const compared = await collectViteCases(comparisons, async (id) => {
+      const [scenario, mode, , css] = cells.find(
+        (cell) => cell.join('-') === id,
+      )
+      const expected = completedReceipt(
+        receipts,
+        completed,
+        scenario === 'lifecycle'
+          ? `lifecycle-default-require-${css}`
+          : `lifecycle-${mode}-import-${css}`,
+      )
+      assertViteParity(
+        expected,
+        completedReceipt(receipts, completed, id),
+        scenario === 'opposite' && css === 'single',
+      )
+    })
+    const index = (rows, group) =>
+      rows.map((result) => {
+        const diagnostic = join(
+          root,
+          `${name}-${group}-${result.name}.diagnostic.json`,
+        )
+        if (!result.ok)
+          writeFileSync(diagnostic, JSON.stringify(result.error, null, 2))
+        return {
+          name: result.name,
+          ok: result.ok,
+          receipt: result.value,
+          partialReceipt:
+            !result.ok && receipts.has(result.name)
+              ? join(root, `${name}-${result.name}.json`)
+              : undefined,
+          diagnostic: result.ok ? undefined : diagnostic,
+        }
+      })
+    summary.push({
+      runtime: name,
+      passed: [...results, ...compared].filter((cell) => cell.ok).length,
+      failed: [...results, ...compared].filter((cell) => !cell.ok).length,
+      results: index(results, 'execute'),
+      comparisons: index(compared, 'compare'),
+    })
+    writeFileSync(
+      join(root, 'vite-summary.json'),
+      JSON.stringify(summary, null, 2),
+    )
+  }
+  const cuts = join(root, 'dev-cuts')
+  try {
+    run(
+      process.execPath,
+      [join(link, 'engine-dev-cuts.mjs'), 'matrix', root, String(port)],
+      {
+        cwd: relocated,
+        evidenceBase: cuts,
+      },
+    )
+    summary.push({ runtime: 'node', cuts: true })
+  } catch (error) {
+    summary.push({ runtime: 'node', cuts: false, error: errorEvidence(error) })
+  }
+  writeFileSync(
+    join(root, 'vite-summary.json'),
+    JSON.stringify(summary, null, 2),
+  )
+  assert(
+    summary.every(
+      (row) =>
+        row.cuts ??
+        [...row.results, ...row.comparisons].every((cell) => cell.ok),
+    ),
+    'Vite collect-all diagnostics failed; inspect vite-summary.json and raw cell evidence before one coordinator batch decision',
+  )
 }
 
 export async function webpackParity(adapter = 'webpack') {
@@ -79,12 +233,19 @@ export async function webpackParity(adapter = 'webpack') {
     )
     assert.equal(packs.length, 1)
     tarballs[`@devup-ui/${name}`] =
-      `file:${realpathSync(join(destination, packs[0])).split(sep).join('/')}`
+      `file:${(adapter === 'vite' ? viteRealpath : realpathSync)(join(destination, packs[0])).split(sep).join('/')}`
   }
   const assertDist =
-    adapter === 'rsbuild' ? assertRsbuildDist : assertWebpackDist
+    adapter === 'rsbuild' || adapter === 'vite'
+      ? assertRsbuildDist
+      : assertWebpackDist
   assertDist(join(repository, `packages/${adapter}-plugin/dist`))
-  const bundler = adapter === 'rsbuild' ? '@rsbuild/core' : 'webpack'
+  const bundler =
+    adapter === 'vite'
+      ? 'vite'
+      : adapter === 'rsbuild'
+        ? '@rsbuild/core'
+        : 'webpack'
   const versions = {}
   for (const name of [bundler, 'react', 'csstype-extra']) {
     const response = await fetch(`https://registry.npmjs.org/${name}/latest`, {
@@ -195,6 +356,14 @@ export async function webpackParity(adapter = 'webpack') {
       2,
     ),
   )
+  if (adapter === 'vite') {
+    cpSync(
+      new URL('./engine-dev-cuts.mjs', import.meta.url),
+      join(relocated, 'engine-dev-cuts.mjs'),
+    )
+    await viteCells({ root, relocated, link, bun })
+    return root
+  }
   for (const runtime of [process.execPath, bun]) {
     const runtimeName = runtime === bun ? 'bun' : 'node'
     const aliasControl = join(root, `${runtimeName}-alias-entry-control`)
@@ -274,12 +443,13 @@ export async function webpackParity(adapter = 'webpack') {
 }
 
 export const rsbuildParity = () => webpackParity('rsbuild')
+export const viteParity = () => webpackParity('vite')
 
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const adapter = process.argv[2] ?? 'webpack'
-  assert(['webpack', 'rsbuild'].includes(adapter))
+  assert(['webpack', 'rsbuild', 'vite'].includes(adapter))
   await webpackParity(adapter)
 }

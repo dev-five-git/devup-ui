@@ -1,7 +1,11 @@
 import { join } from 'node:path'
 
-import type { ReservationRow } from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
+import {
+  type DevupCompiler,
+  loadCompiler,
+  type ReservationEngine,
+  type ReservationRow,
+} from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -10,8 +14,10 @@ import {
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { createViteReservation } from '../reservation'
 
+const wasm: DevupCompiler & ReservationEngine = loadCompiler('wasm')
+
 function reservation(root: string, location: 'root' | 'nested') {
-  return createViteReservation({
+  return createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},

@@ -4,7 +4,7 @@ const { pathToFileURL } = require('node:url')
 const { put } = require('./reservation-native-fixture.cjs')
 const { observe } = require('./reservation-native-observer.cjs')
 const { hooks } = require('./serve-coherence-async-fixture.cjs')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const root = process.argv[4]
 assert(root)
 const telemetry = observe()
@@ -27,6 +27,7 @@ async function main() {
   const owner = await load(first)
   const { createServer } = await import('vite')
   const options = {
+    engine: /** @type {const} */ ('wasm'),
     singleCss: true,
     devupFile: join(root, 'devup.json'),
     distDir: join(root, 'df'),

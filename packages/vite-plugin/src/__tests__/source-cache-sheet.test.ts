@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it } from 'bun:test'
 
 import {
@@ -9,6 +9,7 @@ import {
   extractionObserver,
   writeGate,
 } from './source-cache-fixture'
+const wasm = loadCompiler('wasm')
 it('fully bypasses extraction reuse when identical build inputs repeat', async () => {
   // Given: actual build configuration of the source plugin and real facade.
   using state = await cacheFixture()

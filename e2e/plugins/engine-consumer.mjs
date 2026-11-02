@@ -13,6 +13,35 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { inspect } from 'node:util'
 
+export function viteRealpath(filename) {
+  try {
+    return realpathSync.native(filename)
+  } catch (error) {
+    if (error?.code === 'EISDIR') return realpathSync(filename)
+    throw error
+  }
+}
+
+export async function collectViteCases(cases, visit) {
+  const results = []
+  for (const name of cases) {
+    try {
+      results.push({ name, ok: true, value: await visit(name) })
+    } catch (error) {
+      results.push({ name, ok: false, error: errorEvidence(error) })
+    }
+  }
+  return results
+}
+
+export function completedReceipt(receipts, completed, id) {
+  assert(
+    completed.has(id) && receipts.has(id),
+    `Missing complete requested-boundary receipt: ${id}`,
+  )
+  return receipts.get(id)
+}
+
 export const webpackDistFiles = [
   'index.cjs',
   'index.mjs',
@@ -66,6 +95,21 @@ export function assertRsbuildDist(directory) {
 
 export function assertRawParity(expected, actual) {
   assert.deepEqual(comparisonData(actual), comparisonData(expected))
+}
+
+export function assertViteParity(expected, actual, oppositeSingleCss = false) {
+  // Opposite admission changes intermediate return CSS, never published CSS.
+  if (!oppositeSingleCss) return assertRawParity(expected, actual)
+  const project = (receipt) => {
+    const copy = structuredClone(receipt)
+    for (const phase of copy.phases)
+      for (const output of Object.values(phase.outputs)) {
+        assert(Object.hasOwn(output, 'css'))
+        delete output.css
+      }
+    return copy
+  }
+  assertRawParity(project(expected), project(actual))
 }
 
 // Native/native AND WASM/WASM A/A reproduce this intermediate drift.
@@ -334,6 +378,14 @@ function comparisonData(value) {
 }
 
 export function assertErrorParity(expected, actual) {
+  if (
+    expected?.diagnostic === 'full-error-v1' ||
+    actual?.diagnostic === 'full-error-v1'
+  ) {
+    assert.equal(expected?.diagnostic, 'full-error-v1')
+    assert.equal(actual?.diagnostic, 'full-error-v1')
+    return assertRawParity(expected, actual)
+  }
   const left = new Map()
   const right = new Map()
   const compare = (a, b) => {
@@ -393,6 +445,27 @@ export function assertErrorParity(expected, actual) {
   compare(expected, actual)
 }
 
+export function diagnosticHook(hook, receive) {
+  return async function (...args) {
+    try {
+      return await hook.apply(this, args)
+    } catch (error) {
+      receive(errorEvidence(error), error)
+      throw error
+    }
+  }
+}
+
+export function observeRejection(work) {
+  const settled = work.then(
+    (value) => () => value,
+    (error) => () => {
+      throw error
+    },
+  )
+  return async () => (await settled)()
+}
+
 function put(path, content) {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content)
@@ -408,6 +481,417 @@ function tree(directory) {
       })
       .sort(([a], [b]) => a.localeCompare(b)),
   )
+}
+
+export function assertViteBuckets(phase, color) {
+  for (const name of ['A', 'B']) {
+    const code = phase.requested.transforms[`/src/${name}.js`].code
+    const urls = [
+      ...code.matchAll(/["']([^"'\n]*devup-ui(?:-\d+)?\.css[^"'\n]*)["']/g),
+    ].map((match) => match[1])
+    const numbered = urls.filter((url) => /devup-ui-\d+\.css/.test(url))
+    const buckets = numbered.length ? numbered : urls
+    assert(buckets.length > 0, `Missing mapped ${name} CSS import`)
+    for (const url of buckets) {
+      const file = url.split('?')[0].split('/').at(-1)
+      const disk = Object.entries(phase.disk).find(([path]) =>
+        path.replaceAll('\\', '/').endsWith(`/${file}`),
+      )
+      assert(disk, `Missing mapped disk bucket ${file}`)
+      assert.match(disk[1], color)
+      assert.match(phase.requested.http[`${url}&direct`].body, color)
+    }
+  }
+}
+
+async function consumeVite(context) {
+  const {
+    directory,
+    scenario,
+    selection,
+    singleCss,
+    destination,
+    create,
+    selected,
+    outputs,
+    calls,
+    utils,
+    observations,
+  } = context
+  const phases = []
+  let failure
+  let clock = 2000000000000
+  Date.now = () => clock
+  const { build } = await import('vite')
+  const save = () => {
+    const replacer = (_, value) =>
+      value === undefined ? { undefined: true } : value
+    put(
+      `${destination}.trace.json`,
+      JSON.stringify({ observations }, replacer, 2),
+    )
+    put(destination, JSON.stringify({ phases, failure }, replacer, 2))
+  }
+  const prepare = () => {
+    for (const name of ['src', 'df', 'dist'])
+      rmSync(join(directory, name), { recursive: true, force: true })
+    put(join(directory, 'devup.json'), '{"extends":["./theme.json"]}')
+    put(
+      join(directory, 'theme.json'),
+      '{"theme":{"length":{"default":{"size":"17px"}}}}',
+    )
+    put(
+      join(directory, 'index.html'),
+      '<script type="module" src="/src/entry.js"></script>',
+    )
+    put(join(directory, 'src/tokens.js'), 'export const color="maroon";')
+    for (const name of ['A', 'B']) {
+      put(
+        join(directory, `src/${name}.js`),
+        `import {css} from '@devup-ui/react'; import {color} from './tokens.js'; export const cls=css({color,w:'$size',insetX:'19px',p:${name === 'A' ? 1 : 2}}); if(import.meta.hot) import.meta.hot.accept();`,
+      )
+    }
+    put(
+      join(directory, 'src/entry.js'),
+      'import {cls as a} from "./A.js"; import {cls as b} from "./B.js"; document.body.className=a+" "+b;',
+    )
+  }
+  const snapshot = (name, requested = {}) => {
+    const disk = tree(join(directory, 'df'))
+    const state = {
+      css: selected.getCss(null, false),
+      sheet: selected.exportSheet(),
+      classes: selected.exportClassMap(),
+      files: selected.exportFileMap(),
+      canonical: selected.exportCanonicalMap(),
+      residual: selected.getUnreservedClassSlotCount(),
+      prefix: selected.getPrefix(),
+      debug: selected.isDebug(),
+      theme: selected.getDefaultTheme(),
+    }
+    const phase = {
+      name,
+      requested,
+      disk,
+      state,
+      outputs: Object.fromEntries(
+        [...outputs].sort(([a], [b]) => a.localeCompare(b)),
+      ),
+      calls: { ...calls },
+    }
+    phases.push(phase)
+    save()
+    for (const [path, css] of Object.entries(disk)) {
+      if (path.endsWith('.css'))
+        assert.equal(
+          css,
+          selected.getCss(utils.getFileNumByFilename(path), false),
+          path,
+        )
+    }
+    assert.equal(state.residual, 0)
+    return phase
+  }
+  const config = () => {
+    const arrival = Promise.withResolvers()
+    const first = scenario === 'opposite' ? 'B' : 'A'
+    return {
+      root: directory,
+      configFile: false,
+      logLevel: 'error',
+      plugins: [
+        {
+          name: 'vite-arrival-gate',
+          enforce: 'pre',
+          async transform(_code, id) {
+            if (/\/src\/[AB]\.js$/.test(id) && !id.endsWith(`/${first}.js`))
+              await arrival.promise
+          },
+        },
+        ...create({
+          ...selection,
+          singleCss,
+          atomHoist: 0,
+          shorthands: { insetX: ['left', 'right'] },
+        }),
+        {
+          name: 'vite-arrival-release',
+          enforce: 'post',
+          transform(_code, id) {
+            if (id.endsWith(`/src/${first}.js`)) arrival.resolve()
+          },
+        },
+      ],
+      optimizeDeps: { noDiscovery: true, include: [] },
+      server: {
+        host: '127.0.0.1',
+        port: Number(process.env.DEVUP_ENGINE_VITE_PORT),
+        strictPort: true,
+      },
+      build: {
+        minify: false,
+        cssMinify: false,
+        outDir: 'dist',
+        rolldownOptions: {
+          output: {
+            entryFileNames: '[name].js',
+            chunkFileNames: '[name].js',
+            assetFileNames: '[name][extname]',
+          },
+        },
+      },
+    }
+  }
+  try {
+    prepare()
+    if (scenario === 'late') {
+      const retained = create({ ...selection, singleCss })[0]
+      await retained.closeBundle()
+      const other = create({
+        engine: selection.engine === 'wasm' ? 'native' : 'wasm',
+      })
+      await other[0].closeBundle()
+      const before = calls.getCss
+      retained.load(join(directory, 'df/devup-ui/devup-ui.css'))
+      assert.equal(calls.getCss, before + 1)
+      await retained.closeBundle()
+      assert.equal(utils.getBuildOwnership().running, 0)
+      return { late: true, observations, calls: { ...calls } }
+    }
+    for (const sourcemap of [false, true]) {
+      selected.resetStateForTesting()
+      outputs.clear()
+      const options = config()
+      const result = await build({
+        ...options,
+        build: { ...options.build, sourcemap },
+      })
+      assert(!Array.isArray(result) && 'output' in result)
+      const assets = Object.fromEntries(
+        result.output.map((item) => [
+          item.fileName,
+          item.type === 'chunk'
+            ? { code: item.code, map: item.map }
+            : { source: String(item.source) },
+        ]),
+      )
+      snapshot(`build-map-${sourcemap}`, {
+        assets,
+        emitted: tree(join(directory, 'dist')),
+      })
+      assert.equal(
+        Object.keys(assets).some((name) => name.endsWith('.js.map')),
+        sourcemap,
+      )
+      const publishedCss = result.output
+        .filter(
+          (item) => item.type === 'asset' && item.fileName.endsWith('.css'),
+        )
+        .map((item) => String(item.source))
+        .join('\n')
+      assert(publishedCss.length > 0)
+      for (const name of ['A', 'B'])
+        assert(
+          outputs.has(join(directory, `src/${name}.js`).replaceAll('\\', '/')),
+        )
+      for (const [id, output] of outputs) {
+        if (/\/src\/[AB]\.js$/.test(id))
+          assert.match(output.code, /\bcls\s*=\s*["'][^"']+["']/)
+        for (const match of output.code.matchAll(
+          /\bcls\s*=\s*["']([^"']+)["']/g,
+        )) {
+          if (/\/src\/[AB]\.js$/.test(id)) {
+            const css = assets[output.cssFile.split('/').at(-1)]?.source
+            for (const side of ['left', 'right'])
+              assert(
+                match[1]
+                  .split(' ')
+                  .some((name) => css?.includes(`.${name}{${side}:19px}`)),
+              )
+          }
+          for (const name of match[1].split(' '))
+            assert(
+              publishedCss.includes(`.${name}`),
+              `Missing published class ${name}`,
+            )
+        }
+      }
+      for (const item of result.output) {
+        if (item.type === 'chunk')
+          assert.doesNotMatch(
+            item.code,
+            /@devup-ui\/(?:wasm|binding|plugin-utils)|Cannot run on the runtime/,
+          )
+      }
+      assert.equal(utils.getBuildOwnership().running, 0)
+    }
+    return { phases }
+  } catch (error) {
+    failure = errorEvidence(error)
+    throw error
+  } finally {
+    save()
+    assert.equal(utils.getBuildOwnership().running, 0)
+  }
+}
+
+async function viteErrors(context) {
+  const { directory, create, singleCss, utils, destination } = context
+  const { createServer } = await import('vite')
+  const pairs = []
+  const results = await collectViteCases(
+    ['located', 'resolver', 'registration', 'reservation'],
+    async (kind) => {
+      const errors = []
+      const bundler = []
+      const raw = []
+      const disks = []
+      const violations = []
+      const causes = []
+      const identities = []
+      for (const engine of ['native', 'wasm']) {
+        const cause = new Error(`Vite ${kind} cause`, {
+          cause: new Error('nested cause'),
+        })
+        Object.defineProperty(cause, 'hidden', { value: 'resolver detail' })
+        causes.push(errorEvidence(cause))
+        const backend = utils.loadCompiler(engine)
+        backend.resetStateForTesting()
+        const originals = new Map()
+        const immediate = []
+        let server, owner, before
+        for (const name of ['src', 'df', 'dist'])
+          rmSync(join(directory, name), { recursive: true, force: true })
+        put(join(directory, 'devup.json'), '{}')
+        put(
+          join(directory, 'src/error.js'),
+          'import {css} from "@devup-ui/react"; import {color} from "./throws.js"; export const x=css({color});',
+        )
+        put(join(directory, 'src/throws.js'), 'export const color="maroon";')
+        const inject = (name, replacement) => {
+          originals.set(name, backend[name])
+          backend[name] = replacement
+        }
+        try {
+          const plugins = create({
+            engine,
+            singleCss,
+            atomHoist: 0,
+            extractCss: true,
+          })
+          owner = plugins[0]
+          for (const name of ['configResolved', 'buildStart', 'transform']) {
+            owner[name] = diagnosticHook(owner[name], (evidence, error) => {
+              errors.push(error)
+              immediate.push({ hook: name, evidence })
+            })
+          }
+          if (kind === 'resolver') {
+            const setter = backend.setModuleResolver
+            inject('setModuleResolver', () =>
+              setter(() => {
+                throw cause
+              }),
+            )
+          }
+          if (kind === 'registration')
+            inject('registerTheme', () => {
+              throw cause
+            })
+          if (kind === 'reservation')
+            inject('reserveClassSlots', () => {
+              throw cause
+            })
+          const invalid = {
+            name: 'vite-located-error',
+            enforce: 'pre',
+            transform(code, id) {
+              if (id.endsWith('/error.js') && kind === 'located')
+                return 'import {Box} from "@devup-ui/react"; export const x=<Box color={}/>;'
+              return code
+            },
+          }
+          server = await createServer({
+            root: directory,
+            configFile: false,
+            cacheDir: join(directory, '.vite'),
+            logLevel: 'error',
+            plugins: [invalid, ...plugins],
+            optimizeDeps: { noDiscovery: true, include: [] },
+          })
+          await server.environments.client.pluginContainer.buildStart()
+          before = tree(join(directory, 'df'))
+          try {
+            await server.environments.client.transformRequest('/src/error.js')
+          } catch (error) {
+            bundler.push(error)
+          }
+          assert.deepEqual(tree(join(directory, 'df')), before)
+        } catch (error) {
+          bundler.push(error)
+          if (!errors.includes(error)) violations.push(errorEvidence(error))
+        } finally {
+          raw.push(immediate)
+          identities.push({
+            thrown: errors.at(-1) === cause,
+            cause: errors.at(-1)?.cause === cause,
+          })
+          disks.push({ engine, before, after: tree(join(directory, 'df')) })
+          try {
+            try {
+              await server?.close()
+            } finally {
+              await owner?.closeBundle()
+            }
+          } catch (error) {
+            violations.push(errorEvidence(error))
+          } finally {
+            for (const [name, method] of originals) backend[name] = method
+            backend.resetStateForTesting()
+          }
+        }
+      }
+      const pair = {
+        kind,
+        raw,
+        disks,
+        violations,
+        bundler: bundler.map(errorEvidence),
+        causes,
+        identities,
+      }
+      pairs.push(pair)
+      if (errors.length === 2) {
+        const keys = raw.map((rows) =>
+          rows
+            .at(-1)
+            .evidence.raw.properties.map(({ key }) => JSON.stringify(key)),
+        )
+        pair.nativeOnly = keys[0].filter((key) => !keys[1].includes(key))
+        if (pair.nativeOnly.length) pair.owner = '#796'
+      }
+      put(destination, JSON.stringify({ pairs }, null, 2))
+      assert.deepEqual(violations, [])
+      assert.equal(errors.length, 2)
+      if (kind === 'registration')
+        for (const disk of disks)
+          assert(!Object.keys(disk.after).some((file) => file.endsWith('.css')))
+      assertErrorParity(raw[0].at(-1).evidence, raw[1].at(-1).evidence)
+      assertRawParity(raw[0], raw[1])
+      assertRawParity(identities[0], identities[1])
+      if (kind === 'resolver')
+        assert.deepEqual(identities[0], { thrown: false, cause: false })
+      if (kind === 'registration' || kind === 'reservation')
+        for (const observed of identities) assert.equal(observed.thrown, true)
+      return pair
+    },
+  )
+  put(destination, JSON.stringify({ pairs, results }, null, 2))
+  assert(
+    results.every((result) => result.ok),
+    'Vite error diagnostics failed; inspect all pairs',
+  )
+  return { pairs, results }
 }
 
 async function consumeRsbuild(context) {
@@ -999,7 +1483,10 @@ export async function consume({
     format === 'require'
       ? require.resolve(packageName)
       : fileURLToPath(import.meta.resolve(packageName))
-  const utilsRequire = createRequire(entry)
+  const physical = adapter === 'vite' ? viteRealpath : realpathSync
+  const utilsRequire = createRequire(
+    adapter === 'vite' ? physical(entry) : entry,
+  )
   const utils = utilsRequire('@devup-ui/plugin-utils')
   const utilsRoot = dirname(
     dirname(utilsRequire.resolve('@devup-ui/plugin-utils')),
@@ -1011,16 +1498,18 @@ export async function consume({
     pathToFileURL(join(utilsRoot, utilsManifest.exports['.'].import)).href
   )
   const entryUtils = format === 'import' ? fromEsm : utils
-  const pluginRoot = realpathSync(dirname(dirname(entry)))
+  const pluginRoot = physical(dirname(dirname(entry)))
   const assertDist =
-    adapter === 'rsbuild' ? assertRsbuildDist : assertWebpackDist
+    adapter === 'rsbuild' || adapter === 'vite'
+      ? assertRsbuildDist
+      : assertWebpackDist
   assertDist(join(pluginRoot, 'dist'))
   const manifest = JSON.parse(
     readFileSync(join(pluginRoot, 'package.json'), 'utf8'),
   )
   assert.equal(
-    realpathSync(entry),
-    realpathSync(join(pluginRoot, manifest.exports['.'][format])),
+    physical(entry),
+    physical(join(pluginRoot, manifest.exports['.'][format])),
   )
   assert(
     !Object.values(manifest.dependencies).some((version) =>
@@ -1058,7 +1547,7 @@ export async function consume({
     const plugin =
       format === 'require' ? require(packageName) : await import(packageName)
     const create = (options) =>
-      adapter === 'rsbuild'
+      adapter === 'rsbuild' || adapter === 'vite'
         ? plugin.DevupUI(options)
         : new plugin.DevupUIWebpackPlugin(options)
     if (scenario === 'errors' && adapter === 'webpack') {
@@ -1199,15 +1688,25 @@ export async function consume({
           return true
         },
       )
-      create({ engine: 'wasm' })
+      const instance = create({ engine: 'wasm' })
+      if (adapter === 'vite') await instance[0].closeBundle()
       return { guards: true, diagnostics, denied: errorEvidence(denied) }
     }
+    if (adapter === 'vite' && scenario === 'errors')
+      return await viteErrors({
+        directory,
+        create,
+        singleCss,
+        utils,
+        destination,
+      })
     const selected = utils.loadCompiler(selection.engine)
     assert.equal(fromEsm.loadCompiler(selection.engine), selected)
     selected.resetStateForTesting()
     const calls = {}
     const outputs = new Map()
     const errors = []
+    const observations = []
     for (const name of [
       'registerShorthands',
       'registerTheme',
@@ -1218,13 +1717,36 @@ export async function consume({
       'exportSheet',
       'exportClassMap',
       'exportFileMap',
+      ...(adapter === 'vite'
+        ? [
+            'exportCanonicalMap',
+            'seedFileMap',
+            'setDebug',
+            'setPrefix',
+            'importCanonicalMap',
+            'importFileRoutes',
+            'setAtomHoist',
+          ]
+        : []),
     ]) {
       const method = selected[name]
       originals.set(name, method)
       calls[name] = 0
       selected[name] = (...args) => {
         calls[name]++
+        const scratch =
+          adapter === 'vite' && name === 'reserveClassSlots'
+            ? selected.exportSheet()
+            : undefined
         const result = method(...args)
+        if (adapter === 'vite' && name === 'reserveClassSlots') {
+          observations.push({
+            reservation: args,
+            sheetBefore: scratch,
+            sheetAfter: selected.exportSheet(),
+          })
+          assert.equal(selected.exportSheet(), scratch)
+        }
         if (name === 'codeExtract') {
           outputs.set(args[0], {
             code: result.code,
@@ -1234,10 +1756,29 @@ export async function consume({
             dependencies: result.dependencies,
             updatedBaseStyle: result.updatedBaseStyle,
           })
+          if (adapter === 'vite')
+            observations.push({
+              input: args.slice(0, 2),
+              output: outputs.get(args[0]),
+            })
         }
         return result
       }
     }
+    if (adapter === 'vite')
+      return await consumeVite({
+        directory,
+        scenario,
+        selection,
+        singleCss,
+        destination,
+        create,
+        selected,
+        outputs,
+        calls,
+        utils,
+        observations,
+      })
     rmSync(join(directory, 'df'), { recursive: true, force: true })
     rmSync(join(directory, 'dist'), { recursive: true, force: true })
     put(
@@ -1600,8 +2141,12 @@ export async function consume({
 
 if (
   process.argv[1] &&
-  realpathSync(resolve(process.argv[1])) ===
-    realpathSync(fileURLToPath(import.meta.url))
+  (process.argv[7] === 'vite' ? viteRealpath : realpathSync)(
+    resolve(process.argv[1]),
+  ) ===
+    (process.argv[7] === 'vite' ? viteRealpath : realpathSync)(
+      fileURLToPath(import.meta.url),
+    )
 ) {
   const [scenario, mode, format, css, destination, adapter = 'webpack'] =
     process.argv.slice(2)
@@ -1615,6 +2160,9 @@ if (
       'wrong-loader',
       'errors',
       'dev',
+      'lifecycle',
+      'repeat',
+      'opposite',
     ].includes(scenario),
   )
   assert(['default', 'native', 'wasm'].includes(mode))

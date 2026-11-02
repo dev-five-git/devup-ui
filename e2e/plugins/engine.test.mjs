@@ -23,9 +23,15 @@ import {
   assertRawParity,
   assertRsbuildDist,
   assertRsbuildParity,
+  assertViteBuckets,
+  assertViteParity,
   assertWebpackDist,
+  collectViteCases,
+  completedReceipt,
+  diagnosticHook,
   errorEvidence,
   initialLayerGate,
+  observeRejection,
   webpackDistFiles,
 } from './engine-consumer.mjs'
 import {
@@ -34,6 +40,133 @@ import {
   hostPackSelection,
   verifyHostInstall,
 } from './engine-fixtures.mjs'
+
+for (const single of [false, true]) {
+  for (const corrupt of ['none', 'disk', 'served']) {
+    test(`Vite mapped bucket proof: single=${single}, corrupt=${corrupt}`, () => {
+      // Given: an unrelated teal bucket cannot rescue either affected bucket.
+      const files = single
+        ? ['devup-ui.css']
+        : ['devup-ui-3.css', 'devup-ui-4.css']
+      const urls = files.map((file) => `/df/devup-ui/${file}?devup-revision=1`)
+      const phase = {
+        disk: { '/df/devup-ui/devup-ui-5.css': '.unrelated{color:teal}' },
+        requested: { transforms: {}, http: {} },
+      }
+      for (const [index, name] of ['A', 'B'].entries()) {
+        const url = urls[single ? 0 : index]
+        phase.requested.transforms[`/src/${name}.js`] = {
+          code: `import "${url}";`,
+        }
+        phase.requested.http[`${url}&direct`] = { body: '.a{color:teal}' }
+        phase.disk[url.split('?')[0]] = '.a{color:teal}'
+      }
+      if (!single) {
+        phase.disk['/df/devup-ui/devup-ui.css'] = ':root{--size:17px}'
+        assert.throws(() =>
+          assert.match(phase.disk['/df/devup-ui/devup-ui.css'], /teal/),
+        )
+      }
+      if (corrupt === 'disk') phase.disk[urls[0].split('?')[0]] = ''
+      if (corrupt === 'served')
+        phase.requested.http[`${urls[0]}&direct`].body = ''
+      // When / Then
+      const check = () => assertViteBuckets(phase, /teal/)
+      if (corrupt === 'none') assert.doesNotThrow(check)
+      else assert.throws(check, assert.AssertionError)
+    })
+  }
+}
+
+test('Vite diagnostic collection preserves a failure and still visits later cells', async () => {
+  // Given
+  const visited = []
+  const failure = new Error('diagnostic control')
+  // When
+  const cases = [
+    'located',
+    'resolver',
+    'registration',
+    'reservation',
+    'later-execution',
+    'later-comparison',
+  ]
+  const results = await collectViteCases(cases, async (name) => {
+    visited.push(name)
+    if (name === 'located') throw failure
+    return 'second receipt'
+  })
+  // Then
+  assert.deepEqual(visited, cases)
+  assert.equal(results[0].ok, false)
+  assertRawParity(results[0].error, errorEvidence(failure))
+  assert.deepEqual(results[1], {
+    name: 'resolver',
+    ok: true,
+    value: 'second receipt',
+  })
+})
+
+test('a partial saved receipt cannot become a successful boundary comparison', () => {
+  // Given
+  const receipts = new Map([['partial', { phases: [] }]])
+  // When / Then
+  assert.throws(
+    () => completedReceipt(receipts, new Set(), 'partial'),
+    assert.AssertionError,
+  )
+  assert.equal(
+    completedReceipt(receipts, new Set(['partial']), 'partial'),
+    receipts.get('partial'),
+  )
+})
+
+for (const field of ['http', 'disk', 'map', 'observations', 'residual']) {
+  test(`Vite raw parity rejects a changed ${field} without an intermediate exclusion`, () => {
+    // Given
+    const expected = { phases: [{ [field]: 'before' }] }
+    const actual = { phases: [{ [field]: 'after' }] }
+    // When / Then
+    assert.throws(() => assertRawParity(expected, actual))
+  })
+}
+
+for (const field of [
+  'css',
+  'code',
+  'map',
+  'assets',
+  'disk',
+  'state',
+  'calls',
+]) {
+  test(`Vite opposite single CSS exemption preserves ${field} custody`, () => {
+    const expected = { phases: [{ outputs: { file: { css: 'early' } } }] }
+    const actual = structuredClone(expected)
+    const target = ['css', 'code', 'map'].includes(field)
+      ? actual.phases[0].outputs.file
+      : actual.phases[0]
+    target[field] = 'different'
+    if (field === 'css') {
+      assertViteParity(expected, actual, true)
+      assert.throws(() => assertViteParity(expected, actual))
+    } else assert.throws(() => assertViteParity(expected, actual, true))
+    assert.equal(
+      actual.phases[0].outputs.file.css,
+      field === 'css' ? 'different' : 'early',
+    )
+    delete actual.phases[0].outputs.file.css
+    assert.throws(() => assertViteParity(expected, actual, true))
+  })
+}
+
+test('Vite raw parity distinguishes a present no-map value from an absent field', () => {
+  // Given
+  const expected = { output: { map: undefined } }
+  const actual = { output: {} }
+  // When / Then
+  assert.throws(() => assertRawParity(expected, actual))
+})
 
 test('host path policy equates short, expanded and junction spellings exactly', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'devup host realpath '))
@@ -415,6 +548,58 @@ test('saved error evidence retains complete raw stack values', () => {
     ({ key }) => key.type === 'string' && key.value === 'stack',
   )
   assert.equal(property.observed.value, stack)
+})
+
+test('hook diagnostics retain the complete catch-turn graph before bundler mutation', async () => {
+  // Given
+  const key = Symbol('hidden')
+  const cause = new Error('cause')
+  const error = new Error('boundary', { cause })
+  const nested = { value: 'before' }
+  Object.defineProperty(error, key, { value: nested })
+  Object.defineProperty(error, 'detail', { get: () => nested })
+  const expected = errorEvidence(error)
+  let captured
+  const hook = diagnosticHook(
+    () => {
+      throw error
+    },
+    (value) => {
+      captured = value
+    },
+  )
+  // When: Vite keeps the original reference, adds metadata and changes nested data.
+  await assert.rejects(hook(), (value) => value === error)
+  Object.assign(error, {
+    plugin: 'devup-ui',
+    id: '/src/error.js',
+    loc: { line: 357, column: 12 },
+    frame: 'later',
+  })
+  nested.value = 'after'
+  // Then: the old deferred receipt fails while the immediate graph is unchanged.
+  assert.throws(() => assertErrorParity(expected, errorEvidence(error)))
+  assertErrorParity(expected, captured)
+  for (const field of ['loc', 'frame', 'message', 'other']) {
+    const left = errorEvidence(new Error('same'))
+    const right = errorEvidence(
+      Object.assign(new Error('same'), { [field]: 'different' }),
+    )
+    assert.throws(() => assertErrorParity(left, right))
+  }
+})
+
+test('a rejection stays observed behind a held gate and rethrows its exact cause on consumption', async () => {
+  // Given
+  const gate = Promise.withResolvers()
+  const cause = new Error('held rejection')
+  const consume = observeRejection(Promise.reject(cause))
+  // When: cross a complete event-loop turn before releasing the unrelated work.
+  await new Promise(setImmediate)
+  gate.resolve()
+  await gate.promise
+  // Then
+  await assert.rejects(consume(), (error) => error === cause)
 })
 
 function fixture(t, archiveMarker) {

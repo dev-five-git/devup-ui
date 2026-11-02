@@ -107,6 +107,7 @@ async function main() {
     plugins: [
       observer,
       DevupUI({
+        engine: 'wasm',
         distDir: resolve(root, 'df'),
         cssDir: resolve(root, 'df/devup-ui'),
         devupFile: resolve(root, 'devup.json'),

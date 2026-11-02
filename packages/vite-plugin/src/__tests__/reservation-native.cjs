@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const { writeFileSync } = require('node:fs')
 const { basename, resolve } = require('node:path')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { observe } = require('./reservation-native-observer.cjs')
 
 const { text } = require('./reservation-native-receipt.cjs')
@@ -18,7 +18,7 @@ const gate = Promise.withResolvers()
 telemetry.onExtract((id) => {
   if (basename(id).endsWith(`${order[0]}.js`)) gate.resolve(undefined)
 })
-/** @type {{DevupUI:(options: {distDir:string,cssDir:string,devupFile:string,singleCss:boolean})=>import('vite').PluginOption}} */
+/** @type {{DevupUI:typeof import('../plugin').DevupUI}} */
 const { DevupUI } = require('../../dist/' + 'index.cjs')
 
 async function main() {
@@ -39,6 +39,7 @@ async function main() {
     plugins: [
       observer,
       DevupUI({
+        engine: 'wasm',
         distDir: resolve(root, 'df'),
         cssDir: resolve(root, 'df/devup-ui'),
         devupFile: resolve(root, 'devup.json'),

@@ -4,7 +4,6 @@ import * as os from 'node:os'
 import * as nodePath from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
   beforeEach,
@@ -18,7 +17,26 @@ import type { Plugin } from 'vite'
 
 import { DevupUI } from '../plugin'
 
+const wasm = pluginUtils.loadCompiler('wasm')
+
 describe('shorthand creation boundary', () => {
+  it.each([undefined, 'native', 'wasm'] as const)(
+    'passes engine=%s to the selector',
+    (engine) => {
+      using selection = spyOn(pluginUtils, 'loadCompiler').mockReturnValue(wasm)
+      // When
+      const [plugin] = DevupUI(
+        engine === undefined ? undefined : { engine },
+      ) as unknown as [ViteTestPlugin]
+      try {
+        // Then
+        expect(selection.mock.calls).toEqual([[engine]])
+      } finally {
+        plugin.closeBundle()
+      }
+    },
+  )
+
   it('registers canonical targets when the plugin is created', () => {
     const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
       undefined,
@@ -38,16 +56,18 @@ describe('shorthand creation boundary', () => {
   })
 
   it('rejects a typo before registration when runtime options bypass types', () => {
+    using selection = spyOn(pluginUtils, 'loadCompiler')
     const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
       undefined,
     )
     try {
       expect(() =>
         Reflect.apply(DevupUI, undefined, [
-          { shorthands: { bgx: ['backgroundColour'] } },
+          { engine: 'invalid', shorthands: { bgx: ['backgroundColour'] } },
         ]),
       ).toThrow(pluginUtils.ShorthandConfigError)
       expect(registration).not.toHaveBeenCalled()
+      expect(selection).not.toHaveBeenCalled()
     } finally {
       registration.mockRestore()
     }
@@ -81,7 +101,10 @@ interface ViteConfig {
 
 interface HotUpdateEnvironment {
   config: { consumer: 'client' | 'server' }
-  moduleGraph: { invalidateModule: (...args: unknown[]) => void }
+  moduleGraph: {
+    invalidateModule: (...args: unknown[]) => void
+    getModulesByFile: (file: string) => Set<object> | undefined
+  }
   hot: { send: (...args: unknown[]) => void }
 }
 
@@ -120,6 +143,7 @@ interface ViteTestPlugin {
     server: {
       moduleGraph: {
         invalidateModule: (...args: unknown[]) => void
+        getModulesByFile: (file: string) => Set<object> | undefined
         idToModuleMap?: ReadonlyMap<string, object>
       }
       ws: { send: (...args: unknown[]) => void }
@@ -177,16 +201,18 @@ interface ViteTestRestorePlugin {
 function createCodeExtractResult(
   overrides: Partial<CodeExtractResult> = {},
 ): CodeExtractResult {
+  const free = mock()
   return {
     css: 'css code',
     code: 'code',
     cssFile: 'devup-ui.css',
     map: undefined,
     updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
+    dependencies: [],
+    free,
+    [Symbol.dispose]: free,
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
 }
 
 const activePlugins: ViteTestPlugin[] = []
@@ -194,7 +220,7 @@ const activePlugins: ViteTestPlugin[] = []
 function createPlugins(
   options?: Parameters<typeof DevupUI>[0],
 ): [ViteTestPlugin, ViteTestRestorePlugin] {
-  const plugins = DevupUI(options) as unknown as [
+  const plugins = DevupUI({ engine: 'wasm', ...options }) as unknown as [
     ViteTestPlugin,
     ViteTestRestorePlugin,
   ]
@@ -253,7 +279,7 @@ beforeEach(() => {
   relativeSpy = spyOn(nodePath, 'relative').mockImplementation(
     (from: string, to: string) => originalRelative(from, to),
   )
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(() =>
     createCodeExtractResult(),
   )
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('css code')
@@ -285,6 +311,22 @@ afterEach(() => {
 })
 
 describe('devupUIVitePlugin', () => {
+  it('releases extracted Output before publishing CSS while retaining its result', async () => {
+    // Given
+    const plugin = createPlugin()
+    const output = createCodeExtractResult()
+    codeExtractSpy.mockReturnValueOnce(output)
+    writeFileSpy.mockImplementationOnce(async () => {
+      expect(output.free).toHaveBeenCalledTimes(1)
+    })
+    // When
+    const result = await plugin.transform('source', 'source.tsx')
+    // Then
+    expect(result).toEqual({ code: 'code', map: undefined })
+    expect(writeFileSpy).toHaveBeenCalledTimes(1)
+    expect(output.free).toHaveBeenCalledTimes(1)
+  })
+
   it('should apply default options', () => {
     const plugin = createPlugin({})
     expect(plugin).toEqual({
@@ -1475,7 +1517,7 @@ describe('devupUIVitePlugin', () => {
     const result = await plugin.handleHotUpdate({
       file: 'devup.json',
       server: {
-        moduleGraph: { invalidateModule },
+        moduleGraph: { invalidateModule, getModulesByFile: () => undefined },
         ws: { send },
       },
       modules: [module],
@@ -1506,7 +1548,7 @@ describe('devupUIVitePlugin', () => {
     const result = await plugin.handleHotUpdate({
       file: 'other.json',
       server: {
-        moduleGraph: { invalidateModule },
+        moduleGraph: { invalidateModule, getModulesByFile: () => undefined },
         ws: { send },
       },
       modules: [],
@@ -1571,6 +1613,7 @@ describe('devupUIVitePlugin', () => {
         ...createHotUpdateEnvironment('client'),
         moduleGraph: {
           invalidateModule: mock(),
+          getModulesByFile: () => undefined,
           idToModuleMap: new Map([
             ['a', first],
             ['b', second],
@@ -1606,6 +1649,7 @@ describe('devupUIVitePlugin', () => {
         server: {
           moduleGraph: {
             invalidateModule,
+            getModulesByFile: () => undefined,
             idToModuleMap: new Map([['a', module]]),
           },
           ws: { send },
@@ -1638,7 +1682,10 @@ describe('devupUIVitePlugin', () => {
   function createHotUpdateEnvironment(consumer: 'client' | 'server') {
     return {
       config: { consumer },
-      moduleGraph: { invalidateModule: mock() },
+      moduleGraph: {
+        invalidateModule: mock(),
+        getModulesByFile: () => undefined,
+      },
       hot: { send: mock() },
     }
   }

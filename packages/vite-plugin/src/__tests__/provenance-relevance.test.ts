@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { resetBuildState } from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -13,8 +13,11 @@ import * as htmlReservation from '../html-reservation'
 import { createViteReservation } from '../reservation'
 import { createServerWatch } from '../server-watch'
 
+const wasm = loadCompiler('wasm')
+const { resetBuildState } = wasm
+
 function provenanceReservation(root: string) {
-  return createViteReservation({
+  return createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},
@@ -209,7 +212,7 @@ for (const suffix of ['json', 'css', 'cjs']) {
     const compiled = createCompiledDependencies()
     const supplier = join(project.root, `outside/supplier.${suffix}`)
     compiled.update('rsc', 'consumer.tsx?server', [supplier])
-    const reservation = createViteReservation({
+    const reservation = createViteReservation(wasm, {
       package: '@devup-ui/react',
       include: [],
       importAliases: {},

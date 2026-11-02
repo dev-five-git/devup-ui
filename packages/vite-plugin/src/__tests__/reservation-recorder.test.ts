@@ -2,9 +2,11 @@ import { join } from 'node:path'
 
 import {
   createSharedSlotReservation,
+  type DevupCompiler,
   getBuildOwnership,
+  loadCompiler,
+  type ReservationEngine,
 } from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -14,6 +16,8 @@ import {
   STYLE,
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { createViteReservation } from '../reservation'
+
+const wasm: DevupCompiler & ReservationEngine = loadCompiler('wasm')
 
 it('forwards the actual Vite reservation batch without publishing scratch CSS', async () => {
   expect(getBuildOwnership().running).toBe(0)
@@ -29,7 +33,7 @@ it('forwards the actual Vite reservation batch without publishing scratch CSS', 
       reserve(...args)
     },
   )
-  const reservation = createViteReservation({
+  const reservation = createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},

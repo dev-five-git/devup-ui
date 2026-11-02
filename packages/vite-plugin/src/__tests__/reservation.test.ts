@@ -2,7 +2,6 @@ import * as fs from 'node:fs'
 import { join } from 'node:path'
 
 import * as utils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -12,8 +11,11 @@ import {
 import * as htmlReservation from '../html-reservation'
 import { createViteReservation } from '../reservation'
 
+const wasm: utils.DevupCompiler & utils.ReservationEngine =
+  utils.loadCompiler('wasm')
+
 function reservation(root: string) {
-  return createViteReservation({
+  return createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},

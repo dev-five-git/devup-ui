@@ -11,10 +11,13 @@ import {
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  type DevupCompiler,
+  type DevupUIBasePluginOptions,
   extractedNeedles,
   getBuildOwnership,
   getFileNumByFilename,
   type ImportAliases,
+  loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
@@ -23,19 +26,6 @@ import {
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import {
-  codeExtract,
-  getCss,
-  getDefaultTheme,
-  getThemeInterface,
-  registerShorthands,
-  registerTheme,
-  resetBuildState,
-  seedFileMap,
-  setDebug,
-  setModuleResolver,
-  setPrefix,
-} from '@devup-ui/wasm'
 import type {
   EnvironmentModuleNode,
   ModuleNode,
@@ -254,7 +244,10 @@ function createCssChunkBuildOptions(
     : { rollupOptions: { output } }
 }
 
-export interface DevupUIPluginOptions {
+export interface DevupUIPluginOptions extends Pick<
+  DevupUIBasePluginOptions,
+  'engine'
+> {
   package: string
   cssDir: string
   devupFile: string
@@ -279,6 +272,7 @@ export interface DevupUIPluginOptions {
 }
 
 async function writeDataFiles(
+  compiler: DevupCompiler,
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
   inputs: Set<string>,
   publishTailwind: (files: string[]) => void,
@@ -287,9 +281,9 @@ async function writeDataFiles(
     const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
 
-    registerTheme(withTailwindCss(theme, config))
+    compiler.registerTheme(withTailwindCss(theme, config))
     publishTailwind(tailwindCssFiles(config))
-    const interfaceCode = getThemeInterface(
+    const interfaceCode = compiler.getThemeInterface(
       ...createThemeInterfaceArgs(options.package),
     )
 
@@ -302,7 +296,7 @@ async function writeDataFiles(
     }
   } catch (error) {
     console.error(error)
-    registerTheme({})
+    compiler.registerTheme({})
   }
   // Sequential: writing into cssDir concurrently with its own mkdir loses the
   // race on a cold start (no `df/`) and fails the build with ENOENT.
@@ -310,7 +304,10 @@ async function writeDataFiles(
     await mkdir(options.cssDir, { recursive: true })
   }
   if (!options.singleCss) {
-    await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      compiler.getCss(null, false),
+    )
   }
 }
 
@@ -325,15 +322,17 @@ export function DevupUI({
   singleCss = false,
   prefix,
   shorthands,
+  engine,
   atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const compiler = loadCompiler(engine)
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
   const ownsEngine = getBuildOwnership().running === 0
-  let endBuild: (() => void) | undefined = beginBuild({ resetBuildState })
+  let endBuild: (() => void) | undefined = beginBuild(compiler)
   let closing = false
   let ownedWork = 0
   let drained: PromiseWithResolvers<void> | undefined
@@ -364,16 +363,16 @@ export function DevupUI({
     }
   }
   function configureEngine() {
-    registerShorthands(normalizedShorthands)
-    setDebug(debug)
-    setPrefix(prefix ?? null)
+    compiler.registerShorthands(normalizedShorthands)
+    compiler.setDebug(debug)
+    compiler.setPrefix(prefix ?? null)
   }
   if (ownsEngine) configureEngine()
   const importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
   )
-  const reservation = createViteReservation({
+  const reservation = createViteReservation(compiler, {
     package: libPackage,
     include,
     importAliases,
@@ -449,6 +448,7 @@ export function DevupUI({
       await previous
       activeConfigFiles = inputs
       await writeDataFiles(
+        compiler,
         {
           package: libPackage,
           cssDir,
@@ -462,6 +462,8 @@ export function DevupUI({
           watchConfigInputs?.()
         },
       )
+      if (singleCss)
+        await writeCssFile('devup-ui.css', compiler.getCss(null, false))
     } finally {
       configFiles = inputs
       tailwindFiles = activeTailwindFiles
@@ -485,7 +487,7 @@ export function DevupUI({
   }
   const plugin = {
     name: 'devup-ui',
-    // The WASM sheet and transform state are intentionally shared. Vite
+    // The compiler sheet and transform state are intentionally shared. Vite
     // otherwise recreates this plugin for every environment build, which makes
     // each environment independently emit the same CSS asset.
     sharedDuringBuild: true,
@@ -496,7 +498,7 @@ export function DevupUI({
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
       // Vite ids are POSIX absolute paths
-      setModuleResolver(
+      compiler.setModuleResolver(
         createModuleResolver({
           cwd: projectRoot,
           toId: (path) => path.replaceAll('\\', '/'),
@@ -518,7 +520,7 @@ export function DevupUI({
         // Files numbered before keep their numbers, so a later pass in the
         // dev server only numbers new files after the existing ones.
         seedFileNumbers(
-          { seedFileMap },
+          compiler,
           collectNumberedFiles({
             roots: sourceDirs,
             include,
@@ -580,7 +582,7 @@ export function DevupUI({
         this.addWatchFile(dependency)
     },
     config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
-      const theme = getDefaultTheme()
+      const theme = compiler.getDefaultTheme()
       const define: Record<string, string> = {}
       if (theme) {
         define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
@@ -659,7 +661,12 @@ export function DevupUI({
       // every module is compiled again
       for (const mod of isTailwind
         ? environment.moduleGraph.idToModuleMap.values()
-        : modules) {
+        : new Set([
+            ...modules,
+            ...(environment.moduleGraph.getModulesByFile(
+              resolve(cssDir, 'devup-ui.css').replaceAll('\\', '/'),
+            ) ?? []),
+          ])) {
         environment.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
@@ -694,7 +701,12 @@ export function DevupUI({
       const invalidatedModules = new Set<ModuleNode>()
       for (const mod of isTailwind
         ? server.moduleGraph.idToModuleMap.values()
-        : modules) {
+        : new Set([
+            ...modules,
+            ...(server.moduleGraph.getModulesByFile(
+              resolve(cssDir, 'devup-ui.css').replaceAll('\\', '/'),
+            ) ?? []),
+          ])) {
         server.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
@@ -724,7 +736,7 @@ export function DevupUI({
       const fileName = basename(id).split('?')[0]
       if (DEVUP_CSS_FILE_RE.test(fileName)) {
         const fileNum = getFileNumByFilename(fileName)
-        const css = getCss(fileNum, false)
+        const css = compiler.getCss(fileNum, false)
         cssMap.set(fileNum, css)
         return css
       }
@@ -780,16 +792,26 @@ export function DevupUI({
         updatedBaseStyle,
         dependencies = [],
         // import main css in code
-      } = codeExtract(
-        fileName,
-        code,
-        libPackage,
-        rel,
-        singleCss,
-        true,
-        false,
-        importAliases,
-      )
+      } = (() => {
+        using output = compiler.codeExtract(
+          fileName,
+          code,
+          libPackage,
+          rel,
+          singleCss,
+          true,
+          false,
+          importAliases,
+        )
+        return {
+          code: output.code,
+          css: output.css,
+          map: output.map,
+          cssFile: output.cssFile,
+          updatedBaseStyle: output.updatedBaseStyle,
+          dependencies: output.dependencies,
+        }
+      })()
       compiledDependencies.update(
         this.environment?.name ?? 'client',
         id,
@@ -800,7 +822,9 @@ export function DevupUI({
 
       if (updatedBaseStyle) {
         // update base style
-        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
+        promises.push(
+          writeCssFile('devup-ui.css', compiler.getCss(null, false)),
+        )
       }
 
       if (cssFile) {
@@ -850,7 +874,7 @@ export function DevupUI({
         const cssName = getDevupCssChunkName(asset.name)
         if (!cssName) continue
         if (!('source' in asset)) continue
-        const source = getCss(getFileNumByFilename(cssName), false)
+        const source = compiler.getCss(getFileNumByFilename(cssName), false)
         asset.source = source
         cssFiles.add(file)
       }

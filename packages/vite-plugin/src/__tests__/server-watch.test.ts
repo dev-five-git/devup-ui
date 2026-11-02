@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -12,8 +12,10 @@ import { createCompiledDependencies } from '../compiled-dependencies'
 import { createViteReservation } from '../reservation'
 import { createServerWatch } from '../server-watch'
 
+const wasm = loadCompiler('wasm')
+
 function setup(root: string) {
-  const reservation = createViteReservation({
+  const reservation = createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},
