@@ -713,10 +713,10 @@ export function DevupUI({
           resolve(join(cssDir, fileName))
       ) {
         if (!isServe) return join(cssDir, fileName)
-        // Only changed writes mint a module; `v` survives Vite's timestamp stripping.
+        // Vite reserves `v` for immutable dependency caching, not generated CSS.
         return join(
           cssDir,
-          `${fileName}?v=${sheetRevisions.get(fileName) ?? 0}`,
+          `${fileName}?devup-revision=${sheetRevisions.get(fileName) ?? 0}`,
         )
       }
     },
