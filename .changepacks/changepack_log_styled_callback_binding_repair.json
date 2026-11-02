@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Preserve extractor callback, theme-read and rule-array behavior while removing redundant preparation and unreachable analysis paths. Add Linux-coverable regression cases without coverage exclusions. No new build errors.",
-  "date": "2026-10-21T00:00:00.000Z"
-}

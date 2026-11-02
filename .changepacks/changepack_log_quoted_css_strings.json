@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Keep quoted strings in CSS values, template blocks and selectors byte for byte: a number, color, space, comma, semicolon, brace, parenthesis or comment marker inside quotes is data, so content: '0.5' no longer becomes '.5'. The text around a string is still optimized, with no styling runtime and no new build errors.",
-  "date": "2026-10-20T00:00:00.000Z"
-}

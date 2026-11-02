@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "packages/react/package.json": "Patch"
-  },
-  "note": "Styled components now remove every runtime prop whose name starts with `$` before forwarding a rest spread to a tag or component, including props supplied by callers or attrs. Style and attrs functions can still read transient props, and all other build-time forwarding policies remain unchanged. The styled-components migration guide documents transient prop support. No new build errors",
-  "date": "2026-10-01T00:00:00.000Z"
-}
