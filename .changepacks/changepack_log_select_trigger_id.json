@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/components/package.json": "Patch"
-  },
-  "note": "Each Select trigger now gets its own id from the Select id or a generated id, so several Selects on a page no longer share the id -trigger and each listbox is labelled by its own trigger; no new build errors.",
-  "date": "2026-10-22T00:00:00.000Z"
-}

@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Preserve complete template interpolations when extracting style values: fold exact pure template text and keep dynamic element values in CSS variables without dropping side effects. Standalone css() values that cannot be known at build time now reach the existing located build error instead of silently losing their interpolations.",
-  "date": "2026-10-17T00:00:00.000Z"
-}
