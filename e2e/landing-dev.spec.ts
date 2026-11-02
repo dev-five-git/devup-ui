@@ -23,6 +23,16 @@ const test = base.extend<{ browserErrors: string[] }>({
   ],
 })
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api.github.com/repos/dev-five-git/devup-ui', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ stargazers_count: 1234 }),
+    }),
+  )
+})
+
 const routes = [
   ['/', '/'],
   ['/docs/overview', '/docs/overview'],
