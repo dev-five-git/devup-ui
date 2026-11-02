@@ -1733,6 +1733,546 @@ async function consumeBun(context) {
   }
 }
 
+async function consumeNextLoaders({
+  directory,
+  format,
+  selection,
+  singleCss,
+  selected,
+  utils,
+  outputs,
+  calls,
+  observations,
+}) {
+  const require = createRequire(join(directory, 'package.json'))
+  const modules = []
+  for (const name of ['loader', 'css-loader']) {
+    const specifier = `@devup-ui/next-plugin/${name}`
+    const entry =
+      format === 'require'
+        ? require.resolve(specifier)
+        : fileURLToPath(import.meta.resolve(specifier))
+    const root = dirname(dirname(realpathSync(entry)))
+    const manifest = JSON.parse(
+      readFileSync(join(root, 'package.json'), 'utf8'),
+    )
+    assert.equal(
+      realpathSync(entry),
+      realpathSync(join(root, manifest.exports[`./${name}`][format])),
+    )
+    modules.push(
+      format === 'require' ? require(specifier) : await import(specifier),
+    )
+  }
+  const [sourceModule, cssModule] = modules
+  const sourceLoader = sourceModule.default ?? sourceModule
+  const cssLoader = cssModule.default ?? cssModule
+  const other = utils.loadCompiler(
+    selection.engine === 'wasm' ? 'native' : 'wasm',
+  )
+  other.resetStateForTesting()
+  const state = (compiler) => ({
+    css: compiler.getCss(null, false),
+    sheet: compiler.exportSheet(),
+    classes: compiler.exportClassMap(),
+    files: compiler.exportFileMap(),
+    canonical: compiler.exportCanonicalMap(),
+    residual: compiler.getUnreservedClassSlotCount(),
+    prefix: compiler.getPrefix(),
+    debug: compiler.isDebug(),
+    theme: compiler.getDefaultTheme(),
+  })
+  const unselectedBefore = state(other)
+  selected.registerShorthands({ insetX: ['left', 'right'] })
+  const cssDir = join(directory, 'direct-css')
+  mkdirSync(cssDir, { recursive: true })
+  put(join(directory, 'src/tokens.js'), "export const tone = 'teal';")
+  const resourcePath = join(directory, 'src/direct.jsx')
+  const source =
+    "import {css} from '@devup-ui/react'; import {tone} from './tokens.js'; export const cls=css({color:tone,insetX:'19px',w:'$size',p:'1px'});"
+  put(resourcePath, source)
+  const options = {
+    ...selection,
+    package: '@devup-ui/react',
+    cssDir,
+    singleCss,
+    watch: false,
+    sheetFile: join(cssDir, 'sheet.json'),
+    classMapFile: join(cssDir, 'classMap.json'),
+    fileMapFile: join(cssDir, 'fileMap.json'),
+    themeFile: join(directory, 'direct-devup.json'),
+    defaultSheet: JSON.parse(selected.exportSheet()),
+    defaultClassMap: {},
+    defaultFileMap: {},
+    theme: { length: { default: { size: ['17px'] } } },
+  }
+  const dependencies = []
+  const sourceResult = await new Promise((resolve, reject) => {
+    sourceLoader.call(
+      {
+        resourcePath,
+        getOptions: () => options,
+        addDependency: (path) => dependencies.push(path),
+        async: () => (error, code, map) =>
+          error ? reject(error) : resolve({ code, map }),
+      },
+      Buffer.from(source),
+    )
+    // The asynchronous callback must retain the compiler selected on entry.
+    options.engine = selection.engine === 'wasm' ? 'native' : 'wasm'
+  })
+  options.engine = selection.engine
+  assert.doesNotMatch(sourceResult.code, /Cannot run on the runtime/)
+  assert(sourceResult.map && JSON.parse(sourceResult.map).version === 3)
+  assert(dependencies.includes(join(directory, 'src/tokens.js')))
+  const extraction = outputs.get('src/direct.jsx')
+  assert(extraction)
+  assert.equal(sourceResult.code, extraction.code)
+  assert.equal(sourceResult.map, extraction.map)
+  const fileNum = JSON.parse(selected.exportFileMap())['src/direct.jsx']
+  // Global single-CSS extraction need not allocate a per-file bucket number.
+  if (!singleCss) assert(Number.isInteger(fileNum))
+  assert.equal(typeof extraction.cssFile, 'string')
+  const cssPath = resolve(dirname(resourcePath), extraction.cssFile)
+  assert.equal(
+    cssPath,
+    join(cssDir, singleCss ? 'devup-ui.css' : `devup-ui-${fileNum}.css`),
+  )
+  const requestedFileNum = utils.getFileNumByFilename(cssPath)
+  assert.equal(requestedFileNum, singleCss ? null : fileNum)
+  const liveCss = selected.getCss(requestedFileNum, true)
+  const mainCss = selected.getCss(null, false)
+  for (const rule of [
+    'color:teal',
+    'left:19px',
+    'right:19px',
+    '17px',
+    'padding:1px',
+  ])
+    assert(
+      `${mainCss}\n${liveCss}`.includes(rule),
+      `Missing actual fallback CSS ${rule}`,
+    )
+  const cssCalls = []
+  const cssMap = { version: 3, sources: [], names: [], mappings: '' }
+  const meta = { token: 'next-production-map-meta' }
+  const productionSource = Buffer.from(liveCss)
+  const invokeCss = (watch, callback, source = productionSource) =>
+    cssLoader.call(
+      {
+        resourcePath: cssPath,
+        getOptions: () => ({ ...options, watch }),
+        callback,
+      },
+      source,
+      cssMap,
+      meta,
+    )
+  invokeCss(true, (error, css) => {
+    assert.equal(error, null)
+    assert.equal(css, liveCss)
+    cssCalls.push({ css })
+  })
+  invokeCss(false, (error, css, map, value) => {
+    assert.equal(error, null)
+    assert.equal(css, productionSource)
+    assert.equal(map, cssMap)
+    assert.equal(value, meta)
+    cssCalls.push({ css: css.toString(), map, meta: value })
+  })
+  const local = []
+  const cause = new Error('Next fallback compiler cause')
+  const failure = new Error('Next fallback compiler failure', { cause })
+  assert([undefined, 'authored-errors'].includes(process.argv[8]))
+  const authoredErrors = process.argv[8] === 'authored-errors'
+  if (authoredErrors) {
+    // Author the supplied fixture, never a projection of a received error.
+    // Ordinary realm-created Errors remain covered by the original 40 cells.
+    for (const error of [cause, failure]) {
+      for (const key of Reflect.ownKeys(error))
+        assert(['message', 'cause', ...runtimeErrorKeys].includes(key))
+      for (const key of runtimeErrorKeys) delete error[key]
+      Object.defineProperties(error, {
+        stack: {
+          value: `${error.name}: ${error.message}\n    at nextLoaderFixture (next-loader-fixture:1:1)`,
+          configurable: true,
+          writable: true,
+        },
+        code: {
+          value: 'NEXT_SUPPLIED_ERROR',
+          configurable: true,
+          enumerable: true,
+        },
+        detail: {
+          value: { filename: 'src/direct.jsx' },
+          configurable: true,
+          enumerable: true,
+        },
+      })
+      assert(error instanceof Error)
+      assert.equal(error.constructor, Error)
+      assert.equal(Object.getPrototypeOf(error), Error.prototype)
+    }
+    Object.defineProperty(failure, 'causeAlias', {
+      value: cause,
+      enumerable: true,
+    })
+  }
+  // Materialize runtime-owned lazy stack fields before the immutable baseline.
+  errorEvidence(failure)
+  const inputError = errorEvidence(failure),
+    inputCause = errorEvidence(cause)
+  const unchangedError = (after) => assert.deepEqual(after, inputError)
+  const errorControls = []
+  if (authoredErrors) {
+    const property = (node, key) =>
+      node.properties.find((entry) => entry.key.value === key)
+    for (const [name, mutate] of [
+      [
+        'constructor',
+        (node) => {
+          node.constructor.value += '-changed'
+        },
+      ],
+      [
+        'prototype',
+        (node) => {
+          node.prototypes[0].value += '-changed'
+        },
+      ],
+      [
+        'message',
+        (node) => {
+          property(node, 'message').value.value += '-changed'
+        },
+      ],
+      [
+        'cause',
+        (node) => {
+          property(property(node, 'cause').value, 'message').value.value +=
+            '-changed'
+        },
+      ],
+      [
+        'unknown own property',
+        (node) => {
+          node.properties.push({
+            ...structuredClone(property(node, 'code')),
+            key: { type: 'string', value: 'unknown' },
+          })
+        },
+      ],
+      [
+        'authored descriptor',
+        (node) => {
+          property(node, 'code').writable = true
+        },
+      ],
+      [
+        'cause alias',
+        (node) => {
+          property(node, 'causeAlias').value.reference = 999
+        },
+      ],
+      [
+        'authored raw stack',
+        (node) => {
+          property(node, 'stack').value.value += '-changed'
+        },
+      ],
+    ]) {
+      const changed = structuredClone(inputError)
+      mutate(changed.raw)
+      assert.throws(() => unchangedError(changed), undefined, name)
+      if (name !== 'authored raw stack')
+        assert.throws(
+          () => assertRawParity(inputError, changed),
+          undefined,
+          name,
+        )
+      errorControls.push(name)
+    }
+  }
+  for (const name of ['codeExtract', 'getCss']) {
+    const original = selected[name]
+    let received
+    try {
+      selected[name] = () => {
+        throw failure
+      }
+      if (name === 'codeExtract') {
+        received = await new Promise((resolve) =>
+          sourceLoader.call(
+            {
+              resourcePath,
+              getOptions: () => options,
+              addDependency() {},
+              async: () => resolve,
+            },
+            Buffer.from(source),
+          ),
+        )
+      } else
+        invokeCss(true, (error) => {
+          received = error
+        })
+      assert.equal(received, failure)
+      assert.equal(received.cause, cause)
+      const error = errorEvidence(received)
+      unchangedError(error)
+      assert.deepEqual(errorEvidence(received.cause), inputCause)
+      local.push({
+        method: name,
+        inputError,
+        inputCause,
+        error,
+        thrownIdentity: true,
+        causeIdentity: true,
+      })
+    } finally {
+      selected[name] = original
+    }
+  }
+  let callbackCount = 0
+  assert.throws(
+    () =>
+      invokeCss(false, () => {
+        callbackCount++
+        throw failure
+      }),
+    (error) => error === failure,
+  )
+  assert.equal(callbackCount, 1)
+  const selectedState = state(selected)
+  assert.equal(selectedState.residual, 0)
+  assert(
+    selectedState.css !== unselectedBefore.css ||
+      selectedState.sheet !== unselectedBefore.sheet,
+  )
+  const unselectedAfter = state(other)
+  assert.deepEqual(unselectedAfter, unselectedBefore)
+  assert(calls.codeExtract > 0 && calls.getCss > 0)
+  return {
+    sourceResult,
+    dependencies,
+    mainCss,
+    liveCss,
+    cssCalls,
+    local,
+    errorFixture: authoredErrors ? 'authored' : 'ordinary',
+    errorControls,
+    callbackCount,
+    state: selectedState,
+    unselectedBefore,
+    unselectedAfter,
+    outputs: Object.fromEntries(outputs),
+    observations,
+    calls,
+    disk: tree(cssDir),
+  }
+}
+
+let nextCompilerCapture
+
+export async function captureNextCoordinator({
+  directory,
+  mode,
+  singleCss,
+  destination,
+}) {
+  const require = createRequire(join(directory, 'package.json'))
+  const fromNext = createRequire(
+    realpathSync(require.resolve('@devup-ui/next-plugin')),
+  )
+  const utils = fromNext('@devup-ui/plugin-utils')
+  const compiler = utils.loadCompiler(mode === 'default' ? undefined : mode)
+  const portFile = readFileSync(join(directory, 'df/coordinator.port'), 'utf8')
+  const [port, pid] = portFile.trim().split(/\r?\n/).map(Number)
+  assert(Number.isInteger(port) && port > 0 && port < 65536)
+  assert.equal(pid, process.pid)
+  assert.equal(typeof singleCss, 'boolean')
+  assert.equal(
+    nextCompilerCapture?.selected,
+    compiler,
+    'HTTP witness must use the same physical compiler as the actual CLI capture',
+  )
+  const resources = ['src/A.jsx', 'src/B.jsx'].map((file) => {
+    const record = nextCompilerCapture.outputs.findLast(
+      ({ input }) => input[0] === file,
+    )
+    assert(record, `Missing actual CLI extraction for ${file}`)
+    assert.equal(typeof record.output.cssFile, 'string')
+    const resourcePath = resolve(
+      dirname(join(directory, file)),
+      record.output.cssFile,
+    )
+    assert.equal(dirname(resourcePath), join(directory, 'df/devup-ui'))
+    const fileNum = utils.getFileNumByFilename(resourcePath)
+    if (singleCss) {
+      assert.equal(fileNum, null)
+      assert.equal(resourcePath, join(directory, 'df/devup-ui/devup-ui.css'))
+    } else {
+      assert(Number.isInteger(fileNum) && fileNum >= 0)
+      assert.equal(
+        fileNum,
+        JSON.parse(compiler.exportFileMap())['src/app/page.jsx'],
+      )
+    }
+    return { file, cssFile: record.output.cssFile, resourcePath, fileNum }
+  })
+  assert.equal(resources[0].resourcePath, resources[1].resourcePath)
+  const fileNum = resources[0].fileNum
+  const requests = []
+  for (const [number, importMainCss] of [
+    [null, false],
+    [fileNum, true],
+  ]) {
+    const query = new URLSearchParams({
+      importMainCss: String(importMainCss),
+      waitForIdle: 'true',
+    })
+    if (number !== null) query.set('fileNum', String(number))
+    const url = `http://127.0.0.1:${port}/css?${query}`
+    const response = await fetch(url, { signal: AbortSignal.timeout(90000) })
+    const body = Buffer.from(await response.arrayBuffer())
+    const liveCss = compiler.getCss(number, importMainCss)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-type'), 'text/css')
+    assert.deepEqual(body, Buffer.from(liveCss))
+    requests.push({
+      fileNum: number,
+      importMainCss,
+      url,
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body: body.toString('base64'),
+      liveCss,
+    })
+  }
+  writeFileSync(
+    destination,
+    JSON.stringify({ portFile, pid, singleCss, resources, requests }, null, 2),
+    { flag: 'wx' },
+  )
+}
+
+export async function captureNextCompiler({ directory, mode, destination }) {
+  const require = createRequire(join(directory, 'package.json'))
+  if (
+    !require('node:worker_threads').isMainThread ||
+    !/[\\/]next[\\/]dist[\\/]bin[\\/]next(?:\.js)?$/.test(process.argv[1] ?? '')
+  )
+    return
+  const nextEntry = realpathSync(require.resolve('@devup-ui/next-plugin'))
+  const nextRequire = createRequire(nextEntry)
+  const webpackEntry = realpathSync(
+    nextRequire.resolve('@devup-ui/webpack-plugin'),
+  )
+  const webpackRequire = createRequire(webpackEntry)
+  const nextUtils = realpathSync(nextRequire.resolve('@devup-ui/plugin-utils'))
+  const webpackUtils = realpathSync(
+    webpackRequire.resolve('@devup-ui/plugin-utils'),
+  )
+  const fromUtils = createRequire(nextUtils)
+  const anchors = {
+    nextEntry,
+    webpackEntry,
+    nextUtils,
+    webpackUtils,
+    bindingEntry: realpathSync(fromUtils.resolve('@devup-ui/binding')),
+    wasmEntry: realpathSync(fromUtils.resolve('@devup-ui/wasm')),
+  }
+  writeFileSync(`${destination}.anchors.json`, JSON.stringify(anchors, null, 2))
+  assert.equal(
+    nextUtils,
+    webpackUtils,
+    'Capture must wrap the delegated compiler instance',
+  )
+  const utils = nextRequire('@devup-ui/plugin-utils')
+  const selected = utils.loadCompiler(mode === 'default' ? undefined : mode)
+  const other = utils.loadCompiler(mode === 'wasm' ? 'native' : 'wasm')
+  selected.resetStateForTesting()
+  other.resetStateForTesting()
+  const state = (compiler) => ({
+    css: compiler.getCss(null, false),
+    sheet: compiler.exportSheet(),
+    classes: compiler.exportClassMap(),
+    files: compiler.exportFileMap(),
+    canonical: compiler.exportCanonicalMap(),
+    residual: compiler.getUnreservedClassSlotCount(),
+    prefix: compiler.getPrefix(),
+    debug: compiler.isDebug(),
+    theme: compiler.getDefaultTheme(),
+  })
+  const unselectedBefore = state(other),
+    calls = {},
+    outputs = []
+  nextCompilerCapture = { selected, outputs }
+  for (const name of [
+    'registerShorthands',
+    'registerTheme',
+    'setModuleResolver',
+    'reserveClassSlots',
+    'codeExtract',
+    'codeExtractWithoutSourceMap',
+    'getCss',
+    'exportSheet',
+    'exportClassMap',
+    'exportFileMap',
+    'importCanonicalMap',
+    'importFileRoutes',
+    'setPrefix',
+    'setDebug',
+    'setAtomHoist',
+  ]) {
+    const original = selected[name]
+    calls[name] = 0
+    selected[name] = (...args) => {
+      calls[name]++
+      const result = original(...args)
+      if (name.startsWith('codeExtract'))
+        outputs.push({
+          input: args.slice(0, 2),
+          output: {
+            code: result.code,
+            css: result.css,
+            cssFile: result.cssFile,
+            map: result.map,
+            dependencies: result.dependencies,
+            updatedBaseStyle: result.updatedBaseStyle,
+          },
+        })
+      return result
+    }
+  }
+  process.once('exit', (exitCode) => {
+    const compiler = {
+      anchors,
+      state: state(selected),
+      fileCss: Object.fromEntries(
+        Object.values(JSON.parse(selected.exportFileMap())).map((number) => [
+          number,
+          selected.getCss(number, true),
+        ]),
+      ),
+      outputs,
+      calls,
+      unselectedBefore,
+      unselectedAfter: state(other),
+      pid: process.pid,
+      exitCode,
+    }
+    writeFileSync(
+      destination,
+      JSON.stringify(
+        compiler,
+        (_, value) => (value === undefined ? { undefined: true } : value),
+        2,
+      ),
+    )
+  })
+}
+
 export async function consume({
   directory,
   scenario,
@@ -1794,8 +2334,17 @@ export async function consume({
   const load = Module._resolveFilename
   const denied = new Error('unselected-backend-resolution')
   let nativeFailure = false
+  let nextGuardWasmResolutions = 0
   Module._resolveFilename = function (request, ...args) {
-    if (scenario !== 'late' && scenario !== 'errors') {
+    if (
+      nativeFailure &&
+      adapter === 'next' &&
+      (request === '@devup-ui/wasm' || request.startsWith('@devup-ui/wasm/'))
+    ) {
+      nextGuardWasmResolutions++
+      throw denied
+    }
+    if (scenario !== 'late' && scenario !== 'errors' && adapter !== 'next') {
       const blocked =
         resolvedEngine === 'wasm' ? '@devup-ui/binding' : '@devup-ui/wasm'
       if (request === blocked || request.startsWith(`${blocked}/`)) {
@@ -1822,9 +2371,11 @@ export async function consume({
     const plugin =
       format === 'require' ? require(packageName) : await import(packageName)
     const create = (options) =>
-      adapter === 'rsbuild' || adapter === 'vite' || adapter === 'bun'
-        ? plugin.DevupUI(options)
-        : new plugin.DevupUIWebpackPlugin(options)
+      adapter === 'next'
+        ? plugin.DevupUI({}, options)
+        : adapter === 'rsbuild' || adapter === 'vite' || adapter === 'bun'
+          ? plugin.DevupUI(options)
+          : new plugin.DevupUIWebpackPlugin(options)
     if (scenario === 'errors' && adapter === 'webpack') {
       const sourceModule =
         format === 'import'
@@ -1917,6 +2468,46 @@ export async function consume({
       }
       return evidence
     }
+    if (scenario === 'guards' && adapter === 'next') {
+      nativeFailure = true
+      const sourceModule =
+        format === 'require'
+          ? require('@devup-ui/next-plugin/loader')
+          : await import('@devup-ui/next-plugin/loader')
+      const loader = sourceModule.default ?? sourceModule
+      const diagnostics = []
+      for (const engine of ['invalid', undefined, 'native']) {
+        const error = await new Promise((resolve) =>
+          loader.call(
+            {
+              resourcePath: join(directory, 'src/A.jsx'),
+              getOptions: () => ({ engine }),
+              async: () => resolve,
+            },
+            Buffer.from('export const x = 1;'),
+          ),
+        )
+        diagnostics.push(errorEvidence(error))
+        put(destination, JSON.stringify({ diagnostics }, null, 2))
+        if (engine === 'invalid') assert.equal(error.name, 'InvalidEngineError')
+        else {
+          assert.equal(error.name, 'NativeCompilerLoadError')
+          assert.equal(error.cause, denied)
+          assert.equal(
+            error.platformPackage,
+            JSON.parse(
+              readFileSync(join(directory, '..', 'provenance.json'), 'utf8'),
+            ).host.name,
+          )
+        }
+      }
+      assert.equal(
+        nextGuardWasmResolutions,
+        0,
+        'Native failure must never attempt WASM fallback',
+      )
+      return { guards: true, diagnostics, denied: errorEvidence(denied) }
+    }
     if (scenario === 'guards') {
       nativeFailure = true
       const diagnostics = []
@@ -1993,7 +2584,7 @@ export async function consume({
       'exportSheet',
       'exportClassMap',
       'exportFileMap',
-      ...(adapter === 'vite'
+      ...(adapter === 'vite' || adapter === 'next'
         ? [
             'exportCanonicalMap',
             'seedFileMap',
@@ -2032,7 +2623,7 @@ export async function consume({
             dependencies: result.dependencies,
             updatedBaseStyle: result.updatedBaseStyle,
           })
-          if (adapter === 'vite')
+          if (adapter === 'vite' || adapter === 'next')
             observations.push({
               input: args.slice(0, 2),
               output: outputs.get(args[0]),
@@ -2041,6 +2632,18 @@ export async function consume({
         return result
       }
     }
+    if (adapter === 'next')
+      return await consumeNextLoaders({
+        directory,
+        format,
+        selection,
+        singleCss,
+        selected,
+        utils,
+        outputs,
+        calls,
+        observations,
+      })
     if (adapter === 'vite')
       return await consumeVite({
         directory,

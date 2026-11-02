@@ -628,7 +628,6 @@
         "typescript": "^7.0.2",
       },
       "peerDependencies": {
-        "@devup-ui/wasm": "*",
         "@devup-ui/webpack-plugin": "*",
         "next": "*",
       },

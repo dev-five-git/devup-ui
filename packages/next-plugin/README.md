@@ -205,6 +205,20 @@ custom `distDir`) to `include`.
 <Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
 ```
 
+## Extraction engine
+
+The build-time compiler defaults to `native` for Webpack and Turbopack. Select
+WASM explicitly with `DevupUI(nextConfig, { engine: 'wasm' })`. The chosen engine
+is retained by configuration, prewarm, extraction, CSS and delayed callbacks.
+Turbopack loader options carry only the engine string; the coordinator retains
+the selected physical compiler. Independent concurrent builds in one process
+are unsupported.
+
+Native load failures identify the required platform package and retain the
+original cause. There is no automatic fallback to WASM. Install optional native
+dependencies normally, or choose WASM explicitly for an unsupported platform.
+Both engines extract CSS during the build and add no client styling runtime.
+
 ## Turbopack build profiling
 
 Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a
@@ -221,6 +235,6 @@ $env:DEVUP_UI_PROFILE = '1'; bun run build
 Each `[devup-ui:profile]` JSON entry reports one phase. `next.graph` measures
 the static import-graph pre-pass, `next.prewarm` measures production extraction
 before Turbopack starts loaders, and `coordinator.extract` separates request,
-WASM extraction, CSS/state serialization, and write time for each loaded
+compiler extraction, CSS/state serialization, and write time for each loaded
 module. The setting is disabled by default and does not collect timings or
 write logs when it is absent.

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -16,12 +17,17 @@ import {
 } from 'bun:test'
 
 import * as coordinatorModule from '../coordinator'
+import cssLoader, { resetInit as resetCssInit } from '../css-loader'
 import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
 } from '../plugin'
-import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
+import {
+  loadWasm,
+  setWasmForTesting,
+  setWebpackPluginForTesting,
+} from '../wasm'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type NextWebpackConfig = Parameters<
@@ -247,18 +253,154 @@ describe('DevupUINextPlugin', () => {
     expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
   })
 
-  describe('webpack', () => {
-    it('keeps delegation on wasm when native is requested before the Next migration', () => {
-      // Given
-      delete process.env.TURBOPACK
-      const config = DevupUI({}, { engine: 'native' })
-      // When
-      config.webpack?.(createWebpackConfig(), createWebpackContext())
-      // Then
-      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ engine: 'wasm' }),
-      )
+  it('prewarms and serves actual default Turbo extraction through native state', () => {
+    const child = spawnSync(
+      process.execPath,
+      [
+        '-e',
+        `
+      import assert from 'node:assert/strict';
+      import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+      import { tmpdir } from 'node:os';
+      import { join } from 'node:path';
+      import { DevupUI } from ${JSON.stringify(new URL('../plugin.ts', import.meta.url).href)};
+      import loader from ${JSON.stringify(new URL('../loader.ts', import.meta.url).href)};
+      import { loadWasm, withModuleResolver } from ${JSON.stringify(new URL('../wasm.ts', import.meta.url).href)};
+      import { flushCoordinatorWrites, resetCoordinator } from ${JSON.stringify(new URL('../coordinator.ts', import.meta.url).href)};
+      import { loadCompiler } from ${JSON.stringify(new URL('../../../plugin-utils/src/index.ts', import.meta.url).href)};
+      const native = loadCompiler('native'), wasm = loadCompiler('wasm');
+      const primedWasm = loadWasm('wasm'); // Resolve the old loader dependency at its installed location.
+      const cwd = process.cwd(), root = mkdtempSync(join(tmpdir(), 'devup-next-native-'));
+      try {
+        mkdirSync(join(root, 'src/app'), { recursive: true });
+        writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { jsx: 'react-jsx' }, include: ['src'] }));
+        writeFileSync(join(root, 'src/tokens.ts'), "export const tone = 'teal';");
+        const source = "import {Box} from '@devup-ui/react'; import {tone} from '../tokens'; export default function Page(){return <Box color={tone}/>;}";
+        const resourcePath = join(root, 'src/app/page.tsx');
+        writeFileSync(resourcePath, source);
+        process.chdir(root);
+        native.resetStateForTesting(); wasm.resetStateForTesting();
+        withModuleResolver(primedWasm); // Match normal fixed-cwd supplier resolution after fixture setup.
+        const before = { native: native.getCss(null, false), wasm: wasm.getCss(null, false) };
+        const config = DevupUI({}, { singleCss: true, debug: false });
+        const options = config.turbopack.rules['*.{tsx,ts,jsx,js,mjs}'].loaders[0].options;
+        const code = await new Promise((resolve, reject) => loader.call({
+          resourcePath, getOptions: () => options, addDependency() {},
+          async: () => (error, code) => error ? reject(error) : resolve(code),
+        }, Buffer.from(source)));
+        const after = { native: native.getCss(null, false), wasm: wasm.getCss(null, false) };
+        console.info(JSON.stringify({ observed: 'next-default-native', before, after, code }));
+        assert.equal(typeof code, 'string'); assert(!code.includes('<Box'));
+        assert(!before.native.includes('color:teal'));
+        assert(after.native.includes('color:teal'));
+        assert.equal(after.wasm, before.wasm);
+      } finally {
+        await flushCoordinatorWrites(); resetCoordinator();
+        native.resetStateForTesting(); wasm.resetStateForTesting();
+        process.chdir(cwd); rmSync(root, { recursive: true, force: true });
+      }
+    `,
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 12000,
+        env: { ...process.env, NODE_ENV: 'production', TURBOPACK: '1' },
+        windowsHide: true,
+      },
+    )
+    console.info(child.stdout)
+    expect(child.error).toBeUndefined()
+    expect(child.signal).toBeNull()
+    expect(child.status, child.stderr).toBe(0)
+  }, 15000)
+
+  it('calls a successful CSS callback once when that callback throws', () => {
+    resetCssInit()
+    const failure = new Error('consumer callback failure', {
+      cause: new Error('consumer cause'),
     })
+    let callbacks = 0
+    const context = {
+      resourcePath: 'df/devup-ui/devup-ui.css',
+      getOptions: () => ({
+        watch: false,
+        defaultFileMap: {},
+        defaultClassMap: {},
+        defaultSheet: {},
+      }),
+      callback() {
+        callbacks++
+        throw failure
+      },
+    }
+    expect(() =>
+      Reflect.apply(cssLoader, context, [Buffer.from('ready')]),
+    ).toThrow(failure)
+    expect(callbacks).toBe(1)
+    resetCssInit()
+  })
+
+  it('retains original CSS compiler failure and cause in one callback', () => {
+    resetCssInit()
+    const cause = new Error('compiler cause')
+    const failure = new Error('compiler failure', { cause })
+    getCssSpy.mockImplementation(() => {
+      throw failure
+    })
+    const received: (Error | null)[] = []
+    Reflect.apply(
+      cssLoader,
+      {
+        resourcePath: 'df/devup-ui/devup-ui.css',
+        getOptions: () => ({
+          watch: true,
+          sheetFile: 'sheet',
+          classMapFile: 'classes',
+          fileMapFile: 'files',
+          themeFile: 'theme',
+        }),
+        callback(error: Error | null) {
+          received.push(error)
+        },
+      },
+      [Buffer.from('ready')],
+    )
+    expect(received).toEqual([failure])
+    expect(received[0]?.cause).toBe(cause)
+    resetCssInit()
+  })
+
+  it('caches each selected physical compiler and rejects invalid engines', () => {
+    setWasmForTesting(undefined)
+    const native = importGraphModule.loadCompiler('native')
+    const explicitWasm = importGraphModule.loadCompiler('wasm')
+    expect(loadWasm()).toBe(native)
+    expect(loadWasm('native')).toBe(native)
+    expect(loadWasm('wasm')).toBe(explicitWasm)
+    expect(loadWasm('wasm')).toBe(explicitWasm)
+    expect(native).not.toBe(explicitWasm)
+    expect(() => Reflect.apply(loadWasm, undefined, ['other'])).toThrow(
+      importGraphModule.InvalidEngineError,
+    )
+    expect(() => Reflect.apply(loadWasm, undefined, [null])).toThrow(
+      importGraphModule.InvalidEngineError,
+    )
+  })
+
+  describe('webpack', () => {
+    it.each(['native', 'wasm'] as const)(
+      'retains %s in a deferred Webpack callback',
+      (engine) => {
+        delete process.env.TURBOPACK
+        const options = { engine }
+        const config = DevupUI({}, options)
+        options.engine = engine === 'native' ? 'wasm' : 'native'
+        config.webpack?.(createWebpackConfig(), createWebpackContext())
+        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ engine }),
+        )
+      },
+    )
 
     it.each([
       ['omitted', {}],
@@ -277,7 +419,7 @@ describe('DevupUINextPlugin', () => {
         // Then: explicit zero/thresholds and singleCss reach the real adapter seam.
         expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
           ...options,
-          engine: 'wasm',
+          engine: 'native',
           singleCss: true,
           cssDir: resolve('.next/cache', 'devup-ui'),
           productionPrewarmFiles: [],
@@ -292,7 +434,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('.next/cache', 'devup-ui'),
-        engine: 'wasm',
+        engine: 'native',
         productionPrewarmFiles: [],
       })
     })
@@ -304,7 +446,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('df', 'devup-ui_tmpBuildId'),
-        engine: 'wasm',
+        engine: 'native',
         watch: true,
       })
     })
@@ -321,7 +463,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
-        engine: 'wasm',
+        engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
       })
@@ -342,7 +484,7 @@ describe('DevupUINextPlugin', () => {
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
-        engine: 'wasm',
+        engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
       })
@@ -537,6 +679,7 @@ describe('DevupUINextPlugin', () => {
               {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
+                  engine: 'native',
                   watch: false,
                   coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
@@ -562,6 +705,7 @@ describe('DevupUINextPlugin', () => {
                 {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
+                    engine: 'native',
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
                     coordinatorPortFile: join('df', 'coordinator.port'),
@@ -623,6 +767,7 @@ describe('DevupUINextPlugin', () => {
               {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
+                  engine: 'native',
                   watch: false,
                   coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
@@ -660,6 +805,7 @@ describe('DevupUINextPlugin', () => {
                 {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
+                    engine: 'native',
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
                     coordinatorPortFile: join('df', 'coordinator.port'),
@@ -717,6 +863,7 @@ describe('DevupUINextPlugin', () => {
               {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
+                  engine: 'native',
                   watch: false,
                   coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
@@ -754,6 +901,7 @@ describe('DevupUINextPlugin', () => {
                 {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
+                    engine: 'native',
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
                     coordinatorPortFile: join('df', 'coordinator.port'),

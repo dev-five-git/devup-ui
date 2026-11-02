@@ -61,7 +61,6 @@
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",
-    "next": "*",
-    "@devup-ui/wasm": "*"
+    "next": "*"
   }
 }

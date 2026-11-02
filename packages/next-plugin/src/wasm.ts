@@ -2,14 +2,19 @@ import { existsSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, relative } from 'node:path'
 
-import { createModuleResolver } from '@devup-ui/plugin-utils'
+import {
+  createModuleResolver,
+  type DevupCompiler,
+  type DevupEngine,
+  loadCompiler,
+} from '@devup-ui/plugin-utils'
 
-export type DevupWasm = typeof import('@devup-ui/wasm')
+export type DevupWasm = DevupCompiler
 export type DevupWebpackPlugin = typeof import('@devup-ui/webpack-plugin')
 
 let wasmForTesting: DevupWasm | undefined
 let webpackPluginForTesting: DevupWebpackPlugin | undefined
-let loadedWasm: DevupWasm | undefined
+const loadedCompilers = new Map<DevupEngine, DevupCompiler>()
 let webpackPlugin: DevupWebpackPlugin | undefined
 
 /** @internal Resolve dependencies from the plugin's physical install location. */
@@ -46,11 +51,13 @@ export function withModuleResolver(wasm: DevupWasm): DevupWasm {
 }
 
 /** Load the extraction engine once for the lifetime of a Next config. */
-export function loadWasm(): DevupWasm {
+export function loadWasm(engine: DevupEngine = 'native'): DevupWasm {
   if (wasmForTesting) return wasmForTesting
-  return (loadedWasm ??= withModuleResolver(
-    requireFromPlugin<DevupWasm>('@devup-ui/wasm'),
-  ))
+  const cached = loadedCompilers.get(engine)
+  if (cached) return cached
+  const compiler = withModuleResolver(loadCompiler(engine))
+  loadedCompilers.set(engine, compiler)
+  return compiler
 }
 
 /** Keep the Webpack adapter out of Turbopack startup. */
@@ -77,6 +84,6 @@ export function setWebpackPluginForTesting(
 export function resetWasmForTesting(): void {
   wasmForTesting = undefined
   webpackPluginForTesting = undefined
-  loadedWasm = undefined
+  loadedCompilers.clear()
   webpackPlugin = undefined
 }
