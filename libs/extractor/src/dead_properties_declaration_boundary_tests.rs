@@ -141,35 +141,13 @@ fn keeps_import_metadata_when_validating_global_selector_maps()
     Ok(())
 }
 
-#[test]
+#[rstest]
 #[serial]
-fn keeps_font_face_literals_when_a_descriptor_object_has_an_unreadable_spread()
--> Result<(), Box<dyn std::error::Error>> {
-    // Given a spread that has no statically readable font-face descriptors.
-    reset_class_map();
-    reset_file_map();
+fn rejects_font_face_descriptor_objects_when_a_spread_is_unreadable(
+    #[values(false, true)] single_css: bool,
+) {
     let source = "import { globalCss } from '@devup-ui/react';\nglobalCss({ fontFaces:[{...external, fontFamily:'BoundaryFont', src:'local(BoundaryFont)'}] });";
-
-    // When the global font-face declaration API extracts literal descriptors.
-    let output = extract("font.tsx", source, ExtractOption::default())?;
-
-    // Then the existing spread-ignore behavior preserves the authored literals.
-    let faces: Vec<_> = output
-        .styles
-        .iter()
-        .filter_map(|style| match style {
-            ExtractStyleValue::FontFace(face) => Some(face.properties.clone()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        faces,
-        vec![std::collections::BTreeMap::from([
-            ("font-family".to_string(), "BoundaryFont".to_string()),
-            ("src".to_string(), "local(BoundaryFont)".to_string()),
-        ])]
-    );
-    Ok(())
+    crate::unresolved_global_inputs_tests::rejects_at(source, "external", single_css);
 }
 
 #[rstest]

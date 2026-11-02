@@ -15,6 +15,7 @@ pub mod optimize_value;
 mod property_names;
 pub mod quoted;
 pub mod rm_css_comment;
+pub mod selector_params;
 mod selector_separator;
 pub mod shorthand;
 pub mod slot_reservation;

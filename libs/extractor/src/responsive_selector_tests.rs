@@ -270,7 +270,7 @@ fn nested_array_diagnostic_retains_its_exact_span() {
     };
     // When
     let result = extract_style_from_expression(
-        &builder,
+        (&builder).into(),
         Some("padding"),
         &mut statement.expression,
         0,

@@ -826,7 +826,7 @@ fn resolve_styled_call_target<'a>(
 /// - styled.div({ bg: "red" })
 /// - styled(Component)({ bg: "red" })
 pub fn extract_style_from_styled<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: super::style_inputs::StyleInputs<'_, 'a>,
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
     bindings: StyledBindings<'_>,
@@ -834,6 +834,7 @@ pub fn extract_style_from_styled<'a>(
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
+    let ast_builder = inputs.ast;
     let imports = bindings.imports;
     let Naming {
         split_filename,
@@ -1061,7 +1062,7 @@ pub fn extract_style_from_styled<'a>(
             ..
         } = composed_rules.unwrap_or_else(|| {
             let (result, projection) = extract_with_order(
-                ast_builder,
+                inputs,
                 None,
                 if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
                     &mut spread.argument
