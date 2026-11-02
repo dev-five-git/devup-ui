@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Validate native and WASM compiler binding arguments with matching TypeErrors before state changes, preserve existing user exceptions and seed-array observations, and use the performance-accepted extraction wrappers. Invalid binding arguments now report the function, parameter and required type; located source build errors are unchanged.",
+  "date": "2026-10-27T00:00:00.000Z"
+}

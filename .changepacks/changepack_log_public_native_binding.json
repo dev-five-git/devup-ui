@@ -1,0 +1,15 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-binding-linux-x64-gnu/package.json": "Patch",
+    "bindings/devup-ui-binding-linux-arm64-gnu/package.json": "Patch",
+    "bindings/devup-ui-binding-linux-x64-musl/package.json": "Patch",
+    "bindings/devup-ui-binding-linux-arm64-musl/package.json": "Patch",
+    "bindings/devup-ui-binding-darwin-x64/package.json": "Patch",
+    "bindings/devup-ui-binding-darwin-arm64/package.json": "Patch",
+    "bindings/devup-ui-binding-win32-x64-msvc/package.json": "Patch",
+    "bindings/devup-ui-binding-win32-arm64-msvc/package.json": "Patch"
+  },
+  "note": "Add the public native build-time compiler with CommonJS and ESM types and eight OS, architecture and libc-specific optional packages. Validate exact native tarballs and publish platform artifacts before the root binding. Unsupported hosts and omitted native optional packages fail explicitly; source build errors and generated styling runtime are unchanged. Plugin engine selection is a separate phase.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

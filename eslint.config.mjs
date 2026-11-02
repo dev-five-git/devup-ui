@@ -9,6 +9,7 @@ export default [
     ignores: [
       'benchmark/next-panda-css/styled-system',
       'bindings/devup-ui-wasm/pkg',
+      'bindings/devup-ui-binding/pkg',
       'test-results',
       'release-results.json',
       'release-package-build.json',

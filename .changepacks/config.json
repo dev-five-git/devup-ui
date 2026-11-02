@@ -3,9 +3,27 @@
   "baseBranch": "main",
   "latestPackage": null,
   "publish": {
+    "bindings/devup-ui-binding/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-linux-x64-gnu/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-linux-arm64-gnu/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-linux-x64-musl/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-linux-arm64-musl/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-darwin-x64/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-darwin-arm64/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-win32-x64-msvc/package.json": "node ../../e2e/binding/package/publish.mjs publish",
+    "bindings/devup-ui-binding-win32-arm64-msvc/package.json": "node ../../e2e/binding/package/publish.mjs publish",
     "node": "bun pm pack --quiet --filename .changepacks/publish.tgz && npm publish ../../.changepacks/publish.tgz"
   },
   "publishDryRun": {
+    "bindings/devup-ui-binding/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-linux-x64-gnu/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-linux-arm64-gnu/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-linux-x64-musl/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-linux-arm64-musl/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-darwin-x64/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-darwin-arm64/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-win32-x64-msvc/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
+    "bindings/devup-ui-binding-win32-arm64-msvc/package.json": "node ../../e2e/binding/package/publish.mjs dry-run",
     "node": "bun pm pack --quiet --filename .changepacks/publish.tgz && npm publish ../../.changepacks/publish.tgz --dry-run"
   }
 }

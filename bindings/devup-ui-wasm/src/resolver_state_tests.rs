@@ -1,12 +1,15 @@
 use super::*;
 use crate::{SourceMapMode, code_extract_internal_impl, export_sheet_internal};
+use extractor::ResolvedModule;
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 
 #[test]
 fn reservation_roots_keep_their_original_diagnostic_sites() -> Result<(), String> {
     // Given
     let mut state = ResolverState::default();
-    assert_eq!(state.sources.len(), 0);
+    assert!(state.request("./shared", "first.ts").is_none());
+    assert!(state.request("./shared", "second.ts").is_none());
     state.add_source("first.ts", "import './shared';");
     state.add_source("second.ts", "\nimport './shared';");
 
@@ -19,7 +22,8 @@ fn reservation_roots_keep_their_original_diagnostic_sites() -> Result<(), String
     }
 
     // Then
-    assert_eq!(state.sources.len(), 2);
+    assert!(state.request("./shared", "first.ts").is_some());
+    assert!(state.request("./shared", "second.ts").is_some());
     let error = state.check().err().ok_or("missing resolver diagnostics")?;
     let sites = error
         .lines()
