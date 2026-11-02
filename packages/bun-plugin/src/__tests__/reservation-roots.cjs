@@ -27,7 +27,7 @@ async function main() {
     const result = await build({
       entrypoints: ['./index.ts'],
       outdir: './out',
-      plugins: [DevupUI()],
+      plugins: [DevupUI({ engine: 'wasm' })],
     })
     assert(result.success, result.logs.map(String).join('\n'))
     for (const output of result.outputs) {
@@ -36,7 +36,10 @@ async function main() {
       writeFileSync(output.path, bytes)
     }
   } else {
-    await register(mode === 'default' ? {} : { debug: false })
+    await register({
+      engine: 'wasm',
+      ...(mode === 'default' ? {} : { debug: false }),
+    })
     const module = await import(
       resolve(mode === 'outside' ? 'outside.ts' : 'src/A.ts')
     )

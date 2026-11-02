@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import Module, { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { inspect } from 'node:util'
 
@@ -87,6 +87,15 @@ export function assertWebpackDist(directory) {
 
 export function assertRsbuildDist(directory) {
   for (const name of ['index.cjs', 'index.mjs']) {
+    const code = readFileSync(join(directory, name), 'utf8')
+    assert.doesNotMatch(code, /['"]@devup-ui\/(?:wasm|binding)(?:['"/])/)
+    assert.match(code, /@devup-ui\/plugin-utils/)
+  }
+}
+
+export function assertBunDist(directory) {
+  assertRsbuildDist(directory)
+  for (const name of ['register.cjs', 'register.mjs']) {
     const code = readFileSync(join(directory, name), 'utf8')
     assert.doesNotMatch(code, /['"]@devup-ui\/(?:wasm|binding)(?:['"/])/)
     assert.match(code, /@devup-ui\/plugin-utils/)
@@ -1466,6 +1475,264 @@ async function consumeRsbuild(context) {
   }
 }
 
+export function prepareBunFixture(directory, customShorthands = true) {
+  for (const name of ['src', 'df', 'dist'])
+    rmSync(join(directory, name), { recursive: true, force: true })
+  put(
+    join(directory, 'devup.json'),
+    '{"theme":{"length":{"default":{"size":"17px"}}}}',
+  )
+  put(join(directory, 'src/tokens.ts'), 'export const color="teal";')
+  for (const name of ['A', 'B'])
+    put(
+      join(directory, `src/${name}.ts`),
+      `import {css} from '@devup-ui/react'; import {color} from './tokens.ts'; export const cls=css({color,w:'$size',${customShorthands ? "insetX:'19px'" : "left:'19px',right:'19px'"},p:${name === 'A' ? 1 : 2}});`,
+    )
+  put(
+    join(directory, 'src/Unused.ts'),
+    'import {css} from "@devup-ui/react"; export const unused=css({color:"magenta"});',
+  )
+}
+
+async function consumeBun(context) {
+  const {
+    directory,
+    scenario,
+    selection,
+    create,
+    selected,
+    outputs,
+    calls,
+    utils,
+    plugin,
+  } = context
+  assert(process.versions.bun, 'Bun consumers require the real Bun runtime')
+  const Bun = await import('bun')
+  const options = { ...selection, shorthands: { insetX: ['left', 'right'] } }
+  const entries = ['A', 'B'].map((name) => join(directory, `src/${name}.ts`))
+  const callbacks = new Map()
+  const phases = []
+  const local = []
+  const assertShorthands = (classes, css, file) => {
+    assert(classes?.length, file)
+    for (const property of ['left', 'right'])
+      assert(
+        classes.some((name) =>
+          new RegExp(`\\.${name}\\s*\\{\\s*${property}:\\s*19px;?\\s*\\}`).test(
+            css,
+          ),
+        ),
+        `${file}: ${property}`,
+      )
+  }
+  const compilerState = (compiler) => ({
+    css: compiler.getCss(null, false),
+    sheet: compiler.exportSheet(),
+    classes: compiler.exportClassMap(),
+    files: compiler.exportFileMap(),
+    canonical: compiler.exportCanonicalMap(),
+    residual: compiler.getUnreservedClassSlotCount(),
+    prefix: compiler.getPrefix(),
+    debug: compiler.isDebug(),
+    theme: compiler.getDefaultTheme(),
+  })
+  const snapshot = (assets, sources) => {
+    const state = compilerState(selected)
+    assert.equal(state.residual, 0)
+    assert(!state.css.includes('magenta'))
+    for (const [name, source] of Object.entries(sources)) {
+      assert(typeof source === 'string' && source.length > 0, name)
+      assert.doesNotMatch(
+        source,
+        /Cannot run on the runtime|@devup-ui\/(?:wasm|binding)/,
+      )
+    }
+    const phase = {
+      state,
+      assets,
+      sources,
+      outputs: Object.fromEntries(
+        [...outputs].sort(([a], [b]) => a.localeCompare(b)),
+      ),
+      disk: {
+        df: tree(join(directory, 'df')),
+        dist:
+          scenario === 'runtime' || scenario === 'preload'
+            ? {}
+            : tree(join(directory, 'dist')),
+      },
+      calls: { ...calls },
+    }
+    phases.push(phase)
+    return phase
+  }
+  try {
+    if (scenario === 'runtime' || scenario === 'preload') {
+      if (scenario === 'runtime') await plugin.register(options)
+      const sources = {}
+      for (const file of entries) {
+        const module = await import(pathToFileURL(file).href)
+        assert(typeof module.cls === 'string' && module.cls.length > 0)
+        assertShorthands(
+          module.cls.split(/\s+/),
+          selected.getCss(null, false),
+          file,
+        )
+        sources[file] = module.cls
+      }
+      const phase = snapshot({}, sources)
+      assert.equal(
+        readFileSync(join(directory, 'df/devup-ui/devup-ui.css'), 'utf8'),
+        phase.state.css,
+      )
+      return { phases, local }
+    }
+    for (let round = 0; round < (scenario === 'repeat' ? 2 : 1); round++) {
+      outputs.clear()
+      for (const name of Object.keys(calls)) calls[name] = 0
+      const pending = new Map()
+      const sources = {}
+      const first = entries[scenario === 'opposite' ? 1 : 0]
+      const second = entries.find((file) => file !== first)
+      const genuine = create(options)
+      const observed = {
+        ...genuine,
+        setup(builder) {
+          return genuine.setup(
+            new Proxy(builder, {
+              get(target, key) {
+                if (key === 'onLoad')
+                  return (filter, callback) => {
+                    callbacks.set(filter.namespace ?? 'file', callback)
+                    return target.onLoad(filter, async (args) => {
+                      if (filter.namespace || !entries.includes(args.path))
+                        return callback(args)
+                      await new Promise((release) => {
+                        assert(!pending.has(args.path))
+                        pending.set(args.path, release)
+                        if (pending.size === 2) pending.get(first)()
+                      })
+                      try {
+                        const result = await callback(args)
+                        assert(result && typeof result.contents === 'string')
+                        sources[args.path] = result.contents
+                        return result
+                      } finally {
+                        if (args.path === first) pending.get(second)()
+                      }
+                    })
+                  }
+                const value = Reflect.get(target, key, target)
+                return typeof value === 'function' ? value.bind(target) : value
+              },
+            }),
+          )
+        },
+      }
+      const result = await Bun.build({
+        root: directory,
+        entrypoints: entries,
+        target: 'browser',
+        format: 'esm',
+        sourcemap: 'external',
+        external: ['react', 'react/jsx-runtime'],
+        outdir: join(directory, 'dist'),
+        plugins: [observed],
+      })
+      assert(result.success, result.logs.map(String).join('\n'))
+      assert.deepEqual(result.logs, [])
+      assert.equal(Object.keys(sources).length, 2)
+      const assets = {}
+      for (const output of result.outputs)
+        assets[relative(directory, output.path)] = await output.text()
+      const phase = snapshot(assets, sources)
+      const css = Object.entries(assets)
+        .filter(([name]) => name.endsWith('.css'))
+        .map(([, text]) => text)
+        .join('\n')
+      assert(css.includes('19px') && !css.includes('magenta'))
+      for (const file of entries) {
+        const classes = /\bcls\s*=\s*["']([^"']+)["']/
+          .exec(sources[file])?.[1]
+          .split(/\s+/)
+          .filter(Boolean)
+        assertShorthands(classes, css, file)
+      }
+      if (round) assertRawParity(phases[0], phase)
+    }
+    if (scenario === 'late' || scenario === 'errors') {
+      const callback = callbacks.get('file')
+      assert(callback)
+      const args = {
+        path: entries[0],
+        namespace: 'file',
+        loader: 'file',
+        defer: async () => {},
+      }
+      if (scenario === 'late') {
+        const other = utils.loadCompiler(
+          selection.engine === 'wasm' ? 'native' : 'wasm',
+        )
+        const before = compilerState(other)
+        create({ engine: selection.engine === 'wasm' ? 'native' : 'wasm' })
+        await callback(args)
+        const deferred = [...callbacks].find(
+          ([namespace]) => namespace !== 'file',
+        )?.[1]
+        assert(deferred)
+        assert.equal(
+          (await deferred(args)).contents,
+          selected.getCss(null, false),
+        )
+        const after = compilerState(other)
+        local.push({ unselected: { before, after } })
+        assertRawParity(before, after)
+        snapshot(phases[0].assets, phases[0].sources)
+      } else {
+        const originalSource = readFileSync(args.path, 'utf8')
+        try {
+          put(
+            args.path,
+            'import {css} from "@devup-ui/react"; export const cls=css({color:window.name});',
+          )
+          let parseError
+          try {
+            await callback(args)
+          } catch (error) {
+            parseError = error
+          }
+          local.push({ parseError: errorEvidence(parseError) })
+          assert(parseError instanceof Error)
+        } finally {
+          put(args.path, originalSource)
+        }
+        const cause = new Error('compiler callback cause')
+        const failure = new Error('compiler callback failure', { cause })
+        const extract = selected.codeExtract
+        try {
+          selected.codeExtract = () => {
+            throw failure
+          }
+          await assert.rejects(
+            () => callback(args),
+            (error) => error === failure && error.cause === cause,
+          )
+          local.push({
+            error: errorEvidence(failure),
+            thrownIdentity: true,
+            causeIdentity: true,
+          })
+        } finally {
+          selected.codeExtract = extract
+        }
+      }
+    }
+    return { phases, local }
+  } finally {
+    Bun.plugin.clearAll()
+  }
+}
+
 export async function consume({
   directory,
   scenario,
@@ -1478,12 +1745,13 @@ export async function consume({
   const require = createRequire(join(directory, 'package.json'))
   const selection = mode === 'default' ? {} : { engine: mode }
   const resolvedEngine = mode === 'wasm' ? 'wasm' : 'native'
-  const packageName = `@devup-ui/${adapter}-plugin`
+  const packageName = `@devup-ui/${adapter}-plugin${adapter === 'bun' ? '/register' : ''}`
   const entry =
     format === 'require'
       ? require.resolve(packageName)
       : fileURLToPath(import.meta.resolve(packageName))
-  const physical = adapter === 'vite' ? viteRealpath : realpathSync
+  const physical =
+    adapter === 'vite' || adapter === 'bun' ? viteRealpath : realpathSync
   const utilsRequire = createRequire(
     adapter === 'vite' ? physical(entry) : entry,
   )
@@ -1500,16 +1768,23 @@ export async function consume({
   const entryUtils = format === 'import' ? fromEsm : utils
   const pluginRoot = physical(dirname(dirname(entry)))
   const assertDist =
-    adapter === 'rsbuild' || adapter === 'vite'
-      ? assertRsbuildDist
-      : assertWebpackDist
+    adapter === 'bun'
+      ? assertBunDist
+      : adapter === 'rsbuild' || adapter === 'vite'
+        ? assertRsbuildDist
+        : assertWebpackDist
   assertDist(join(pluginRoot, 'dist'))
   const manifest = JSON.parse(
     readFileSync(join(pluginRoot, 'package.json'), 'utf8'),
   )
   assert.equal(
     physical(entry),
-    physical(join(pluginRoot, manifest.exports['.'][format])),
+    physical(
+      join(
+        pluginRoot,
+        manifest.exports[adapter === 'bun' ? './register' : '.'][format],
+      ),
+    ),
   )
   assert(
     !Object.values(manifest.dependencies).some((version) =>
@@ -1547,7 +1822,7 @@ export async function consume({
     const plugin =
       format === 'require' ? require(packageName) : await import(packageName)
     const create = (options) =>
-      adapter === 'rsbuild' || adapter === 'vite'
+      adapter === 'rsbuild' || adapter === 'vite' || adapter === 'bun'
         ? plugin.DevupUI(options)
         : new plugin.DevupUIWebpackPlugin(options)
     if (scenario === 'errors' && adapter === 'webpack') {
@@ -1702,7 +1977,8 @@ export async function consume({
       })
     const selected = utils.loadCompiler(selection.engine)
     assert.equal(fromEsm.loadCompiler(selection.engine), selected)
-    selected.resetStateForTesting()
+    if (adapter !== 'bun' || scenario !== 'preload')
+      selected.resetStateForTesting()
     const calls = {}
     const outputs = new Map()
     const errors = []
@@ -1778,6 +2054,18 @@ export async function consume({
         calls,
         utils,
         observations,
+      })
+    if (adapter === 'bun')
+      return await consumeBun({
+        directory,
+        scenario,
+        selection,
+        create,
+        selected,
+        outputs,
+        calls,
+        utils,
+        plugin,
       })
     rmSync(join(directory, 'df'), { recursive: true, force: true })
     rmSync(join(directory, 'dist'), { recursive: true, force: true })
@@ -2141,10 +2429,10 @@ export async function consume({
 
 if (
   process.argv[1] &&
-  (process.argv[7] === 'vite' ? viteRealpath : realpathSync)(
+  (['vite', 'bun'].includes(process.argv[7]) ? viteRealpath : realpathSync)(
     resolve(process.argv[1]),
   ) ===
-    (process.argv[7] === 'vite' ? viteRealpath : realpathSync)(
+    (['vite', 'bun'].includes(process.argv[7]) ? viteRealpath : realpathSync)(
       fileURLToPath(import.meta.url),
     )
 ) {
@@ -2163,6 +2451,8 @@ if (
       'lifecycle',
       'repeat',
       'opposite',
+      'runtime',
+      'preload',
     ].includes(scenario),
   )
   assert(['default', 'native', 'wasm'].includes(mode))

@@ -20,6 +20,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
+  assertBunDist,
   assertRawParity,
   assertRsbuildDist,
   assertRsbuildParity,
@@ -28,6 +29,7 @@ import {
   collectViteCases,
   completedReceipt,
   errorEvidence,
+  prepareBunFixture,
   viteRealpath,
 } from './engine-consumer.mjs'
 import { packHostEngines, verifyHostInstall } from './engine-fixtures.mjs'
@@ -200,6 +202,136 @@ async function viteCells(context) {
   )
 }
 
+async function bunCells({ root, relocated, link, bun }) {
+  const receipts = new Map()
+  const completed = new Set()
+  const cells = []
+  for (const scenario of [
+    'build',
+    'repeat',
+    'opposite',
+    'runtime',
+    'preload',
+    'late',
+    'errors',
+  ])
+    for (const format of ['require', 'import'])
+      for (const mode of ['default', 'native', 'wasm'])
+        cells.push([scenario, mode, format])
+  for (const format of ['require', 'import'])
+    cells.push(['guards', 'wasm', format])
+  cells.push(['preload-root', 'default', 'import'])
+  const results = await collectViteCases(
+    cells.map((cell) => cell.join('-')),
+    async (id) => {
+      const [scenario, mode, format] = cells.find(
+        (cell) => cell.join('-') === id,
+      )
+      const base = join(root, id)
+      const destination = `${base}.json`
+      const rootPreload = scenario === 'preload-root'
+      prepareBunFixture(relocated, !rootPreload)
+      const args = []
+      if (scenario === 'preload' || rootPreload) {
+        const preload = join(relocated, 'engine-preload.mjs')
+        const select = mode === 'default' ? {} : { engine: mode }
+        const load =
+          format === 'require'
+            ? 'createRequire(import.meta.url)("@devup-ui/bun-plugin/register")'
+            : 'await import("@devup-ui/bun-plugin/register")'
+        writeFileSync(
+          preload,
+          rootPreload
+            ? 'await import("@devup-ui/bun-plugin");'
+            : `import {createRequire} from 'node:module'; const {register}=${load}; await register(${JSON.stringify({ ...select, shorthands: { insetX: ['left', 'right'] } })});`,
+        )
+        args.push('--preload', preload)
+      }
+      args.push(
+        join(link, 'engine-consumer.mjs'),
+        rootPreload ? 'preload' : scenario,
+        mode,
+        format,
+        'single',
+        destination,
+        'bun',
+      )
+      try {
+        run(bun, args, { cwd: relocated, evidenceBase: base })
+      } finally {
+        if (existsSync(destination))
+          receipts.set(id, JSON.parse(readFileSync(destination, 'utf8')))
+      }
+      assert(receipts.has(id))
+      if (scenario === 'guards') assert.equal(receipts.get(id).guards, true)
+      completed.add(id)
+      return destination
+    },
+  )
+  const comparisons = await collectViteCases(
+    cells
+      .filter(
+        ([scenario, mode, format]) =>
+          !['guards', 'preload-root'].includes(scenario) &&
+          !(mode === 'default' && format === 'require'),
+      )
+      .map((cell) => cell.join('-')),
+    async (id) => {
+      const [scenario] = cells.find((cell) => cell.join('-') === id)
+      assertRawParity(
+        completedReceipt(receipts, completed, `${scenario}-default-require`),
+        completedReceipt(receipts, completed, id),
+      )
+    },
+  )
+  comparisons.push(
+    ...(await collectViteCases(
+      cells
+        .filter(([scenario]) => scenario === 'opposite')
+        .map((cell) => `admission-${cell.join('-')}`),
+      async (name) => {
+        const id = name.slice('admission-'.length)
+        const [, mode, format] = cells.find((cell) => cell.join('-') === id)
+        const forward = completedReceipt(
+          receipts,
+          completed,
+          `build-${mode}-${format}`,
+        )
+        const reverse = completedReceipt(receipts, completed, id)
+        try {
+          assertRawParity(forward.phases[0], reverse.phases[0])
+        } catch (error) {
+          writeFileSync(
+            join(root, `${name}-raw-difference.json`),
+            JSON.stringify(errorEvidence(error), null, 2),
+          )
+        }
+        // Output::new snapshots the current sheet; Bun publishes via getCss.
+        const publication = (phase) => {
+          const copy = structuredClone(phase)
+          for (const output of Object.values(copy.outputs)) {
+            assert(Object.hasOwn(output, 'css'))
+            delete output.css
+          }
+          return copy
+        }
+        assertRawParity(
+          publication(forward.phases[0]),
+          publication(reverse.phases[0]),
+        )
+      },
+    )),
+  )
+  writeFileSync(
+    join(root, 'bun-summary.json'),
+    JSON.stringify({ results, comparisons }, null, 2),
+  )
+  assert(
+    [...results, ...comparisons].every((row) => row.ok),
+    'Bun collect-all diagnostics failed; inspect bun-summary.json and raw evidence',
+  )
+}
+
 export async function webpackParity(adapter = 'webpack') {
   const repository = fileURLToPath(new URL('../../', import.meta.url))
   const parent = process.env.DEVUP_ENGINE_ARTIFACT_PARENT ?? tmpdir()
@@ -233,21 +365,29 @@ export async function webpackParity(adapter = 'webpack') {
     )
     assert.equal(packs.length, 1)
     tarballs[`@devup-ui/${name}`] =
-      `file:${(adapter === 'vite' ? viteRealpath : realpathSync)(join(destination, packs[0])).split(sep).join('/')}`
+      `file:${(adapter === 'vite' || adapter === 'bun' ? viteRealpath : realpathSync)(join(destination, packs[0])).split(sep).join('/')}`
   }
   const assertDist =
-    adapter === 'rsbuild' || adapter === 'vite'
-      ? assertRsbuildDist
-      : assertWebpackDist
+    adapter === 'bun'
+      ? assertBunDist
+      : adapter === 'rsbuild' || adapter === 'vite'
+        ? assertRsbuildDist
+        : assertWebpackDist
   assertDist(join(repository, `packages/${adapter}-plugin/dist`))
   const bundler =
-    adapter === 'vite'
-      ? 'vite'
-      : adapter === 'rsbuild'
-        ? '@rsbuild/core'
-        : 'webpack'
+    adapter === 'bun'
+      ? '@devup-ui/bun-plugin'
+      : adapter === 'vite'
+        ? 'vite'
+        : adapter === 'rsbuild'
+          ? '@rsbuild/core'
+          : 'webpack'
   const versions = {}
-  for (const name of [bundler, 'react', 'csstype-extra']) {
+  for (const name of [
+    ...(adapter === 'bun' ? [] : [bundler]),
+    'react',
+    'csstype-extra',
+  ]) {
     const response = await fetch(`https://registry.npmjs.org/${name}/latest`, {
       signal: AbortSignal.timeout(30000),
     })
@@ -356,6 +496,10 @@ export async function webpackParity(adapter = 'webpack') {
       2,
     ),
   )
+  if (adapter === 'bun') {
+    await bunCells({ root, relocated, link, bun })
+    return root
+  }
   if (adapter === 'vite') {
     cpSync(
       new URL('./engine-dev-cuts.mjs', import.meta.url),
@@ -444,12 +588,13 @@ export async function webpackParity(adapter = 'webpack') {
 
 export const rsbuildParity = () => webpackParity('rsbuild')
 export const viteParity = () => webpackParity('vite')
+export const bunParity = () => webpackParity('bun')
 
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const adapter = process.argv[2] ?? 'webpack'
-  assert(['webpack', 'rsbuild', 'vite'].includes(adapter))
+  assert(['webpack', 'rsbuild', 'vite', 'bun'].includes(adapter))
   await webpackParity(adapter)
 }

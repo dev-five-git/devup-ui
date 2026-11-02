@@ -10,7 +10,10 @@ import {
   createSharedSlotReservation,
   createThemeInterfaceArgs,
   type CustomShorthands,
+  type DevupCompiler,
+  type DevupEngine,
   isProjectJsx,
+  loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
@@ -19,20 +22,6 @@ import {
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import {
-  codeExtract,
-  getCss,
-  getThemeInterface,
-  hasDevupUI,
-  registerShorthands,
-  registerTheme,
-  reserveClassSlots,
-  resetBuildState,
-  seedFileMap,
-  setDebug,
-  setModuleResolver,
-  setPrefix,
-} from '@devup-ui/wasm'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
@@ -53,6 +42,8 @@ const compiledPackages = [
 ]
 
 export interface DevupUIBunPluginOptions {
+  /** Native by default. Select WASM explicitly without automatic fallback. */
+  engine?: DevupEngine
   shorthands?: CustomShorthands
   /**
    * Readable class names. Defaults to `true` under the Bun runtime (tests) and
@@ -63,7 +54,7 @@ export interface DevupUIBunPluginOptions {
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
-async function writeDataFiles(): Promise<string[]> {
+async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
   let theme = {}
   let tailwindFiles: string[] = []
   try {
@@ -73,28 +64,34 @@ async function writeDataFiles(): Promise<string[]> {
   } catch {
     // Error reading devup.json, use empty theme
   }
-  registerTheme(theme)
+  compiler.registerTheme(theme)
 
   // Generate theme interface after registration (always write, even if empty)
   await writeFile(
     join(distDir, 'theme.d.ts'),
-    getThemeInterface(...createThemeInterfaceArgs(libPackage)),
+    compiler.getThemeInterface(...createThemeInterfaceArgs(libPackage)),
     'utf-8',
   )
 
   if (!existsSync(cssDir)) {
     await mkdir(cssDir, { recursive: true })
   }
-  await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+  await writeFile(
+    join(cssDir, 'devup-ui.css'),
+    compiler.getCss(null, false),
+    'utf-8',
+  )
   return tailwindFiles
 }
 
-const watchTailwindCss = createTailwindWatcher(writeDataFiles)
-
-async function initialize(shorthands: Record<string, readonly string[]>) {
-  registerShorthands(shorthands)
-  setPrefix(null)
-  setModuleResolver(createModuleResolver())
+async function initialize(
+  compiler: DevupCompiler,
+  shorthands: Record<string, readonly string[]>,
+  watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
+) {
+  compiler.registerShorthands(shorthands)
+  compiler.setPrefix(null)
+  compiler.setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -102,7 +99,7 @@ async function initialize(shorthands: Record<string, readonly string[]>) {
     createCompatTypes(importAliases),
     'utf-8',
   )
-  watchTailwindCss(await writeDataFiles())
+  watchTailwindCss(await writeDataFiles(compiler))
 }
 
 const scanners = new Map<SourceLoader, Bun.Transpiler>()
@@ -128,7 +125,11 @@ function importsCompiledPackage(contents: string, loader: SourceLoader) {
   }
 }
 
-async function loadSourceFile(filePath: string, bundling: boolean) {
+async function loadSourceFile(
+  compiler: DevupCompiler,
+  filePath: string,
+  bundling: boolean,
+) {
   const loader: SourceLoader = filePath.endsWith('.tsx')
     ? 'tsx'
     : filePath.endsWith('.ts')
@@ -141,9 +142,9 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
   if (
     isProjectJsx(filePath, importAliases) ||
     importsCompiledPackage(contents, loader) ||
-    hasDevupUI(filePath, contents, libPackage, importAliases)
+    compiler.hasDevupUI(filePath, contents, libPackage, importAliases)
   ) {
-    const code = codeExtract(
+    using code = compiler.codeExtract(
       filePath,
       contents,
       libPackage,
@@ -157,7 +158,11 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
     // every extracted style in the base sheet; synchronous writes keep
     // concurrent source loads from overwriting a newer sheet with an older one.
     if (!bundling)
-      writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
+      writeFileSync(
+        join(cssDir, 'devup-ui.css'),
+        compiler.getCss(null, false),
+        'utf-8',
+      )
     return { contents: code.code, loader }
   }
   return { contents, loader }
@@ -169,6 +174,10 @@ async function loadSourceFile(filePath: string, bundling: boolean) {
  */
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
+  const compiler = loadCompiler(options.engine)
+  const watchTailwindCss = createTailwindWatcher(
+    writeDataFiles.bind(undefined, compiler),
+  )
   return {
     name: 'devup-ui',
 
@@ -177,12 +186,12 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       const bundling = build.config !== undefined
       // A build starts from its own options, not from what an earlier build in
       // this process left in the engine
-      const endBuild = beginBuild({ resetBuildState })
+      const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
-      await initialize(shorthands)
+      await initialize(compiler, shorthands, watchTailwindCss)
       const debug = options.debug ?? !bundling
-      setDebug(debug)
-      const slots = createSharedSlotReservation({ reserveClassSlots })
+      compiler.setDebug(debug)
+      const slots = createSharedSlotReservation(compiler)
       let reservationPending = bundling
       const reserveFiles = () => {
         slots.invalidate()
@@ -217,7 +226,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       else {
         try {
           seedFileNumbers(
-            { seedFileMap },
+            compiler,
             collectNumberedFiles({
               roots: [resolve('src')],
               needles: compiledPackages,
@@ -247,7 +256,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         async ({ defer }) => {
           if (!bundling) return { contents: '', loader: 'js' }
           await defer()
-          return { contents: getCss(null, false), loader: 'css' }
+          return { contents: compiler.getCss(null, false), loader: 'css' }
         },
       )
 
@@ -261,7 +270,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
             reserveFiles()
             reservationPending = false
           }
-          return loadSourceFile(path, bundling)
+          return loadSourceFile(compiler, path, bundling)
         },
       )
     },

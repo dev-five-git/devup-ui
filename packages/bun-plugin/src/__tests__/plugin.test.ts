@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
+import * as pluginUtils from '@devup-ui/plugin-utils'
 import { ShorthandConfigError } from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import {
   afterAll,
   afterEach,
@@ -19,13 +19,30 @@ import { bunRegistration } from '../../../../bun.setup'
 import { DevupUI, register } from '../plugin'
 import { captureBunHooks } from './captured-hooks.test-support'
 
+const selectCompiler = pluginUtils.loadCompiler
+const wasm = selectCompiler('wasm')
+
 describe('shorthand creation boundary', () => {
+  it.each([undefined, 'native', 'wasm'] as const)(
+    'selects engine=%s once per factory',
+    (engine) => {
+      const selection = spyOn(pluginUtils, 'loadCompiler').mockReturnValue(wasm)
+      try {
+        DevupUI(engine === undefined ? undefined : { engine })
+        expect(selection.mock.calls).toEqual([[engine]])
+      } finally {
+        selection.mockRestore()
+        selection.mockImplementation(selectCompiler)
+      }
+    },
+  )
   it('registers canonical targets when the plugin is registered', async () => {
     const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
       undefined,
     )
     try {
       await register({
+        engine: 'wasm',
         shorthands: { bgx: ['backgroundColor', 'py', '--Gap'] },
       })
       expect(registration.mock.calls).toEqual([
@@ -41,6 +58,7 @@ describe('shorthand creation boundary', () => {
   })
 
   it('rejects a typo before registration when runtime options bypass types', () => {
+    const selection = spyOn(pluginUtils, 'loadCompiler')
     const registration = spyOn(wasm, 'registerShorthands').mockReturnValue(
       undefined,
     )
@@ -51,8 +69,11 @@ describe('shorthand creation boundary', () => {
         ]),
       ).toThrow(ShorthandConfigError)
       expect(registration).not.toHaveBeenCalled()
+      expect(selection).not.toHaveBeenCalled()
     } finally {
       registration.mockRestore()
+      selection.mockRestore()
+      selection.mockImplementation(selectCompiler)
     }
   })
 })
@@ -97,6 +118,81 @@ async function load(path: string, namespace = 'file') {
 }
 
 describe('registered Bun hooks', () => {
+  it('compiles default runtime input into native state without mutating WASM', async () => {
+    const native = pluginUtils.loadCompiler()
+    native.resetStateForTesting()
+    const file = join(root, 'native-default.ts')
+    await Bun.write(
+      file,
+      "import {css} from '@devup-ui/react'; export const cls=css({color:'teal'});",
+    )
+    const before = {
+      native: native.getCss(null, false),
+      wasm: wasm.getCss(null, false),
+    }
+    try {
+      await register({ debug: false })
+      const result = await load(file)
+      const after = {
+        native: native.getCss(null, false),
+        wasm: wasm.getCss(null, false),
+      }
+      console.info(
+        JSON.stringify({ observed: 'native-default', before, after, result }),
+      )
+      expect(before.native).not.toContain('color:teal')
+      expect(result && 'contents' in result && result.contents).not.toContain(
+        'css(',
+      )
+      expect(after.native).toContain('color:teal')
+      expect(after.wasm).toBe(before.wasm)
+    } finally {
+      native.resetStateForTesting()
+    }
+  })
+
+  it('keeps retained source callbacks on their factory compiler', async () => {
+    const native = pluginUtils.loadCompiler()
+    native.resetStateForTesting()
+    const file = join(root, 'retained-native.ts')
+    await Bun.write(
+      file,
+      "import {css} from '@devup-ui/react'; export const cls=css({color:'teal'});",
+    )
+    try {
+      await register({ engine: 'native', debug: false })
+      const retained = loads.splice(0)
+      await register({ engine: 'wasm', debug: false })
+      const before = {
+        native: native.getCss(null, false),
+        wasm: wasm.getCss(null, false),
+      }
+      const source = retained.find(({ options }) => !options.namespace)
+      if (!source) throw new Error('Missing retained native source callback')
+      const result = await source.callback({
+        path: file,
+        namespace: 'file',
+        loader: 'file',
+        defer: async () => {},
+      })
+      const after = {
+        native: native.getCss(null, false),
+        wasm: wasm.getCss(null, false),
+      }
+      console.info(
+        JSON.stringify({ observed: 'retained-native', before, after, result }),
+      )
+      expect(before.native).not.toContain('color:teal')
+      expect(result && 'contents' in result && result.contents).not.toContain(
+        'css(',
+      )
+      expect(after.native).toContain('color:teal')
+      expect(after.wasm).toBe(before.wasm)
+    } finally {
+      native.resetStateForTesting()
+    }
+  })
+
   it('seeds readable names from physical inputs before runtime source loads', async () => {
     const file = join(root, 'numbered.tsx')
     await Bun.write(
@@ -108,7 +204,7 @@ describe('registered Bun hooks', () => {
       paths.length === 1 && paths[0] === 'src' ? root : realResolve(...paths),
     )
     try {
-      await register()
+      await register({ engine: 'wasm' })
       expect(Object.keys(JSON.parse(wasm.exportFileMap()))).toContain(file)
       expect(wasm.isDebug()).toBe(true)
     } finally {
@@ -122,7 +218,7 @@ describe('registered Bun hooks', () => {
   })
 
   it('reserves short runtime names during awaited setup', async () => {
-    await register({ debug: false })
+    await register({ engine: 'wasm', debug: false })
     expect(wasm.isDebug()).toBe(false)
     expect(loads.length).toBe(2)
   })
@@ -131,7 +227,7 @@ describe('registered Bun hooks', () => {
     const path = join(root, 'malformed.ts')
     const source = 'import {'
     await Bun.write(path, source)
-    await register()
+    await register({ engine: 'wasm' })
     expect(await load(path)).toEqual({ contents: source, loader: 'ts' })
     expect(writeSync).not.toHaveBeenCalled()
   })
@@ -149,7 +245,7 @@ describe('registered Bun hooks', () => {
         target: 'bun',
         external: ['react/jsx-dev-runtime', 'react/jsx-runtime'],
         outdir: join(root, 'out'),
-        plugins: [DevupUI()],
+        plugins: [DevupUI({ engine: 'wasm' })],
       })
       expect(result.success).toBe(true)
       expect(result.logs).toEqual([])
@@ -166,7 +262,7 @@ describe('registered Bun hooks', () => {
   })
 
   it('creates cold directories before writing configuration and CSS', async () => {
-    await register()
+    await register({ engine: 'wasm' })
     expect(mkdir).toHaveBeenCalledWith('df', { recursive: true })
     expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('devup-ui'), {
       recursive: true,
@@ -184,7 +280,7 @@ describe('registered Bun hooks', () => {
     readConfig.mockResolvedValue(
       '{"theme":{"colors":{"default":{"primary":"#123456"}}}}',
     )
-    await register()
+    await register({ engine: 'wasm' })
     expect(wasm.getCss(null, false)).toContain('#123456')
     expect(mkdir).not.toHaveBeenCalled()
   })
@@ -192,12 +288,12 @@ describe('registered Bun hooks', () => {
   it('registers an empty theme when reading configuration fails', async () => {
     exists.mockReturnValue(true)
     readConfig.mockRejectedValue(new Error('unreadable fixture config'))
-    await register()
+    await register({ engine: 'wasm' })
     expect(wasm.getDefaultTheme()).toBeUndefined()
   })
 
   it('resolves generated stylesheets and loads their runtime placeholder', async () => {
-    await register()
+    await register({ engine: 'wasm' })
     const resolve = resolves[0]
     if (!resolve) throw new Error('No CSS resolver registered')
     const result = await resolve({
@@ -232,7 +328,7 @@ describe('registered Bun hooks', () => {
         `source.${extension}`,
       )
       await Bun.write(path, source)
-      await register()
+      await register({ engine: 'wasm' })
       const result = await load(path)
       if (!result || !('contents' in result))
         throw new Error('Expected transformed source contents')
@@ -251,7 +347,7 @@ describe('registered Bun hooks', () => {
   it('returns source without style imports unchanged', async () => {
     const path = join(root, 'plain.ts')
     await Bun.write(path, 'export const value = 42')
-    await register()
+    await register({ engine: 'wasm' })
     expect(await load(path)).toEqual({
       contents: 'export const value = 42',
       loader: 'ts',
@@ -260,7 +356,7 @@ describe('registered Bun hooks', () => {
   })
 
   it('propagates source read errors instead of returning partial output', async () => {
-    await register()
+    await register({ engine: 'wasm' })
     await expect(load(join(root, 'missing.ts'))).rejects.toThrow()
   })
 
@@ -270,7 +366,7 @@ describe('registered Bun hooks', () => {
       path,
       "import { css } from '@devup-ui/react'; export const styles = css({ color: window.name })",
     )
-    await register()
+    await register({ engine: 'wasm' })
     await expect(load(path)).rejects.toThrow(/invalid\.ts:\d+:\d+:/)
   })
 })
