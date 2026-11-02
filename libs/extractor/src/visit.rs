@@ -91,11 +91,12 @@ use oxc_syntax::number::NumberBase;
 use oxc_syntax::operator::LogicalOperator;
 use oxc_syntax::symbol::SymbolId;
 
+use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_VALUE,
     LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments, Suspends,
     build_time_error, call_with_values, css_prop_error, css_prop_override_error, element_error,
-    expression_to_style_order, fixed_value, get_key_by_literal_expression, get_str_by_property_key,
+    expression_to_style_order, get_key_by_literal_expression, get_str_by_property_key,
     get_string_by_literal_expression, get_string_by_property_key, is_pure,
     jsx_expression_to_style_order, key_error, readable_argument, readable_code, reads_directly,
     reads_spreads_once, reads_unknown, runtime_classes, runtime_value, runtime_value_error,
@@ -1098,7 +1099,7 @@ impl<'a> DevupVisitor<'a> {
                     self.style_values.read_in(&self.ast, &mut rules);
                     let (result, authored) =
                         crate::extractor::style_order_projection::extract_with_order_policy::<LOCATE>(
-                            &self.ast,
+                            StyleInputs::with_values(&self.ast, &self.style_values),
                             None,
                             &mut rules,
                             0,
@@ -3182,6 +3183,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.style_values
                 .import(std::mem::take(&mut self.imported_css));
         }
+        self.style_values.record_absence(it);
         self.stylex_captures.reserve(it);
         if self.style_values.has_scoping() {
             for (name, component) in &self.imported_styled {
@@ -3434,7 +3436,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 errors,
                 definition,
             } = extract_style_from_styled(
-                &self.ast,
+                StyleInputs::with_values(&self.ast, &self.style_values),
                 it,
                 Naming {
                     split_filename: self.split_filename.as_deref(),
@@ -3873,7 +3875,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     runtime_value,
                 },
                 runtime_offset,
-            ) = extract_keyframes_with_location(&self.ast, arg);
+            ) = extract_keyframes_with_location(
+                StyleInputs::with_values(&self.ast, &self.style_values),
+                arg,
+            );
             if let Some(value) = runtime_value {
                 self.errors.push((
                     runtime_offset
@@ -4068,7 +4073,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     *it = if r.is_css() {
                         let (result, authored) =
                             crate::extractor::style_order_projection::extract_with_order(
-                                &self.ast,
+                                StyleInputs::with_values(&self.ast, &self.style_values),
                                 None,
                                 if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
                                     &mut spread.argument
@@ -4152,7 +4157,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 runtime_value,
                             },
                             runtime_offset,
-                        ) = extract_keyframes_with_location(&self.ast, frames);
+                        ) = extract_keyframes_with_location(
+                            StyleInputs::with_values(&self.ast, &self.style_values),
+                            frames,
+                        );
                         if let Some(value) = runtime_value {
                             self.errors.push((
                                 runtime_offset
@@ -4184,7 +4192,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             } else {
                                 call.arguments[0].to_expression_mut()
                             },
-                            &self.filename,
+                            &crate::extractor::global_inputs::GlobalInputs {
+                                file: &self.filename,
+                                values: &self.style_values,
+                            },
                         );
                         if let Some((offset, value)) =
                             crate::dead_properties::located_value(&styles, offset, true)
@@ -4242,7 +4253,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     } = extract_global_style_from_expression(
                         &self.ast,
                         &mut folded,
-                        &self.filename,
+                        &crate::extractor::global_inputs::GlobalInputs {
+                            file: &self.filename,
+                            values: &self.style_values,
+                        },
                     );
                     if let Some((offset, value)) =
                         crate::dead_properties::located_value(&styles, offset, true)
@@ -4517,6 +4531,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 );
                 let mut props_styles = vec![];
                 let ast = AstBuilder::new(self.ast.allocator());
+                let absence = self.style_values.absence_proof();
                 let ExtractResult {
                     styles,
                     tag: _tag,
@@ -4524,7 +4539,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     style_vars,
                     props,
                 } = extract_with_policy::<false>(
-                    &ast,
+                    StyleInputs::with_values(&ast, &absence),
                     None,
                     it.arguments[1].to_expression_mut(),
                     0,
@@ -4536,6 +4551,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         _ => self.visit_expression(value),
                     },
                 );
+                let mut unreadable = Vec::new();
+                unreadable_styles(&styles, false, &mut unreadable);
+                for (offset, code, requirement) in unreadable {
+                    if requirement != Some(crate::extractor::selector_params::SELECTOR_PARAMS) {
+                        continue;
+                    }
+                    self.errors.push((
+                        if offset == 0 { it.span.start } else { offset },
+                        element_error(
+                            &kind.to_string(),
+                            &code,
+                            requirement.unwrap_or(STYLE_OBJECT),
+                        ),
+                    ));
+                }
                 props_styles.extend(styles);
 
                 if let Some(t) = _tag {
@@ -4980,8 +5010,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     let GlobalExtractResult {
                         styles,
                         style_order,
-                    } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
-                    if let Some(value) = fixed_value(&styles) {
+                    } = extract_global_style_from_expression(
+                        &self.ast,
+                        expression,
+                        &crate::extractor::global_inputs::GlobalInputs {
+                            file: &self.filename,
+                            values: &self.style_values,
+                        },
+                    );
+                    if let Some((offset, value)) =
+                        crate::dead_properties::located_value(&styles, offset, true)
+                    {
                         self.errors.push((
                             offset,
                             element_error(&name, &value.0, value.1.unwrap_or(RUNTIME_VALUE)),
@@ -5093,8 +5132,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 {
                                     self.style_values.read_in(&self.ast, expression);
                                 }
-                                let ExtractResult { styles, tag, .. } =
-                                    extract_style_from_jsx(&self.ast, &disassembled, at);
+                                let ExtractResult { styles, tag, .. } = extract_style_from_jsx(
+                                    StyleInputs::with_values(&self.ast, &self.style_values),
+                                    &disassembled,
+                                    at,
+                                );
                                 props_styles.extend(styles.into_iter().rev());
                                 tag_name = tag.unwrap_or(tag_name);
                             }
@@ -5137,7 +5179,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut self.errors,
                     );
                     let ExtractResult { styles, .. } = extract_style_from_expression(
-                        &self.ast,
+                        StyleInputs::with_values(&self.ast, &self.style_values),
                         None,
                         &mut spread.argument,
                         0,
@@ -5408,6 +5450,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "visit_factory_params_tests.rs"]
+mod factory_params_tests;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]

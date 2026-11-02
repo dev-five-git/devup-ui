@@ -9,11 +9,14 @@ use crate::{
     },
     own_css_context::{Contexts, Frame, under},
     own_css_plan::{Node, Plan},
-    utils::{RESPONSIVE_ARRAY, SELECTOR_NAME, get_string_by_literal_expression},
+    utils::{RESPONSIVE_ARRAY, SELECTOR_NAME},
 };
 use css::{disassemble_property, style_selector::split_selector_list};
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{ast::Expression, builder::AstBuilder};
+
+#[path = "own_css_params.rs"]
+pub(crate) mod params;
 
 struct Cursor {
     id: usize,
@@ -137,19 +140,28 @@ impl<'a> RuleCompiler<'_, 'a> {
                     if !root_object
                         && contexts.selected(path)
                         && let Some(property) = properties.iter().find(|p| p.name == "params")
-                        && let Node::Array(items) = &plan.nodes[property.value]
                     {
-                        let params: Vec<_> = items
-                            .iter()
-                            .filter_map(|id| match plan.nodes[*id] {
-                                Node::Scalar(slot) => {
-                                    get_string_by_literal_expression(&slots[slot])
-                                        .filter(|s| !s.is_empty())
-                                }
-                                Node::Array(_) | Node::Object(_) => None,
-                            })
-                            .collect();
-                        path = Some(contexts.push(path, Frame::Params(params.join(","))));
+                        match (params::Params {
+                            plan,
+                            value: property.value,
+                        })
+                        .resolve(
+                            |slot| params::literal(&slots[slot]),
+                            || contexts.requires_argument(path),
+                        ) {
+                            Ok(Some(params)) => {
+                                path = Some(contexts.push(path, Frame::Params(params)));
+                            }
+                            Ok(None) => {}
+                            Err(()) => {
+                                result.styles.push(misplaced(
+                                    0,
+                                    "params".into(),
+                                    crate::extractor::selector_params::SELECTOR_PARAMS,
+                                ));
+                                return result;
+                            }
+                        }
                     }
                     let properties: Vec<_> = if root_object {
                         properties.iter().collect()
@@ -218,7 +230,7 @@ impl<'a> RuleCompiler<'_, 'a> {
                     };
                     let mut expression = slots[*slot].clone_in_with_semantic_ids(ast.allocator());
                     let mut styles = extract_style_from_expression(
-                        ast,
+                        ast.into(),
                         name.as_deref(),
                         &mut expression,
                         level,

@@ -8,7 +8,7 @@ fn resolver(specifier: &str, _: &str) -> Option<ResolvedModule> {
     match specifier {
         "./ui" => Some(ResolvedModule {
             path: "/src/ui.ts".to_string(),
-            code: "export { css, Box } from '@devup-ui/react';".to_string(),
+            code: "export { css, Box, globalCss } from '@devup-ui/react';".to_string(),
         }),
         _ => None,
     }
@@ -158,4 +158,108 @@ fn source_map_and_units_survive_barrel_namespace_alias_and_boa_layers()
         .ok_or("missing declaration token")?;
     assert_eq!((token.get_src_line(), token.get_src_col()), (5, 13));
     Ok(())
+}
+
+#[rstest]
+#[case("import { globalCss } from './ui';", "globalCss")]
+#[case("import * as UI from './ui';", "UI.globalCss")]
+#[serial]
+fn global_imports_evaluate_pure_calls_after_barrel_rewriting(
+    #[case] import: &str,
+    #[case] api: &str,
+    #[values(false, true)] single_css: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: a structural URL needs evaluation after the project import is rewritten.
+    reset_class_map();
+    reset_file_map();
+    let source = format!(
+        "{import}\n{api}({{imports:[{{url:(() => 'pure.css')()}}]}});\nexport const after = 1;"
+    );
+    // When: the real barrel and value-evaluation pipeline extracts the global.
+    let output = extract_with_modules(
+        "/src/app.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+        true,
+        &resolver,
+    )?;
+    // Then: the exact import, dependency and following authored coordinate survive.
+    let urls: Vec<_> = output
+        .styles
+        .iter()
+        .map(|style| match style {
+            crate::ExtractStyleValue::Import(import) => import.url.as_str(),
+            other => panic!("expected import, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(urls, vec!["\"pure.css\""]);
+    assert_eq!(output.dependencies, vec!["/src/ui.ts"]);
+    let map =
+        oxc_sourcemap::SourceMap::from_json_string(output.map.as_deref().ok_or("missing map")?)?;
+    assert_eq!(map.get_source_content(0), Some(source.as_str()));
+    let (line, generated) = output
+        .code
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains("after"))
+        .ok_or("missing declaration")?;
+    let column = position(generated, "after");
+    let token = map
+        .get_tokens()
+        .find(|token| {
+            usize::try_from(token.get_dst_line()) == Ok(line)
+                && usize::try_from(token.get_dst_col()) == Ok(column)
+        })
+        .ok_or("missing declaration token")?;
+    assert_eq!((token.get_src_line(), token.get_src_col()), (2, 13));
+    Ok(())
+}
+
+#[rstest]
+#[case(("font-family:${() => \"Face\"};", "() => \"Face\"", "() => \"Face\""))]
+#[case(("font-family:${() => \" at build time: \"};", "() => \" at build time: \"", "() => \" at build time: \""))]
+#[case(("font-family:${class {}};", "class {}", "(class {})"))]
+#[case(("font-family:${function() {}};", "function() {}", "(function() {})"))]
+#[case(("${p => p.theme.fonts.body}:Face;", "p => p.theme.fonts.body", "(p) => p.theme.fonts.body"))]
+#[case(("${p => p.theme.fonts.body};font-family:Face;", "p => p.theme.fonts.body", "(p) => p.theme.fonts.body"))]
+#[serial]
+fn font_interpolations_keep_authored_refusals_after_barrel_rewriting(
+    #[case] fixture: (&str, &str, &str),
+    #[values(false, true)] namespace: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: a rewritten global contains a function or misplaced theme interpolation.
+    reset_class_map();
+    reset_file_map();
+    let (text, marker, rejected) = fixture;
+    let (import, api) = if namespace {
+        ("import * as UI from './ui';", "UI.globalCss")
+    } else {
+        ("import { globalCss } from './ui';", "globalCss")
+    };
+    let statement = format!("{api}({{fontFaces:[`{text}src:url(face.woff2);`]}});");
+    let column = position(&statement, marker) + 1;
+    let source = format!("{import}\n{statement}");
+    // When: extraction sees the invalid structural leaf through the project barrel.
+    let error = failure(extract_with_modules(
+        "/src/app.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+        false,
+        &resolver,
+    ));
+    // Then: neither evaluation nor rewrite mapping can discard or relocate the refusal.
+    assert_eq!(
+        error,
+        format!(
+            "/src/app.tsx:2:{column}: `globalCss()` cannot use `{rejected}` at build time: {}",
+            crate::extractor::global_inputs::FONT_TEMPLATE_INPUT
+        )
+    );
 }

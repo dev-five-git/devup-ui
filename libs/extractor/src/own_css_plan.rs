@@ -22,9 +22,28 @@ pub(crate) struct Plan {
     pub composing: bool,
     pub template: Option<Vec<String>>,
     pub origin: Option<(String, String)>,
+    pub holes: rustc_hash::FxHashSet<usize>,
+    pub param_values: rustc_hash::FxHashMap<usize, crate::own_css_lower::params::Scalar>,
+    pub has_params: bool,
+}
+
+pub(crate) enum ParamEntry {
+    Hole,
+    Scalar(usize),
+    Invalid,
 }
 
 impl Plan {
+    pub fn param_entry(&self, id: usize) -> ParamEntry {
+        if self.holes.contains(&id) {
+            return ParamEntry::Hole;
+        }
+        match self.nodes[id] {
+            Node::Scalar(slot) => ParamEntry::Scalar(slot),
+            Node::Array(_) | Node::Object(_) => ParamEntry::Invalid,
+        }
+    }
+
     pub fn needs_bridge(&self) -> bool {
         self.deep
             || (self.template.is_some()
@@ -60,8 +79,13 @@ impl Plan {
                     Node::Array(items) => {
                         code.push('[');
                         pending.push(Step::Text("]"));
+                        if items.last().is_some_and(|id| self.holes.contains(id)) {
+                            pending.push(Step::Text(","));
+                        }
                         for (index, &item) in items.iter().enumerate().rev() {
-                            pending.push(Step::Node(item));
+                            if !self.holes.contains(&item) {
+                                pending.push(Step::Node(item));
+                            }
                             if index > 0 {
                                 pending.push(Step::Text(","));
                             }

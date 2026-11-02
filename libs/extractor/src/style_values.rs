@@ -2,6 +2,7 @@
 //! `const fadeIn = keyframes({ ... })`: the build gives it a name, so styles
 //! reading the binding read that name
 
+mod absence;
 use std::rc::Rc;
 
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -45,6 +46,7 @@ pub struct StyleValues<'a> {
     texts: FxHashMap<SymbolId, String>,
     rules: FxHashMap<SymbolId, Expression<'a>>,
     calls: FxHashMap<u32, Expression<'a>>,
+    absent_references: FxHashSet<oxc_span::Span>,
 }
 
 impl<'a> StyleValues<'a> {
@@ -59,6 +61,7 @@ impl<'a> StyleValues<'a> {
             texts: FxHashMap::default(),
             rules: FxHashMap::default(),
             calls: FxHashMap::default(),
+            absent_references: FxHashSet::default(),
         }
     }
 

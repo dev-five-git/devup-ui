@@ -21,13 +21,15 @@ pub(crate) enum Frame {
 
 struct Link {
     parent: Option<usize>,
-    frame: Frame,
+    frame: Option<Frame>,
     selected: bool,
+    target: std::cell::OnceCell<Option<usize>>,
 }
 
 #[derive(Default)]
 pub(crate) struct Contexts {
     links: Vec<Link>,
+    targets: selector::Targets,
 }
 
 impl Contexts {
@@ -36,14 +38,51 @@ impl Contexts {
         let id = self.links.len();
         self.links.push(Link {
             parent,
-            frame,
+            frame: Some(frame),
             selected,
+            target: std::cell::OnceCell::new(),
         });
         id
     }
 
     pub fn selected(&self, path: Option<usize>) -> bool {
         path.is_some_and(|id| self.links[id].selected)
+    }
+
+    pub fn uncertain(&mut self, path: Option<usize>) -> usize {
+        let id = self.links.len();
+        self.links.push(Link {
+            parent: path,
+            frame: None,
+            selected: self.selected(path),
+            target: std::cell::OnceCell::from(Some(self.targets.uncertain())),
+        });
+        id
+    }
+
+    pub fn requires_argument(&mut self, path: Option<usize>) -> bool {
+        let mut pending = Vec::new();
+        let mut cursor = path;
+        let mut target = None;
+        while let Some(id) = cursor {
+            if let Some(cached) = self.links[id].target.get().copied() {
+                target = cached;
+                break;
+            }
+            pending.push(id);
+            cursor = self.links[id].parent;
+        }
+        for id in pending.into_iter().rev() {
+            for frame in self.links[id].frame.as_slice() {
+                target = match frame {
+                    Frame::At(..) | Frame::Layer(_) => target,
+                    Frame::Selector(template) => Some(self.targets.nest(target, template)),
+                    Frame::Params(_) => self.targets.consume(target),
+                };
+            }
+            self.links[id].target = std::cell::OnceCell::from(target);
+        }
+        self.targets.required(target)
     }
 
     pub fn materialize(
@@ -53,7 +92,7 @@ impl Contexts {
         let mut links = Vec::new();
         let mut cursor = path;
         while let Some(id) = cursor {
-            links.push(&self.links[id].frame);
+            links.extend(self.links[id].frame.as_ref());
             cursor = self.links[id].parent;
         }
         let mut selector = selector::SelectorText::default();

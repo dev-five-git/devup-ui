@@ -45,7 +45,7 @@ fn projected_selectors_when_key_is_dynamic_keep_the_refusal_in_both_views() {
     .unwrap_or_else(|error| panic!("{error:?}"));
     // When
     let (raw, authored) = crate::extractor::style_order_projection::extract_with_order(
-        &ast, Some("selectors"), &mut expression, 0, &None,
+        (&ast).into(), Some("selectors"), &mut expression, 0, &None,
         crate::extractor::extract_style_from_expression::LiteralHandling::ExpandResponsiveThemeToken,
     );
     // Then

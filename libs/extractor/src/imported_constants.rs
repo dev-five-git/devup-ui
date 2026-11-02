@@ -1646,7 +1646,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                         {
                             let (result, mut authored) =
                                 crate::extractor::style_order_projection::extract_with_order(
-                                    &builder,
+                                    (&builder).into(),
                                     None,
                                     &mut rules,
                                     0,
