@@ -35,6 +35,10 @@
 
 English | [한국어](README_ko.md)
 
+## Documentation
+
+- [Typography (한국어)](https://devup-ui.com/ko/docs/devup/typography)
+
 ## Why Devup UI?
 
 **Devup UI isn't just another CSS-in-JS library — it's the next evolution.**
