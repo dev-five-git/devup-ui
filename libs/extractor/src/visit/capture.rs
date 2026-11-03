@@ -386,3 +386,7 @@ pub(super) fn literal_choice(
         LogicalOperator::Coalesce => !nullish,
     })
 }
+
+#[cfg(test)]
+#[path = "capture_contract_tests.rs"]
+mod contract_tests;

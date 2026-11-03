@@ -184,3 +184,195 @@ fn imported_class_when_used_as_a_controller_selects_by_declarations_not_metadata
         .collect();
     assert_eq!(colors, [expected]);
 }
+
+#[rstest]
+#[case("{color:(()=>later)()}", true)]
+#[case("{color:(function(){return later})()}", true)]
+#[case("{color:()=>later}", false)]
+#[case("{color:function(){return later}}", false)]
+fn local_shape_tdz_checks_eager_iifes_and_leaves_deferred_callbacks(
+    #[case] initializer: &str,
+    #[case] expected: bool,
+) {
+    let allocator = Allocator::default();
+    let source = format!("const shape={initializer};const later='red';");
+    let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let scoping = SemanticBuilder::new()
+        .build(&parsed.program)
+        .semantic
+        .into_scoping();
+    let mut declarations = LocalConstants::default();
+    declarations.visit_program(&parsed.program);
+    let oxc_ast::ast::Statement::VariableDeclaration(declaration) = &parsed.program.body[0] else {
+        panic!("expected shape declaration")
+    };
+    let init = declaration.declarations[0]
+        .init
+        .as_ref()
+        .unwrap_or_else(|| panic!("expected shape initializer"));
+    let before = crate::utils::readable_code(init);
+    assert_eq!(
+        local_rule_shapes::has_tdz(init, &scoping, &declarations.bindings),
+        expected
+    );
+    assert_eq!(crate::utils::readable_code(init), before);
+}
+
+#[test]
+fn selected_jsx_style_spread_keeps_the_authored_winning_value() {
+    let allocator = Allocator::default();
+    let source = "import {Box} from '@devup-ui/react';const selected=true;const color='red';<Box {...(selected ? {color} : {color:'blue'})}/>;";
+    let mut parsed = Parser::new(&allocator, source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let inlined = inline_constants(
+        &AstBuilder::new(&allocator),
+        &mut parsed.program,
+        "spread.tsx",
+        &ExtractOption::default(),
+        None,
+        CssProp::Off,
+        &FxHashSet::default(),
+    );
+    assert!(inlined.errors.is_empty(), "{:?}", inlined.errors);
+    let Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) = parsed.program.body.last()
+    else {
+        panic!("expected element expression")
+    };
+    let Expression::JSXElement(element) = &statement.expression else {
+        panic!("expected JSX")
+    };
+    let oxc_ast::ast::JSXAttributeItem::SpreadAttribute(spread) =
+        &element.opening_element.attributes[0]
+    else {
+        panic!("spread must remain an authored copy")
+    };
+    let Expression::ObjectExpression(object) = crate::utils::unwrap_syntax_only(&spread.argument)
+    else {
+        panic!("constant controller must select exactly one object")
+    };
+    assert_eq!(object.properties.len(), 1);
+    let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) = &object.properties[0] else {
+        panic!("expected own property")
+    };
+    assert!(
+        property
+            .key
+            .static_name()
+            .is_some_and(|name| name == "color")
+    );
+    assert!(matches!(&property.value, Expression::StringLiteral(value) if value.value == "red"));
+    assert!(!property.computed);
+    assert!(!property.method);
+}
+#[rstest]
+#[case("title={mark('before','title')}")]
+#[case("{...{title:mark('before','title')}}")]
+#[serial_test::serial]
+fn intrinsic_css_relocation_preserves_evaluation_order_with_spread_control(#[case] before: &str) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = format!(
+        "import {{jsx}} from '@emotion/react';const events=[];function mark(name,value){{events.push(name);return value;}}const App=()=> <div {before} css={{{{color:mark('color','red')}}}} id={{mark('after','id')}}/>;"
+    );
+    let output = crate::extract(
+        "boundary-order.tsx",
+        &source,
+        crate::ExtractOption {
+            single_css: true,
+            import_aliases: std::collections::HashMap::from([(
+                "@emotion/react".into(),
+                crate::ImportAlias::NamedToNamed,
+            )]),
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("boundary-order.tsx", None),
+        &output,
+        "const element=App();JSON.stringify([events,element.target,element.props.title,element.props.id,values(element,'color'),Object.hasOwn(element.props,'css')]);",
+    );
+    assert_eq!(
+        actual,
+        serde_json::json!([
+            ["before", "color", "after"],
+            "div",
+            "title",
+            "id",
+            ["red"],
+            false
+        ])
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn overwritten_dynamic_css_retains_boolean_attribute_and_once_only_effect() {
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = "import {jsx} from '@emotion/react';const events=[];function read(){events.push('read');return 'red';}const App=()=> <div hidden css={{color:read(),color:'blue'}}/>;";
+    let output = crate::extract(
+        "boolean-static.tsx",
+        source,
+        crate::ExtractOption {
+            single_css: true,
+            import_aliases: std::collections::HashMap::from([(
+                "@emotion/react".into(),
+                crate::ImportAlias::NamedToNamed,
+            )]),
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("boolean-static.tsx", None),
+        &output,
+        "const element=App();JSON.stringify([events,element.target,element.props.hidden,values(element,'color'),Object.hasOwn(element.props,'css')]);",
+    );
+    assert_eq!(
+        actual,
+        serde_json::json!([["read"], "div", true, ["blue"], false])
+    );
+}
+
+#[rstest]
+#[case("", "undefined", false, false, 0)]
+#[case(",null", "null", false, false, 0)]
+#[case(",undefined", "undefined", false, false, 0)]
+#[case(",{}", "object", false, false, 0)]
+#[case(",readProps()", "object", true, false, 1)]
+#[case(",{['css']:{color:'red'}}", "object", false, true, 0)]
+#[serial_test::serial]
+fn compiled_intrinsic_without_eligible_css_preserves_raw_props(
+    #[case] arguments: &str,
+    #[case] kind: &str,
+    #[case] identity: bool,
+    #[case] has_css: bool,
+    #[case] calls: usize,
+) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = format!(
+        "import {{jsx}} from '@emotion/react';let calls=0;const shared={{id:'kept'}};function readProps(){{calls++;return shared;}}const Control=()=>jsx('div',{{css:{{color:'red'}}}});const App=()=>jsx('div'{arguments});"
+    );
+    let output = crate::extract(
+        "raw-css-controls.ts",
+        &source,
+        crate::ExtractOption {
+            single_css: true,
+            import_aliases: std::collections::HashMap::from([(
+                "@emotion/react".into(),
+                crate::ImportAlias::NamedToNamed,
+            )]),
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("raw-css-controls.ts", None),
+        &output,
+        "const element=App();const control=Control();JSON.stringify([element.target,element.props===null?'null':typeof element.props,element.props===shared,Object.hasOwn(element.props||{},'css'),calls,values(control,'color'),Object.hasOwn(control.props,'css')]);",
+    );
+    assert_eq!(
+        actual,
+        serde_json::json!(["div", kind, identity, has_css, calls, ["red"], false])
+    );
+}

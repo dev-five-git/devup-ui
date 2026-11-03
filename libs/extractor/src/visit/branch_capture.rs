@@ -4,7 +4,7 @@ use super::DevupVisitor;
 use super::capture::Captured;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::{Expression, Str};
-use oxc_ast_visit::{VisitMut, walk_mut};
+use oxc_ast_visit::VisitMut;
 use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 use rustc_hash::FxHashMap;
@@ -16,13 +16,15 @@ pub(super) struct BranchReads<'a, 'b> {
 
 impl<'a> VisitMut<'a> for BranchReads<'a, '_> {
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
-        if let Expression::Identifier(identifier) = expression
-            && let Some(read) = self.reads.get(identifier.name.as_str())
-        {
-            *expression = read.clone_in(self.ast.allocator());
-        } else {
-            walk_mut::walk_expression(self, expression);
-        }
+        crate::utils::rewrite_expression(expression, &mut |expression| {
+            if let Expression::Identifier(identifier) = expression
+                && let Some(read) = self.reads.get(identifier.name.as_str())
+            {
+                *expression = read.clone_in(self.ast.allocator());
+                return true;
+            }
+            false
+        });
     }
 }
 
@@ -348,3 +350,7 @@ impl<'a> DevupVisitor<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "branch_capture_contract_tests.rs"]
+mod contract_tests;

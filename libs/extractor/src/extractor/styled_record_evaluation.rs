@@ -86,7 +86,7 @@ impl<'b, 'a> Evaluations<'b, 'a> {
 fn visit_style_value_expression<'a>(
     builder: &AstBuilder<'a>,
     style: &mut crate::ExtractStyleValue,
-    visit: &mut impl FnMut(&mut Expression<'a>),
+    visit: &mut dyn FnMut(&mut Expression<'a>),
 ) {
     use crate::ExtractStyleValue;
     match style {
@@ -116,7 +116,7 @@ fn visit_style_value_expression<'a>(
 pub(crate) fn visit_style_expressions<'a>(
     builder: &AstBuilder<'a>,
     style: &mut crate::ExtractStyleProp<'a>,
-    visit: &mut impl FnMut(&mut Expression<'a>),
+    visit: &mut dyn FnMut(&mut Expression<'a>),
 ) {
     use crate::ExtractStyleProp;
     match style {

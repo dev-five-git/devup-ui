@@ -4619,31 +4619,27 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let reads = self.bindings.lowered_reads(props);
                 self.report_reads(reads);
             }
-            let css_only = element_kind.is_none()
+            let css_only_props = (element_kind.is_none()
                 && it.arguments.first().and_then(Argument::as_expression)
-                    .is_some_and(|element| self.css_prop.takes_type(element, |_| false))
-                && it.arguments.get(1).and_then(Argument::as_expression)
-                    .is_some_and(|props| matches!(unwrap_syntax_only(props), Expression::ObjectExpression(object)
-                        if object.properties.iter().any(|property| matches!(property, ObjectPropertyKind::ObjectProperty(property)
-                            if !property.computed && property.key.static_name().is_some_and(|key| key == "css")))));
-            let kept: FxHashSet<String> = if css_only {
-                it.arguments
-                    .get(1)
-                    .and_then(Argument::as_expression)
-                    .and_then(|props| match unwrap_syntax_only(props) {
-                        Expression::ObjectExpression(object) => Some(object),
-                        _ => None,
-                    })
-                    .into_iter()
-                    .flat_map(|object| &object.properties)
-                    .filter_map(ObjectPropertyKind::as_property)
-                    .filter_map(|property| crate::utils::get_str_by_property_key(&property.key))
-                    .filter(|key| key != "css")
-                    .map(std::borrow::Cow::into_owned)
-                    .collect()
-            } else {
-                FxHashSet::default()
-            };
+                    .is_some_and(|element| self.css_prop.takes_type(element, |_| false)))
+                .then(|| it.arguments.get(1).and_then(Argument::as_expression))
+                .flatten()
+                .and_then(|props| match unwrap_syntax_only(props) {
+                    Expression::ObjectExpression(object) => Some(object),
+                    _ => None,
+                })
+                .filter(|object| object.properties.iter().any(|property| matches!(property,
+                    ObjectPropertyKind::ObjectProperty(property)
+                        if !property.computed && property.key.static_name().is_some_and(|key| key == "css"))));
+            let css_only = css_only_props.is_some();
+            let kept: FxHashSet<String> = css_only_props
+                .into_iter()
+                .flat_map(|object| &object.properties)
+                .filter_map(ObjectPropertyKind::as_property)
+                .filter_map(|property| crate::utils::get_str_by_property_key(&property.key))
+                .filter(|key| key != "css")
+                .map(std::borrow::Cow::into_owned)
+                .collect();
             let order = if element_kind.is_some() || css_only {
                 it.arguments
                     .get_mut(1)
@@ -4655,24 +4651,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 None
             };
             let css = self.take_jsx_css_prop(it, element_kind.is_some());
-            if element_kind.is_none()
-                && let Some(mut css) = css
-            {
-                let values = if let Some(order) = order {
+            if element_kind.is_none() {
+                if let (Some(mut css), Some(order)) = (css, order) {
                     let props = it.arguments[1].to_expression_mut();
                     let values = self.finish_call_props(order, props);
                     if let Expression::ObjectExpression(object) = unwrap_syntax_only(props) {
                         css.class_name = written_object_class_name(&self.ast, &object.properties);
                     }
-                    values
-                } else {
-                    Vec::new()
-                };
-                self.lower_jsx_css_prop(it, css);
-                if !values.is_empty() {
-                    let props = it.arguments[1].to_expression_mut();
-                    let original = props.take_in(&self.ast);
-                    *props = call_with_values(&self.ast, values, original);
+                    self.lower_jsx_css_prop(it, css);
+                    if !values.is_empty() {
+                        let props = it.arguments[1].to_expression_mut();
+                        let original = props.take_in(&self.ast);
+                        *props = call_with_values(&self.ast, values, original);
+                    }
                 }
             } else if let Some(kind) = element_kind
                 && it

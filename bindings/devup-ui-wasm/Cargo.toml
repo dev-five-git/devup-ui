@@ -57,6 +57,7 @@ workspace = true
 # of the WebAssembly 2.0 baseline (Chrome 74, Firefox 62, Safari 14.1, Node 12).
 wasm-opt = [
     "-Oz",
+    "--converge",
     "--enable-bulk-memory",
     "--enable-nontrapping-float-to-int",
     "--enable-sign-ext",

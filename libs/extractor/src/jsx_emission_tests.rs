@@ -339,3 +339,52 @@ fn unrelated_dialect_errors_remain_errors(#[case] filename: &str, #[case] source
         .with_jsx(true);
     assert!(validate(source, source_type).is_err());
 }
+
+#[test]
+fn recoverable_non_sequence_emission_error_preserves_code_and_map() {
+    let arena = Allocator::default();
+    let parsed = Parser::new(&arena, "const original=1;", SourceType::tsx()).parse();
+    let mut result = Codegen::new()
+        .with_options(CodegenOptions {
+            source_map_path: Some("original.tsx".into()),
+            ..CodegenOptions::default()
+        })
+        .build(&parsed.program);
+    result.code = "const invalid=/[z-a]/;".into();
+    let checked = Parser::new(&arena, &result.code, SourceType::tsx())
+        .with_options(ParseOptions {
+            parse_regular_expression: true,
+            ..ParseOptions::default()
+        })
+        .parse();
+    assert!(
+        !checked.fatal_error,
+        "fixture must exercise a recoverable diagnostic"
+    );
+    assert_eq!(checked.diagnostics.len(), 1);
+    assert_eq!(
+        checked.diagnostics[0].to_string(),
+        "Invalid regular expression: Character class atom range out of order"
+    );
+    assert_ne!(checked.diagnostics[0].code.number.as_deref(), Some("18007"));
+    let before = result.code.clone();
+    let before_map = result
+        .map
+        .as_ref()
+        .map(oxc_sourcemap::SourceMap::to_json_string);
+    let Err(error) = parenthesize(&mut result, SourceType::tsx()) else {
+        panic!("only missing JSX sequence parentheses can be repaired")
+    };
+    assert_eq!(
+        error.to_string(),
+        "Cannot emit JSX: Invalid regular expression: Character class atom range out of order"
+    );
+    assert_eq!(result.code, before);
+    assert_eq!(
+        result
+            .map
+            .as_ref()
+            .map(oxc_sourcemap::SourceMap::to_json_string),
+        before_map
+    );
+}

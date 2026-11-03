@@ -17,7 +17,7 @@ impl Names {
                 .filter(|token| token.starts_with("__devup") || token.starts_with("DevupAs"))
                 .map(str::to_string),
         );
-        oxc_ast_visit::Visit::visit_program(self, program);
+        crate::utils::reserve_binding_names(program, &mut self.taken);
     }
 
     pub(super) fn reserve(&mut self, scoping: &oxc_semantic::Scoping) {
@@ -60,15 +60,5 @@ impl Names {
                 }
                 restored
             })
-    }
-}
-
-impl<'a> oxc_ast_visit::Visit<'a> for Names {
-    fn visit_binding_identifier(&mut self, identifier: &oxc_ast::ast::BindingIdentifier<'a>) {
-        self.taken.insert(identifier.name.to_string());
-    }
-
-    fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
-        self.taken.insert(identifier.name.to_string());
     }
 }

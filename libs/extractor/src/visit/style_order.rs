@@ -72,23 +72,15 @@ impl<'a> DevupVisitor<'a> {
         };
         let mut errors = Vec::new();
         crate::style_order_validation::validate_attribute(value, &self.style_values, &mut errors);
-        if errors.is_empty() && matches!(parsed, ParsedStyleOrder::Unsupported) {
-            let (offset, code) = match value {
-                JSXAttributeValue::ExpressionContainer(container) => container
-                    .expression
-                    .as_expression()
-                    .map(|value| (value.span().start, readable_code(value)))
-                    .unwrap_or_default(),
-                JSXAttributeValue::StringLiteral(literal) => {
-                    (literal.span.start, format!("{:?}", literal.value))
-                }
-                JSXAttributeValue::Element(element) => {
-                    (element.span.start, "<element>".to_string())
-                }
-                JSXAttributeValue::Fragment(fragment) => {
-                    (fragment.span.start, "<>...</>".to_string())
-                }
-            };
+        if errors.is_empty()
+            && matches!(parsed, ParsedStyleOrder::Unsupported)
+            && let JSXAttributeValue::ExpressionContainer(container) = value
+        {
+            let (offset, code) = container
+                .expression
+                .as_expression()
+                .map(|value| (value.span().start, readable_code(value)))
+                .unwrap_or_default();
             self.errors
                 .push((offset, element_error(element, &code, STYLE_ORDER_VALUE)));
         }

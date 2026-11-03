@@ -397,12 +397,9 @@ impl<'a> DevupVisitor<'a> {
         if inline_reads.is_some() {
             let attributes = &mut element.opening_element.attributes;
             if let Some(index) = attributes.iter().position(|attribute| {
-                let JSXAttributeItem::Attribute(attribute) = attribute else {
-                    return false;
-                };
                 attribute
-                    .name
-                    .as_identifier()
+                    .as_attribute()
+                    .and_then(|attribute| attribute.name.as_identifier())
                     .is_some_and(|name| name.name == "style")
             }) {
                 let style = attributes.remove(index);
@@ -490,3 +487,7 @@ impl<'a> DevupVisitor<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "css_boundary_contract_tests.rs"]
+mod contract_tests;

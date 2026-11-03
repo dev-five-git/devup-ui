@@ -169,3 +169,22 @@ fn lexical_reads_when_static_initialization_precedes_their_declaration() {
         assert!(result.errors[0].1.contains("ReferenceError"));
     }
 }
+
+#[test]
+fn shape_iife_tdz_when_eager_keeps_the_located_reference_error() {
+    for eager in ["(()=>later)()", "(function(){return later})()"] {
+        let source = format!(
+            "import {{styled}} from '@devup-ui/react';const shape={{color:{eager}}};const later='red';const View=styled.div(shape);"
+        );
+        let (code, result) = inline(&source);
+        assert_eq!(result.errors.len(), 1, "{source}");
+        let (offset, error) = &result.errors[0];
+        let start = usize::try_from(*offset).unwrap_or_else(|error| panic!("{error}"));
+        assert!(
+            source[start..].starts_with("later"),
+            "{source} at {offset}: {error}"
+        );
+        assert!(error.contains("ReferenceError"), "{error}");
+        assert!(code.contains("later"), "{code}");
+    }
+}

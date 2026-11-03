@@ -21,6 +21,125 @@ use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
+/// One preorder walker for expression and program rewrite entries.
+struct Rewrite<'s, 'a>(&'s mut dyn FnMut(&mut Expression<'a>) -> bool);
+impl<'a> oxc_ast_visit::VisitMut<'a> for Rewrite<'_, 'a> {
+    fn visit_expression(&mut self, expression: &mut Expression<'a>) {
+        if !(self.0)(expression) {
+            oxc_ast_visit::walk_mut::walk_expression(self, expression);
+        }
+    }
+}
+
+/// Rewrite an expression before its children, leaving handled replacements untouched.
+pub(super) fn rewrite_expression<'a>(
+    expression: &mut Expression<'a>,
+    rewrite: &mut dyn FnMut(&mut Expression<'a>) -> bool,
+) {
+    oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(rewrite), expression);
+}
+
+/// Rewrite program expressions with the same preorder and replacement boundary.
+pub(super) fn rewrite_program<'a>(
+    program: &mut Program<'a>,
+    rewrite: &mut dyn FnMut(&mut Expression<'a>) -> bool,
+) {
+    oxc_ast_visit::VisitMut::visit_program(&mut Rewrite(rewrite), program);
+}
+
+/// The existing reservation policies share traversal while retaining set ownership.
+pub(super) enum ReservedNames<'s, 'a> {
+    Owned(&'s mut rustc_hash::FxHashSet<String>),
+    Borrowed(&'s mut rustc_hash::FxHashSet<&'a str>),
+    CssSlot(&'s mut rustc_hash::FxHashSet<String>),
+}
+
+impl<'a> ReservedNames<'_, 'a> {
+    fn binding_or_reference(&mut self, name: &'a str) {
+        match self {
+            Self::Owned(names) | Self::CssSlot(names) => {
+                names.insert(name.to_string());
+            }
+            Self::Borrowed(names) => {
+                names.insert(name);
+            }
+        }
+    }
+
+    pub(super) fn reserve(mut self, program: &Program<'a>) {
+        oxc_ast_visit::Visit::visit_program(&mut self, program);
+    }
+}
+
+fn static_key_name<'a>(expression: &Expression<'a>) -> Option<&'a str> {
+    match unwrap_syntax_only(expression) {
+        Expression::StringLiteral(literal) => literal.value.as_str(),
+        Expression::TemplateLiteral(template) => template.single_quasi()?.as_str(),
+        Expression::TSTypeAssertion(assertion) => static_key_name(&assertion.expression),
+        _ => None,
+    }
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for ReservedNames<'_, 'a> {
+    fn visit_binding_identifier(&mut self, it: &oxc_ast::ast::BindingIdentifier<'a>) {
+        self.binding_or_reference(it.name.as_str());
+    }
+
+    fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
+        self.binding_or_reference(it.name.as_str());
+    }
+
+    fn visit_identifier_name(&mut self, it: &IdentifierName<'a>) {
+        if let Self::CssSlot(names) = self {
+            names.insert(it.name.to_string());
+        }
+    }
+
+    fn visit_jsx_identifier(&mut self, it: &oxc_ast::ast::JSXIdentifier<'a>) {
+        if let Self::CssSlot(names) = self {
+            names.insert(it.name.to_string());
+        }
+    }
+
+    fn visit_property_key(&mut self, it: &PropertyKey<'a>) {
+        if let Self::CssSlot(names) = self
+            && let Some(name) = it
+                .as_expression()
+                .and_then(static_key_name)
+                .map(str::to_string)
+                .or_else(|| {
+                    it.static_name()
+                        .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+                        .map(std::borrow::Cow::into_owned)
+                })
+        {
+            names.insert(name);
+        }
+        oxc_ast_visit::walk::walk_property_key(self, it);
+    }
+
+    fn visit_computed_member_expression(
+        &mut self,
+        it: &oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) {
+        if let Self::CssSlot(names) = self
+            && let Some(name) =
+                static_key_name(&it.expression).or_else(|| it.static_property_name()?.as_str())
+        {
+            names.insert(name.to_string());
+        }
+        oxc_ast_visit::walk::walk_computed_member_expression(self, it);
+    }
+}
+
+/// Reserve binding and reference names without changing the caller's set ownership.
+pub(super) fn reserve_binding_names(
+    program: &Program<'_>,
+    names: &mut rustc_hash::FxHashSet<String>,
+) {
+    ReservedNames::Owned(names).reserve(program);
+}
+
 /// Check if a filename is a vanilla-extract style file.
 pub(super) fn is_vanilla_extract_file(filename: &str) -> bool {
     filename.ends_with(".css.ts") || filename.ends_with(".css.js")
