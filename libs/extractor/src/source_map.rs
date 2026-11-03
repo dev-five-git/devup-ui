@@ -7,14 +7,18 @@ use oxc_sourcemap::{SourceMap, Token};
 
 use crate::import_alias_visit::{Edit, source_offset};
 
+mod trace;
+
+pub(crate) use trace::{Trace, complete_marks, marks};
+
 /// Where the lines of a text start, split as the codegen splits them
-struct Lines<'t> {
+pub(crate) struct Lines<'t> {
     text: &'t str,
     starts: Vec<usize>,
 }
 
 impl<'t> Lines<'t> {
-    fn new(text: &'t str) -> Self {
+    pub(crate) fn new(text: &'t str) -> Self {
         let mut starts = vec![0];
         let mut characters = text.char_indices().peekable();
         while let Some((index, character)) = characters.next() {
@@ -28,13 +32,16 @@ impl<'t> Lines<'t> {
         Self { text, starts }
     }
 
-    /// The byte offset of `column`, in UTF-16 units, on `line`
-    fn offset(&self, line: u32, column: u32) -> usize {
-        let start = self
-            .starts
+    fn line_start(&self, line: u32) -> usize {
+        self.starts
             .get(line as usize)
             .copied()
-            .unwrap_or(self.text.len());
+            .unwrap_or(self.text.len())
+    }
+
+    /// The byte offset of `column`, in UTF-16 units, on `line`
+    pub(crate) fn offset(&self, line: u32, column: u32) -> usize {
+        let start = self.line_start(line);
         let mut units = 0;
         for (index, character) in self.text[start..].char_indices() {
             if units >= column as usize {
@@ -43,6 +50,16 @@ impl<'t> Lines<'t> {
             units += character.len_utf16();
         }
         self.text.len()
+    }
+
+    /// The byte offset of the code point `column` on `line`, the way the
+    /// script engine counts columns
+    pub(crate) fn code_point_offset(&self, line: u32, column: u32) -> usize {
+        let start = self.line_start(line);
+        self.text[start..]
+            .char_indices()
+            .nth(column as usize)
+            .map_or(self.text.len(), |(index, _)| start + index)
     }
 
     /// The line and UTF-16 column of the byte `offset`
@@ -90,6 +107,49 @@ pub(crate) fn remap<'a>(
         .collect();
     parts.source_contents = vec![Some(Cow::Borrowed(source))];
     SourceMap::from_parts(parts)
+}
+
+/// Shift generated positions after inserting ASCII parentheses. Source
+/// positions and every other map field retain their original values.
+pub(crate) fn shift_generated<'a>(
+    map: SourceMap<'a>,
+    code: &str,
+    insertions: &[usize],
+) -> Result<SourceMap<'a>, Box<dyn std::error::Error>> {
+    let lines = Lines::new(code);
+    let positions: Vec<_> = insertions
+        .iter()
+        .map(|offset| lines.position(*offset))
+        .collect();
+    let shift = |line: u32, column: u32| -> Result<u32, Box<dyn std::error::Error>> {
+        let before = positions.partition_point(|position| position.0 < line);
+        let after = positions.partition_point(|position| *position <= (line, column));
+        let count = u32::try_from(after - before)?;
+        column
+            .checked_add(count)
+            .ok_or_else(|| "Generated source map column overflow".into())
+    };
+    let mut parts = map.into_parts();
+    parts.tokens = parts
+        .tokens
+        .iter()
+        .map(|token| {
+            Ok(Token::new(
+                token.get_dst_line(),
+                shift(token.get_dst_line(), token.get_dst_col())?,
+                token.get_src_line(),
+                token.get_src_col(),
+                token.get_source_id(),
+                token.get_name_id(),
+            ))
+        })
+        .collect::<Result<_, Box<dyn std::error::Error>>>()?;
+    if let Some(chunks) = &mut parts.token_chunks {
+        for chunk in chunks {
+            chunk.prev_dst_col = shift(chunk.prev_dst_line, chunk.prev_dst_col)?;
+        }
+    }
+    Ok(SourceMap::from_parts(parts))
 }
 
 #[cfg(test)]

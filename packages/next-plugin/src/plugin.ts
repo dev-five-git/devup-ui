@@ -20,6 +20,7 @@ import {
   extractedNeedles,
   loadDevupConfigSync,
   mergeImportAliases,
+  normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
@@ -134,6 +135,7 @@ export function DevupUI(
   config: NextConfig,
   options: DevupUINextPluginOptions = {},
 ): NextConfig {
+  const normalizedShorthands = normalizeShorthands(options.shorthands ?? {})
   const pluginStartedAt = profileStart()
   const isTurbo =
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
@@ -150,7 +152,6 @@ export function DevupUI(
       devupFile = 'devup.json',
       include = [],
       prefix,
-      shorthands,
       atomHoist,
       importAliases: userImportAliases,
     } = options
@@ -189,7 +190,7 @@ export function DevupUI(
       include,
       libPackage,
       prefix,
-      shorthands,
+      shorthands: normalizedShorthands,
       singleCss,
       sourceMap,
     })
@@ -249,7 +250,7 @@ export function DevupUI(
       setPrefix,
     } = wasm
 
-    registerShorthands(shorthands ?? {})
+    registerShorthands(normalizedShorthands)
 
     setPrefix(prefix ?? null)
 

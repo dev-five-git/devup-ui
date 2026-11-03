@@ -16,7 +16,7 @@ it('drains native descendants when the owned command exceeds its deadline', () =
   expect(result.error).toBeUndefined()
   expect(result.status).toBe(124)
   expect(result.stdout).toMatch(/"active":\[\]/)
-  const pids = [...result.stdout.matchAll(/W65-FAULT-PID (\d+)/g)]
+  const pids = [...result.stdout.matchAll(/FAULT-PID (\d+)/g)]
   expect(pids.length).toBe(2)
   for (const match of pids) {
     expect(() => process.kill(Number(match[1]), 0)).toThrow()

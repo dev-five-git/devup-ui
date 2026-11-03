@@ -104,7 +104,7 @@ impl Normalizer<'_, '_> {
 
     /// Remember the bindings of `createRequire` and of the `module` namespace.
     pub(super) fn collect_module_api(&mut self, import: &ImportDeclaration<'_>) {
-        if !matches!(import.source.value.as_str(), "module" | "node:module")
+        if !matches!(import.source.value.as_str(), Some("module" | "node:module"))
             || import.import_kind.is_type()
         {
             return;

@@ -352,7 +352,7 @@ impl Context<'_, '_> {
             for property in &object.properties {
                 match property {
                     ObjectPropertyKind::ObjectProperty(property) => {
-                        if property.key.static_name().as_deref() == Some(key) {
+                        if property.key.is_specific_static_name(key) {
                             found = Some(&property.value);
                         } else if property.computed {
                             found = None;
@@ -529,7 +529,9 @@ impl Context<'_, '_> {
             object => {
                 is_global(object, "exports")
                     || (is_global(object, "module")
-                        && member.static_property_name() == Some("exports"))
+                        && member
+                            .static_property_name()
+                            .is_some_and(|name| name == "exports"))
             }
         }
     }

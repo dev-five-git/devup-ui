@@ -17,6 +17,7 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
@@ -327,6 +328,7 @@ export function DevupUI({
   atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
+  const normalizedShorthands = normalizeShorthands(shorthands ?? {})
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
   // styles) is gone unless another build is still running.
@@ -362,7 +364,7 @@ export function DevupUI({
     }
   }
   function configureEngine() {
-    registerShorthands(shorthands ?? {})
+    registerShorthands(normalizedShorthands)
     setDebug(debug)
     setPrefix(prefix ?? null)
   }
@@ -711,10 +713,10 @@ export function DevupUI({
           resolve(join(cssDir, fileName))
       ) {
         if (!isServe) return join(cssDir, fileName)
-        // Only changed writes mint a module; `v` survives Vite's timestamp stripping.
+        // Vite reserves `v` for immutable dependency caching, not generated CSS.
         return join(
           cssDir,
-          `${fileName}?v=${sheetRevisions.get(fileName) ?? 0}`,
+          `${fileName}?devup-revision=${sheetRevisions.get(fileName) ?? 0}`,
         )
       }
     },

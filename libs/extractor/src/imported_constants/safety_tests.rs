@@ -55,34 +55,22 @@ fn inline_read_when_the_binding_initializes_on_either_side_of_it_is_safe(
     #[case] expected: Option<&str>,
 ) {
     let allocator = Allocator::default();
-    let ast_builder = AstBuilder::new(&allocator);
     let parsed = Parser::new(&allocator, source, SourceType::ts()).parse();
     let scoping = SemanticBuilder::new()
         .build(&parsed.program)
         .semantic
         .into_scoping();
     let initialization = initialization::Initialization::new(&parsed.program, &scoping);
-    let style = StyleSymbols::new(&scoping);
-    let css_props = CssTakers::new(&parsed.program, &scoping, CssProp::Off, "@devup-ui/react");
     let symbol = scoping
         .get_root_binding("tone".into())
         .unwrap_or_else(|| panic!("tone binding"));
     let symbols = FxHashMap::from_iter([(symbol, Constant::String("red".to_string()))]);
-    let inline = Inline {
-        ast_builder: &ast_builder,
+    let inline = ConstantReads {
         scoping: &scoping,
         initialization: &initialization,
         symbols: &symbols,
-        style: &style,
-        css_props: &css_props,
-        css_failures: &mut Vec::new(),
-        unknown: &mut Unknown::default(),
-        objects: false,
-        styles: false,
-        px: false,
-        position: InlinePosition::Rules,
-        marks: &crate::import_alias_visit::PxMarks::default(),
-        class_names: Vec::new(),
+        local_ends: &FxHashMap::default(),
+        deferred: &FxHashSet::default(),
     };
     let expression = parsed
         .program

@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "(props=>props.bg||`white`)(rest)",
+                identifier: "__devupRecord2",
                 selector: None,
                 style_order: None,
             },
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "margin",
+                identifier: "__devupRecord0",
                 selector: None,
                 style_order: None,
             },
@@ -26,11 +26,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "padding",
+                identifier: "__devupRecord1",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet margin = \"10px\";\nlet padding = \"20px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"bg\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a a-b a-c\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": padding,\n\t\t\"--b\": margin,\n\t\t\"--c\": (props=>props.bg||`white`)(rest)\n\t},\n\t...style\n}} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nlet margin = \"10px\";\nlet padding = \"20px\";\nconst StyledDiv = __devupForwardRef((__devupRefProps, __devupRef) => (__devupRecord3=>{const {__devupCss0:__devupRecord4,__devupForwarded0:__devupRecord15,...__devupRecord14}=__devupRecord3;const __devupRecord17=(void 0);const __devupRecord18=(__devupRecord4&&__devupRecord4[3])??__devupRecord17;const __devupRecord16=__devupRecord4?__devupRecord4[2]:false;const __devupRecord13=__devupRecord14.className;const __devupRecord5={...__devupRecord14,className:void 0};const __devupRecord12=(__devupRecord6)=>{const {style,className,as:__devupRecord20,forwardedAs,...rest}=__devupRecord6;let DevupAs=__devupRecord20;if(DevupAs===void 0){if(__devupRecord18){DevupAs = (0,__devupRecord18)();}else{DevupAs = \"div\";}}const __devupRecord19=DevupAs;const __devupRecord0 = (0, margin);\nconst __devupRecord1 = (0, padding);\nconst __devupRecord2 = (0, ((props) => props.bg || \"white\")(rest));\nconst __devupRecord9=[__devupRecord4?[(\"a-c\"),(\"a-b\"),(\"a-a\")]:[\"a-a a-b a-c\"],{ \"--a\": __devupRecord1, \"--b\": __devupRecord0, \"--c\": __devupRecord2 },(void 0),__devupRecord19,({ style, className, as: DevupAs = __devupRecord19, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className} style={style} />,rest];return __devupRecord4?(0,__devupRecord4[1])(__devupRecord6,__devupRecord9):__devupRecord9[4]({...Object.fromEntries(Object.entries((({ \"bg\": __devupOmit0, \"theme\": __devupOmit1, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\")),as:__devupRecord9[3],forwardedAs:__devupRecord6.forwardedAs,className:(__devupRecord9[0].length||__devupRecord9[2]!==void 0)?[...__devupRecord9[0],__devupRecord9[2],__devupRecord6.className].filter(Boolean).join(' '):__devupRecord6.className,style:__devupRecord9[1]===void 0?__devupRecord6.style:{...__devupRecord9[1],...__devupRecord6.style}});};const __devupRecord10=__devupRecord6=>__devupRecord12({...__devupRecord6,className:__devupRecord16?([__devupRecord6.className,__devupRecord13].filter(Boolean).join(' ')||void 0):__devupRecord13});const __devupRecord11=(__devupRecord5);return __devupRecord4?(0,__devupRecord4[0])(__devupRecord11,__devupRecord10,__devupRecord16):__devupRecord10(__devupRecord11);})({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
 }

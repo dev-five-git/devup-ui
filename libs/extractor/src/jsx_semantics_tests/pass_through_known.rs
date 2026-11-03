@@ -2,6 +2,109 @@ use super::*;
 use rstest::rstest;
 use serial_test::serial;
 
+fn compile_imported_spread(
+    source: &str,
+    known: &'static str,
+    single_css: bool,
+) -> Result<ExtractOutput, String> {
+    let resolver = move |specifier: &str, _: &str| {
+        (specifier == "./known").then(|| ResolvedModule {
+            path: "known.ts".into(),
+            code: known.into(),
+        })
+    };
+    reset_class_map();
+    reset_file_map();
+    extract_with_modules(
+        "case.tsx",
+        source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+        true,
+        &resolver,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[rstest]
+#[case("cond ? knownImport : rest")]
+#[case("cond ? rest : knownImport")]
+#[serial]
+fn imported_rule_and_runtime_conditional_arms_refuse_at_the_authored_read(
+    #[case] branch: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    // The independent real-WASM agreement fixture must keep the constants owner's rule admission.
+    let prefix = "import { Box, type DevupProps } from '@devup-ui/react'; import { styles as knownImport } from './known';\n";
+    let body = format!(
+        "export function render(cond: boolean, rest: DevupProps) {{ return <Box {{...({branch})}} /> }}"
+    );
+    let source = format!("{prefix}{body}");
+    let error =
+        match compile_imported_spread(&source, "export const styles = { bg: 'red' }", single_css) {
+            Err(error) => error,
+            Ok(_) => panic!("a known rule arm must not turn into raw props"),
+        };
+    let column = body.rfind("rest").unwrap_or_else(|| panic!("runtime arm")) + 1;
+    assert!(
+        error.starts_with(&format!("case.tsx:2:{column}:")),
+        "{error}"
+    );
+    assert!(error.contains("cannot use `rest`"), "{error}");
+    assert_eq!(error.lines().count(), 1, "{error}");
+}
+
+#[rstest]
+#[case::known_first("cond ? knownImport : rest", "known", "rest")]
+#[case::runtime_first("cond ? rest : knownImport", "rest", "known")]
+#[case::runtime_only("cond ? rest : other", "rest", "other")]
+#[case::authored_literal(concat!("cond ? {", "p:1} : rest"), "literal", "rest")]
+#[case::authored_literal_first_runtime(concat!("cond ? rest : {", "p:1}"), "rest", "literal")]
+#[serial]
+fn conditional_props_without_a_proven_rule_owner_keep_raw_values(
+    #[case] branch: &str,
+    #[case] consequent: &str,
+    #[case] alternate: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!(
+        "{BOX}import {{styles as knownImport}} from './known';export const render=(cond,rest,other)=><Box {{...({branch})}}/>;"
+    );
+    let output =
+        compile_imported_spread(&source, "export const styles = { id: 'kept' }", single_css)
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(output.styles.is_empty());
+    // Select both arms; distinct objects expose accidental eager reads or wrong-arm reuse.
+    for (cond, selected) in [(true, consequent), (false, alternate)] {
+        let observed = whole::execute(
+            &output.code,
+            &format!(
+                "(()=>{{const first={{}};const second={{}};const firstCallback=()=>0;const secondCallback=()=>1;const make=(label,p,payload,callback)=>({{get p(){{trace.push(label+':p');return p;}},get payload(){{trace.push(label+':payload');return payload;}},get onClick(){{trace.push(label+':onClick');return callback;}}}});const e=render({cond},make('rest',7,first,firstCallback),make('other',9,second,secondCallback));return [e.props.p??null,e.props.id??null,e.props.payload===first,e.props.payload===second,e.props.onClick===firstCallback,e.props.onClick===secondCallback];}})()"
+            ),
+        );
+        let expected = match selected {
+            "rest" => serde_json::json!([7, null, true, false, true, false]),
+            "other" => serde_json::json!([9, null, false, true, false, true]),
+            "known" => serde_json::json!([null, "kept", false, false, false, false]),
+            "literal" => serde_json::json!([1, null, false, false, false, false]),
+            _ => panic!("unknown selected arm"),
+        };
+        assert_eq!(observed.element, expected, "{branch}/{cond}");
+        let trace = if matches!(selected, "rest" | "other") {
+            serde_json::json!([
+                format!("{selected}:p"),
+                format!("{selected}:payload"),
+                format!("{selected}:onClick")
+            ])
+        } else {
+            serde_json::json!([])
+        };
+        assert_eq!(observed.trace, trace, "{branch}/{cond}");
+    }
+}
+
 #[rstest]
 #[case("<Box px={1} {...rest} pl={2} {...{...{bg:'red'},background:'blue'}}/>")]
 #[case("jsx(Box,{px:1,...rest,pl:2,...{...{bg:'red'},background:'blue'}})")]
@@ -171,4 +274,557 @@ fn iterators_when_local_objects_are_spread_keep_the_original_receiver() {
         "(()=>{Object.prototype[Symbol.iterator]=function*(){this.p++;yield this.p;};return a().props.title;})()",
     );
     assert_eq!(actual.element, "1,2");
+}
+
+#[test]
+#[serial]
+fn local_objects_when_ordinary_callbacks_capture_them_remain_raw() {
+    let source = format!(
+        "{BOX}export const a=()=>{{const first={{p:'20px'}};return <Box p='4px' {{...first}} onClick={{()=>{{first.p='mutated';}}}} data-object={{first}}/>;}};"
+    );
+    assert_eq!(
+        static_styles(&output(&source)),
+        vec![("padding".into(), "4px".into())]
+    );
+    assert_eq!(
+        whole::evaluate(
+            &source,
+            "(()=>{const e=a();const before=e.props.p;e.props.onClick();return [before,e.props.p,e.props['data-object'].p];})()"
+        )
+        .element,
+        serde_json::json!(["20px", "20px", "mutated"])
+    );
+}
+
+#[rstest]
+#[case::conditional(
+    concat!(
+    "export const a=(on,rest)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:rest)}/>;",
+),
+    "a(false,raw)",
+    3
+)]
+#[case::nested("export const a=(rest)=><Box {...{...rest,p:1}}/>;", "a(raw)", 1)]
+#[case::shadow_undefined(
+    concat!(
+    "export const a=(on,undefined)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:undefined)}/>;",
+),
+    "a(false,raw)",
+    3
+)]
+#[case::shadow_nan(
+    concat!(
+    "export const a=(on,NaN)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:NaN)}/>;",
+),
+    "a(false,raw)",
+    3
+)]
+#[case::shadow_infinity(
+    concat!(
+    "export const a=(on,Infinity)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:Infinity)}/>;",
+),
+    "a(false,raw)",
+    3
+)]
+#[serial]
+fn opaque_local_props_preserve_original_copy_and_cutoff(
+    #[case] body: &str,
+    #[case] call: &str,
+    #[case] padding: i32,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!("{BOX}{body}");
+    let output = compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(output.styles.is_empty(), "{output:?}");
+    if padding == 3 {
+        let active = whole::execute(
+            &output.code,
+            "(()=>{const raw={get p(){trace.push('unexpected');throw new Error('opaque arm ran');}};return a(true,raw).props.p;})()",
+        );
+        assert_eq!(active.element, 1);
+        assert_eq!(active.trace, serde_json::json!([]));
+    }
+    for throwing in [false, true] {
+        let observed = whole::execute(
+            &output.code,
+            &format!(
+                r"(()=>{{
+const callback=()=>0;const token={{}};const style={{opacity:0.4}};
+const raw={{get p(){{trace.push('p');if({throwing})throw new Error('stop');return 3;}},get onClick(){{trace.push('callback');return callback;}},get className(){{trace.push('class');return 'raw';}},get style(){{trace.push('style');return style;}},get payload(){{trace.push('payload');return token;}}}};
+try{{const e={call};return ['ok',e.props.p,e.props.onClick===callback,e.props.className==='raw',e.props.style===style,e.props.payload===token];}}catch(error){{return [error.message];}}
+}})()"
+            ),
+        );
+        if throwing {
+            assert_eq!(observed.element, serde_json::json!(["stop"]));
+            assert_eq!(observed.trace, serde_json::json!(["p"]));
+        } else {
+            assert_eq!(
+                observed.element,
+                serde_json::json!(["ok", padding, true, true, true, true])
+            );
+            assert_eq!(
+                observed.trace,
+                serde_json::json!(["p", "callback", "class", "style", "payload"])
+            );
+        }
+    }
+}
+
+#[rstest]
+#[case::member(
+    concat!(
+    "export const a=(on,rest)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:rest.rules)}/>;",
+),
+    "rest.rules"
+)]
+#[case::call(concat!(
+    "export const a=(on,rest)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:read())}/>;",
+), "read()")]
+#[case::module(
+    concat!(
+    "export const a=(on)=><Box ",
+    "{",
+    "...(on?",
+    "{",
+    "p:1}:unknownRules)}/>;",
+),
+    "unknownRules"
+)]
+#[case::selector("export const a=(rest)=><Box _hover={rest}/>;", "rest")]
+#[serial]
+fn opaque_props_dispatch_preserves_explicit_style_refusals(
+    #[case] body: &str,
+    #[case] leaf: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!("{BOX}import {{css}} from '@devup-ui/react';{body}");
+    let error = match compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("style refusal must remain"),
+    };
+    assert!(error.starts_with("a.tsx:"), "{error}");
+    assert!(error.contains(&format!("cannot use `{leaf}`")), "{error}");
+}
+
+#[rstest]
+#[case::empty("{}")]
+#[case::inert("undefined")]
+#[serial]
+fn known_conditional_rules_keep_style_admission(
+    #[case] alternate: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!("{BOX}export const a=(on)=><Box {{...(on?{{p:1}}:{alternate})}}/>;");
+    let output = compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(
+        static_styles(&output),
+        vec![("padding".into(), "4px".into())]
+    );
+}
+
+#[rstest]
+#[case::known(
+    "const rules=css({color:'red'});return <Box {...(on?{p:1}:rules)}/>;",
+    false
+)]
+#[case::shadow(
+    "const rules=css({color:'red'});return ((rules)=><Box {...(on?{p:1}:rules)}/>)(raw);",
+    true
+)]
+#[serial]
+fn local_known_class_and_shadowed_props_keep_their_own_bindings(
+    #[case] body: &str,
+    #[case] shadowed: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    let source =
+        format!("{BOX}import {{css}} from '@devup-ui/react';export const a=(on,raw)=>{{{body}}};");
+    let output = compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    let observed = whole::execute(
+        &output.code,
+        "(()=>{const token={};const raw={payload:token,className:'external'};const e=a(false,raw);return [e.props.payload===token,e.props.className];})()",
+    );
+    if shadowed {
+        assert_eq!(static_styles(&output), vec![("color".into(), "red".into())]);
+        assert_eq!(observed.element, serde_json::json!([true, "external"]));
+    } else {
+        assert_eq!(
+            static_styles(&output),
+            vec![
+                ("color".into(), "red".into()),
+                ("padding".into(), "4px".into())
+            ]
+        );
+        assert_eq!(observed.element[0], false);
+        assert_eq!(observed.element[1], "");
+    }
+}
+
+#[rstest]
+#[case::function("export const a=(rest)=>css(rest);", "a(token)")]
+#[case::native_prop("export const a=(rest)=><div css={rest}/>;", "a(token).props.css")]
+#[serial]
+fn opaque_css_controls_keep_passthrough_identity_without_reading_the_value(
+    #[case] body: &str,
+    #[case] call: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!("{BOX}import {{css}} from '@devup-ui/react';{body}");
+    let output = compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(output.styles.is_empty(), "{output:?}");
+    let observed = whole::execute(
+        &output.code,
+        &format!(
+            r"(()=>{{
+const callback=()=>0;const style={{opacity:0.4}};
+const token={{get onClick(){{trace.push('callback');return callback;}},get style(){{trace.push('style');return style;}}}};
+const actual={call};const before=trace.slice();
+return [actual===token,before,actual.onClick===callback,actual.style===style];
+}})()"
+        ),
+    );
+    assert_eq!(observed.element, serde_json::json!([true, [], true, true]));
+    assert_eq!(observed.trace, serde_json::json!(["callback", "style"]));
+}
+
+#[derive(Default)]
+struct StaticCaptureWork {
+    calls: usize,
+    wrappers: usize,
+    arrays: usize,
+    sequences: usize,
+    class_reads: Vec<String>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for StaticCaptureWork {
+    fn visit_call_expression(&mut self, value: &oxc_ast::ast::CallExpression<'a>) {
+        self.calls += 1;
+        self.wrappers += usize::from(matches!(
+            value.callee.get_inner_expression(),
+            oxc_ast::ast::Expression::ArrowFunctionExpression(_)
+                | oxc_ast::ast::Expression::FunctionExpression(_)
+        ));
+        oxc_ast_visit::walk::walk_call_expression(self, value);
+    }
+    fn visit_array_expression(&mut self, value: &oxc_ast::ast::ArrayExpression<'a>) {
+        self.arrays += 1;
+        oxc_ast_visit::walk::walk_array_expression(self, value);
+    }
+    fn visit_sequence_expression(&mut self, value: &oxc_ast::ast::SequenceExpression<'a>) {
+        self.sequences += 1;
+        oxc_ast_visit::walk::walk_sequence_expression(self, value);
+    }
+    fn visit_identifier_reference(&mut self, value: &oxc_ast::ast::IdentifierReference<'a>) {
+        if matches!(value.name.as_str(), "base" | "extra") {
+            self.class_reads.push(value.name.to_string());
+        }
+    }
+}
+
+fn static_capture_work(source: &str) -> StaticCaptureWork {
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::tsx()).parse();
+    assert!(
+        !parsed.fatal_error && parsed.diagnostics.is_empty(),
+        "{source}\n{:?}",
+        parsed.diagnostics
+    );
+    let mut work = StaticCaptureWork::default();
+    oxc_ast_visit::Visit::visit_program(&mut work, &parsed.program);
+    work
+}
+
+#[rstest]
+#[case::original_focused(
+    "export const App = () => <div css={css`${base}; color: red;`} />;",
+    "App()",
+    false
+)]
+#[case::original_mixed(
+    "export const App = ({ cls }) => <><div css={[base, { color: 'red' }]} /><div css={css`${base}; color: red;`} /><div css={css({ color: 'red' }, cond && { color: 'blue' })} /><div css={[cls, { color: 'red' }]} /></>;",
+    "(()=>{globalThis.cond=false;return App({cls:'external'}).children[1];})()",
+    false
+)]
+#[case::nested_child(
+    "export const App=()=> <section><div css={css`${base}; color: red;`}/></section>;",
+    "App().children[0]",
+    false
+)]
+#[case::nested_attribute(
+    "export const App=()=> <section child={<div css={css`${base}; color: red;`}/>}/>;",
+    "App().props.child",
+    false
+)]
+#[case::fragment(
+    "export const App=()=> <><aside/><div css={css`${base}; color: red;`}/></>;",
+    "App().children[1]",
+    false
+)]
+#[case::text(
+    "export const App=()=> <div css={css`${base}; color: red;`}>ready</div>;",
+    "App()",
+    false
+)]
+#[case::multiple_reads(
+    concat!(
+    "const extra=css(",
+    "{",
+    "padding:0});export const App=()=> <div css=",
+    "{",
+    "css`$",
+    "{",
+    "base}; $",
+    "{",
+    "extra}; color: red;`}/>;",
+),
+    "App()",
+    true
+)]
+#[serial]
+fn static_css_captures_keep_reads_without_unused_calls(
+    #[case] body: &str,
+    #[case] probe: &str,
+    #[case] multiple: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    struct RestoreDebug(bool);
+    impl Drop for RestoreDebug {
+        fn drop(&mut self) {
+            css::debug::set_debug(self.0);
+        }
+    }
+    let source = format!(
+        "import {{ css }} from '@emotion/react';\nconst base = css({{ color: 'blue', margin: 0 }});\n{body}"
+    );
+    let options = ExtractOption {
+        single_css,
+        import_aliases: HashMap::from([("@emotion/react".into(), ImportAlias::NamedToNamed)]),
+        ..ExtractOption::default()
+    };
+    let bucket = crate::css_bucket("a.tsx", &options);
+    let output = compile_with(&source, options).unwrap_or_else(|error| panic!("{error:?}"));
+    let work = static_capture_work(&output.code);
+    assert_eq!(
+        (work.calls, work.wrappers, work.arrays),
+        (0, 0, 0),
+        "{}",
+        output.code
+    );
+    assert!(
+        work.sequences > 0,
+        "original reads must remain: {}",
+        output.code
+    );
+    assert_eq!(
+        work.class_reads,
+        if multiple {
+            vec!["base", "extra"]
+        } else {
+            vec!["base"]
+        }
+    );
+    let observed = whole::execute(&output.code, probe);
+    assert_eq!(observed.element["type"], "div");
+    let names: Vec<_> = observed.element["props"]["className"]
+        .as_str()
+        .unwrap_or_else(|| panic!("expected rendered class name"))
+        .split_whitespace()
+        .collect();
+    let restore_debug = RestoreDebug(css::debug::is_debug());
+    css::debug::set_debug(true);
+    let red_is_active = output.styles.iter().any(|style| {
+        matches!(style, ExtractStyleValue::Static(value) if value.property()=="color" && value.value()=="red")
+            && matches!(style.extract(bucket.as_deref()), Some(StyleProperty::ClassName(name)) if names.contains(&name.as_str()))
+    });
+    drop(restore_debug);
+    assert!(red_is_active, "{output:?}\n{:?}", observed.element);
+    assert_eq!(observed.trace, serde_json::json!([]));
+    let map: serde_json::Value = serde_json::from_str(
+        output
+            .map
+            .as_deref()
+            .unwrap_or_else(|| panic!("expected extraction source map")),
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(map["sourcesContent"][0], source);
+}
+
+#[rstest]
+#[case::component(
+    "export const App=(View)=> <View css={css`${base}; color: red;`}/>;",
+    "(()=>{const View=()=>0;return App(View).type===View;})()"
+)]
+#[case::capture_like_component(
+    "export const App=(__devupValue0)=> <__devupValue0 css={css`${base}; color: red;`}/>;",
+    "(()=>{const View=()=>0;return App(View).type===View;})()"
+)]
+#[case::expression_attribute(
+    "export const App=(token)=> <div data-token={token} css={css`${base}; color: red;`}/>;",
+    "(()=>{const token={};return App(token).props['data-token']===token;})()"
+)]
+#[case::partial_value(
+    "export const App=(gap)=> <div css={css`${base}; padding: ${gap};`}/>;",
+    "typeof App('12px').props.style==='object'"
+)]
+#[case::expression_child(
+    "export const App=(child)=> <div css={css`${base}; color: red;`}>{child}</div>;",
+    "(()=>{const child={};return App(child).children[0]===child;})()"
+)]
+#[case::nested_element_child(
+    "export const App=()=> <div css={css`${base}; color: red;`}><span/></div>;",
+    "App().children[0].type==='span'"
+)]
+#[case::spread_attribute(
+    "export const App=(props)=> <div {...props} css={css`${base}; color: red;`}/>;",
+    "(()=>{const token={};return App({token}).props.token===token;})()"
+)]
+#[serial]
+fn static_css_capture_elision_keeps_used_values_and_component_names(
+    #[case] body: &str,
+    #[case] probe: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source =
+        format!("import {{css}} from '@emotion/react';const base=css({{color:'blue'}});{body}");
+    let output = compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            import_aliases: HashMap::from([("@emotion/react".into(), ImportAlias::NamedToNamed)]),
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    let work = static_capture_work(&output.code);
+    assert!(work.wrappers > 0, "{}", output.code);
+    assert_eq!(work.sequences, 0, "{}", output.code);
+    let observed = whole::execute(&output.code, probe);
+    assert_eq!(observed.element, true);
+    assert_eq!(observed.trace, serde_json::json!([]));
+}
+
+#[rstest]
+#[case::first_uninitialized("", "const base=css({color:'blue'});", "base")]
+#[case::second_uninitialized("const base=css({color:'blue'});", "", "extra")]
+#[serial]
+fn static_css_capture_reads_keep_tdz_and_first_error_order(
+    #[case] before: &str,
+    #[case] after: &str,
+    #[case] first_error: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!(
+        "import {{css}} from '@emotion/react';{before}export const early=(()=>{{try{{App();return ['ok'];}}catch(error){{return [error.name,error.message];}}}})();{after}const extra=css({{margin:0}});export function App(){{return <div css={{css`${{base}}; ${{extra}}; color: red;`}}/>;}}"
+    );
+    let output = compile_with(
+        &source,
+        ExtractOption {
+            single_css,
+            import_aliases: HashMap::from([("@emotion/react".into(), ImportAlias::NamedToNamed)]),
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    let observed = whole::execute(&output.code, "early");
+    assert_eq!(observed.element[0], "ReferenceError");
+    assert!(
+        observed.element[1]
+            .as_str()
+            .unwrap_or_else(|| panic!("expected first ReferenceError message"))
+            .contains(first_error),
+        "{:?}",
+        observed.element
+    );
+    let work = static_capture_work(&output.code);
+    // The one authored immediate arrow and App() call remain.
+    assert_eq!(
+        (work.calls, work.wrappers, work.arrays),
+        (2, 1, 2),
+        "{}",
+        output.code
+    );
+    assert!(work.sequences > 0, "{}", output.code);
+    assert_eq!(work.class_reads, vec!["base", "extra"]);
+}
+
+#[rstest]
+#[serial]
+fn static_css_capture_fallback_preserves_trailing_spread_refusal(
+    #[values(false, true)] single_css: bool,
+) {
+    let source = "import {css} from '@emotion/react';const base=css({color:'blue'});export const App=(props)=> <div css={css`${base}; color: red;`} {...props}/>;";
+    let error = match compile_with(
+        source,
+        ExtractOption {
+            single_css,
+            import_aliases: HashMap::from([("@emotion/react".into(), ImportAlias::NamedToNamed)]),
+            ..ExtractOption::default()
+        },
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("trailing spread must remain refused"),
+    };
+    assert_eq!(
+        error,
+        "a.tsx:1:131: `css` on `<div>` cannot use `...props` at build time: a spread after the `css` prop may carry a `css` of its own, which replaces it whole where only the runtime could tell: write the spread before `css`"
+    );
 }

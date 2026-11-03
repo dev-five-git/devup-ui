@@ -239,3 +239,198 @@ fn spread_frames_when_emitted_have_no_style_key_selection() {
         );
     }
 }
+
+#[rstest]
+#[case::native_exact(
+    "export const App = ({ rest, cls }) => <><div {...rest} css={{ color: 'red' }} /><div className={cls} {...rest} css={{ color: 'red' }} style={{ opacity: 1 }} /></>;",
+    false,
+    false
+)]
+#[case::native_array_control(
+    "export const App = ({ rest, cls }) => [<div {...rest} css={{ color: 'red' }} />,<div className={cls} {...rest} css={{ color: 'red' }} style={{ opacity: 1 }} />];",
+    false,
+    false
+)]
+#[case::styled_array_control(
+    "import styled from '@emotion/styled';const Button=styled.button({color:'blue',margin:1});export const App=({rest,cls})=>[<Button {...rest} css={{padding:2}}/>,<Button {...rest} css={[cls,{top:1}]}/>];",
+    true,
+    false
+)]
+#[case::native_interleaved_control(
+    "export const App=({rest,cls,mark})=>[<div data-before={mark('before1')} {...rest} css={{color:'red'}} data-after={mark('after1')}/>,<div data-before={mark('before2')} className={cls} {...rest} css={{color:'red'}} data-after={mark('after2')} style={{opacity:1}}/>];",
+    false,
+    true
+)]
+#[serial]
+fn merged_classes_read_the_written_spread_snapshot_once(
+    #[case] source: &str,
+    #[case] styled: bool,
+    #[case] interleaved: bool,
+    #[values(false, true)] single_css: bool,
+    #[values("ordinary", "mutation", "throw-second", "poison-extra")] phase: &str,
+) {
+    reset_class_map();
+    reset_file_map();
+    css::debug::set_debug(false);
+    let options = ExtractOption {
+        single_css,
+        import_aliases: HashMap::from([
+            ("@emotion/react".into(), ImportAlias::NamedToNamed),
+            (
+                "@emotion/styled".into(),
+                ImportAlias::DefaultToNamed("styled".into()),
+            ),
+        ]),
+        ..ExtractOption::default()
+    };
+    let bucket = crate::css_bucket("test.tsx", &options);
+    let output = extract("test.tsx", source, options).unwrap_or_else(|error| panic!("{error:?}"));
+    let finish = if styled {
+        "elements.map(element=>render(element))"
+    } else {
+        "elements"
+    };
+    let probe = format!(
+        r"(()=>{{
+let reads=0;const style={{opacity:0.4}};const callback=()=>0;
+const rest={{get className(){{trace.push('class'+(++reads));if(('{phase}'==='throw-second'&&reads===2)||('{phase}'==='poison-extra'&&reads===3))throw new Error('stop');return '{phase}'==='mutation'?'next'+reads:'first';}},get style(){{trace.push('style');return style;}},get onClick(){{trace.push('callback');return callback;}}}};
+try{{const result=App({{rest,cls:'authored',mark:label=>trace.push(label)}});const elements=Array.isArray(result)?result:result.children;const finished={finish};return {{outcome:'ok',reads,classes:finished.map(e=>e.props.className),targets:finished.map(e=>e.target??e.type),callbackIdentity:finished.map(e=>e.props.onClick===callback),styleIdentity:finished.map(e=>e.props.style===style),opacity:finished.map(e=>e.props.style.opacity)}};}}catch(error){{return {{outcome:error.message,reads}};}}
+}})()"
+    );
+    let (value, trace) = if styled {
+        let observed = crate::styled_source_tests::captured_render::execute(
+            ("test.tsx", bucket.as_deref()),
+            &output,
+            &format!("const trace=[];JSON.stringify([{probe},trace]);"),
+        );
+        (observed[0].clone(), observed[1].clone())
+    } else {
+        let observed = whole::execute(&output.code, &probe);
+        (observed.element, observed.trace)
+    };
+    if !styled {
+        // Native props reference compares authored getter/marker ordering, not CSS styling.
+        let reference = whole::execute(source, &probe);
+        assert_eq!(trace, reference.trace);
+        assert_eq!(value["outcome"], reference.element["outcome"]);
+        assert_eq!(value["reads"], reference.element["reads"]);
+    }
+    if phase == "throw-second" {
+        assert_eq!(value, serde_json::json!({"outcome":"stop","reads":2}));
+        assert_eq!(
+            trace,
+            if interleaved {
+                serde_json::json!([
+                    "before1", "class1", "style", "callback", "after1", "before2", "class2"
+                ])
+            } else {
+                serde_json::json!(["class1", "style", "callback", "class2"])
+            }
+        );
+        return;
+    }
+    assert_eq!(value["outcome"], "ok", "{value}");
+    assert_eq!(value["reads"], 2, "{value}");
+    assert_eq!(
+        trace,
+        if interleaved {
+            serde_json::json!([
+                "before1", "class1", "style", "callback", "after1", "before2", "class2", "style",
+                "callback", "after2"
+            ])
+        } else {
+            serde_json::json!(["class1", "style", "callback", "class2", "style", "callback"])
+        }
+    );
+    assert_eq!(
+        value["targets"],
+        if styled {
+            serde_json::json!(["button", "button"])
+        } else {
+            serde_json::json!(["div", "div"])
+        }
+    );
+    assert_eq!(value["callbackIdentity"], serde_json::json!([true, true]));
+    assert_eq!(
+        value["styleIdentity"],
+        if styled {
+            serde_json::json!([true, true])
+        } else {
+            serde_json::json!([true, false])
+        }
+    );
+    assert_eq!(
+        value["opacity"],
+        if styled {
+            serde_json::json!([0.4, 0.4])
+        } else {
+            serde_json::json!([0.4, 1])
+        }
+    );
+    for (index, class) in value["classes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("expected rendered class list"))
+        .iter()
+        .enumerate()
+    {
+        let expected = if phase == "mutation" {
+            format!("next{}", index + 1)
+        } else {
+            "first".into()
+        };
+        let names: Vec<_> = class
+            .as_str()
+            .unwrap_or_else(|| panic!("expected rendered class name"))
+            .split_whitespace()
+            .collect();
+        assert!(names.contains(&expected.as_str()), "{value}");
+        assert_eq!(names.contains(&"authored"), styled && index == 1, "{value}");
+    }
+}
+
+#[rstest]
+#[case("export const App=()=> <div css={{color:'red'}}/>;")]
+#[case("export const App=({title})=> <div title={title} css={{color:'red'}}/>;")]
+#[case("import {Box} from '@devup-ui/react';export const App=()=> <Box color='red'/>;")]
+#[serial]
+fn spread_owner_fix_keeps_static_and_single_reads_without_extra_work(
+    #[case] source: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    use oxc_ast_visit::{Visit, walk};
+    #[derive(Default)]
+    struct Work {
+        calls: usize,
+        arrays: usize,
+    }
+    impl<'a> Visit<'a> for Work {
+        fn visit_call_expression(&mut self, value: &oxc_ast::ast::CallExpression<'a>) {
+            self.calls += 1;
+            walk::walk_call_expression(self, value);
+        }
+        fn visit_array_expression(&mut self, value: &oxc_ast::ast::ArrayExpression<'a>) {
+            self.arrays += 1;
+            walk::walk_array_expression(self, value);
+        }
+    }
+    reset_class_map();
+    reset_file_map();
+    css::debug::set_debug(false);
+    let output = extract(
+        "test.tsx",
+        source,
+        ExtractOption {
+            single_css,
+            import_aliases: HashMap::from([("@emotion/react".into(), ImportAlias::NamedToNamed)]),
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    let arena = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&arena, &output.code, oxc_span::SourceType::tsx()).parse();
+    assert!(!parsed.fatal_error && parsed.diagnostics.is_empty());
+    let mut work = Work::default();
+    work.visit_program(&parsed.program);
+    assert_eq!((work.calls, work.arrays), (0, 0), "{}", output.code);
+    assert!(output.styles.iter().any(|style| matches!(style,ExtractStyleValue::Static(value) if value.property()=="color" && value.value()=="red")));
+}

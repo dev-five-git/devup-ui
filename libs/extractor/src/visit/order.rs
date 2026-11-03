@@ -63,7 +63,11 @@ pub(super) fn reach(bindings: &Bindings, expression: &Expression<'_>) -> Reach {
             template
                 .expressions
                 .iter()
-                .map(of)
+                .map(|value| match crate::utils::unwrap_syntax_only(value) {
+                    // Creating a literal is inert; converting it to text can call user code.
+                    Expression::ObjectExpression(_) | Expression::ArrayExpression(_) => Reach::Runs,
+                    value => of(value),
+                })
                 .max()
                 .unwrap_or(Reach::Constant),
         ),
@@ -139,10 +143,16 @@ pub(super) fn reach(bindings: &Bindings, expression: &Expression<'_>) -> Reach {
             | ChainElement::CallExpression(_) => Reach::Runs,
             ChainElement::TSNonNullExpression(inner) => of(&inner.expression),
         },
-        Expression::CallExpression(call)
-            if bindings.compiles(&call.callee)
-                || bindings.stylex_function(&call.callee).is_some() =>
-        {
+        Expression::CallExpression(call) => {
+            if let Some(input) =
+                crate::imported_constants::local_rule_shapes::number_length_input(call)
+            {
+                return of(input);
+            }
+            if !bindings.compiles(&call.callee) && bindings.stylex_function(&call.callee).is_none()
+            {
+                return Reach::Runs;
+            }
             call.arguments
                 .iter()
                 .map(|argument| match argument {
@@ -176,7 +186,10 @@ pub(super) fn written_properties(expression: &Expression<'_>) -> Vec<String> {
                     ObjectPropertyKind::ObjectProperty(property) => property
                         .key
                         .static_name()
-                        .filter(|name| !css::is_special_property::is_special_property(name))
+                        .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+                        .filter(|name| {
+                            !css::is_special_property::is_special_property(name.as_ref())
+                        })
                         .map(|name| vec![name.to_string()])
                         .unwrap_or_default(),
                     ObjectPropertyKind::SpreadProperty(spread) => {

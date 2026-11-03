@@ -21,6 +21,7 @@ enum Read {
 
 pub(super) struct Initialization {
     reads: FxHashMap<ReferenceId, Read>,
+    references: Vec<(ReferenceId, SymbolId, u32, usize)>,
 }
 
 impl Initialization {
@@ -65,7 +66,10 @@ impl Initialization {
                 (reference, read)
             })
             .collect();
-        Self { reads }
+        Self {
+            reads,
+            references: collector.references,
+        }
     }
 
     pub(super) fn allows(&self, identifier: &IdentifierReference<'_>) -> bool {
@@ -80,16 +84,40 @@ impl Initialization {
     }
 
     pub(super) fn errors(
-        &self,
+        &mut self,
         references: &FxHashSet<ReferenceId>,
         scoping: &Scoping,
+        declarations: &FxHashMap<SymbolId, Expression<'_>>,
     ) -> Vec<(u32, String)> {
+        let collected = std::mem::take(&mut self.references);
         let mut errors: Vec<_> = references.iter().filter_map(|reference| {
             let Read::Before { temporal: true, at, symbol } = self.reads.get(reference)? else {
                 return None;
             };
             let name = scoping.symbol_name(*symbol);
-            Some((*at, format!("style value cannot use `{name}` at build time: it is read before its lexical declaration is initialized, so the original JavaScript throws ReferenceError; move the declaration of `{name}` above this use")))
+            let mut pending = vec![*at];
+            let mut seen = FxHashSet::default();
+            let mut shapes = Vec::new();
+            while let Some(offset) = pending.pop() {
+                for (owner, init) in declarations {
+                    let span = init.span();
+                    if span.start <= offset && offset < span.end
+                        && scoping.get_resolved_reference_ids(*owner).iter().any(|read| references.contains(read))
+                        && seen.insert(*owner)
+                    {
+                        if matches!(crate::utils::unwrap_syntax_only(init), Expression::ObjectExpression(_) | Expression::ArrayExpression(_)) {
+                            shapes.push(scoping.symbol_name(*owner));
+                        }
+                        pending.extend(collected.iter().filter(|(read, symbol, _, _)| symbol == owner && references.contains(read)).map(|(_, _, at, _)| *at));
+                    }
+                }
+            }
+            shapes.sort_unstable();
+            shapes.dedup();
+            let context = if shapes.is_empty() { String::new() } else {
+                format!("; containing style shapes: {}", shapes.join(", "))
+            };
+            Some((*at, format!("style value cannot use `{name}` at build time: it is read before its lexical declaration is initialized, so the original JavaScript throws ReferenceError; move the declaration of `{name}` above this use{context}")))
         }).collect();
         errors.sort_unstable_by_key(|(at, _)| *at);
         errors

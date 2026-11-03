@@ -102,7 +102,10 @@ fn record<'a>(
 /// Scan decoded string text while retaining authored offsets across JS escapes.
 pub(crate) fn literal_errors<'a>(literal: &StringLiteral<'_>) -> Vec<ExtractStyleProp<'a>> {
     let origins = super::strings::origins(literal);
-    declarations(&literal.value)
+    let Some(text) = literal.value.as_str() else {
+        return vec![];
+    };
+    declarations(text)
         .into_iter()
         .filter_map(|(index, name)| declaration_error(&name, *origins.get(index)?))
         .collect()

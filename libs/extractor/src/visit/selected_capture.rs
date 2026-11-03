@@ -134,11 +134,11 @@ impl<'a> DevupVisitor<'a> {
                     }
                 }
             }
-            Expression::ObjectExpression(object) if object.properties.iter().all(|property|matches!(property,ObjectPropertyKind::ObjectProperty(property) if property.kind==PropertyKind::Init&&!property.method&&property.key.static_name().is_some()))=>{
+            Expression::ObjectExpression(object) if object.properties.iter().all(|property|matches!(property,ObjectPropertyKind::ObjectProperty(property) if property.kind==PropertyKind::Init&&!property.method&&crate::utils::get_str_by_property_key(&property.key).is_some()))=>{
                 let Expression::ObjectExpression(original)=crate::utils::unwrap_syntax_only_mut(&mut member.object)else{return false};
                 for(payload,branch)in object.properties.iter_mut().zip(&mut original.properties){
                     if let(ObjectPropertyKind::ObjectProperty(payload),ObjectPropertyKind::ObjectProperty(branch))=(payload,branch)
-                        && let Some(key)=branch.key.static_name(){
+                        && let Some(key)=crate::utils::get_str_by_property_key(&branch.key){
                         payload.value=self.selected_branch(&name,&key,&mut branch.value);
                         payload.shorthand=false;
                     }

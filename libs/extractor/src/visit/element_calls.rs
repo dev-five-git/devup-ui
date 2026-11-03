@@ -29,7 +29,9 @@ impl<'a> DevupVisitor<'a> {
             .arguments
             .first()
             .and_then(Argument::as_expression)
-            .is_some_and(|component| self.bindings.kind(component).is_some());
+            .is_some_and(|component| {
+                self.bindings.kind(component).is_some() || self.definition_of(component).is_some()
+            });
         if !renders {
             return false;
         }

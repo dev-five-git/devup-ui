@@ -200,6 +200,78 @@ mod tests {
     }
 
     #[rstest]
+    #[case::override_header(
+        "/** @jsxImportSource custom */\nconst broken;\nexport const view = <div />;",
+        "project.tsx:2:7: Cannot parse source:",
+        "Missing initializer in const declaration"
+    )]
+    #[case::octal_css_value(
+        "export const view=<div css={{padding:01}}/>;",
+        "project.tsx:1:38: Cannot parse source:",
+        "octal"
+    )]
+    #[serial_test::serial]
+    fn project_jsx_rejects_original_syntax_before_preprocessing(
+        #[case] source: &str,
+        #[case] location: &str,
+        #[case] cause: &str,
+    ) -> Result<(), String> {
+        // Given: project-only Emotion JSX, without a package name in the source.
+        let option = crate::ExtractOption {
+            import_aliases: HashMap::from([
+                ("@emotion/react".into(), ImportAlias::NamedToNamed),
+                (
+                    "@emotion/react/jsx-runtime".into(),
+                    ImportAlias::NamedToNamed,
+                ),
+            ]),
+            ..crate::ExtractOption::default()
+        };
+
+        // When: the public extractor sees an override or a pixelifiable number.
+        let error = crate::extract("project.tsx", source, option)
+            .err()
+            .ok_or("expected original-source parsing error")?
+            .to_string();
+
+        // Then: the authored error survives, located before any source rewriting.
+        assert!(error.starts_with(location), "{error}");
+        assert!(
+            error.to_lowercase().contains(&cause.to_lowercase()),
+            "{error}"
+        );
+        assert!(
+            error.contains("Fix: correct the syntax at this location"),
+            "{error}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn project_jsx_validation_leaves_unrelated_typescript_unchanged() -> Result<(), String> {
+        // Given: a non-JSX file without relevant imports in an Emotion project.
+        let source = "const broken;";
+        let option = crate::ExtractOption {
+            import_aliases: HashMap::from([
+                ("@emotion/react".into(), ImportAlias::NamedToNamed),
+                (
+                    "@emotion/react/jsx-runtime".into(),
+                    ImportAlias::NamedToNamed,
+                ),
+            ]),
+            ..crate::ExtractOption::default()
+        };
+        // When: extraction checks whether this unrelated file needs processing.
+        let output =
+            crate::extract("unrelated.ts", source, option).map_err(|error| error.to_string())?;
+        // Then: project JSX validation has not expanded to unrelated files.
+        assert_eq!(output.code, source);
+        assert_eq!(output.styles.len(), 0);
+        Ok(())
+    }
+
+    #[rstest]
     #[case::plain("")]
     #[case::hashbang("#!/usr/bin/env node\n")]
     #[case::directive("'use client';\n")]
@@ -229,7 +301,7 @@ mod tests {
         assert_eq!(
             error,
             format!(
-                "project.tsx:{line}:28: JSX attributes must only be assigned a non-empty 'expression'."
+                "project.tsx:{line}:28: Cannot parse source: JSX attributes must only be assigned a non-empty 'expression'. Fix: correct the syntax at this location"
             )
         );
         Ok(())

@@ -1,8 +1,9 @@
 'use client'
 import { Box, css, Flex, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { useLocale } from 'next-intl'
 import { useEffect, useState } from 'react'
+
+import { Link, usePathname } from '@/i18n/navigation'
 
 function IndexMenu({
   children,
@@ -40,12 +41,13 @@ function IndexMenu({
 
 export function RightIndex() {
   const pathname = usePathname()
+  const locale = useLocale()
   const isDocs = pathname.startsWith('/docs/')
   const isComponents = pathname.startsWith('/components/')
   const editUrl = isDocs
-    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/docs${pathname.replace('/docs', '')}/page.mdx`
+    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)${pathname}/page${locale === 'en' ? '' : '.' + locale}.mdx`
     : isComponents
-      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/components${pathname.replace('/components', '')}/`
+      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)${pathname}/`
       : ''
   const [menus, setMenus] = useState<
     {
@@ -91,7 +93,7 @@ export function RightIndex() {
       clearTimeout(timeoutId)
       observer.disconnect()
     }
-  }, [])
+  }, [pathname, locale])
 
   return (
     <VStack gap="16px" p="20px 16px" w="200px">

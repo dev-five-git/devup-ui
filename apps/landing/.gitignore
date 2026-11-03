@@ -2,6 +2,7 @@
 
 # dependencies
 public/search.json
+public/search.ko.json
 /node_modules
 /.pnp
 .pnp.*

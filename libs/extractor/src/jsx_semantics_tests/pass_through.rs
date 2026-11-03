@@ -142,3 +142,80 @@ fn wrapped_factory_props_when_no_unknown_spread_exists_attach_authored_styles(
         );
     }
 }
+
+#[test]
+#[serial]
+fn distinct_esm_and_commonjs_dynamic_bindings_when_captured_match_runtime_metadata() {
+    // Given: the snapshot fixture's two DYNAMIC exports deliberately have different runtime sentinels.
+    let source = "import {Box} from '@devup-ui/react';import {DYNAMIC,PRIMARY} from './tokens';import {DYNAMIC as CJS_DYNAMIC} from './cjs-tokens';export const a=state=><Box accentColor={(state.esm,DYNAMIC)} lightingColor={(state.cjs,CJS_DYNAMIC)} {...state.raw}/>;export const shadowed=PRIMARY=><Box color={PRIMARY}/>;";
+    let resolver = |specifier: &str, _: &str| match specifier {
+        "./tokens" => Some(ResolvedModule {
+            path: "/src/tokens.ts".into(),
+            code: "export const DYNAMIC=readEsm();export const PRIMARY='global';".into(),
+        }),
+        "./cjs-tokens" => Some(ResolvedModule {
+            path: "/src/cjs-tokens.js".into(),
+            code: "exports.DYNAMIC=readCjs();".into(),
+        }),
+        _ => None,
+    };
+    reset_class_map();
+    reset_file_map();
+    let output = extract_with_modules(
+        "/src/App.tsx",
+        source,
+        ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+        false,
+        &resolver,
+    )
+    .unwrap_or_else(|error| panic!("distinct import extraction: {error}"));
+    let mut metadata: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| {
+            let ExtractStyleValue::Dynamic(value) = style else {
+                return None;
+            };
+            match style.extract(None) {
+                Some(StyleProperty::Variable {
+                    class_name,
+                    variable_name,
+                    ..
+                }) => Some((value.property().to_string(), class_name, variable_name)),
+                _ => panic!("dynamic declaration must expose its variable"),
+            }
+        })
+        .collect();
+    metadata.sort();
+    assert_eq!(metadata.len(), 3);
+    let metadata =
+        serde_json::to_string(&metadata).unwrap_or_else(|error| panic!("metadata: {error}"));
+    let compiled = format!(
+        "const DYNAMIC='esm-sentinel';const CJS_DYNAMIC='cjs-sentinel';{}",
+        output.code
+    );
+    // When: executable output reads both getters once and uses metadata to select the real variables.
+    let result = whole::execute(
+        &compiled,
+        &format!(
+            "(()=>{{const raw={{p:{{sentinel:true}}}};const e=a({{get esm(){{trace.push('esm');return 1;}},get cjs(){{trace.push('cjs');return 2;}},raw}});const local=shadowed('local-sentinel');return [{metadata}.map(([property,name,variable])=>[property,((property==='color'?local:e).props.className||'').split(/\\s+/).includes(name),(property==='color'?local:e).props.style[variable]]),e.props.p===raw.p];}})()"
+        ),
+    );
+    // Then: neither code nor metadata aliases CJS to ESM, and PRIMARY remains the parameter.
+    assert_eq!(
+        result.element,
+        serde_json::json!([
+            [
+                ["accent-color", true, "esm-sentinel"],
+                ["color", true, "local-sentinel"],
+                ["lighting-color", true, "cjs-sentinel"]
+            ],
+            true
+        ])
+    );
+    assert_eq!(result.trace, serde_json::json!(["esm", "cjs"]));
+}

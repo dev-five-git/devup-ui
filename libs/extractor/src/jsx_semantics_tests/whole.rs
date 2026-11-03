@@ -11,7 +11,7 @@ use oxc_transformer::{JsxRuntime, TransformOptions, Transformer};
 use std::path::Path;
 
 /// `code` with its types stripped and its JSX written as calls of `h`
-fn plain_script(code: &str) -> String {
+pub(crate) fn plain_script(code: &str) -> String {
     let allocator = Allocator::default();
     let mut program = Parser::new(&allocator, code, SourceType::tsx())
         .parse()

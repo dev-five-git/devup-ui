@@ -43,7 +43,7 @@ function prepare(root, watch = false) {
   put(
     root,
     'app/Dynamic.jsx',
-    'import {Box} from "@devup-ui/react"; export const dynamic = (color) => <Box color={color} styleOrder={0}/>',
+    'import {Box} from "@devup-ui/react"; export const dynamic = (color) => <Box color={color} styleOrder={1}/>',
   )
   if (!watch) addPair(root)
 }

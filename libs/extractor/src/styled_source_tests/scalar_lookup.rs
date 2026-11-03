@@ -1,7 +1,6 @@
 use super::*;
 use crate::extract_style::{extract_style_value::ExtractStyleValue, style_property::StyleProperty};
 use boa_engine::{Context, Source};
-use oxc_codegen::Codegen;
 
 #[rstest]
 #[case::object("({a:0.5,b:{nested:`0.${5}`}})", "a", "b")]
@@ -63,16 +62,8 @@ fn scalar_lookup_preserves_whole_values_when_candidates_include_containers(
             other => panic!("unexpected scalar declaration: {:?}", other.0),
         })
         .collect();
-    let arena = Allocator::default();
-    let mut program = parse(&arena, "scalar-lookup.ts", &output.code);
-    let calls = renders(&program);
-    let helper = &calls[0].helper;
-    program
-        .body
-        .retain(|s| !matches!(s, Statement::ImportDeclaration(_)));
     let generated = format!(
-        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{}const results={scenarios}.map(([on,next])=>{{enabled=on;key=next;trace.length=0;try{{const e=Card.render({{}},null);const active=new Set((e.props.className||'').split(/\\s+/));return [{declarations}.filter(([c])=>active.has(c)).map(([,p,v,k])=>[p,k?e.props.style[k]:v]).filter(([,v])=>v!=null).map(([p,v])=>[p,typeof v==='object'?v:String(Number(v))]).sort(([a],[b])=>a.localeCompare(b)),trace.slice()];}}catch(e){{return [e.message,trace.slice()];}}}});JSON.stringify(results);",
-        Codegen::new().build(&program).code,
+        "const results={scenarios}.map(([on,next])=>{{enabled=on;key=next;trace.length=0;try{{const e=render({{target:Card,props:{{}}}});const active=new Set((e.props.className||'').split(/\\s+/));return [{declarations}.filter(([c])=>active.has(c)).map(([,p,v,k])=>[p,k?e.props.style[k]:v]).filter(([,v])=>v!=null).map(([p,v])=>[p,typeof v==='object'?v:String(Number(v))]).sort(([a],[b])=>a.localeCompare(b)),trace.slice()];}}catch(e){{return [e.message,trace.slice()];}}}});JSON.stringify(results);",
         declarations = serde_json::to_string(&declarations)
             .unwrap_or_else(|error| panic!("declarations must serialize: {error}"))
     );
@@ -85,7 +76,8 @@ fn scalar_lookup_preserves_whole_values_when_candidates_include_containers(
             .to_std_string_escaped()
     };
     // When: all active declarations, coercions and throw-short-circuit effects are observed.
-    let actual = observe(&generated);
+    let actual =
+        captured_render::execute(("scalar-lookup.ts", None), &output, &generated).to_string();
     // Then: b must remain opacity data, and a missing key must omit it, not activate nested.
     assert_eq!(actual, observe(&authored), "{}", output.code);
     eprintln!(
@@ -134,25 +126,12 @@ fn finite_rule_lookup_keeps_objects_when_the_property_is_a_selector(#[case] fixt
             other => panic!("rules must remain static: {:?}", other.0),
         })
         .collect::<Vec<_>>();
-    let arena = Allocator::default();
-    let mut program = parse(&arena, "rule-lookup.ts", &output.code);
-    let calls = renders(&program);
-    let helper = &calls[0].helper;
-    program
-        .body
-        .retain(|s| !matches!(s, Statement::ImportDeclaration(_)));
     let script = format!(
-        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{}JSON.stringify(['a','b','missing'].map(next=>{{key=next;const e=Card.render({{}},null);return {declarations}.filter(([c])=>e.props.className.split(' ').includes(c)).map(([,p,v,s])=>[p,v,s]);}}));",
-        Codegen::new().build(&program).code,
+        "JSON.stringify(['a','b','missing'].map(next=>{{key=next;const e=render({{target:Card,props:{{}}}});return {declarations}.filter(([c])=>e.props.className.split(' ').includes(c)).map(([,p,v,s])=>[p,v,s]);}}));",
         declarations = serde_json::to_string(&declarations)
             .unwrap_or_else(|error| panic!("declarations must serialize: {error}"))
     );
-    let actual = Context::default()
-        .eval(Source::from_bytes(&script))
-        .unwrap_or_else(|error| panic!("rule execution failed: {error}"))
-        .as_string()
-        .unwrap_or_else(|| panic!("rule observation must return JSON"))
-        .to_std_string_escaped();
+    let actual = captured_render::execute(("rule-lookup.ts", None), &output, &script).to_string();
     // Then: finite rule objects remain supported without treating scalar objects as rules.
     assert_eq!(
         actual,

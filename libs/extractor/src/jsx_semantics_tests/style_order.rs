@@ -5,11 +5,39 @@ use serial_test::serial;
 #[serial]
 fn style_order_the_build_knows_is_kept() {
     let rendered = code(&format!(
-        "{BOX}const ORDER = 3;\nexport const a = <Box styleOrder={{ORDER}} color=\"red\" />;\nexport const b = <Box styleOrder={{5 as number}} color=\"red\" />;\nexport const c = <Box styleOrder={{undefined}} color=\"red\" />;\nexport const d = <Box styleOrder={{cond ? 1 : undefined}} color=\"red\" />;\nexport const e = <Box styleOrder={{cond && 2}} color=\"red\" />;\nexport const f = <Box styleOrder=\"7\" color=\"red\" />;\nexport const h = <Box styleOrder={{cond ? null : void 0}} color=\"red\" />;"
+        "{BOX}const ORDER = 3;\nexport const a = <Box styleOrder={{ORDER}} color=\"red\" />;\nexport const b = <Box styleOrder={{5 as number}} color=\"red\" />;\nexport const e = <Box styleOrder={{cond && 2}} color=\"red\" />;\nexport const f = <Box styleOrder=\"7\" color=\"red\" />;"
     ));
 
-    for order in ["--3-", "--5-", "--255-", "--1-", "--2-", "--7-"] {
+    for order in ["--3-", "--5-", "--255-", "--2-", "--7-"] {
         assert!(rendered.contains(order), "{order}: {rendered}");
+    }
+}
+
+#[test]
+#[serial]
+fn explicit_absent_orders_when_written_as_c_d_h_report_the_authored_branches() {
+    for (name, order, branches) in [
+        ("c", "undefined", vec!["undefined"]),
+        ("d", "cond ? 1 : undefined", vec!["undefined"]),
+        ("h", "cond ? null : void 0", vec!["null", "void 0"]),
+    ] {
+        let source =
+            format!("{BOX}export const {name} = <Box styleOrder={{{order}}} color=\"red\" />;");
+        let message = error(&source);
+        assert_eq!(message.lines().count(), branches.len(), "{message}");
+        for branch in branches {
+            let offset = source
+                .find(branch)
+                .unwrap_or_else(|| panic!("fixture branch"));
+            let location = crate::locate("a.tsx", &source, offset);
+            assert!(
+                message
+                    .lines()
+                    .any(|line| line.starts_with(&format!("{location}:"))
+                        && line.contains(&crate::style_order::invalid_order(branch))),
+                "{message}"
+            );
+        }
     }
 }
 
@@ -48,9 +76,6 @@ fn style_order_that_is_not_a_number_or_a_condition_of_numbers_is_an_error() {
         ("{cond ? 1 : other}", "cond ? 1 : other"),
         ("{cond ? other : 2}", "cond ? other : 2"),
         ("{cond && other}", "cond && other"),
-        ("\"abc\"", "\"abc\""),
-        ("<div />", "<element>"),
-        ("<></>", "<>...</>"),
     ] {
         let message = error(&format!(
             "{BOX}export const a = (cond, other) => <Box styleOrder={order} color=\"red\" />;"
@@ -59,6 +84,30 @@ fn style_order_that_is_not_a_number_or_a_condition_of_numbers_is_an_error() {
         assert!(
             message.contains(&format!("`<Box>` cannot use `{written}`")),
             "{order}: {message}"
+        );
+    }
+}
+
+#[test]
+#[serial]
+fn static_invalid_orders_when_written_as_strings_or_jsx_keep_main_diagnostics() {
+    for (order, written) in [
+        ("\"abc\"", "\"abc\""),
+        ("<div />", "<div />"),
+        ("<></>", "<></>"),
+    ] {
+        let source = format!("{BOX}export const a = <Box styleOrder={order} color=\"red\" />;");
+        let message = error(&source);
+        let offset = source
+            .find(order)
+            .unwrap_or_else(|| panic!("fixture order"));
+        assert!(
+            message.starts_with(&format!("{}:", crate::locate("a.tsx", &source, offset))),
+            "{message}"
+        );
+        assert!(
+            message.contains(&crate::style_order::invalid_order(written)),
+            "{message}"
         );
     }
 }

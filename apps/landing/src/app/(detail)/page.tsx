@@ -4,9 +4,9 @@ import { Metadata } from 'next'
 import { Container } from '@/components/Container'
 import { Discord } from '@/components/Discord'
 
-import { Bench } from './Bench'
-import { Feature } from './Feature'
-import { TopBanner } from './TopBanner'
+import { Bench } from '../Bench'
+import { Feature } from '../Feature'
+import { TopBanner } from '../TopBanner'
 
 export const metadata: Metadata = {
   alternates: {

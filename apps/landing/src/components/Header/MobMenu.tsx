@@ -1,5 +1,6 @@
 import { Box, css, Flex, Text } from '@devup-ui/react'
-import Link from 'next/link'
+
+import { Link } from '@/i18n/navigation'
 
 import { LeftMenu as LeftMenuComponents } from '../../app/(detail)/components/LeftMenu'
 import { LeftMenu as LeftMenuDocs } from '../../app/(detail)/docs/LeftMenu'
@@ -54,12 +55,11 @@ export function MobMenu() {
             </Text>
           </Flex>
         </Link>
-        <Link
+        <a
           className={css({
             textDecoration: 'none',
           })}
           href="/storybook/index.html"
-          prefetch={false}
         >
           <Flex alignItems="center" gap="4px" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
@@ -77,7 +77,7 @@ export function MobMenu() {
               maskSize="contain"
             />
           </Flex>
-        </Link>
+        </a>
         <Box h="100px" />
       </Box>
     </MobMenuWrap>

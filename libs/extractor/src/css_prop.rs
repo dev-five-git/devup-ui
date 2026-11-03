@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
-    Argument, ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
+    ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
     FormalParameters, FunctionBody, IdentifierReference, ImportDeclarationSpecifier,
     JSXAttributeItem, JSXChild, JSXElement, JSXElementName, ObjectPropertyKind, Program, Statement,
     Str, TemplateElement, TemplateElementValue, TemplateLiteral,
@@ -19,7 +19,7 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashSet;
 
 use crate::ImportAlias;
-use crate::css_utils::{Place, interpolation_place};
+use crate::css_utils::{Place, template_interpolation_places};
 use crate::utils::{
     binding_root, get_key_by_literal_expression, get_string_by_literal_expression,
     unwrap_syntax_only,
@@ -157,11 +157,19 @@ impl<'s> CssTakers<'s> {
         let mut class_names = FxHashSet::default();
         for statement in &program.body {
             if let Statement::ImportDeclaration(import) = statement {
-                let source = import.source.value.as_str();
+                if import.import_kind.is_type() {
+                    continue;
+                }
+                let Some(source) = import.source.value.as_str() else {
+                    continue;
+                };
                 for specifier in import.specifiers.iter().flatten() {
                     let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
                         continue;
                     };
+                    if specifier.import_kind.is_type() {
+                        continue;
+                    }
                     let imported = specifier.imported.name();
                     if is_jsx_function(source, &imported, compat) {
                         jsx.extend(specifier.local.symbol_id.get());
@@ -237,7 +245,10 @@ impl<'s> CssTakers<'s> {
         let Expression::Identifier(callee) = &call.callee else {
             return None;
         };
-        let [element, Argument::ObjectExpression(props), ..] = call.arguments.as_slice() else {
+        let [element, props, ..] = call.arguments.as_slice() else {
+            return None;
+        };
+        let Expression::ObjectExpression(props) = unwrap_syntax_only(props.as_expression()?) else {
             return None;
         };
         let element = element.as_expression()?;
@@ -277,11 +288,9 @@ pub(crate) fn may_take_css_prop(code: &str) -> bool {
 
 /// Whether importing `source` shows a file uses Emotion
 pub(crate) fn is_emotion(source: &str) -> bool {
-    [EMOTION_REACT, "@emotion/styled"].iter().any(|package| {
-        source
-            .strip_prefix(package)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-    })
+    [EMOTION_REACT, "@emotion/styled"]
+        .iter()
+        .any(|package| crate::package_specifier::is_package(source, package))
 }
 
 /// Where the JSX pragma in the comment text `comment` names `@emotion/react`
@@ -469,7 +478,7 @@ pub(crate) fn class_names_params(params: &FormalParameters<'_>) -> Option<ClassN
                 ) else {
                     return None;
                 };
-                let slot = match key.as_ref() {
+                let slot = match key.as_str()? {
                     "css" => &mut names.css,
                     "cx" => &mut names.cx,
                     "theme" => &mut names.theme,
@@ -576,7 +585,7 @@ fn theme_roots<'a>(params: &FormalParameters<'a>) -> Option<Vec<ThemeRoot<'a>>> 
                             Some(ThemeRoot {
                                 name: local.name.as_str(),
                                 symbol: local.symbol_id.get(),
-                                key: Some(key.to_string()),
+                                key: Some(key.into_cow_str()?.into_owned()),
                             })
                         }
                         _ => None,
@@ -742,21 +751,13 @@ pub(crate) fn template_parts<'a>(
     mixins: bool,
 ) -> Result<Vec<Expression<'a>>, (Expression<'a>, &'static str)> {
     let mut parts = Vec::new();
-    let mut text = String::new();
-    let mut depth = 0usize;
-    let mut quotes = css::quoted::QuoteState::default();
     let mut from = 0;
-    for (index, expression) in template.expressions.iter().enumerate() {
-        let quasi = template.quasis[index].value.raw.as_str();
-        text.push_str(quasi);
-        for byte in quasi.bytes().filter(|&byte| quotes.is_syntax(byte)) {
-            match byte {
-                b'{' => depth += 1,
-                b'}' => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-        }
-        let place = interpolation_place(&text, &template.quasis[index + 1..]);
+    for (index, (expression, (place, depth))) in template
+        .expressions
+        .iter()
+        .zip(template_interpolation_places(template))
+        .enumerate()
+    {
         if matches!(place, Place::Value) || get_string_by_literal_expression(expression).is_some() {
             continue;
         }

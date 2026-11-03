@@ -1,0 +1,13 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "Custom shorthand targets are constrained to supported camelCase/kebab-case CSS properties, built-in aliases and valid custom properties. All five build adapters normalize options at creation before registration or extraction, including Next.js production cache reuse. Unsupported targets fail registration atomically with the original shorthand name, target and zero-based index; previously registered shorthands remain unchanged. New devup-ui option errors expose structured logical shorthands paths without inventing source coordinates. Eighteen dead unprefixed property names are rejected.",
+  "date": "2026-10-05T00:00:00.000Z"
+}

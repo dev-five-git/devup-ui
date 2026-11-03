@@ -289,7 +289,10 @@ mod tests {
     fn scope_restores_registries_when_private_locks_are_poisoned() {
         let _state = crate::test_state::TestStateGuard::new();
         set_typography_keys(vec!["outer".into()]);
-        crate::set_custom_shorthands(BTreeMap::from([("alias".into(), vec!["left".into()])]));
+        assert_eq!(
+            crate::set_custom_shorthands(BTreeMap::from([("alias".into(), vec!["left".into()])])),
+            Ok(())
+        );
         let nested = crate::test_state::TestStateGuard::new();
         for poison_tokens in [false, true] {
             let result = std::panic::catch_unwind(|| {

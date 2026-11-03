@@ -62,6 +62,7 @@ impl<'a> DevupVisitor<'a> {
         &self,
         attributes: &[JSXAttributeItem<'a>],
         kept: &FxHashSet<String>,
+        css_only: bool,
     ) -> Vec<Item> {
         let mut written: FxHashSet<String> = FxHashSet::default();
         let mut lost = vec![false; attributes.len()];
@@ -101,12 +102,13 @@ impl<'a> DevupVisitor<'a> {
                 }
                 SpreadAttribute(spread) => {
                     let read = reach(&self.bindings, &spread.argument);
-                    let unknown = is_unknown_spread(&spread.argument);
+                    let branch = !css_only && self.is_rule_branch(&spread.argument);
+                    let unknown = is_unknown_spread(&spread.argument) && !branch;
                     let snapshot = unknown;
                     Item {
                         role: if unknown { Role::Stays } else { Role::Moved },
                         reach: read,
-                        lost: !unknown,
+                        lost: !unknown && !branch,
                         snapshot,
                         suspends: suspends(&spread.argument),
                     }
@@ -124,31 +126,57 @@ impl<'a> DevupVisitor<'a> {
         &mut self,
         element: &mut JSXElement<'a>,
         kept: &FxHashSet<String>,
+        css_only: bool,
     ) -> AttributeOrder<'a> {
         let mut order = AttributeOrder::default();
-        let style_order=element.opening_element.attributes.iter().find_map(|attribute|match attribute {
-            Attribute(attribute) if matches!(&attribute.name,Identifier(name) if name.name=="styleOrder")=>attribute.value.as_ref().and_then(crate::utils::jsx_expression_to_number).map(|value|Some(value as u8)),
-            _=>None,
+        let style_order = element.opening_element.attributes.iter().rev().find_map(|attribute| {
+            match attribute {
+                Attribute(attribute)
+                    if !kept.contains("styleOrder")
+                        && matches!(&attribute.name, Identifier(name) if name.name == "styleOrder") =>
+                {
+                    attribute.value.as_ref().map(|value| {
+                        crate::style_order::attribute_order(value, self.ast.allocator()).as_static()
+                    })
+                }
+                _ => None,
+            }
         }).flatten();
         let kind = self.bindings.element(&element.opening_element.name);
         let default_tag = kind.as_ref().map_or("div", |kind| kind.to_tag());
         let children_suspend = element.children.iter().any(child_suspends);
+        let css_element = self
+            .takes_css(&element.opening_element.name)
+            .then(|| element.opening_element.name.to_string());
         let attributes = &mut element.opening_element.attributes;
+        let css_entry = css_element.as_ref().and_then(|_| attributes.iter().rposition(|attribute| matches!(attribute, Attribute(attribute) if matches!(&attribute.name, Identifier(name) if name.name == "css"))));
         for attribute in attributes.iter_mut() {
             if let SpreadAttribute(spread) = attribute
+                && !css_only
                 && !is_unknown_spread(&spread.argument)
                 && let Expression::ObjectExpression(object) =
                     crate::utils::unwrap_syntax_only_mut(&mut spread.argument)
             {
                 flatten_known(&self.ast, object);
             }
+        }
+        let items = self.attribute_items(attributes, kept, css_only);
+        for attribute in attributes.iter_mut() {
             if let Attribute(attribute) = attribute
                 && !matches!(&attribute.name, Identifier(name) if name.name == "css")
-                && let Some(JSXAttributeValue::ExpressionContainer(container)) =
-                    &mut attribute.value
-                && let Some(value) = container.expression.as_expression_mut()
             {
-                self.style_values.read_in(&self.ast, value);
+                let class_name =
+                    matches!(&attribute.name, Identifier(name) if name.name == "className");
+                if let Some(JSXAttributeValue::ExpressionContainer(container)) =
+                    &mut attribute.value
+                    && let Some(value) = container.expression.as_expression_mut()
+                {
+                    if class_name {
+                        self.style_values.read_in_class(&self.ast, value);
+                    } else {
+                        self.style_values.read_in(&self.ast, value);
+                    }
+                }
             }
         }
         // A lone primitive class call stays in one final `call() || ""` slot;
@@ -162,15 +190,29 @@ impl<'a> DevupVisitor<'a> {
         {
             return order;
         }
-        let items = self.attribute_items(attributes, kept);
         let Some(last) = last_captured(&items, children_suspend) else {
             return order;
         };
-        for (item, attribute) in items.iter().zip(attributes.iter_mut()).take(last + 1) {
+        for (index, (item, attribute)) in items
+            .iter()
+            .zip(attributes.iter_mut())
+            .enumerate()
+            .take(last + 1)
+        {
             let mut captured = Vec::new();
             match attribute {
+                SpreadAttribute(spread)
+                    if !css_only
+                        && self.is_rule_branch(&spread.argument)
+                        && super::element_props::unreadable_branch(&spread.argument) =>
+                {
+                    continue;
+                }
                 SpreadAttribute(_) if item.reach == Reach::Constant && !item.snapshot => continue,
-                SpreadAttribute(spread) if is_unknown_spread(&spread.argument) => {
+                SpreadAttribute(spread)
+                    if is_unknown_spread(&spread.argument)
+                        && (css_only || !self.is_rule_branch(&spread.argument)) =>
+                {
                     let name = self.names.fresh("__devupSpread");
                     if super::call_order::unsafe_to_extract(&spread.argument) {
                         captured.push(self.snapshot_as(name, &mut spread.argument));
@@ -201,6 +243,7 @@ impl<'a> DevupVisitor<'a> {
                         continue;
                     }
                     if order_value
+                        && !kept.contains("styleOrder")
                         && matches!(
                             self.parsed_order(value),
                             crate::utils::ParsedStyleOrder::Unsupported
@@ -227,7 +270,12 @@ impl<'a> DevupVisitor<'a> {
                             order.as_name = Some(as_name);
                         }
                         Role::Moved if !merged => {
+                            let css = self.css_capture.take();
+                            if css_entry == Some(index) {
+                                self.css_capture.clone_from(&css_element);
+                            }
                             self.capture_shape(value, &mut captured);
+                            self.css_capture = css;
                         }
                         Role::Moved if class_name => {
                             self.capture_class_name(value, &mut captured, style_order);

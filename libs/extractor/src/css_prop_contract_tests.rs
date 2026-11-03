@@ -82,7 +82,7 @@ fn empty_css_expression_is_rejected_when_mixed_with_valid_forms() {
     // Then: the original invalid input has the exact located parser error.
     assert_eq!(
         error,
-        "test.tsx:1:192: JSX attributes must only be assigned a non-empty 'expression'."
+        "test.tsx:1:192: Cannot parse source: JSX attributes must only be assigned a non-empty 'expression'. Fix: correct the syntax at this location"
     );
 }
 

@@ -33,13 +33,27 @@ struct Collector<'s, 'a> {
     copies: FxHashSet<ReferenceId>,
 }
 
+impl Collector<'_, '_> {
+    /// A conditional spread copies only the selected value, never its test.
+    fn copy_leaves(&mut self, value: &Expression<'_>) {
+        let mut pending = vec![value];
+        while let Some(value) = pending.pop() {
+            match crate::utils::unwrap_syntax_only(value) {
+                Expression::Identifier(identifier) => {
+                    self.copies.extend(identifier.reference_id.get());
+                }
+                Expression::ConditionalExpression(branch) => {
+                    pending.extend([&branch.consequent, &branch.alternate]);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 impl<'a> Visit<'a> for Collector<'_, 'a> {
     fn visit_jsx_spread_attribute(&mut self, spread: &JSXSpreadAttribute<'a>) {
-        if let Expression::Identifier(identifier) =
-            crate::utils::unwrap_syntax_only(&spread.argument)
-        {
-            self.copies.extend(identifier.reference_id.get());
-        }
+        self.copy_leaves(&spread.argument);
         walk::walk_jsx_spread_attribute(self, spread);
     }
     fn visit_object_expression(&mut self, object: &ObjectExpression<'a>) {

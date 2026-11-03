@@ -1,0 +1,13 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Update dependencies to their latest releases and migrate Oxc while preserving exact JavaScript string identity, static CSS output, and React 18/19 compatibility. Final CSS text, values, keys, and required evaluation-module specifiers containing unpaired UTF-16 surrogates now fail at build time with source locations instead of becoming lossy text or dynamic styling.",
+  "date": "2026-10-26T00:00:00.000Z"
+}

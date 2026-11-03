@@ -41,7 +41,7 @@ async function main() {
         ),
         message,
       )
-      console.info('W65-HTTP-REJECTION ' + failure)
+      console.info('HTTP-REJECTION ' + failure)
     } finally {
       await new Promise((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

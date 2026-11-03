@@ -36,10 +36,10 @@ pub(super) fn is_unitless_key(key: &str) -> bool {
 }
 
 /// Whether a number on `key` stays bare in a library whose numbers mean pixels:
-/// unitless keys, and Devup UI shorthands (`p`, `bg`, `mx`, ...), which keep
+/// order metadata, unitless keys, and Devup UI shorthands (`p`, `bg`, `mx`, ...), which keep
 /// Devup UI's spacing scale because no such library defines them.
 pub(super) fn keeps_bare_number(key: &str) -> bool {
-    if is_unitless_key(key) {
+    if key == "styleOrder" || is_unitless_key(key) {
         return true;
     }
     let mut properties = css::disassemble_property(key);
@@ -220,44 +220,7 @@ pub(super) fn jsx_expression_to_style_order<'a>(
     expr: &JSXAttributeValue<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    match expr {
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .map_or(ParsedStyleOrder::None, |e| {
-                expression_to_style_order(e, allocator)
-            }),
-        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::Unsupported, |n| {
-            ParsedStyleOrder::Static(n as u8)
-        }),
-    }
-}
-
-/// What a branch of a `styleOrder` gives the build
-enum OrderBranch {
-    Number(u8),
-    Nothing,
-}
-
-/// What a `styleOrder` branch gives: a number, nothing, or neither
-fn style_order_branch(
-    expr: &Expression<'_>,
-    nothing: &impl Fn(&Expression<'_>) -> bool,
-) -> Option<OrderBranch> {
-    let expr = unwrap_syntax_only(expr);
-    if let Some(number) = get_number_by_literal_expression(expr) {
-        return Some(OrderBranch::Number(number as u8));
-    }
-    nothing(expr).then_some(OrderBranch::Nothing)
-}
-
-impl OrderBranch {
-    const fn order(&self) -> Option<u8> {
-        match self {
-            OrderBranch::Number(number) => Some(*number),
-            OrderBranch::Nothing => None,
-        }
-    }
+    crate::style_order::attribute_order(expr, allocator)
 }
 
 /// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
@@ -265,69 +228,9 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    expression_to_style_order_with(expr, allocator, &|value| match value {
-        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
-        Expression::Identifier(identifier) => identifier.name == "undefined",
-        Expression::UnaryExpression(unary) => {
-            unary.operator == UnaryOperator::Void && is_pure(&unary.argument)
-        }
-        _ => false,
-    })
-}
-
-/// Parse order branches using the caller's lexical meaning of an empty value.
-pub(super) fn expression_to_style_order_with<'a>(
-    expr: &Expression<'a>,
-    allocator: &'a Allocator,
-    nothing: &impl Fn(&Expression<'_>) -> bool,
-) -> ParsedStyleOrder<'a> {
-    // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
-    // never matches a conditional/logical node, so folding it into the default arm is
-    // behavior-identical to the former "static probe first, then re-match" flow while
-    // avoiding the redundant second inspection of `expr`.
-    match unwrap_syntax_only(expr) {
-        // Conditional: `cond ? a : b` → Conditional with both branches probed.
-        Expression::ConditionalExpression(cond) => {
-            match (
-                style_order_branch(&cond.consequent, nothing),
-                style_order_branch(&cond.alternate, nothing),
-            ) {
-                (Some(consequent), Some(alternate)) => ParsedStyleOrder::Conditional {
-                    condition: cond.test.clone_in(allocator),
-                    consequent: consequent.order(),
-                    alternate: alternate.order(),
-                },
-                _ => ParsedStyleOrder::Unsupported,
-            }
-        }
-        // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            style_order_branch(&logical.right, nothing).map_or(
-                ParsedStyleOrder::Unsupported,
-                |consequent| ParsedStyleOrder::Conditional {
-                    condition: logical.left.clone_in(allocator),
-                    consequent: consequent.order(),
-                    alternate: None,
-                },
-            )
-        }
-        // Otherwise a number, or nothing at all.
-        expr => match style_order_branch(expr, nothing) {
-            Some(OrderBranch::Number(number)) => ParsedStyleOrder::Static(number),
-            Some(OrderBranch::Nothing) => ParsedStyleOrder::None,
-            None => ParsedStyleOrder::Unsupported,
-        },
-    }
-}
-
-pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
-    match expr {
-        JSXAttributeValue::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        JSXAttributeValue::ExpressionContainer(ec) => ec
-            .expression
-            .as_expression()
-            .and_then(get_number_by_literal_expression),
-        _ => None,
+    match crate::style_order::expression_order(expr, allocator) {
+        ParsedStyleOrder::None => ParsedStyleOrder::Unsupported,
+        order => order,
     }
 }
 
@@ -337,7 +240,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             get_number_by_literal_expression(&parenthesized.expression)
         }
         Expression::StringLiteral(sl) => {
-            let text = sl.value.as_str();
+            let text = sl.value.as_str()?;
             let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
             if unsigned == "Infinity"
                 || text
@@ -368,6 +271,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
                 };
                 let text = value
                     .value
+                    .as_str()?
                     .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
                 let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
                 (unsigned.eq_ignore_ascii_case("inf")
@@ -420,19 +324,27 @@ pub(crate) fn js_number_string(number: f64) -> String {
 /// Property keys and template substitutions preserve text rather than CSS numeric normalization.
 pub(super) fn get_key_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     match expr {
-        Expression::StringLiteral(value) => Some(Cow::Borrowed(value.value.as_str())),
+        Expression::StringLiteral(value) => value.value.as_str().map(Cow::Borrowed),
         Expression::ParenthesizedExpression(value) => {
             get_key_by_literal_expression(&value.expression)
         }
         Expression::TemplateLiteral(template) => {
-            let mut text = String::new();
-            for (index, quasi) in template.quasis.iter().enumerate() {
-                text.push_str(quasi.value.cooked.as_deref()?);
-                if let Some(expression) = template.expressions.get(index) {
-                    text.push_str(&get_key_by_literal_expression(expression)?);
-                }
-            }
-            Some(Cow::Owned(text))
+            let utf8 = template.quasis.iter().enumerate().try_fold(
+                String::new(),
+                |mut text, (index, quasi)| {
+                    text.push_str(quasi.value.cooked?.as_str()?);
+                    if let Some(expression) = template.expressions.get(index) {
+                        text.push_str(&get_key_by_literal_expression(expression)?);
+                    }
+                    Some(text)
+                },
+            );
+            utf8.or_else(|| {
+                let mut text = Vec::new();
+                append_literal_utf16(expr, &mut text)?;
+                String::from_utf16(&text).ok()
+            })
+            .map(Cow::Owned)
         }
         _ => get_string_by_literal_expression(expr),
     }
@@ -449,12 +361,72 @@ pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Opt
     get_number_by_literal_expression(expr)
         .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
-            Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
+            Expression::StringLiteral(str) => str.value.as_str().map(Cow::Borrowed),
             Expression::BooleanLiteral(bool) => {
                 Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
             }
             _ => None,
         })
+}
+
+/// Assemble JavaScript text before checking whether its complete UTF-16 is UTF-8.
+fn append_literal_utf16(expr: &Expression<'_>, text: &mut Vec<u16>) -> Option<()> {
+    match expr {
+        Expression::StringLiteral(literal) => text.extend(literal.value.encode_utf16()),
+        Expression::ParenthesizedExpression(parenthesized) => {
+            append_literal_utf16(&parenthesized.expression, text)?;
+        }
+        Expression::TemplateLiteral(template) => {
+            for (index, quasi) in template.quasis.iter().enumerate() {
+                text.extend(quasi.value.cooked?.encode_utf16());
+                if let Some(expression) = template.expressions.get(index) {
+                    append_literal_utf16(expression, text)?;
+                }
+            }
+        }
+        _ => text.extend(get_key_by_literal_expression(expr)?.encode_utf16()),
+    }
+    Some(())
+}
+
+pub(super) fn unrepresentable_literal(expr: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(expr) {
+        Expression::StringLiteral(literal) => literal.value.as_str().is_none(),
+        Expression::TemplateLiteral(template) => {
+            if !template.quasis.iter().any(|quasi| {
+                quasi
+                    .value
+                    .cooked
+                    .is_some_and(|text| text.as_str().is_none())
+            }) && !template.expressions.iter().any(unrepresentable_literal)
+            {
+                return false;
+            }
+            let mut text = Vec::new();
+            append_literal_utf16(expr, &mut text).is_some() && String::from_utf16(&text).is_err()
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn template_element_value<'a>(
+    raw: &str,
+    builder: &AstBuilder<'a>,
+) -> oxc_ast::ast::TemplateElementValue<'a> {
+    let raw = oxc_ast::ast::Str::from_str_in(raw, builder);
+    let cooked = if raw.contains(['\\', '`']) || raw.contains("${") {
+        let source = builder.allocator().alloc_str(&format!("`{raw}`"));
+        oxc_parser::Parser::new(builder.allocator(), source, oxc_span::SourceType::mjs())
+            .parse_expression()
+            .ok()
+            .and_then(|expression| match expression {
+                Expression::TemplateLiteral(template) => template.single_quasi(),
+                _ => None,
+            })
+    } else {
+        Some(raw.into())
+    };
+    oxc_ast::ast::TemplateElementValue { raw, cooked }
 }
 
 pub(super) fn wrap_array_filter<'a>(
@@ -743,7 +715,7 @@ pub(super) fn style_arguments<'a>(
     for part in parts {
         match part {
             StylePart::Rules(object) => {
-                merge_style_properties(ast_builder, &mut merged, &object.properties);
+                merge_style_properties(ast_builder, &mut merged, &object.properties, false);
             }
             StylePart::Conditional {
                 test,
@@ -1018,6 +990,14 @@ pub(super) const CSS_PROP_SPREAD: &str = "a spread after the `css` prop may carr
 
 pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
 
+/// A style object declared below the top level that styles read, and code
+/// elsewhere reads too
+pub(super) fn local_style_error(name: &str) -> String {
+    format!(
+        "Cannot read `{name}` as styles at build time: it is also read elsewhere, where code may change it, so use it only as styles, or declare it with `const` at the top level of the module"
+    )
+}
+
 pub(super) const LOCAL_STYLES: &str = "a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it";
 
 pub(super) const CLASS_NAMES_CHILD: &str =
@@ -1287,7 +1267,12 @@ fn merge_conditional_properties<'a>(
             .any(|value| matches!(value, Some(Expression::ObjectExpression(_))))
         {
             let mut nested = oxc_allocator::Vec::new_in(ast_builder);
-            merge_style_properties(ast_builder, &mut nested, object_properties(fallback)?);
+            merge_style_properties(
+                ast_builder,
+                &mut nested,
+                object_properties(fallback)?,
+                false,
+            );
             merge_conditional_properties(
                 ast_builder,
                 &mut nested,
@@ -1357,6 +1342,7 @@ fn merge_style_properties<'a>(
     ast_builder: &AstBuilder<'a>,
     merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
     properties: &[ObjectPropertyKind<'a>],
+    keep_position: bool,
 ) {
     for property in properties {
         let existing = match property {
@@ -1376,7 +1362,7 @@ fn merge_style_properties<'a>(
             continue;
         };
         let previous = merged.remove(index);
-        if let (
+        let replacement = if let (
             ObjectPropertyKind::ObjectProperty(previous),
             ObjectPropertyKind::ObjectProperty(next),
         ) = (&previous, property)
@@ -1384,13 +1370,19 @@ fn merge_style_properties<'a>(
                 (&previous.value, &next.value)
         {
             let mut nested = oxc_allocator::Vec::new_in(ast_builder);
-            merge_style_properties(ast_builder, &mut nested, &before.properties);
-            merge_style_properties(ast_builder, &mut nested, &after.properties);
+            let layers = get_str_by_property_key(&next.key).as_deref() == Some("@layer");
+            merge_style_properties(ast_builder, &mut nested, &before.properties, layers);
+            merge_style_properties(ast_builder, &mut nested, &after.properties, layers);
             let mut combined = next.clone_in(ast_builder.allocator());
             combined.value = Expression::new_object_expression(SPAN, nested, ast_builder);
-            merged.push(ObjectPropertyKind::ObjectProperty(combined));
+            ObjectPropertyKind::ObjectProperty(combined)
         } else {
-            merged.push(property.clone_in(ast_builder.allocator()));
+            property.clone_in(ast_builder.allocator())
+        };
+        if keep_position {
+            merged.insert(index, replacement);
+        } else {
+            merged.push(replacement);
         }
     }
 }
@@ -1759,11 +1751,11 @@ mod tests {
     }
 
     #[test]
-    fn test_jsx_expression_to_number() {
+    fn test_jsx_expression_to_style_order() {
         let allocator = Allocator::default();
         let builder = oxc_ast::builder::AstBuilder::new(&allocator);
         assert_eq!(
-            jsx_expression_to_number(
+            jsx_expression_to_style_order(
                 JSXAttribute::new(
                     SPAN,
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
@@ -1774,13 +1766,16 @@ mod tests {
                 )
                 .value
                 .as_ref()
-                .unwrap()
-            ),
+                .unwrap(),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             Some(1.0)
         );
 
         assert_eq!(
-            jsx_expression_to_number(
+            jsx_expression_to_style_order(
                 JSXAttribute::new(
                     SPAN,
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
@@ -1809,18 +1804,26 @@ mod tests {
                 )
                 .value
                 .as_ref()
-                .unwrap()
-            ),
+                .unwrap(),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             None
         );
 
         assert_eq!(
-            jsx_expression_to_number(&JSXAttributeValue::new_expression_container(
-                SPAN,
-                Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
-                    .into(),
-                &builder,
-            )),
+            jsx_expression_to_style_order(
+                &JSXAttributeValue::new_expression_container(
+                    SPAN,
+                    Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
+                        .into(),
+                    &builder,
+                ),
+                &allocator,
+            )
+            .as_static()
+            .map(f64::from),
             Some(2.0)
         );
     }
@@ -1853,7 +1856,7 @@ mod tests {
                 vec![TemplateElement::new(
                     SPAN,
                     oxc_ast::ast::TemplateElementValue {
-                        cooked: Some(Str::from("template")),
+                        cooked: Some(Str::from("template").into()),
                         raw: Str::from("template"),
                     },
                     true,
@@ -1876,7 +1879,7 @@ mod tests {
                     TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some(Str::from("a")),
+                            cooked: Some(Str::from("a").into()),
                             raw: Str::from("a"),
                         },
                         false,
@@ -1885,7 +1888,7 @@ mod tests {
                     TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some(Str::from("b")),
+                            cooked: Some(Str::from("b").into()),
                             raw: Str::from("b"),
                         },
                         true,
@@ -1905,6 +1908,59 @@ mod tests {
         // Identifier 등 기타 타입 - None 반환
         let expr = Expression::new_identifier(SPAN, "foo", &builder);
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
+    }
+
+    #[rstest::rstest]
+    #[case("''", Some(""))]
+    #[case("'ascii'", Some("ascii"))]
+    #[case("'한글'", Some("한글"))]
+    #[case(r"'\uD83D\uDE00'", Some("😀"))]
+    #[case(r"`\uD83D${'\uDE00'}`", Some("😀"))]
+    #[case(r"`${'\uD83D'}\uDE00`", Some("😀"))]
+    #[case(r"'\uD800'", None)]
+    #[case(r"'\uDC00'", None)]
+    #[case("'05'", Some("05"))]
+    fn literal_key_preserves_utf16_when_fragments_are_complete(
+        #[case] source: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let allocator = Allocator::default();
+        let expression = oxc_parser::Parser::new(&allocator, source, oxc_span::SourceType::mjs())
+            .parse_expression()
+            .unwrap();
+        assert_eq!(
+            get_key_by_literal_expression(&expression).as_deref(),
+            expected
+        );
+    }
+
+    #[test]
+    fn surrogate_is_not_a_number_when_numeric_probe_is_optional() {
+        let allocator = Allocator::default();
+        let expression =
+            oxc_parser::Parser::new(&allocator, r"'\uD800'", oxc_span::SourceType::mjs())
+                .parse_expression()
+                .unwrap();
+        assert_eq!(get_number_by_literal_expression(&expression), None);
+    }
+
+    #[rstest::rstest]
+    #[case("plain", Some("plain"))]
+    #[case(r"a\nb", Some("a\nb"))]
+    #[case(r"\uD83D\uDE00", Some("😀"))]
+    #[case(r"\uD800", None)]
+    #[case("` + value + `", None)]
+    fn synthesized_quasi_decodes_raw_text_without_loss(
+        #[case] raw: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let allocator = Allocator::default();
+        let value = template_element_value(raw, &AstBuilder::new(&allocator));
+        assert_eq!(
+            value.cooked.as_ref().and_then(|cooked| cooked.as_str()),
+            expected
+        );
+        assert_eq!(value.raw.as_str(), raw);
     }
 
     #[test]
@@ -2019,3 +2075,7 @@ mod tests {
         assert_eq!(get_str_by_property_key(&private), None);
     }
 }
+
+#[cfg(test)]
+#[path = "style_arguments_spread_tests.rs"]
+mod style_arguments_spread_tests;

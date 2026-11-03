@@ -17,6 +17,10 @@ pub(super) type Captured<'a> = (String, Expression<'a>);
 impl<'a> DevupVisitor<'a> {
     /// Put `value` under `name`, returning what it was
     pub(super) fn capture_as(&mut self, name: String, value: &mut Expression<'a>) -> Captured<'a> {
+        let styles = self.class_styles(value);
+        if !styles.is_empty() {
+            self.captured_class_styles.insert(name.clone(), styles);
+        }
         self.names.stands_for(&name, readable_code(value));
         let read = Expression::new_identifier(
             value.span(),
@@ -34,30 +38,37 @@ impl<'a> DevupVisitor<'a> {
             if let Expression::BinaryExpression(binary) = unwrap_syntax_only_mut(value)
                 && binary.operator == oxc_syntax::operator::BinaryOperator::Addition
                 && let Expression::StringLiteral(tail) = &mut binary.right
+                && let Some(text) = tail.value.as_str()
             {
-                let text = tail.value.strip_suffix(';').unwrap_or(&tail.value);
+                let text = text.strip_suffix(';').unwrap_or(text);
                 important = text.ends_with(" !important");
                 tail.value = Str::from_in(
                     text.strip_suffix(" !important").unwrap_or(text),
                     self.ast.allocator(),
-                );
+                )
+                .into();
                 tail.raw = None;
             }
             if let Expression::TemplateLiteral(template) = unwrap_syntax_only_mut(value)
                 && let Some(tail) = template.quasis.last_mut()
             {
-                let raw = tail.value.raw.strip_suffix(';').unwrap_or(&tail.value.raw);
+                let raw = tail.value.raw.as_str();
+                let raw = raw.strip_suffix(';').unwrap_or(raw);
                 important |= raw.ends_with(" !important");
                 tail.value.raw = Str::from_in(
                     raw.strip_suffix(" !important").unwrap_or(raw),
                     self.ast.allocator(),
                 );
                 tail.value.cooked = tail.value.cooked.as_ref().map(|cooked| {
-                    let cooked = cooked.strip_suffix(';').unwrap_or(cooked);
+                    let Some(text) = cooked.as_str() else {
+                        return *cooked;
+                    };
+                    let cooked = text.strip_suffix(';').unwrap_or(text);
                     Str::from_in(
                         cooked.strip_suffix(" !important").unwrap_or(cooked),
                         self.ast.allocator(),
                     )
+                    .into()
                 });
             }
             let name = self.names.fresh("__devupValue");
@@ -72,7 +83,7 @@ impl<'a> DevupVisitor<'a> {
                             SPAN,
                             TemplateElementValue {
                                 raw: Str::from_in(text, self.ast.allocator()),
-                                cooked: Some(Str::from_in(text, self.ast.allocator())),
+                                cooked: Some(Str::from_in(text, self.ast.allocator()).into()),
                             },
                             index == 1,
                             &self.ast,
@@ -96,6 +107,9 @@ impl<'a> DevupVisitor<'a> {
         value: &mut Expression<'a>,
         captured: &mut Vec<Captured<'a>>,
     ) {
+        if self.css_capture.is_some() && self.capture_css_boundary(value, captured) {
+            return;
+        }
         if let Expression::LogicalExpression(logical) = crate::utils::unwrap_syntax_only(value)
             && let Some(left) = literal_choice(&self.bindings, &logical.left, logical.operator)
         {
@@ -118,6 +132,14 @@ impl<'a> DevupVisitor<'a> {
             Expression::ArrayExpression(array) => {
                 for element in &mut array.elements {
                     match element {
+                        ArrayExpressionElement::SpreadElement(spread)
+                            if matches!(
+                                crate::utils::unwrap_syntax_only(&spread.argument),
+                                Expression::ArrayExpression(_)
+                            ) =>
+                        {
+                            self.capture_shape(&mut spread.argument, captured);
+                        }
                         ArrayExpressionElement::SpreadElement(spread) => {
                             let name = self.names.fresh("__devupValue");
                             let (name, original) = self.capture_as(name, &mut spread.argument);
@@ -152,13 +174,25 @@ impl<'a> DevupVisitor<'a> {
                         }
                         ObjectPropertyKind::ObjectProperty(property) => {
                             if property.computed
+                                && self.css_capture.is_none()
                                 && let Some(key) = property.key.as_expression_mut()
                             {
                                 self.capture_leaf(key, captured);
                             }
                             if property.kind == PropertyKind::Init {
                                 property.shorthand = false;
+                                let css = if matches!(
+                                    crate::utils::unwrap_syntax_only(&property.value),
+                                    Expression::ObjectExpression(_)
+                                ) {
+                                    None
+                                } else {
+                                    self.css_capture.take()
+                                };
                                 self.capture_shape(&mut property.value, captured);
+                                if css.is_some() {
+                                    self.css_capture = css;
+                                }
                             }
                         }
                     }
@@ -189,6 +223,10 @@ impl<'a> DevupVisitor<'a> {
                     self.errors.push((logical.span.start,crate::utils::build_time_error("style value",&readable_code(&Expression::LogicalExpression(logical.clone_in(self.ast.allocator()))),"a lazy await or yield cannot move into the generated synchronous props wrapper; evaluate the logical value into a variable in the original async or generator scope before rendering")));
                     return;
                 }
+                if self.css_capture.is_some() {
+                    self.capture_css_logical(value, captured);
+                    return;
+                }
                 let right_is_constant = reach(&self.bindings, &logical.right) == Reach::Constant;
                 if right_is_constant {
                     self.capture_leaf(&mut logical.left, captured);
@@ -201,6 +239,94 @@ impl<'a> DevupVisitor<'a> {
         };
         if whole {
             self.capture_leaf(value, captured);
+        }
+    }
+
+    /// Preserve CSS admission syntax while capturing only declaration values.
+    fn capture_css_boundary(
+        &mut self,
+        value: &mut Expression<'a>,
+        captured: &mut Vec<Captured<'a>>,
+    ) -> bool {
+        if self.reads_local_styles(value) {
+            return true;
+        }
+        let approved = match crate::utils::unwrap_syntax_only(value) {
+            Expression::CallExpression(call) => self
+                .util_type(&call.callee)
+                .is_some_and(|util| util.is_css()),
+            Expression::TaggedTemplateExpression(tag) => {
+                self.util_type(&tag.tag).is_some_and(|util| util.is_css())
+            }
+            _ => false,
+        };
+        match unwrap_syntax_only_mut(value) {
+            Expression::CallExpression(call) => {
+                if approved {
+                    for argument in &mut call.arguments {
+                        if let Some(value) = argument.as_expression_mut() {
+                            self.capture_shape(value, captured);
+                        }
+                    }
+                }
+            }
+            Expression::TaggedTemplateExpression(tag) if approved => {
+                self.capture_css_template(&mut tag.quasi, captured, true);
+            }
+            Expression::TemplateLiteral(template) => {
+                self.capture_css_template(template, captured, false);
+            }
+            Expression::TaggedTemplateExpression(_) => {}
+            _ => return false,
+        }
+        true
+    }
+
+    fn capture_css_template(
+        &mut self,
+        template: &mut oxc_ast::ast::TemplateLiteral<'a>,
+        captured: &mut Vec<Captured<'a>>,
+        tagged: bool,
+    ) {
+        if crate::css_prop::template_parts(&self.ast, template, tagged).is_err() {
+            return;
+        }
+        for (index, (place, _)) in crate::css_utils::template_interpolation_places(template)
+            .into_iter()
+            .enumerate()
+        {
+            let value = unwrap_syntax_only_mut(&mut template.expressions[index]);
+            if tagged && matches!(place, crate::css_utils::Place::Statement) {
+                self.capture_shape(value, captured);
+            } else if reach(&self.bindings, value) != Reach::Constant
+                || (!tagged
+                    && matches!(
+                        value,
+                        Expression::ObjectExpression(_) | Expression::ArrayExpression(_)
+                    ))
+            {
+                if tagged {
+                    self.capture_leaf(value, captured);
+                } else {
+                    let expression = value.take_in(&self.ast);
+                    let quasis = [false, true].map(|tail| {
+                        TemplateElement::new(
+                            SPAN,
+                            crate::utils::template_element_value("", &self.ast),
+                            tail,
+                            &self.ast,
+                        )
+                    });
+                    *value = Expression::new_template_literal(
+                        SPAN,
+                        oxc_allocator::Vec::from_array_in(quasis, &self.ast),
+                        oxc_allocator::Vec::from_array_in([expression], &self.ast),
+                        &self.ast,
+                    );
+                    let name = self.names.fresh("__devupValue");
+                    captured.push(self.capture_as(name, value));
+                }
+            }
         }
     }
 
@@ -236,7 +362,7 @@ impl<'a> DevupVisitor<'a> {
     }
 }
 
-fn literal_choice(
+pub(super) fn literal_choice(
     bindings: &crate::scope::Bindings,
     value: &Expression<'_>,
     operator: oxc_syntax::operator::LogicalOperator,
@@ -247,6 +373,10 @@ fn literal_choice(
         Expression::BooleanLiteral(value) => (value.value, false),
         Expression::NumericLiteral(value) => (value.value != 0.0 && !value.value.is_nan(), false),
         Expression::StringLiteral(value) => (!value.value.is_empty(), false),
+        Expression::TemplateLiteral(value) if value.expressions.is_empty() => (
+            !value.quasis.first()?.value.cooked?.as_str()?.is_empty(),
+            false,
+        ),
         Expression::Identifier(value) if bindings.is_global_undefined(value) => (false, true),
         _ => return None,
     };

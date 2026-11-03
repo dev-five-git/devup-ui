@@ -1,6 +1,5 @@
 use super::*;
 use boa_engine::{Context, Source};
-use oxc_codegen::Codegen;
 
 #[rstest]
 #[case::object(("({a:'red',b:'blue'})", ["a", "b", "missing"]))]
@@ -64,27 +63,18 @@ fn static_classes_when_finite_lookup_key_changes(
         .unwrap_or_else(|error| panic!("finite declarations must serialize: {error}"));
     let keys = serde_json::to_string(&keys)
         .unwrap_or_else(|error| panic!("finite lookup keys must serialize: {error}"));
-    let arena = Allocator::default();
-    let mut program = parse(&arena, "lookup.ts", &output.code);
-    let calls = renders(&program);
-    assert_eq!(calls.len(), 1);
-    let helper = &calls[0].helper;
-    program
-        .body
-        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
     // When: render selected, changed and missing keys through the emitted callback.
     let script = format!(
-        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const results={keys}.map(next=>{{key=next;const rendered=Card.render({{}},null);const names=rendered.props.className.split(' ');return [{declarations}.filter(([name])=>names.includes(name)).map(([,value])=>value),Object.values(rendered.props.style||{{}}).filter(value=>value!=null)];}});JSON.stringify([before,results,trace]);"
+        "const before=trace.slice();const results={keys}.map(next=>{{key=next;const rendered=render({{target:Card,props:{{}}}});const names=rendered.props.className.split(' ');return [{declarations}.filter(([name])=>names.includes(name)).map(([,value])=>value),Object.values(rendered.props.style||{{}}).filter(value=>value!=null)];}});JSON.stringify([before,results,trace]);"
     );
-    let mut context = Context::default();
-    let result = context
-        .eval(Source::from_bytes(&script))
-        .unwrap_or_else(|error| panic!("finite lookup execution failed: {error}"));
-    let result = result
-        .as_string()
-        .unwrap_or_else(|| panic!("finite lookup observation must be JSON"))
-        .to_std_string_escaped();
+    let result = captured_render::execute(
+        (
+            "lookup.ts",
+            if single_css { None } else { Some("lookup.ts") },
+        ),
+        &output,
+        &script,
+    );
     // Then: selected classes resolve authored CSS; keys run once only under the guard.
     let expected = match enabled {
         None => serde_json::json!([
@@ -103,7 +93,7 @@ fn static_classes_when_finite_lookup_key_changes(
             ["guard", "guard", "guard"]
         ]),
     };
-    assert_eq!(result, expected.to_string());
+    assert_eq!(result, expected);
 }
 
 #[rstest]
@@ -122,31 +112,23 @@ fn whole_value_when_lookup_is_not_finite_static(
     let source = format!(
         "{IMPORT}const trace=[];const state={{{object}get key(){{trace.push('key');return 'a'}}}};const Card=styled.div({{bg:{lookup}}});"
     );
-    let output = compile("lookup.ts", &source, true);
-    let arena = Allocator::default();
-    let mut program = parse(&arena, "lookup.ts", &output);
-    let calls = renders(&program);
-    let helper = &calls[0].helper;
-    program
-        .body
-        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
+    reset_class_map();
+    reset_file_map();
+    let output = extract(
+        "lookup.ts",
+        &source,
+        ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("whole lookup extraction: {error}"));
     // When: execute the actual emitted dynamic value once per render.
-    let script = format!(
-        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const rendered=Card.render({{}},null);JSON.stringify([before,Object.values(rendered.props.style),trace]);"
-    );
-    let mut context = Context::default();
-    let result = context
-        .eval(Source::from_bytes(&script))
-        .unwrap_or_else(|error| panic!("whole lookup execution failed: {error}"));
+    let script = "const before=trace.slice();const rendered=render({target:Card,props:{}});JSON.stringify([before,Object.values(rendered.props.style),trace]);";
+    let result = captured_render::execute(("lookup.ts", None), &output, script);
     // Then: object, key and selected value effects retain their original order/count.
-    assert_eq!(
-        result
-            .as_string()
-            .unwrap_or_else(|| panic!("whole lookup observation must be JSON"))
-            .to_std_string_escaped(),
-        serde_json::json!([[], ["red"], order]).to_string()
-    );
+    assert_eq!(result, serde_json::json!([[], ["red"], order]));
 }
 
 #[rstest]
@@ -248,33 +230,21 @@ fn whole_value_when_numeric_template_lookup_has_effects(
         .collect();
     let declarations = serde_json::to_string(&declarations)
         .unwrap_or_else(|error| panic!("opacity declarations must serialize: {error}"));
-    let arena = Allocator::default();
-    let mut program = parse(&arena, "lookup.ts", &output.code);
-    let calls = renders(&program);
-    assert_eq!(calls.len(), 1);
-    let helper = &calls[0].helper;
-    program
-        .body
-        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    // The real TS bundler erases these fixture-only assertions before execution.
-    let code = Codegen::new().build(&program).code.replace(" as const", "");
     // When: execute the actual emitted renderer, retaining definition-time observations.
     let script = format!(
-        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const rendered=Card.render({{}},null);const names=rendered.props.className.split(' ');const selected={declarations}.filter(([name])=>names.includes(name)).map(([,property,value,variable,level,selector])=>[property,String(Number(variable?(rendered.props.style||{{}})[variable]:value)),level,selector]).sort();JSON.stringify([before,selected,trace]);"
+        "const before=trace.slice();const rendered=render({{target:Card,props:{{}}}});const names=rendered.props.className.split(' ');const selected={declarations}.filter(([name])=>names.includes(name)).map(([,property,value,variable,level,selector])=>[property,String(Number(variable?(rendered.props.style||{{}})[variable]:value)),level,selector]).sort();JSON.stringify([before,selected,trace]);"
     );
-    let mut context = Context::default();
-    let result = context
-        .eval(Source::from_bytes(&script))
-        .unwrap_or_else(|error| {
-            panic!("emitted numeric template lookup execution failed: {error}")
-        });
+    let result = captured_render::execute(
+        (
+            "lookup.ts",
+            if single_css { None } else { Some("lookup.ts") },
+        ),
+        &output,
+        &script,
+    );
     // Then: no eager reads; selected lookups retain exact effect order and dynamic value.
     assert_eq!(
-        result
-            .as_string()
-            .unwrap_or_else(|| panic!("emitted numeric template observation must be JSON"))
-            .to_std_string_escaped(),
+        result,
         serde_json::json!([[], [["opacity", expected_opacity, 0, null]], expected_trace])
-            .to_string()
     );
 }

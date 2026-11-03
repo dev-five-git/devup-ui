@@ -14,10 +14,13 @@ fn build_reports_failing_file_when_fixture_contains_malformed_jsx() {
     };
     // Then: the typed error retains its failing file and parser context.
     assert_eq!(error.file, "src/shared/s00.tsx");
-    assert_eq!(error.message, "src/shared/s00.tsx:1:61: Unexpected token");
+    assert_eq!(
+        error.message,
+        "src/shared/s00.tsx:1:61: Cannot parse source: Unexpected token. Fix: correct the syntax at this location"
+    );
     assert_eq!(
         error.to_string(),
-        "src/shared/s00.tsx: src/shared/s00.tsx:1:61: Unexpected token"
+        "src/shared/s00.tsx: src/shared/s00.tsx:1:61: Cannot parse source: Unexpected token. Fix: correct the syntax at this location"
     );
     assert_eq!(css::atom_hoist::atom_hoist_threshold(), None);
     assert_eq!(css::file_routes::get_file_routes().len(), 0);

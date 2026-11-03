@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 
-// Test-only adaptation of W31ac's suspended-assignment, kill-on-close job.
 public sealed class WebpackJob : IDisposable {
     [StructLayout(LayoutKind.Sequential)] struct BasicLimit {
         public long UserTime, JobTime; public uint Flags;

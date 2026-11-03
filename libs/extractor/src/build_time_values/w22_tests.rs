@@ -18,13 +18,14 @@ fn original_build_time_evaluation_when_the_dependency_closure_is_exact_replaces_
     #[case] source: &str,
     #[case] expected: &str,
 ) {
-    let actual = evaluate(
+    let actual = evaluate_located(
         source,
         "a.tsx",
         &crate::ExtractOption::default(),
         None,
         &crate::imported_constants::Unknown::default(),
     )
+    .unwrap_or_else(|errors| panic!("{source}: {errors:?}"))
     .unwrap_or_else(|| panic!("{source}"));
     assert!(actual.0.contains(expected), "{}", actual.0);
     assert_ne!(actual.1.len(), 0);

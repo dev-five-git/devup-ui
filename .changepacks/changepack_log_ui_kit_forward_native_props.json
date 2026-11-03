@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Input readOnly now reaches the native input, making the field read-only while keeping its clear button hidden; no new build errors.",
+  "date": "2026-10-24T00:00:00.000Z"
+}

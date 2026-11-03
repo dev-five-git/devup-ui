@@ -25,9 +25,16 @@ pub(super) struct PreparedRecord<'a> {
     pub bindings: Vec<(String, Expression<'a>)>,
 }
 
-struct Preparation<'b, 'a> {
-    reads: Evaluations<'b, 'a>,
+enum Origin {
+    Values,
+    OrdinaryCallbacks,
+    WholeRule,
+}
+
+struct Preparation<'r, 'b, 'a> {
+    reads: &'r mut Evaluations<'b, 'a>,
     affected: bool,
+    origin: Origin,
 }
 
 pub(super) fn prepare<'a>(
@@ -35,9 +42,28 @@ pub(super) fn prepare<'a>(
     rules: &Expression<'a>,
     scope: &Expression<'a>,
 ) -> Option<PreparedRecord<'a>> {
+    prepare_with_origin(builder, rules, scope, Origin::Values)
+}
+
+pub(super) fn prepare_whole<'a>(
+    builder: &AstBuilder<'a>,
+    rules: &Expression<'a>,
+    scope: &Expression<'a>,
+) -> Option<PreparedRecord<'a>> {
+    prepare_with_origin(builder, rules, scope, Origin::WholeRule)
+}
+
+fn prepare_with_origin<'a>(
+    builder: &AstBuilder<'a>,
+    rules: &Expression<'a>,
+    scope: &Expression<'a>,
+    origin: Origin,
+) -> Option<PreparedRecord<'a>> {
+    let mut reads = Evaluations::new(builder, readable_code(scope));
     let mut preparation = Preparation {
-        reads: Evaluations::new(builder, readable_code(scope)),
+        reads: &mut reads,
         affected: false,
+        origin,
     };
     let entries = preparation.record(rules, &preparation.reads.boolean(true))?;
     if !preparation.affected && preparation.reads.bindings.is_empty() {
@@ -45,11 +71,29 @@ pub(super) fn prepare<'a>(
     }
     Some(PreparedRecord {
         rules: preparation.materialize(rules.span(), entries),
-        bindings: preparation.reads.bindings,
+        bindings: reads.bindings,
     })
 }
 
-impl<'a> Preparation<'_, 'a> {
+pub(super) fn prepare_callbacks<'a>(
+    reads: &mut Evaluations<'_, 'a>,
+    rules: &Expression<'a>,
+) -> Option<Expression<'a>> {
+    let start = reads.bindings.len();
+    let mut preparation = Preparation {
+        reads,
+        affected: false,
+        origin: Origin::OrdinaryCallbacks,
+    };
+    if let Some(entries) = preparation.record(rules, &preparation.reads.boolean(true)) {
+        Some(preparation.materialize(rules.span(), entries))
+    } else {
+        preparation.reads.bindings.truncate(start);
+        None
+    }
+}
+
+impl<'a> Preparation<'_, '_, 'a> {
     fn record(
         &mut self,
         source: &Expression<'a>,
@@ -70,12 +114,7 @@ impl<'a> Preparation<'_, 'a> {
                                 key.as_str(),
                                 "styleOrder" | "styleVars" | "props" | "params" | "as"
                             ) {
-                                let rules = key.starts_with(['_', '@'])
-                                    || key == "selectors"
-                                    || super::extract_style_from_expression::is_nested_selector_key(
-                                        &key,
-                                    );
-                                property.value = self.value(&property.value, guard, rules)?;
+                                property.value = self.value(&property.value, guard, &key)?;
                             }
                             property.shorthand = false;
                             let entry = Entry {

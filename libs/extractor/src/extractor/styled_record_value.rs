@@ -1,4 +1,5 @@
-use super::Preparation;
+use super::{Origin, Preparation};
+use crate::extractor::extract_style_from_styled::scalar;
 use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKind};
@@ -77,16 +78,21 @@ fn static_lookup_value(source: &Expression<'_>, rules: bool) -> bool {
     }
 }
 
-impl<'a> Preparation<'_, 'a> {
+impl<'a> Preparation<'_, '_, 'a> {
     pub(super) fn value(
         &mut self,
         source: &Expression<'a>,
         guard: &Expression<'a>,
-        rules: bool,
+        key: &str,
     ) -> Option<Expression<'a>> {
         let source = unwrap_syntax_only(source);
         let builder = self.reads.builder;
-        if get_string_by_literal_expression(source).is_some() {
+        let rules = key.starts_with(['_', '@'])
+            || key == "selectors"
+            || super::super::extract_style_from_expression::is_nested_selector_key(key);
+        if get_string_by_literal_expression(source).is_some()
+            || crate::utils::unrepresentable_literal(source)
+        {
             return Some(source.clone_in(builder.allocator()));
         }
         match source {
@@ -124,8 +130,8 @@ impl<'a> Preparation<'_, 'a> {
                     ),
                     &self.reads.boolean(false),
                 );
-                let yes = self.value(&choice.consequent, &yes_guard, rules)?;
-                let no = self.value(&choice.alternate, &no_guard, rules)?;
+                let yes = self.value(&choice.consequent, &yes_guard, key)?;
+                let no = self.value(&choice.alternate, &no_guard, key)?;
                 Some(self.reads.choose(&test, &yes, &no))
             }
             Expression::LogicalExpression(logical) => {
@@ -148,7 +154,7 @@ impl<'a> Preparation<'_, 'a> {
                 let right_guard =
                     self.reads
                         .choose(guard, &takes_right, &self.reads.boolean(false));
-                let right = self.value(&logical.right, &right_guard, rules)?;
+                let right = self.value(&logical.right, &right_guard, key)?;
                 Some(Expression::new_logical_expression(
                     source.span(),
                     left,
@@ -161,12 +167,43 @@ impl<'a> Preparation<'_, 'a> {
                 let mut array = array.clone_in(builder.allocator());
                 for element in &mut array.elements {
                     if let Some(value) = element.as_expression_mut() {
-                        *value = self.value(value, guard, rules)?;
+                        *value = self.value(value, guard, key)?;
                     } else if matches!(element, ArrayExpressionElement::SpreadElement(_)) {
                         return None;
                     }
                 }
                 Some(Expression::ArrayExpression(array))
+            }
+            Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)
+                if matches!(self.origin, Origin::OrdinaryCallbacks)
+                    && crate::css_utils::theme_var_reference(source).is_none() =>
+            {
+                let call = crate::utils::wrap_direct_call(
+                    builder,
+                    source,
+                    &[Expression::new_identifier(oxc_span::SPAN, "rest", builder)],
+                );
+                let slot = self.reads.capture(&call, guard);
+                Some(crate::extractor::extract_style_from_styled::scalar::captured(
+                    builder,
+                    crate::extractor::extract_style_from_styled::scalar::Origin::OrdinaryProperty(key),
+                    slot,
+                ))
+            }
+            Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)
+                if matches!(self.origin, Origin::WholeRule) =>
+            {
+                let slot = self.reads.capture(source, guard);
+                let direct = Expression::new_sequence_expression(
+                    oxc_span::SPAN,
+                    oxc_allocator::Vec::from_array_in([scalar::zero(builder), slot], builder),
+                    builder,
+                );
+                Some(crate::utils::wrap_direct_call(
+                    builder,
+                    &direct,
+                    &[Expression::new_identifier(oxc_span::SPAN, "rest", builder)],
+                ))
             }
             Expression::NullLiteral(_)
             | Expression::BigIntLiteral(_)
@@ -179,7 +216,14 @@ impl<'a> Preparation<'_, 'a> {
             {
                 Some(source.clone_in(builder.allocator()))
             }
-            _ => Some(self.reads.capture(source, guard)),
+            _ => {
+                let captured = self.reads.capture(source, guard);
+                Some(if matches!(self.origin, Origin::WholeRule) {
+                    scalar::captured(builder, scalar::Origin::WholeRule(key), captured)
+                } else {
+                    captured
+                })
+            }
         }
     }
 }

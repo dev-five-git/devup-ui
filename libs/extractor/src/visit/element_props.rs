@@ -14,7 +14,7 @@ use std::borrow::Cow;
 mod tests;
 
 /// Prove the entire spread's own keys before capture replaces its syntax.
-pub(super) fn is_unknown_spread(argument: &Expression<'_>) -> bool {
+pub(crate) fn is_unknown_spread(argument: &Expression<'_>) -> bool {
     let mut pending = vec![argument];
     while let Some(value) = pending.pop() {
         let Expression::ObjectExpression(object) = unwrap_syntax_only(value) else {
@@ -40,6 +40,59 @@ pub(super) fn is_unknown_spread(argument: &Expression<'_>) -> bool {
         }
     }
     false
+}
+
+/// Conditional rules keep their original owner before any opaque-props snapshot.
+/// Logical roots keep the existing raw-props snapshot contract.
+pub(super) fn is_rule_branch(value: &Expression<'_>) -> bool {
+    if !matches!(
+        unwrap_syntax_only(value),
+        Expression::ConditionalExpression(_)
+    ) {
+        return false;
+    }
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match unwrap_syntax_only(value) {
+            Expression::ConditionalExpression(branch) => {
+                pending.extend([&branch.consequent, &branch.alternate]);
+            }
+            Expression::LogicalExpression(branch) => {
+                pending.extend([&branch.left, &branch.right]);
+            }
+            Expression::ObjectExpression(_) if is_unknown_spread(value) => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
+/// A refused whole-rule leaf must reach the existing extractor with its authored span.
+/// Reuse its inert-leaf policy; do not replace unknown branches with packet slots.
+pub(super) fn unreadable_branch(value: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(value) {
+        Expression::ConditionalExpression(branch) => {
+            unreadable_branch(&branch.consequent) || unreadable_branch(&branch.alternate)
+        }
+        Expression::ObjectExpression(_)
+        | Expression::StringLiteral(_)
+        | Expression::TemplateLiteral(_) => false,
+        value => !crate::extractor::extract_style_from_expression::unreadable(value)
+            .styles
+            .is_empty(),
+    }
+}
+
+/// Whether style extraction left props for a selected own-data branch to pass on.
+pub(super) fn has_runtime_props(value: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(value) {
+        Expression::ObjectExpression(object) => !object.properties.is_empty(),
+        Expression::ConditionalExpression(branch) => {
+            has_runtime_props(&branch.consequent) || has_runtime_props(&branch.alternate)
+        }
+        Expression::LogicalExpression(branch) => has_runtime_props(&branch.right),
+        _ => false,
+    }
 }
 
 /// Keep native Emotion's flat-literal admission separate from Devup's recursive D1 proof.

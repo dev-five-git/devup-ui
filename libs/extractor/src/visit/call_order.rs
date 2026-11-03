@@ -7,15 +7,14 @@ use super::jsx_order::AttributeOrder;
 use super::order::{
     Item, Reach, Role, classify, is_merged, last_captured, reach, suspends, written_properties,
 };
-use crate::utils::unwrap_syntax_only_mut;
+use crate::utils::{get_str_by_property_key, unwrap_syntax_only_mut};
 use css::disassemble_property;
 use oxc_allocator::TakeIn;
 use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKind};
 use rustc_hash::FxHashSet;
 
 impl<'a> DevupVisitor<'a> {
-    fn property_items(&self, object: &ObjectExpression<'a>) -> Vec<Item> {
-        let kept = FxHashSet::default();
+    fn property_items(&self, object: &ObjectExpression<'a>, kept: &FxHashSet<String>) -> Vec<Item> {
         let mut written = FxHashSet::default();
         let mut items = Vec::new();
         for property in object.properties.iter().rev() {
@@ -35,15 +34,17 @@ impl<'a> DevupVisitor<'a> {
                     }
                 }
                 ObjectPropertyKind::ObjectProperty(property) => {
-                    let key = property.key.static_name();
+                    let key = get_str_by_property_key(&property.key);
                     let (role, style) = key
                         .as_ref()
-                        .map_or((Role::Stays, false), |key| classify(key, &kept));
+                        .map_or((Role::Stays, false), |key| classify(key.as_ref(), kept));
                     let keys: Vec<_> = key
                         .as_ref()
                         .filter(|_| style)
                         .into_iter()
-                        .flat_map(|key| disassemble_property(key).map(std::borrow::Cow::into_owned))
+                        .flat_map(|key| {
+                            disassemble_property(key.as_ref()).map(std::borrow::Cow::into_owned)
+                        })
                         .collect();
                     let lost = keys.len() > 1
                         || (!keys.is_empty() && keys.iter().all(|key| written.contains(key)));
@@ -65,9 +66,16 @@ impl<'a> DevupVisitor<'a> {
     }
 
     /// Capture the source prefix before extracting or discarding any prop.
-    pub(super) fn order_call_props(&mut self, props: &mut Expression<'a>) -> AttributeOrder<'a> {
+    pub(super) fn order_call_props(
+        &mut self,
+        props: &mut Expression<'a>,
+        kept: &FxHashSet<String>,
+        css_only: bool,
+        css_element: Option<&str>,
+    ) -> AttributeOrder<'a> {
         let mut order = AttributeOrder::default();
         let style_order = match crate::utils::unwrap_syntax_only(props) {
+            _ if kept.contains("styleOrder") => None,
             Expression::ObjectExpression(object) => {
                 object
                     .properties
@@ -89,15 +97,27 @@ impl<'a> DevupVisitor<'a> {
         let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(props) else {
             return order;
         };
-        flatten_known(&self.ast, object);
+        if !css_only {
+            flatten_known(&self.ast, object);
+        }
+        let css_entry = css_element.and_then(|_| object.properties.iter().rposition(|property| matches!(property, ObjectPropertyKind::ObjectProperty(property) if !property.computed && property.key.static_name().is_some_and(|key|key=="css"))));
+        let items = self.property_items(object, kept);
         for property in &mut object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property
                 && property.key.static_name().is_none_or(|key| key != "css")
             {
-                self.style_values.read_in(&self.ast, &mut property.value);
+                if property
+                    .key
+                    .static_name()
+                    .is_some_and(|key| key == "className")
+                {
+                    self.style_values
+                        .read_in_class(&self.ast, &mut property.value);
+                } else {
+                    self.style_values.read_in(&self.ast, &mut property.value);
+                }
             }
         }
-        let items = self.property_items(object);
         let Some(mut last) = last_captured(&items, false) else {
             return order;
         };
@@ -107,7 +127,12 @@ impl<'a> DevupVisitor<'a> {
         {
             last = items.len() - 1;
         }
-        for (item, property) in items.iter().zip(&mut object.properties).take(last + 1) {
+        for (index, (item, property)) in items
+            .iter()
+            .zip(&mut object.properties)
+            .enumerate()
+            .take(last + 1)
+        {
             if item.reach == Reach::Constant && !item.snapshot {
                 continue;
             }
@@ -137,14 +162,13 @@ impl<'a> DevupVisitor<'a> {
                     *property = ObjectPropertyKind::new_spread_property(span, value, &self.ast);
                 }
                 ObjectPropertyKind::ObjectProperty(property) => {
-                    let merged = property
-                        .key
-                        .static_name()
-                        .is_some_and(|key| is_merged(&key));
+                    let merged =
+                        get_str_by_property_key(&property.key).is_some_and(|key| is_merged(&key));
                     if property
                         .key
                         .static_name()
                         .is_some_and(|key| key == "styleOrder")
+                        && !kept.contains("styleOrder")
                         && matches!(
                             self.parsed_order(&property.value),
                             crate::utils::ParsedStyleOrder::Unsupported
@@ -154,7 +178,12 @@ impl<'a> DevupVisitor<'a> {
                     }
                     property.shorthand = false;
                     if item.role == Role::Moved && !merged {
+                        let css = self.css_capture.take();
+                        if css_entry == Some(index) {
+                            self.css_capture = css_element.map(str::to_owned);
+                        }
                         self.capture_shape(&mut property.value, &mut captured);
+                        self.css_capture = css;
                     } else if property
                         .key
                         .static_name()

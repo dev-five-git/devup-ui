@@ -16,6 +16,7 @@ mod create_element_attachment;
 mod css_prop;
 mod errors;
 mod evaluation_edges;
+mod factory_order;
 mod forwarded;
 mod gate_edges;
 mod ordered;
@@ -28,7 +29,7 @@ mod spread_repair;
 mod style_order;
 mod styled;
 mod type_imports;
-mod whole;
+pub(crate) mod whole;
 
 const BOX: &str = "import { Box } from '@devup-ui/react';\n";
 const EMOTION: &str = "/** @jsxImportSource @emotion/react */\n";

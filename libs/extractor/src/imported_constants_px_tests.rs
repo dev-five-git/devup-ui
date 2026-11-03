@@ -1,6 +1,141 @@
 use super::*;
 use rstest::rstest;
 
+#[rstest]
+#[case("good = 2")]
+#[case("good")]
+#[serial_test::serial]
+fn ordinary_enum_member_after_string_key_is_static(
+    #[case] member: &str,
+    #[values("plain", r"\uD800", r"\uDC00")] key: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: a numeric member follows a string-named member in a literal enum.
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    let source = format!(
+        "import {{ css }} from '@devup-ui/react';\nenum E {{ '{key}' = 1, {member} }}\nexport const result = css({{ p: E.good }});"
+    );
+
+    // When: the public style surface consumes only the later ordinary member.
+    let output = crate::extract("enum-key.tsx", &source, ExtractOption::default())?;
+
+    // Then: the prior key cannot turn the exact static value into a fallback.
+    let values: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            ExtractStyleValue::Static(style) => Some((style.property(), style.value())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(values, vec![("padding", "8px")]);
+    Ok(())
+}
+
+#[rstest]
+#[case("``", vec![], Some(""))]
+#[case("`a${token}z`", vec![Constant::String("b".to_string())], Some("abz"))]
+#[case("`한${token}😀`", vec![Constant::String("글".to_string())], Some("한글😀"))]
+#[case("`${token}`", vec![Constant::Number(1e21)], Some("1e+21"))]
+#[case("`${token}`", vec![Constant::Bool(true)], Some("true"))]
+#[case("`${a}:${b}`", vec![Constant::Null, Constant::Undefined], Some("null:undefined"))]
+#[case(r"`\uD83D${token}\uDE00`", vec![Constant::String(String::new())], Some("😀"))]
+#[case(r"`left\uD83D${token}\uDE00right`", vec![Constant::String(String::new())], Some("left😀right"))]
+#[case(r"`\uD800${token}`", vec![Constant::String(String::new())], None)]
+#[case(r"`${token}\uDC00`", vec![Constant::String(String::new())], None)]
+#[case(r"`\uD83D${token}\uDE00`", vec![Constant::Number(1.0)], None)]
+#[case("`${token}`", vec![Constant::Array(Rc::new(vec![]))], None)]
+#[case(r"`\uD800${token}`", vec![Constant::Array(Rc::new(vec![]))], None)]
+fn folded_template_keeps_complete_static_text(
+    #[case] source: &str,
+    #[case] values: Vec<Constant>,
+    #[case] expected: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: valid authored template syntax and the evaluator's constant substitutions.
+    let allocator = Allocator::default();
+    let expression = Parser::new(&allocator, source, SourceType::mjs())
+        .parse_expression()
+        .map_err(|errors| format!("invalid template fixture: {errors:?}"))?;
+    let Expression::TemplateLiteral(template) = expression else {
+        return Err("fixture must be a template literal".into());
+    };
+
+    // When: the constant folder assembles the complete JavaScript string.
+    let result = fold_template(&template, &values);
+
+    // Then: exact text survives, but incomplete surrogates and unsupported values do not fold.
+    match (result, expected) {
+        (Some(Constant::String(actual)), Some(expected)) => assert_eq!(actual, expected),
+        (None, None) => {}
+        (actual, expected) => {
+            panic!("unexpected template result: {actual:?}, expected {expected:?}")
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn namespace_css_tag_materializes_record_when_inlined_without_alias_normalization() {
+    // Given: authored namespace syntax reaches the parsed-source seam unchanged.
+    let source = concat!(
+        "import * as UI from '@devup-ui/react';",
+        "const rules={p:2,color:'tomato'};",
+        "export const card=UI.css`${rules}`;",
+    );
+    let allocator = Allocator::default();
+    let mut program = crate::parsing::parse(&allocator, "/src/namespace.ts", source)
+        .unwrap_or_else(|error| panic!("invalid namespace fixture: {error}"));
+
+    // When: inline real constants with semantic binding resolution and no px marks.
+    inline_constants(
+        &AstBuilder::new(&allocator),
+        &mut program,
+        "/src/namespace.ts",
+        &ExtractOption::default(),
+        None,
+        CssProp::Off,
+        &crate::import_alias_visit::PxMarks::default(),
+    );
+
+    // Then: the exported namespace tag contains the actual materialized record.
+    let Some(Statement::ExportDeclaration(export)) = program.body.last() else {
+        panic!("expected exported card");
+    };
+    let oxc_ast::ast::Declaration::VariableDeclaration(declaration) = &export.declaration else {
+        panic!("expected card declaration");
+    };
+    let Some(Expression::TaggedTemplateExpression(tagged)) =
+        declaration.declarations[0].init.as_ref()
+    else {
+        panic!("expected namespace css tag");
+    };
+    let Expression::StaticMemberExpression(member) = &tagged.tag else {
+        panic!("expected namespace member");
+    };
+    let Expression::Identifier(namespace) = &member.object else {
+        panic!("expected namespace binding");
+    };
+    assert_eq!(namespace.name, "UI");
+    assert_eq!(member.property.name, "css");
+    let [Expression::ObjectExpression(object)] = tagged.quasi.expressions.as_slice() else {
+        panic!("expected materialized record interpolation");
+    };
+    let [
+        ObjectPropertyKind::ObjectProperty(p),
+        ObjectPropertyKind::ObjectProperty(color),
+    ] = object.properties.as_slice()
+    else {
+        panic!("expected two record properties");
+    };
+    assert!(p.key.static_name().is_some_and(|name| name == "p"));
+    assert_eq!(crate::utils::js_number_literal(&p.value), Some(2.0));
+    assert!(color.key.static_name().is_some_and(|name| name == "color"));
+    let Expression::StringLiteral(value) = &color.value else {
+        panic!("expected materialized color string");
+    };
+    assert_eq!(value.value, "tomato");
+}
+
 #[test]
 fn own_css_record_keeps_fallback_order_when_authored_px_mark_is_inlined() {
     // Given: Emotion-style fallback arrays, not responsive breakpoints.
@@ -59,8 +194,14 @@ export const card = css`${rules}`;";
                     .key
                     .static_name()
                     .unwrap_or_else(|| panic!("expected static key"))
+                    .into_cow_str()
+                    .unwrap_or_else(|| panic!("expected UTF-8 key"))
+                    .into_owned(),
+                value
+                    .value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("expected UTF-8 fallback"))
                     .to_string(),
-                value.value.to_string(),
             )
         })
         .collect();
@@ -130,7 +271,14 @@ export const card = css`${rules}`;";
         let ObjectPropertyKind::ObjectProperty(property) = property else {
             panic!("expected record property");
         };
-        assert_eq!(property.key.static_name().as_deref(), Some(key));
+        assert_eq!(
+            property
+                .key
+                .static_name()
+                .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+                .as_deref(),
+            Some(key)
+        );
         let value = if key == "vars" {
             let Expression::ObjectExpression(vars) = &property.value else {
                 panic!("expected vars record");

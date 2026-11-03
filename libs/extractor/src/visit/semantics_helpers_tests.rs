@@ -30,7 +30,7 @@ fn composition_when_an_empty_left_value_has_different_logical_meanings(
             _ => None,
         })
         .collect();
-    assert_eq!(classes, expected.into_iter().collect::<Vec<_>>());
+    assert_eq!(classes, expected.map(Some).into_iter().collect::<Vec<_>>());
 }
 
 #[rstest]

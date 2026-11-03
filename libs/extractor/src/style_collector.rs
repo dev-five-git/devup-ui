@@ -5,6 +5,9 @@ use crate::extract_style::{
     extract_layer_order::ExtractLayerOrder, extract_style_value::ExtractStyleValue,
 };
 
+#[path = "style_collector_layers.rs"]
+mod layers;
+
 /// The styles a file writes. Global rules are numbered in the order the file
 /// writes them, since that order decides which of them wins, and layers are
 /// listed in the order the file first uses them, since that order decides
@@ -18,56 +21,6 @@ pub struct StyleCollector {
 }
 
 impl StyleCollector {
-    /// Register authored layers before composition can replace their first atoms.
-    pub(crate) fn use_layers(&mut self, props: &[crate::ExtractStyleProp<'_>]) {
-        use crate::ExtractStyleProp;
-
-        let mut pending: Vec<_> = props.iter().rev().collect();
-        while let Some(prop) = pending.pop() {
-            let values = match prop {
-                ExtractStyleProp::Static(value) => std::slice::from_ref(value),
-                ExtractStyleProp::Expression { styles, .. } => styles.as_slice(),
-                ExtractStyleProp::StaticArray(props) => {
-                    pending.extend(props.iter().rev());
-                    continue;
-                }
-                ExtractStyleProp::Conditional {
-                    consequent,
-                    alternate,
-                    ..
-                } => {
-                    pending.extend(
-                        [alternate, consequent]
-                            .into_iter()
-                            .filter_map(|side| side.as_deref()),
-                    );
-                    continue;
-                }
-                ExtractStyleProp::Enum { map, .. } => {
-                    pending.extend(map.values().rev().flat_map(|props| props.iter().rev()));
-                    continue;
-                }
-                ExtractStyleProp::MemberExpression { map, .. } => {
-                    pending.extend(map.values().rev().map(AsRef::as_ref));
-                    continue;
-                }
-                ExtractStyleProp::Unreadable { .. } => continue,
-            };
-            for value in values {
-                match value {
-                    ExtractStyleValue::Static(style) => self.use_layer(style.layer()),
-                    ExtractStyleValue::Dynamic(style) => self.use_layer(style.layer()),
-                    ExtractStyleValue::Css(_)
-                    | ExtractStyleValue::Import(_)
-                    | ExtractStyleValue::FontFace(_)
-                    | ExtractStyleValue::Typography(_)
-                    | ExtractStyleValue::Keyframes(_)
-                    | ExtractStyleValue::LayerOrder(_) => {}
-                }
-            }
-        }
-    }
-
     pub fn insert(&mut self, mut style: ExtractStyleValue) {
         match &mut style {
             ExtractStyleValue::Css(css) => {
@@ -84,16 +37,20 @@ impl StyleCollector {
                 self.use_layer(style.layer.as_deref());
             }
             ExtractStyleValue::Dynamic(style) => self.use_layer(style.layer()),
-            ExtractStyleValue::Typography(_)
-            | ExtractStyleValue::Keyframes(_)
-            | ExtractStyleValue::LayerOrder(_) => {}
+            ExtractStyleValue::LayerOrder(order) => {
+                for layer in &order.layers {
+                    self.use_layer(Some(layer));
+                }
+                return;
+            }
+            ExtractStyleValue::Typography(_) | ExtractStyleValue::Keyframes(_) => {}
         }
         self.styles.insert(style);
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.styles.is_empty()
+        self.styles.is_empty() && self.layers.is_empty()
     }
 
     /// The styles of `file`, with the order of its layers when it uses any

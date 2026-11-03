@@ -9,6 +9,17 @@ pub(super) struct Names {
 }
 
 impl Names {
+    pub(super) fn reserve_program(&mut self, program: &oxc_ast::ast::Program<'_>) {
+        self.taken.extend(
+            program
+                .source_text
+                .split(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$')
+                .filter(|token| token.starts_with("__devup") || token.starts_with("DevupAs"))
+                .map(str::to_string),
+        );
+        oxc_ast_visit::Visit::visit_program(self, program);
+    }
+
     pub(super) fn reserve(&mut self, scoping: &oxc_semantic::Scoping) {
         self.taken
             .extend(scoping.symbol_names().map(str::to_string));
@@ -40,7 +51,24 @@ impl Names {
             .iter()
             .rev()
             .fold(message.to_string(), |message, (name, code)| {
-                message.replace(name.as_str(), code)
+                let boundary = |ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '$';
+                let mut restored = String::new();
+                for chunk in message.split_inclusive(boundary) {
+                    let token = chunk.trim_end_matches(boundary);
+                    restored.push_str(if token == name { code } else { token });
+                    restored.push_str(&chunk[token.len()..]);
+                }
+                restored
             })
+    }
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for Names {
+    fn visit_binding_identifier(&mut self, identifier: &oxc_ast::ast::BindingIdentifier<'a>) {
+        self.taken.insert(identifier.name.to_string());
+    }
+
+    fn visit_identifier_reference(&mut self, identifier: &oxc_ast::ast::IdentifierReference<'a>) {
+        self.taken.insert(identifier.name.to_string());
     }
 }

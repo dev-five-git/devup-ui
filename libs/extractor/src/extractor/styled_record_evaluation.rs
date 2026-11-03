@@ -1,11 +1,17 @@
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
-use oxc_ast::{ast::Expression, builder::AstBuilder};
+use oxc_ast::{
+    ast::{ArrowFunctionBody, Expression},
+    builder::AstBuilder,
+};
 use oxc_span::{GetSpan, SPAN};
 
 use crate::utils::is_same_expression;
+#[path = "styled_capture_statements.rs"]
+mod captures;
+pub(crate) use captures::capture_statements;
 
 /// Ordered reads shared by the class and variable expressions of one render.
-pub(super) struct Evaluations<'b, 'a> {
+pub(crate) struct Evaluations<'b, 'a> {
     pub builder: &'b AstBuilder<'a>,
     source: String,
     pub bindings: Vec<(String, Expression<'a>)>,
@@ -85,11 +91,13 @@ fn visit_style_value_expression<'a>(
     use crate::ExtractStyleValue;
     match style {
         ExtractStyleValue::Dynamic(value) => {
-            let mut expression = Expression::new_identifier(
-                SPAN,
-                oxc_ast::ast::Ident::from_in(value.identifier(), builder.allocator()),
-                builder,
-            );
+            let source = builder.allocator().alloc_str(value.identifier());
+            let mut expression =
+                oxc_parser::Parser::new(builder.allocator(), source, oxc_span::SourceType::tsx())
+                    .parse_expression()
+                    .unwrap_or_else(|error| {
+                        panic!("invalid generated dynamic expression: {error:?}")
+                    });
             visit(&mut expression);
             *value.identifier_mut() = crate::utils::readable_code(&expression);
         }
@@ -105,7 +113,7 @@ fn visit_style_value_expression<'a>(
     }
 }
 
-pub(super) fn visit_style_expressions<'a>(
+pub(crate) fn visit_style_expressions<'a>(
     builder: &AstBuilder<'a>,
     style: &mut crate::ExtractStyleProp<'a>,
     visit: &mut impl FnMut(&mut Expression<'a>),
@@ -150,58 +158,32 @@ pub(super) fn visit_style_expressions<'a>(
     }
 }
 
-pub(super) fn bind_render<'a>(
+/// Ordered captures owned directly by a compiler-generated render arrow.
+pub(crate) fn bind_render_body<'a>(
+    builder: &AstBuilder<'a>,
+    bindings: Vec<(String, Expression<'a>)>,
+    body: Expression<'a>,
+) -> ArrowFunctionBody<'a> {
+    use oxc_allocator::Vec as ArenaVec;
+    use oxc_ast::ast::Statement;
+    if bindings.is_empty() {
+        return body.into();
+    }
+    let mut statements = capture_statements(builder, bindings);
+    statements.push(Statement::new_return_statement(SPAN, Some(body), builder));
+    ArrowFunctionBody::new_function_body(SPAN, ArenaVec::new_in(builder), statements, builder)
+}
+
+pub(crate) fn bind_render<'a>(
     builder: &AstBuilder<'a>,
     bindings: Vec<(String, Expression<'a>)>,
     body: Expression<'a>,
 ) -> Expression<'a> {
     use oxc_allocator::Vec as ArenaVec;
-    use oxc_ast::ast::{
-        ArrowFunctionBody, BindingPattern, FormalParameterKind, FormalParameters, Statement,
-        VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
-    };
+    use oxc_ast::ast::{FormalParameterKind, FormalParameters};
     if bindings.is_empty() {
         return body;
     }
-    // Sibling declarations preserve dependent read order without one scope per capture.
-    let mut statements = ArenaVec::with_capacity_in(bindings.len() + 1, builder);
-    for (name, value) in bindings {
-        let name = oxc_ast::ast::Ident::from_in(name.as_str(), builder.allocator());
-        // Sequence evaluation prevents declaration-name inference for anonymous definitions.
-        let value = Expression::new_sequence_expression(
-            SPAN,
-            ArenaVec::from_array_in(
-                [
-                    Expression::new_numeric_literal(
-                        SPAN,
-                        0.0,
-                        None,
-                        oxc_syntax::number::NumberBase::Decimal,
-                        builder,
-                    ),
-                    value,
-                ],
-                builder,
-            ),
-            builder,
-        );
-        let declaration = VariableDeclarator::new(
-            SPAN,
-            BindingPattern::new_binding_identifier(SPAN, name, builder),
-            None,
-            Some(value),
-            false,
-            builder,
-        );
-        statements.push(Statement::VariableDeclaration(VariableDeclaration::boxed(
-            SPAN,
-            VariableDeclarationKind::Const,
-            ArenaVec::from_array_in([declaration], builder),
-            false,
-            builder,
-        )));
-    }
-    statements.push(Statement::new_return_statement(SPAN, Some(body), builder));
     let arrow = Expression::new_arrow_function_expression(
         SPAN,
         false,
@@ -214,7 +196,7 @@ pub(super) fn bind_render<'a>(
             builder,
         ),
         None,
-        ArrowFunctionBody::new_function_body(SPAN, ArenaVec::new_in(builder), statements, builder),
+        bind_render_body(builder, bindings, body),
         builder,
     );
     Expression::new_call_expression(
