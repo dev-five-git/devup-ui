@@ -5606,11 +5606,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .children
                         .iter()
                         .all(|child| matches!(child, JSXChild::Text(_)))
-                    && elem.opening_element.attributes.iter().all(|attribute| {
-                        matches!(attribute, Attribute(attribute)
-                            if matches!(attribute.value,
-                                None | Some(JSXAttributeValue::StringLiteral(_))))
-                    });
+                    && elem
+                        .opening_element
+                        .attributes
+                        .iter()
+                        .all(|attribute| match attribute {
+                            Attribute(attribute) => attribute.value.as_ref().is_none_or(|value| {
+                                matches!(value, JSXAttributeValue::StringLiteral(_))
+                            }),
+                            JSXAttributeItem::SpreadAttribute(_) => false,
+                        });
                 let replacement = if static_body {
                     let mut expressions =
                         oxc_allocator::Vec::with_capacity_in(values.len() + 1, &self.ast);
