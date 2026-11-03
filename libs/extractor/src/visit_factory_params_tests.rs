@@ -59,3 +59,52 @@ fn factory_params_use_the_call_location_when_the_leaf_has_no_offset(#[case] clea
         )]
     );
 }
+
+#[rstest::rstest]
+#[case::devup_base("const Base = styled(Box)({color:'red'});", true, false)]
+#[case::native_base("const Base = styled.div({color:'red'});", false, false)]
+#[case::ordinary_base("function Base(props) { return null; }", false, true)]
+#[serial_test::serial]
+fn styled_extensions_inherit_only_a_style_capable_base(
+    #[case] base: &str,
+    #[case] style_capable: bool,
+    #[case] keeps_padding_prop: bool,
+) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let arena = Allocator::default();
+    let source = format!(
+        "import {{Box,styled}} from '@devup-ui/react';{base}const Choice=styled(Base)({{opacity:0.5}});const view=<Choice p={{2}} title='kept'/>;"
+    );
+    let mut parsed = Parser::new(&arena, &source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let mut visitor =
+        DevupVisitor::new(&arena, "extension.tsx", "@devup-ui/react", Vec::new(), None);
+
+    visitor.visit_program(&mut parsed.program);
+
+    assert!(visitor.errors.is_empty(), "{:?}", visitor.errors);
+    let symbol = visitor
+        .style_values
+        .root_symbol("Choice")
+        .unwrap_or_else(|| panic!("Choice binding"));
+    let definition = visitor
+        .definition(symbol)
+        .unwrap_or_else(|| panic!("Choice definition"));
+    assert_eq!(definition.takes_styles, style_capable);
+    assert!(definition.takes("title"));
+    // Native tags filter invalid DOM props; ordinary components forward them.
+    if !style_capable {
+        assert_eq!(definition.takes("p"), keeps_padding_prop);
+    }
+    let padding = std::mem::take(&mut visitor.styles)
+        .into_styles("extension.tsx")
+        .iter()
+        .filter(|style| {
+            matches!(style, crate::ExtractStyleValue::Static(value) if value.property() == "padding")
+        })
+        .count();
+    assert_eq!(padding, usize::from(style_capable));
+    let code = oxc_codegen::Codegen::new().build(&parsed.program).code;
+    assert!(code.contains("title=\"kept\""), "{code}");
+    assert_eq!(code.contains("p={2}"), keeps_padding_prop, "{code}");
+}

@@ -376,3 +376,68 @@ fn compiled_intrinsic_without_eligible_css_preserves_raw_props(
         serde_json::json!(["div", kind, identity, has_css, calls, ["red"], false])
     );
 }
+
+#[test]
+fn declaration_collection_keeps_nested_const_ends_and_excludes_non_bindings() {
+    let arena = Allocator::default();
+    let source = "const outer = () => { const nested = 4; }; let ignored = 2; var legacy = 3; const { destructured } = input; declare const ambient: string;";
+    let parsed = Parser::new(&arena, source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let before = oxc_codegen::Codegen::new().build(&parsed.program).code;
+    let mut declarations = LocalConstants::default();
+
+    declarations.visit_program(&parsed.program);
+
+    let at = |needle: &str| {
+        u32::try_from(
+            source
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing {needle}")),
+        )
+        .unwrap_or_else(|error| panic!("fixture offset: {error}"))
+    };
+    assert_eq!(
+        declarations.bindings,
+        FxHashMap::from_iter([(at("outer"), at("};") + 1), (at("nested"), at("4;") + 1)])
+    );
+    assert_eq!(
+        oxc_codegen::Codegen::new().build(&parsed.program).code,
+        before
+    );
+}
+
+#[rstest]
+#[case("[0, ...[1, 2], 3]", &["0", "1", "2", "3"])]
+#[case("[0, ...[], 3]", &["0", "3"])]
+#[case("[0, ...[1, ...[2]], 3]", &["0", "1", "2", "3"])]
+fn exact_array_spreads_keep_element_order_and_empty_spreads(
+    #[case] source: &str,
+    #[case] expected: &[&str],
+) {
+    let arena = Allocator::default();
+    let parsed = Parser::new(&arena, source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+        panic!("array fixture");
+    };
+    let before = crate::utils::readable_code(&statement.expression);
+    let option = ExtractOption::default();
+    let mut scope = ModuleScope::new("array.ts", &parsed.program, None);
+    let mut modules = Modules {
+        resolver: None,
+        option: &option,
+        exports: FxHashMap::default(),
+        loading: vec![],
+    };
+
+    let Some(Constant::Array(values)) = scope.evaluate(&mut modules, &statement.expression) else {
+        panic!("exact array spread must evaluate");
+    };
+
+    let actual = values.iter().map(js_string).collect::<Option<Vec<_>>>();
+    assert_eq!(
+        actual,
+        Some(expected.iter().map(|value| (*value).to_string()).collect())
+    );
+    assert_eq!(crate::utils::readable_code(&statement.expression), before);
+}
