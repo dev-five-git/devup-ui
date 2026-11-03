@@ -108,3 +108,46 @@ fn styled_extensions_inherit_only_a_style_capable_base(
     assert!(code.contains("title=\"kept\""), "{code}");
     assert_eq!(code.contains("p={2}"), keeps_padding_prop, "{code}");
 }
+
+#[rstest::rstest]
+#[case::literal_attribute(false)]
+#[case::runtime_attribute(true)]
+#[serial_test::serial]
+fn captured_native_css_keeps_literal_and_runtime_attributes(#[case] runtime_title: bool) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let title = if runtime_title {
+        "title={read('title','kept')}"
+    } else {
+        "title='kept'"
+    };
+    let source = format!(
+        "import {{jsx}} from '@emotion/react';const events=[];function read(name,value){{events.push(name);return value;}}const App=()=> <div hidden {title} css={{{{color:read('color','red'),color:'blue'}}}}>text</div>;"
+    );
+    let output = crate::extract(
+        "static-attrs.tsx",
+        &source,
+        crate::ExtractOption {
+            single_css: true,
+            import_aliases: std::collections::HashMap::from([(
+                "@emotion/react".into(),
+                crate::ImportAlias::NamedToNamed,
+            )]),
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("static-attrs.tsx", None),
+        &output,
+        "const element=App();JSON.stringify([events,element.target,element.props.title,element.props.hidden,element.props.children,values(element,'color'),Object.hasOwn(element.props,'css')]);",
+    );
+    let events = if runtime_title {
+        vec!["title", "color"]
+    } else {
+        vec!["color"]
+    };
+    assert_eq!(
+        actual,
+        serde_json::json!([events, "div", "kept", true, "text", ["blue"], false])
+    );
+}

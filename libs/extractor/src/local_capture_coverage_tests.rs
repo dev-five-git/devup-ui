@@ -441,3 +441,229 @@ fn exact_array_spreads_keep_element_order_and_empty_spreads(
     );
     assert_eq!(crate::utils::readable_code(&statement.expression), before);
 }
+
+#[rstest]
+#[case::eager_forward("const shape = { color: later };const later='red';", true)]
+#[case::declared_before("const later='red';const shape = { color: later };", false)]
+#[case::deferred_callback("const shape = {color:()=>later};const later='red';", false)]
+fn referenced_local_shapes_reject_eager_tdz_and_keep_safe_controls(
+    #[case] declarations: &str,
+    #[case] rejected: bool,
+) {
+    let arena = Allocator::default();
+    let source = format!(
+        "import {{styled}} from '@devup-ui/react';function make(){{{declarations}return styled.div(shape);}}"
+    );
+    let mut parsed = Parser::new(&arena, &source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let before = oxc_codegen::Codegen::new().build(&parsed.program).code;
+    {
+        // The public pipeline rejects eager TDZ before this visitor runs.
+        // Exercise the collector using real semantic IDs and declaration ends.
+        let scoping = SemanticBuilder::new()
+            .build(&parsed.program)
+            .semantic
+            .into_scoping();
+        let symbol = scoping
+            .symbol_ids()
+            .find(|symbol| scoping.symbol_name(*symbol) == "shape")
+            .unwrap_or_else(|| panic!("shape symbol"));
+        assert_eq!(scoping.get_resolved_reference_ids(symbol).len(), 1);
+        let mut ends = LocalConstants::default();
+        ends.visit_program(&parsed.program);
+        let option = ExtractOption::default();
+        let mut scope = ModuleScope::new("local-tdz.tsx", &parsed.program, None);
+        scope.scoped = Some(&scoping);
+        scope.shared_scoping = Some(&scoping);
+        let mut modules = Modules {
+            resolver: None,
+            option: &option,
+            exports: FxHashMap::default(),
+            loading: vec![],
+        };
+        let mut found = Vec::new();
+        let mut shapes = FxHashMap::default();
+        let mut invalid = FxHashSet::default();
+        ScopedLocals {
+            scope: &mut scope,
+            modules: &mut modules,
+            scoping: &scoping,
+            found: &mut found,
+            builder: &AstBuilder::new(&arena),
+            shapes: &mut shapes,
+            ends: &ends.bindings,
+            invalid: &mut invalid,
+        }
+        .visit_program(&parsed.program);
+        let local = found
+            .iter()
+            .find(|local| local.name == "shape")
+            .unwrap_or_else(|| panic!("referenced shape must be collected"));
+        assert_eq!(local.binding, scoping.symbol_span(symbol).start);
+        assert_eq!(Some(&local.end), ends.bindings.get(&local.binding));
+        assert_eq!(invalid.contains(&symbol), rejected);
+        if rejected {
+            assert!(!shapes.contains_key(&symbol));
+            assert!(local.value.is_none());
+        } else {
+            assert!(shapes.contains_key(&symbol) || local.value.is_some());
+        }
+        assert_eq!(
+            oxc_codegen::Codegen::new().build(&parsed.program).code,
+            before
+        );
+    }
+    let inlined = inline_constants(
+        &AstBuilder::new(&arena),
+        &mut parsed.program,
+        "local-tdz.tsx",
+        &ExtractOption::default(),
+        None,
+        CssProp::Off,
+        &FxHashSet::default(),
+    );
+    if rejected {
+        let offset = u32::try_from(
+            source
+                .find("color: later")
+                .unwrap_or_else(|| panic!("eager read"))
+                + "color: ".len(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(inlined.errors, vec![(offset, "style value cannot use `later` at build time: it is read before its lexical declaration is initialized, so the original JavaScript throws ReferenceError; move the declaration of `later` above this use; containing style shapes: shape".to_string())]);
+        assert!(matches!(
+            inlined.disposition,
+            ErrorDisposition::TerminalInitialization
+        ));
+        assert_eq!(
+            oxc_codegen::Codegen::new().build(&parsed.program).code,
+            before
+        );
+    } else {
+        assert!(inlined.errors.is_empty(), "{:?}", inlined.errors);
+        assert!(matches!(inlined.disposition, ErrorDisposition::Recoverable));
+    }
+}
+
+#[rstest]
+#[case::copy_only(false)]
+#[case::identity_escape(true)]
+#[serial_test::serial]
+fn native_nested_spreads_inline_only_copy_exclusive_bindings(#[case] escapes: bool) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let arena = Allocator::default();
+    let escape = if escapes {
+        "const identity=props;if(identity!==props){throw new Error('changed identity');}"
+    } else {
+        ""
+    };
+    let source = format!(
+        "import {{styled}} from '@devup-ui/react';function make(){{const props={{title:'kept',color:'red'}};{escape}return <div {{...{{...props}}}}/>;}}"
+    );
+    let mut parsed = Parser::new(&arena, &source, SourceType::tsx()).parse();
+    assert!(parsed.diagnostics.is_empty());
+    let inlined = inline_constants(
+        &AstBuilder::new(&arena),
+        &mut parsed.program,
+        "native-copy.tsx",
+        &ExtractOption::default(),
+        None,
+        CssProp::Off,
+        &FxHashSet::default(),
+    );
+    assert!(inlined.errors.is_empty(), "{:?}", inlined.errors);
+    let function = parsed
+        .program
+        .body
+        .iter()
+        .find_map(|statement| match statement {
+            Statement::FunctionDeclaration(function)
+                if function.id.as_ref().is_some_and(|id| id.name == "make") =>
+            {
+                Some(function)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("make function"));
+    let body = function
+        .body
+        .as_ref()
+        .unwrap_or_else(|| panic!("function body"));
+    let Some(oxc_ast::ast::Statement::ReturnStatement(statement)) = body.statements.last() else {
+        panic!("return element")
+    };
+    let Some(Expression::JSXElement(element)) = &statement.argument else {
+        panic!("native element")
+    };
+    assert_eq!(element.opening_element.name.to_string(), "div");
+    let oxc_ast::ast::JSXAttributeItem::SpreadAttribute(spread) =
+        &element.opening_element.attributes[0]
+    else {
+        panic!("outer spread")
+    };
+    assert_eq!(crate::visit::is_unknown_spread(&spread.argument), escapes);
+    let Expression::ObjectExpression(outer) = crate::utils::unwrap_syntax_only(&spread.argument)
+    else {
+        panic!("outer own object")
+    };
+    assert_eq!(outer.properties.len(), 1);
+    let ObjectPropertyKind::SpreadProperty(inner) = &outer.properties[0] else {
+        panic!("nested copy")
+    };
+    if escapes {
+        assert!(
+            matches!(crate::utils::unwrap_syntax_only(&inner.argument), Expression::Identifier(identifier) if identifier.name == "props")
+        );
+    } else {
+        let Expression::ObjectExpression(props) = crate::utils::unwrap_syntax_only(&inner.argument)
+        else {
+            panic!("copy expands to own properties")
+        };
+        let actual: Vec<_> = props
+            .properties
+            .iter()
+            .map(|property| {
+                let ObjectPropertyKind::ObjectProperty(property) = property else {
+                    panic!("own property")
+                };
+                assert!(!property.computed && !property.method);
+                let Expression::StringLiteral(value) = &property.value else {
+                    panic!("inert string value")
+                };
+                (
+                    property
+                        .key
+                        .static_name()
+                        .unwrap_or_else(|| panic!("static key"))
+                        .as_str()
+                        .unwrap_or_else(|| panic!("UTF8 static key"))
+                        .to_string(),
+                    value
+                        .value
+                        .as_str()
+                        .unwrap_or_else(|| panic!("UTF8 value"))
+                        .to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                ("title".to_string(), "kept".to_string()),
+                ("color".to_string(), "red".to_string())
+            ]
+        );
+    }
+    let output = crate::extract("native-copy.tsx", &source, ExtractOption::default())
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(output.styles.iter().all(|style| !matches!(
+        style,
+        ExtractStyleValue::Static(_) | ExtractStyleValue::Dynamic(_)
+    )));
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("native-copy.tsx", None),
+        &output,
+        "const element=make();JSON.stringify([element.target,element.props.title,element.props.color]);",
+    );
+    assert_eq!(actual, serde_json::json!(["div", "kept", "red"]));
+}
