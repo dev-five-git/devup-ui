@@ -82,6 +82,7 @@ async function main() {
         },
       },
       DevupUI({
+        engine: 'wasm',
         include: ['accepted'],
         singleCss: true,
         devupFile: join(root, 'devup.json'),

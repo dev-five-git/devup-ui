@@ -13,6 +13,11 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {
+  packHostEngines,
+  verifyHostInstall,
+} from '../../../../../e2e/plugins/engine-fixtures.mjs'
+
 const repository = fileURLToPath(new URL('../../../../../', import.meta.url))
 const fixtures = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const packages = [
@@ -119,6 +124,8 @@ export async function prepareRun(root) {
         .digest('hex'),
     })
   }
+  const native = await packHostEngines({ repository, root, bun }, command)
+  Object.assign(tarballs, native.tarballs)
   const evidence = {
     node: process.version,
     bunVersion: execFileSync(bun, ['--version'], { encoding: 'utf8' }).trim(),
@@ -126,6 +133,7 @@ export async function prepareRun(root) {
     tarballs,
     hashes,
     repository,
+    host: native.host,
   }
   await writeFile(
     join(root, 'resolution.json'),
@@ -188,7 +196,9 @@ export async function prepareConsumer(context, target, singleCss) {
     default:
       throw new Error(`Unknown target ${target}`)
   }
-  command(context.bun, ['install'], { cwd: directory })
+  command(context.bun, ['install', ...context.host.installArgs], {
+    cwd: directory,
+  })
   const require = createRequire(join(directory, 'package.json'))
   for (const [name, expected] of Object.entries(dependencies)) {
     if (name.startsWith('@devup-ui/')) continue
@@ -201,6 +211,7 @@ export async function prepareConsumer(context, target, singleCss) {
     if (actual.version !== expected)
       throw new Error(`Resolution mismatch for ${name}`)
   }
+  verifyHostInstall({ ...context, directory })
   const args =
     target === 'next-webpack'
       ? [require.resolve('next/dist/bin/next'), 'build', '--webpack']

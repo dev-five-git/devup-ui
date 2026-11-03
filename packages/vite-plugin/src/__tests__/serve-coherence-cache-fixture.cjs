@@ -3,7 +3,7 @@ const { join, resolve } = require('node:path')
 const { put } = require('./reservation-native-fixture.cjs')
 const { hooks, gate } = require('./serve-coherence-async-fixture.cjs')
 const { observe } = require('./reservation-native-observer.cjs')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 
 /** @typedef {import('./serve-coherence-async-fixture.cjs').Hooks & {load(id:string):string|undefined}} CacheHooks */
 /** @param {unknown} value @returns {value is CacheHooks} */
@@ -21,6 +21,7 @@ function fixture(root, options = {}) {
   write('src/A.tsx', source)
   const { DevupUI } = require('../../dist/' + 'index.cjs')
   const plugins = DevupUI({
+    engine: 'wasm',
     singleCss: true,
     devupFile: join(root, 'devup.json'),
     distDir: join(root, 'df'),

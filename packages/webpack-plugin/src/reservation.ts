@@ -3,9 +3,9 @@ import { dirname, relative, resolve } from 'node:path'
 import {
   createModuleResolver,
   createSharedSlotReservation,
+  type DevupCompiler,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
-import { reserveClassSlots, setModuleResolver } from '@devup-ui/wasm'
 import type { Compiler } from 'webpack'
 
 import type { DevupUIWebpackPluginOptions } from './plugin'
@@ -13,8 +13,9 @@ import type { DevupUIWebpackPluginOptions } from './plugin'
 export function createWebpackReservation(
   options: Omit<DevupUIWebpackPluginOptions, 'importAliases'>,
   importAliases: WasmImportAliases,
+  compiler: Pick<DevupCompiler, 'reserveClassSlots' | 'setModuleResolver'>,
 ) {
-  const slots = createSharedSlotReservation({ reserveClassSlots })
+  const slots = createSharedSlotReservation(compiler)
   return ({
     context,
     entry,
@@ -22,7 +23,7 @@ export function createWebpackReservation(
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
     const toId = (path: string) => relative(cwd, path).replaceAll('\\', '/')
-    setModuleResolver(createModuleResolver({ toId }))
+    compiler.setModuleResolver(createModuleResolver({ toId }))
     slots.invalidate()
     slots.reserve(
       {

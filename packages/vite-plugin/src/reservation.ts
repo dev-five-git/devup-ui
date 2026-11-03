@@ -7,17 +7,11 @@ import {
   computeReachableFiles,
   createModuleResolver,
   createSharedSlotReservation,
+  type DevupCompiler,
   planAtomHoist,
   reservationGraph,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
-import {
-  importCanonicalMap,
-  importFileRoutes,
-  reserveClassSlots,
-  setAtomHoist,
-  setModuleResolver,
-} from '@devup-ui/wasm'
 
 import type { HtmlReservationEntry } from './html-reservation'
 import { packageBoundary } from './package-boundary'
@@ -28,17 +22,20 @@ import {
   type ReservationEnvironment,
 } from './reservation-inputs'
 
-export function createViteReservation(options: {
-  readonly package: string
-  readonly include: readonly string[]
-  readonly importAliases: WasmImportAliases
-  readonly singleCss: boolean
-  readonly atomHoist?: number
-  readonly cssDir: string
-  readonly distDir: string
-  readonly relevant?: (file: string) => boolean
-}) {
-  const slots = createSharedSlotReservation({ reserveClassSlots })
+export function createViteReservation(
+  compiler: DevupCompiler,
+  options: {
+    readonly package: string
+    readonly include: readonly string[]
+    readonly importAliases: WasmImportAliases
+    readonly singleCss: boolean
+    readonly atomHoist?: number
+    readonly cssDir: string
+    readonly distDir: string
+    readonly relevant?: (file: string) => boolean
+  },
+) {
+  const slots = createSharedSlotReservation(compiler)
   const environments = new Map<
     string,
     { config: ReservationConfig; environment: ReservationEnvironment }
@@ -104,7 +101,7 @@ export function createViteReservation(options: {
       }
       // An event during the parser await supersedes this entire candidate batch.
       if (current !== revision) continue
-      setModuleResolver(
+      compiler.setModuleResolver(
         createModuleResolver({
           cwd: cwd ?? process.cwd(),
           toId: (path) => path.replaceAll('\\', '/'),
@@ -153,10 +150,10 @@ export function createViteReservation(options: {
               }
               const reach = computeFileReach({ ...graphOptions, entries })
               const plan = planAtomHoist(canonical, reach, threshold)
-              importCanonicalMap(canonical)
+              compiler.importCanonicalMap(canonical)
               if (plan) {
-                importFileRoutes(plan.reachByBucket)
-                setAtomHoist(plan.threshold)
+                compiler.importFileRoutes(plan.reachByBucket)
+                compiler.setAtomHoist(plan.threshold)
               }
             }
             // Scratch may freeze even when the engine later throws. Never reinstall.

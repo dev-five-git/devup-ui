@@ -1,7 +1,7 @@
 import { rmSync, symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -10,8 +10,10 @@ import {
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { createViteReservation } from '../reservation'
 
+const wasm = loadCompiler('wasm')
+
 function reservation(root: string) {
-  const slots = createViteReservation({
+  const slots = createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: ['accepted'],
     importAliases: {},

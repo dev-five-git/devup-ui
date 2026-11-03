@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 
 import * as utils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 
 import {
@@ -9,6 +8,8 @@ import {
   STYLE,
 } from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { createViteReservation } from '../reservation'
+
+const wasm = utils.loadCompiler('wasm')
 
 it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
   'installs the numeric policy for %s before scratch, ignoring it in singleCss',
@@ -35,7 +36,7 @@ it.each([undefined, 0, -1, NaN, Infinity, -Infinity, 0.5, 1, 2, 3])(
         expect(canonical).toHaveBeenCalledTimes(enabled ? 1 : 0)
         expect(threshold).toHaveBeenCalledTimes(enabled ? 1 : 0)
       })
-      const slots = createViteReservation({
+      const slots = createViteReservation(wasm, {
         package: '@devup-ui/react',
         include: [],
         importAliases: {},
@@ -96,7 +97,7 @@ it('folds canonical reach and skips global buckets before installing the thresho
   using _engine = spyOn(wasm, 'reserveClassSlots').mockImplementation(() => {
     events.push('scratch')
   })
-  const slots = createViteReservation({
+  const slots = createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},

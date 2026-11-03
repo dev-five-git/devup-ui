@@ -1,3 +1,4 @@
+import type { DevupEngine } from './compiler-types'
 import type { CustomShorthands, ImportAliases } from './types'
 
 /**
@@ -94,6 +95,7 @@ export function createThemeInterfaceArgs(
  * Common plugin options shared across all devup-ui build plugins.
  */
 export interface DevupUIBasePluginOptions {
+  engine?: DevupEngine
   package: string
   cssDir: string
   devupFile: string

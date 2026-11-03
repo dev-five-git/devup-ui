@@ -10,7 +10,16 @@ async function runDev(rsbuild, state) {
   const first = nextCompile()
   rsbuild.onAfterDevCompile(({ stats }) => {
     if (stats.hasErrors()) complete.reject(new Error(stats.toString()))
-    else complete.resolve(stats)
+    else if (
+      (stats.stats ?? [stats]).some(
+        ({ compilation }) => compilation.needAdditionalPass,
+      )
+    ) {
+      for (const { compilation } of stats.stats ?? [stats]) {
+        assert(compilation.needAdditionalPass)
+        assert.equal(compilation.getAssets().length, 0)
+      }
+    } else complete.resolve(stats)
   })
   let server
   try {

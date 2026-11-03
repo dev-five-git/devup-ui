@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const { join } = require('node:path')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 /** @type {typeof import('../../../plugin-utils/src/index')} */
 const utils = require('@devup-ui/plugin-utils')
 const { observe } = require('./reservation-native-observer.cjs')

@@ -43,7 +43,7 @@ async function main() {
     cwd: root,
     config: {
       mode: 'production',
-      plugins: [DevupUI({ singleCss: true }), observer],
+      plugins: [DevupUI({ engine: 'wasm', singleCss: true }), observer],
       source: { entry: { main: './src/entry.js' } },
       environments: {
         first: { output: { distPath: { root: 'out-first' } } },

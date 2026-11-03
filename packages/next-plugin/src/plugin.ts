@@ -136,6 +136,7 @@ export function DevupUI(
   options: DevupUINextPluginOptions = {},
 ): NextConfig {
   const normalizedShorthands = normalizeShorthands(options.shorthands ?? {})
+  const engine = options.engine === undefined ? 'native' : options.engine
   const pluginStartedAt = profileStart()
   const isTurbo =
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
@@ -185,6 +186,7 @@ export function DevupUI(
       cssDir,
       devupFile,
       distDir,
+      engine,
       hoistV: process.env.DEVUP_HOIST_V,
       importAliases,
       include,
@@ -231,7 +233,7 @@ export function DevupUI(
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
 
-    const wasm = loadWasm()
+    const wasm = loadWasm(engine)
     const {
       codeExtract,
       codeExtractWithoutSourceMap,
@@ -557,6 +559,7 @@ export function DevupUI(
           loader: '@devup-ui/next-plugin/css-loader',
           options: {
             watch,
+            engine,
             coordinatorPortFile,
             sheetFile,
             classMapFile,
@@ -580,6 +583,7 @@ export function DevupUI(
             loader: '@devup-ui/next-plugin/loader',
             options: {
               package: libPackage,
+              engine,
               cssDir,
               coordinatorPortFile,
               sheetFile,
@@ -653,6 +657,7 @@ export function DevupUI(
     config.plugins.push(
       new DevupUIWebpackPlugin({
         ...options,
+        engine,
         watch: _options.dev,
         productionPrewarmFiles: _options.dev
           ? undefined

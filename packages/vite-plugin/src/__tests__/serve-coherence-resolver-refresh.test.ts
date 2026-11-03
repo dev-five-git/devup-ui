@@ -1,10 +1,12 @@
 import { join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import { fixture } from '../../../plugin-utils/src/__tests__/reservation-fixture'
 import { createViteReservation } from '../reservation'
+
+const wasm = loadCompiler('wasm')
 
 it('refreshes live alias resolution before dirty reservation without refreshing clean preparation', async () => {
   // Given
@@ -22,7 +24,7 @@ it('refreshes live alias resolution before dirty reservation without refreshing 
   project.write('src/red.js', "export const tone='red'")
   project.write('src/blue.js', "export const tone='blue'")
   project.write('tsconfig.json', paths('red'))
-  const slots = createViteReservation({
+  const slots = createViteReservation(wasm, {
     package: '@devup-ui/react',
     include: [],
     importAliases: {},

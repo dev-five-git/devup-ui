@@ -40,6 +40,7 @@ function project() {
   /** @type {{DevupUI:typeof import('../plugin').DevupUI}} */
   const { DevupUI } = require('../../dist/' + 'index.cjs')
   const plugins = DevupUI({
+    engine: 'wasm',
     devupFile: join(root, 'devup.json'),
     distDir: join(root, 'df'),
     cssDir: join(root, 'df/css'),

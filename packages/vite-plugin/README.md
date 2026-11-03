@@ -177,6 +177,24 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Compiler engine
+
+Vite uses the native compiler by default. Select either engine explicitly:
+
+```ts
+DevupUI()
+DevupUI({ engine: 'native' })
+DevupUI({ engine: 'wasm' })
+```
+
+Keep optional dependencies enabled for the native platform package. Native load
+failures name that package and preserve the original error as their cause;
+there is no automatic fallback. Select `engine: 'wasm'` on hosts without a
+working native image or its required libraries. Invalid shorthands fail before
+engine selection. Configuration, reservation, transforms and delayed callbacks
+use the same selected compiler. Neither engine supports concurrent independent
+builds in one process; Vite environments within a build share its compiler state.
+
 ## Custom Shorthands
 
 Custom shorthands are build-plugin options, not theme tokens. Every target

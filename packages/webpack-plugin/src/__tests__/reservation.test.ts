@@ -1,11 +1,12 @@
 import { dirname, relative, resolve } from 'node:path'
 
 import * as utils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import { expect, it, mock, spyOn } from 'bun:test'
 
 import { DevupUIWebpackPlugin } from '../plugin'
 import { createWebpackReservation } from '../reservation'
+
+const wasm = utils.loadCompiler('wasm')
 
 it('maps the physical inventory to the exact loader IDs, CSS directory and flags', () => {
   const input = {
@@ -42,19 +43,19 @@ it('maps the physical inventory to the exact loader IDs, CSS directory and flags
   )
   try {
     const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
       include: ['@slot/ui'],
       singleCss: true,
     })
-    const barrier = createWebpackReservation(plugin.options, {})
+    const selected = utils.loadCompiler('wasm')
+    const barrier = createWebpackReservation(plugin.options, {}, selected)
     barrier({
       context: resolve('context'),
       entry: () => {
         throw new Error('entry must stay opaque')
       },
     })
-    expect(create).toHaveBeenCalledWith({
-      reserveClassSlots: wasm.reserveClassSlots,
-    })
+    expect(create).toHaveBeenCalledWith(selected)
     expect(manager.invalidate).toHaveBeenCalledTimes(1)
     expect(reserve).toHaveBeenCalledTimes(1)
     expect(setResolver).toHaveBeenCalledTimes(1)

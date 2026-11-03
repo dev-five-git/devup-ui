@@ -4,7 +4,7 @@ const fs = require('node:fs/promises')
 const { put } = require('./reservation-native-fixture.cjs')
 const { observe } = require('./reservation-native-observer.cjs')
 const { rebindParser } = require('./html-parser-bundle.cjs')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 
 /** @typedef {import('./serve-coherence-async-fixture.cjs').Hooks & {load(id:string):string|undefined, configureServer(server:import('vite').ViteDevServer):void, hotUpdate(this:unknown,ctx:unknown):Promise<unknown>, handleHotUpdate(ctx:unknown):Promise<unknown>}} ProvenanceHooks */
 /** @param {unknown} value @returns {value is ProvenanceHooks} */
@@ -39,6 +39,7 @@ function provenanceFixture(root, options = {}) {
   write('src/A.tsx', source)
   const { DevupUI } = require('../../dist/' + 'index.cjs')
   const plugins = DevupUI({
+    engine: 'wasm',
     singleCss: true,
     devupFile: join(root, 'devup.json'),
     distDir: join(root, 'df'),

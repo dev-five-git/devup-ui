@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const { join } = require('node:path')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { project, gate } = require('./serve-coherence-async-fixture.cjs')
 const mode = process.argv[2]
 assert(mode === 'config' || mode === 'tailwind' || mode === 'tailwind-import')

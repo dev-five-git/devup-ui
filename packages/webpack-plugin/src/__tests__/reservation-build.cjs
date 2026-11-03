@@ -4,7 +4,7 @@ const { join } = require('node:path')
 const {
   webpack,
 } = require('../../../next-plugin/node_modules/next/dist/compiled/webpack/webpack')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { state } = require('./reservation-loaders.cjs')
 const fixtureSources = require('./reservation-fixture.cjs')
 const snapshot = require('./reservation-output.cjs')
@@ -66,6 +66,7 @@ let entryCalls = 0
 let setups = 0
 let compilations = 0
 const plugin = new DevupUIWebpackPlugin({
+  engine: 'wasm',
   watch,
   singleCss,
   include: ['@slot/ui'],

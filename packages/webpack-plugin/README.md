@@ -177,6 +177,29 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Compiler engine
+
+Webpack uses the native compiler by default. Select either engine explicitly
+when needed:
+
+```ts
+new DevupUIWebpackPlugin() // native
+new DevupUIWebpackPlugin({ engine: 'native' })
+new DevupUIWebpackPlugin({ engine: 'wasm' })
+```
+
+Both engines are installed through plugin-utils. The native binding selects
+its optional platform package; keep optional dependencies enabled when
+installing. A native load failure names the required platform package and
+preserves its original cause. There is no automatic fallback: use
+`engine: 'wasm'` explicitly on hosts without a working native image or native
+libraries. Invalid engine selections fail before loading a backend; malformed
+custom shorthands are reported before attempting to load either engine.
+
+Selection applies to the plugin, source loader, CSS loader and delayed build
+callbacks as one unit. Native state, like WASM state, does not support
+concurrent independent builds in the same process.
+
 ## Custom Shorthands
 
 ```ts

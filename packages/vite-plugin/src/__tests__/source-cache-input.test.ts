@@ -1,4 +1,4 @@
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import * as htmlReservation from '../html-reservation'
@@ -7,6 +7,7 @@ import {
   extractionObserver,
   transformedCode,
 } from './source-cache-fixture'
+const wasm = loadCompiler('wasm')
 for (const query of ['', '?alternate'])
   it(`restores the latest whole physical input after A B A without events (${query})`, async () => {
     // Given: same physical file, distinct whole inputs with a common styled body.

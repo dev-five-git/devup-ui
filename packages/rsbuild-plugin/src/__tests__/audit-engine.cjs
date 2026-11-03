@@ -1,6 +1,5 @@
 const { basename } = require('node:path')
-/** @type {typeof import('@devup-ui/wasm')} */
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 /** @type {unknown[]} */
 const batches = []
 /** @type {{name:string,code:string,map:string|undefined,before:number,after:number}[]} */

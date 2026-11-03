@@ -1,5 +1,7 @@
-import { getFileNumByFilename } from '@devup-ui/plugin-utils'
-import { getCss } from '@devup-ui/wasm'
+import {
+  type DevupCompiler,
+  getFileNumByFilename,
+} from '@devup-ui/plugin-utils'
 
 import { servedCss } from './served-css'
 
@@ -17,6 +19,7 @@ interface WatchCssCompilation<Module extends object> {
 
 export function reconcileWatchCss<Module extends object>(
   compilation: WatchCssCompilation<Module>,
+  compiler: Pick<DevupCompiler, 'getCss'>,
 ): void {
   compilation.hooks.finishModules.tapPromise(
     { name: 'DevupUIWebpackPluginWatchCss', stage: Number.MAX_SAFE_INTEGER },
@@ -29,7 +32,7 @@ export function reconcileWatchCss<Module extends object>(
           const css = served.get(module.resource)
           if (
             css === undefined ||
-            css === getCss(getFileNumByFilename(module.resource), true)
+            css === compiler.getCss(getFileNumByFilename(module.resource), true)
           )
             return
           await new Promise<void>((resolve, reject) => {
