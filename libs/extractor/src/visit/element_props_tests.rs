@@ -122,7 +122,12 @@ fn authored_props_when_a_computed_dom_key_is_unknown_keep_its_evaluation() {
         panic!("object required")
     };
 
-    let result = extract_props(&ast, object, &mut FxHashSet::default(), &mut |_| {});
+    let result = extract_props(
+        (&ast).into(),
+        object,
+        &mut FxHashSet::default(),
+        &mut |_| {},
+    );
 
     let values: Vec<_> = result
         .styles

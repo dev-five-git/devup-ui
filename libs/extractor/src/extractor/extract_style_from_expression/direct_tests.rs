@@ -18,7 +18,7 @@ fn root_styles_when_dom_props_are_present_extract_only_styles_and_keep_dom_value
     .unwrap_or_else(|error| panic!("{error:?}"));
 
     let result = extract_style_from_expression(
-        &ast,
+        (&ast).into(),
         None,
         &mut expression,
         0,
@@ -54,7 +54,7 @@ fn styles(source: &str, name: Option<&str>) -> (Vec<ExtractStyleValue>, Vec<Stri
         panic!("expression required")
     };
     let result = extract_style_from_expression(
-        &ast,
+        (&ast).into(),
         name,
         &mut statement.expression,
         0,

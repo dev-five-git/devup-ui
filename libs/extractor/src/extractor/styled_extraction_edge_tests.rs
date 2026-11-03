@@ -76,7 +76,7 @@ fn raw_styled_spread_when_received_by_extractor_keeps_reads_or_composition_error
     let inline_css = FxHashMap::default();
     // When
     let output = extract_style_from_styled(
-        &ast,
+        crate::extractor::style_inputs::StyleInputs::with_values(&ast, &values),
         &mut expression,
         Naming::default(),
         StyledBindings {
@@ -149,7 +149,7 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
     let inline_css = FxHashMap::default();
     // When
     let output = extract_style_from_styled(
-        &ast,
+        crate::extractor::style_inputs::StyleInputs::with_values(&ast, &values),
         &mut expression,
         Naming::default(),
         StyledBindings {

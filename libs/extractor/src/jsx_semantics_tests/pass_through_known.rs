@@ -828,3 +828,180 @@ fn static_css_capture_fallback_preserves_trailing_spread_refusal(
         "a.tsx:1:131: `css` on `<div>` cannot use `...props` at build time: a spread after the `css` prop may carry a `css` of its own, which replaces it whole where only the runtime could tell: write the spread before `css`"
     );
 }
+
+#[rstest]
+#[case::and_right(
+    "cond ? (gate && knownImport) : rest",
+    "gate && knownImport",
+    r#"gate && { "bg": "red" }"#
+)]
+#[case::and_right_alternate(
+    "cond ? rest : (gate && knownImport)",
+    "gate && knownImport",
+    r#"gate && { "bg": "red" }"#
+)]
+#[case::or_left(
+    "cond ? (knownImport || null) : rest",
+    "knownImport || null",
+    r#"({ "bg": "red" }) || null"#
+)]
+#[case::coalesce_left(
+    "cond ? (knownImport ?? null) : rest",
+    "knownImport ?? null",
+    r#"({ "bg": "red" }) ?? null"#
+)]
+#[case::or_right(
+    "cond ? (false || knownImport) : rest",
+    "false || knownImport",
+    r#"false || { "bg": "red" }"#
+)]
+#[case::coalesce_right(
+    "cond ? (null ?? knownImport) : rest",
+    "null ?? knownImport",
+    r#"null ?? { "bg": "red" }"#
+)]
+#[serial]
+fn nested_logical_rule_owners_keep_the_authored_runtime_refusal(
+    #[case] branch: &str,
+    #[case] authored_logical: &str,
+    #[case] rendered_logical: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let prefix =
+        "import {Box} from '@devup-ui/react';import {styles as knownImport} from './known';\n";
+    let body = format!("export const render=(cond,gate,rest)=><Box {{...({branch})}}/>;");
+    let source = format!("{prefix}{body}");
+    let error =
+        match compile_imported_spread(&source, "export const styles = { bg: 'red' }", single_css) {
+            Err(error) => error,
+            Ok(_) => panic!("a nested rule owner must retain runtime rule refusal"),
+        };
+    let logical_column = body
+        .find(authored_logical)
+        .unwrap_or_else(|| panic!("authored logical arm"))
+        + 1;
+    let rest_column = body.rfind("rest").unwrap_or_else(|| panic!("runtime arm")) + 1;
+    let mut expected = [(logical_column, rendered_logical), (rest_column, "rest")];
+    expected.sort_by_key(|(column, _)| *column);
+    let expected = expected.map(|(column, code)| {
+        format!("case.tsx:2:{column}: `<Box>` cannot use `{code}` at build time: its styles must be an object literal or a constant object, or be computed from constants")
+    });
+    assert_eq!(error, expected.join("\n"));
+    assert_eq!(error.lines().count(), 2);
+    assert_eq!(error.matches("cannot use `rest`").count(), 1);
+}
+
+#[rstest]
+#[case::and_left("cond ? (knownImport && rest) : other", "rest", "other", false)]
+#[case::and_left_alternate("cond ? rest : (knownImport && other)", "rest", "other", false)]
+#[case::literal_condition(
+    concat!("cond ? ({", "p:1} && rest) : other"),
+    "rest",
+    "other",
+    false
+)]
+#[case::local_shadow("cond ? (knownImport && rest) : other", "rest", "other", true)]
+#[serial]
+fn nested_and_conditions_without_rule_results_keep_raw_props(
+    #[case] branch: &str,
+    #[case] consequent: &str,
+    #[case] alternate: &str,
+    #[case] shadowed: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    let parameters = if shadowed {
+        "cond,rest,other,knownImport"
+    } else {
+        "cond,rest,other"
+    };
+    let source = format!(
+        "{BOX}import {{styles as knownImport}} from './known';export const render=({parameters})=><Box {{...({branch})}}/>;"
+    );
+    let output =
+        compile_imported_spread(&source, "export const styles = { bg: 'red' }", single_css)
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(output.styles.is_empty(), "{output:?}");
+    for (cond, selected) in [(true, consequent), (false, alternate)] {
+        let observed = whole::execute(
+            &output.code,
+            &format!(
+                "(()=>{{const first={{}};const second={{}};const callback=()=>0;const make=(name,p,payload)=>({{get p(){{trace.push(name+':p');return p;}},get payload(){{trace.push(name+':payload');return payload;}},get onClick(){{trace.push(name+':onClick');return callback;}}}});const e=render({cond},make('rest',7,first),make('other',9,second),{{get bg(){{throw Error('condition copied');}}}});return [e.props.p,e.props.payload===first,e.props.payload===second,e.props.onClick===callback];}})()"
+            ),
+        );
+        assert_eq!(
+            observed.element,
+            if selected == "rest" {
+                serde_json::json!([7, true, false, true])
+            } else {
+                serde_json::json!([9, false, true, true])
+            },
+            "{branch}/{cond}"
+        );
+        assert_eq!(
+            observed.trace,
+            serde_json::json!([
+                format!("{selected}:p"),
+                format!("{selected}:payload"),
+                format!("{selected}:onClick")
+            ]),
+            "{branch}/{cond}"
+        );
+    }
+}
+
+#[rstest]
+#[case::or_fallback("readGate() || knownImport", "null", "known")]
+#[case::or_value("readGate() || knownImport", "rest", "rest")]
+#[case::coalesce_fallback("readGate() ?? knownImport", "null", "known")]
+#[case::coalesce_value("readGate() ?? knownImport", "rest", "rest")]
+#[case::coalesce_falsy("readGate() ?? knownImport", "0", "none")]
+#[case::and_falsy("readGate() && knownImport", "0", "none")]
+#[case::and_value("readGate() && knownImport", "rest", "known")]
+#[serial]
+fn nested_logical_data_arms_keep_short_circuit_reads_and_identity(
+    #[case] logical: &str,
+    #[case] gate: &str,
+    #[case] selected: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!(
+        "{BOX}import {{styles as knownImport}} from './known';export const render=(cond,readGate,other)=><Box {{...(cond ? ({logical}) : other)}}/>;"
+    );
+    let output =
+        compile_imported_spread(&source, "export const styles = { id: 'kept' }", single_css)
+            .unwrap_or_else(|error| panic!("{error}"));
+    assert!(output.styles.is_empty(), "{output:?}");
+    for cond in [true, false] {
+        let observed = whole::execute(
+            &output.code,
+            &format!(
+                "(()=>{{const token={{}};const callback=()=>0;const make=name=>({{get p(){{trace.push(name+':p');return 7;}},get payload(){{trace.push(name+':payload');return token;}},get onClick(){{trace.push(name+':onClick');return callback;}}}});const rest=make('rest');const other=make('other');const readGate=()=>{{trace.push('gate');return {gate};}};const e=render({cond},readGate,other);return [e.props.p??null,e.props.id??null,e.props.payload===token,e.props.onClick===callback];}})()"
+            ),
+        );
+        let chosen = if cond { selected } else { "other" };
+        assert_eq!(
+            observed.element,
+            match chosen {
+                "rest" | "other" => serde_json::json!([7, null, true, true]),
+                "known" => serde_json::json!([null, "kept", false, false]),
+                "none" => serde_json::json!([null, null, false, false]),
+                _ => panic!("unknown selected arm"),
+            },
+            "{logical}/{gate}/{cond}"
+        );
+        let mut expected = Vec::new();
+        if cond {
+            expected.push("gate".to_string());
+        }
+        if matches!(chosen, "rest" | "other") {
+            for key in ["p", "payload", "onClick"] {
+                expected.push(format!("{chosen}:{key}"));
+            }
+        }
+        assert_eq!(
+            observed.trace,
+            serde_json::json!(expected),
+            "{logical}/{gate}/{cond}"
+        );
+    }
+}

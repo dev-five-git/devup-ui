@@ -18,7 +18,7 @@ fn authored_branches_when_nullish_choose_the_matching_color(
             .unwrap_or_else(|error| panic!("{error:?}"));
     // When: authored projection reconstructs the actual condition and its two sides.
     let (_, authored) = extract_with_order(
-        &ast,
+        (&ast).into(),
         Some("color"),
         &mut expression,
         0,

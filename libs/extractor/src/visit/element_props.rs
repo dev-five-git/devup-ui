@@ -1,5 +1,6 @@
 use crate::extractor::ExtractResult;
 use crate::extractor::extract_style_from_expression::{LiteralHandling, extract_with_policy};
+use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{get_str_by_property_key, unwrap_syntax_only};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::{disassemble_property, is_special_property::is_special_property};
@@ -171,11 +172,12 @@ pub(super) fn retains_target(
 
 /// Extract only authored properties; opaque spreads never enter the style extractor.
 pub(super) fn extract_props<'a>(
-    ast: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     object: &mut ObjectExpression<'a>,
     written: &mut FxHashSet<Cow<'a, str>>,
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
+    let ast = inputs.ast;
     let mut result = ExtractResult::default();
     for index in (0..object.properties.len()).rev() {
         let ObjectPropertyKind::ObjectProperty(property) = &object.properties[index] else {
@@ -205,7 +207,7 @@ pub(super) fn extract_props<'a>(
             ast,
         );
         let mut extracted = extract_with_policy::<false>(
-            ast,
+            inputs,
             None,
             &mut single,
             0,

@@ -60,7 +60,7 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
     let inline_css = FxHashMap::default();
     // When
     let output = extract_style_from_styled(
-        &ast,
+        crate::extractor::style_inputs::StyleInputs::with_values(&ast, &values),
         &mut expression,
         Naming::default(),
         StyledBindings {
@@ -125,7 +125,7 @@ fn uncurried_styled_when_second_argument_is_callback_stays_object_only()
     let inline_css = FxHashMap::default();
     // When
     let output = extract_style_from_styled(
-        &ast,
+        crate::extractor::style_inputs::StyleInputs::with_values(&ast, &values),
         &mut expression,
         Naming::default(),
         StyledBindings {

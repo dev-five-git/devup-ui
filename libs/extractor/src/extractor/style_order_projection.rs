@@ -2,6 +2,7 @@
 use super::{
     ExtractResult,
     extract_style_from_expression::{self, LiteralHandling},
+    style_inputs::StyleInputs,
 };
 use crate::{ExtractStyleProp, composition::Composition};
 use css::style_selector::StyleSelector;
@@ -83,7 +84,7 @@ impl<'a> Projection<'a> {
 
     pub(super) fn extract<const LOCATE: bool>(
         &mut self,
-        ast: &AstBuilder<'a>,
+        inputs: StyleInputs<'_, 'a>,
         name: Option<&str>,
         expression: &mut Expression<'a>,
         coordinates: (u8, &Option<StyleSelector>),
@@ -96,7 +97,7 @@ impl<'a> Projection<'a> {
             Self::default()
         };
         let result = extract_style_from_expression::extract_projected::<LOCATE>(
-            ast,
+            inputs,
             name,
             expression,
             coordinates,
@@ -105,7 +106,7 @@ impl<'a> Projection<'a> {
             prepare,
         );
         if let Some(children) = &mut self.children {
-            children.push(child.finish(ast, &result.styles));
+            children.push(child.finish(inputs.ast, &result.styles));
         }
         result
     }
@@ -194,7 +195,7 @@ impl<'a> Projection<'a> {
 }
 
 pub(crate) fn extract_with_order<'a>(
-    ast: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
@@ -202,7 +203,7 @@ pub(crate) fn extract_with_order<'a>(
     handling: LiteralHandling,
 ) -> (ExtractResult<'a>, AuthoredStyles<'a>) {
     extract_with_order_policy::<false>(
-        ast,
+        inputs,
         name,
         expression,
         level,
@@ -214,7 +215,7 @@ pub(crate) fn extract_with_order<'a>(
 
 /// Retain authored chunks with the caller's dynamic-leaf location and preparation policy.
 pub(crate) fn extract_with_order_policy<'a, const LOCATE: bool>(
-    ast: &AstBuilder<'a>,
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
@@ -224,7 +225,7 @@ pub(crate) fn extract_with_order_policy<'a, const LOCATE: bool>(
 ) -> (ExtractResult<'a>, AuthoredStyles<'a>) {
     let mut projection = Projection::enabled();
     let result = extract_style_from_expression::extract_projected::<LOCATE>(
-        ast,
+        inputs,
         name,
         expression,
         (level, selector),
@@ -232,7 +233,7 @@ pub(crate) fn extract_with_order_policy<'a, const LOCATE: bool>(
         &mut projection,
         prepare,
     );
-    let authored = projection.finish(ast, &result.styles);
+    let authored = projection.finish(inputs.ast, &result.styles);
     (result, authored)
 }
 
