@@ -117,11 +117,10 @@ impl<'a> DevupVisitor<'a> {
             .collect()
     }
 
-    /// Capture the attributes of `element` that must be evaluated before it is
-    /// built for them to evaluate in the order written: the ones compiling
-    /// moves behind a later one, drops, or repeats, and everything written
-    /// before the last of them. `kept` are the attributes a styled component
-    /// takes as they are
+    /// Orders attributes into the evaluation order required to preserve JavaScript
+    /// semantics: the ones compiling moves behind a later one, drops, or repeats,
+    /// and everything written before the last of them. `kept` are the attributes
+    /// a styled component takes as they are.
     pub(super) fn order_attributes(
         &mut self,
         element: &mut JSXElement<'a>,
@@ -151,14 +150,17 @@ impl<'a> DevupVisitor<'a> {
         let attributes = &mut element.opening_element.attributes;
         let css_entry = css_element.as_ref().and_then(|_| attributes.iter().rposition(|attribute| matches!(attribute, Attribute(attribute) if matches!(&attribute.name, Identifier(name) if name.name == "css"))));
         for attribute in attributes.iter_mut() {
-            if let SpreadAttribute(spread) = attribute
-                && !css_only
-                && !is_unknown_spread(&spread.argument)
-                && let Expression::ObjectExpression(object) =
-                    crate::utils::unwrap_syntax_only_mut(&mut spread.argument)
-            {
-                flatten_known(&self.ast, object);
+            let SpreadAttribute(spread) = attribute else {
+                continue;
+            };
+            if css_only || is_unknown_spread(&spread.argument) {
+                continue;
             }
+            let object = match crate::utils::unwrap_syntax_only_mut(&mut spread.argument) {
+                Expression::ObjectExpression(object) => object,
+                _ => continue,
+            };
+            flatten_known(&self.ast, object);
         }
         let items = self.attribute_items(attributes, kept, css_only);
         for attribute in attributes.iter_mut() {
