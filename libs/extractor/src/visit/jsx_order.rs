@@ -56,6 +56,14 @@ fn child_suspends(child: &JSXChild<'_>) -> bool {
     suspends.found
 }
 
+fn lone_run_value(value: &Expression<'_>) -> bool {
+    let value = crate::utils::unwrap_syntax_only(value);
+    if matches!(value, Expression::TemplateLiteral(_)) {
+        return true;
+    }
+    matches!(value, Expression::StaticMemberExpression(_))
+}
+
 impl<'a> DevupVisitor<'a> {
     /// The items for the order `attributes` evaluate in
     fn attribute_items(
@@ -200,17 +208,12 @@ impl<'a> DevupVisitor<'a> {
                 Some(Attribute(attribute))
                     if matches!(&attribute.name, Identifier(name) if name.name != "css" && is_style(&name.name, kept))
             );
-        let allow_lone_runs = allow_lone_moved
-            && matches!(
-                attributes.first(),
-                Some(Attribute(attribute))
-                    if value_of(attribute).is_some_and(|value| {
-                        matches!(
-                            crate::utils::unwrap_syntax_only(value),
-                            Expression::TemplateLiteral(_) | Expression::StaticMemberExpression(_)
-                        )
-                    })
-            );
+        let allow_lone_runs = attributes.first().is_some_and(|attribute| {
+            let Attribute(attribute) = attribute else {
+                return false;
+            };
+            allow_lone_moved && value_of(attribute).is_some_and(lone_run_value)
+        });
         let Some(last) = last_captured_with_lone_moved(
             &items,
             children_suspend,
