@@ -43,6 +43,12 @@ fn lone_static_member_reads_a_getter_once_without_a_capture_wrapper() {
     let source = format!(
         r"{BOX}const value={{get p(){{trace.push('p');return 'red';}}}};export const a=()=> <Box bg={{value.p}}/>;"
     );
+    let compiled = output(&source);
+    assert!(
+        !compiled.code.contains("__devupValue"),
+        "unexpected capture wrapper: {}",
+        compiled.code
+    );
     let actual = whole::evaluate(&source, "a().props");
     assert_eq!(
         actual.element["style"]
