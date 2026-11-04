@@ -153,14 +153,15 @@ impl<'a> DevupVisitor<'a> {
             let SpreadAttribute(spread) = attribute else {
                 continue;
             };
-            if css_only || is_unknown_spread(&spread.argument) {
+            if css_only {
                 continue;
             }
-            if let Expression::ObjectExpression(object) =
-                crate::utils::unwrap_syntax_only_mut(&mut spread.argument)
-            {
-                flatten_known(&self.ast, object);
-            }
+            let known = !is_unknown_spread(&spread.argument);
+            let object = match crate::utils::unwrap_syntax_only_mut(&mut spread.argument) {
+                Expression::ObjectExpression(object) if known => object,
+                _ => continue,
+            };
+            flatten_known(&self.ast, object);
         }
         let items = self.attribute_items(attributes, kept, css_only);
         for attribute in attributes.iter_mut() {
