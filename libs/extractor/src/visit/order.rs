@@ -295,9 +295,28 @@ pub(super) fn classify(name: &str, kept: &FxHashSet<String>) -> (Role, bool) {
 /// `children_suspend` tells children that hold an `await` or `yield`, which
 /// only the arguments of the call building the element can hold
 pub(super) fn last_captured(items: &[Item], children_suspend: bool) -> Option<usize> {
-    let last = (0..items.len())
-        .rev()
-        .find(|index| items[*index].must_capture(&items[..*index], &items[*index + 1..]))?;
+    last_captured_with_lone_moved(items, children_suspend, false)
+}
+
+/// The last prop to capture, optionally allowing a single style value to stay
+/// at its authored evaluation point when the element has no other work that
+/// can observe its relocation.
+pub(super) fn last_captured_with_lone_moved(
+    items: &[Item],
+    children_suspend: bool,
+    allow_lone_moved: bool,
+) -> Option<usize> {
+    let last = (0..items.len()).rev().find(|index| {
+        let item = &items[*index];
+        let lone_moved = allow_lone_moved
+            && items.len() == 1
+            && item.role == Role::Moved
+            && item.reach == Reach::Reads
+            && !item.lost
+            && !item.snapshot
+            && !item.suspends;
+        !lone_moved && item.must_capture(&items[..*index], &items[*index + 1..])
+    })?;
     let suspending = items.iter().rposition(|item| item.suspends).unwrap_or(0);
     Some(if children_suspend {
         items.len() - 1

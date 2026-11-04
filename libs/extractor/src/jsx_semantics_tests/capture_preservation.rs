@@ -3,6 +3,20 @@ use serial_test::serial;
 
 #[test]
 #[serial]
+fn lone_dynamic_style_keeps_the_value_in_place_without_an_arrow_wrapper() {
+    let actual = output(&format!(
+        "{BOX}export const a=(color)=><Box bg={{color}}/>;"
+    ));
+    assert!(
+        !actual.code.contains("__devupValue"),
+        "unexpected capture wrapper: {}",
+        actual.code
+    );
+    assert!(actual.code.contains("color"), "{}", actual.code);
+}
+
+#[test]
+#[serial]
 fn class_templates_when_captured_keep_their_static_tailwind_rules() {
     let actual = output(&format!(
         "{BOX}export const a=(get,rest)=><Box className={{`${{get()}} text-[#3B82F6] p-4`}} {{...rest}}/>;"

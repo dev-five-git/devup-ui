@@ -1,10 +1,20 @@
-use super::order::{Reach, reach};
+use super::order::{Item, Reach, Role, last_captured, last_captured_with_lone_moved, reach};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Statement;
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 use rstest::rstest;
+
+fn item(role: Role, reach: Reach) -> Item {
+    Item {
+        role,
+        reach,
+        lost: false,
+        snapshot: false,
+        suspends: false,
+    }
+}
 
 #[rstest]
 #[case("input", Reach::Reads)]
@@ -18,6 +28,33 @@ fn generated_length_guard_preserves_argument_reach(#[case] source: &str, #[case]
         .unwrap_or_else(|error| panic!("{error:?}"));
     let generated = crate::imported_constants::local_rule_shapes::number_length(&ast, input);
     assert!(reach(&crate::scope::Bindings::default(), &generated) == expected);
+}
+
+#[test]
+fn lone_moved_value_does_not_need_a_capture_wrapper() {
+    let items = [item(Role::Moved, Reach::Reads)];
+    assert_eq!(last_captured_with_lone_moved(&items, false, true), None);
+}
+
+#[test]
+fn lone_moved_call_still_needs_a_capture_wrapper() {
+    let items = [item(Role::Moved, Reach::Runs)];
+    assert_eq!(last_captured_with_lone_moved(&items, false, true), Some(0));
+}
+
+#[test]
+fn moved_value_crossing_a_runtime_prop_still_needs_capture() {
+    let items = [
+        item(Role::Stays, Reach::Reads),
+        item(Role::Moved, Reach::Runs),
+    ];
+    assert_eq!(last_captured(&items, false), Some(1));
+
+    let items = [
+        item(Role::Moved, Reach::Runs),
+        item(Role::Stays, Reach::Reads),
+    ];
+    assert_eq!(last_captured(&items, false), Some(0));
 }
 
 #[test]

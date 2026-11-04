@@ -4,8 +4,8 @@ use super::DevupVisitor;
 use super::capture::Captured;
 use super::element_props::{flatten_known, is_unknown_spread};
 use super::order::{
-    Item, Reach, Role, classify, is_merged, is_style, last_captured, reach, suspends,
-    written_properties,
+    Item, Reach, Role, classify, is_merged, is_style, last_captured_with_lone_moved, reach,
+    suspends, written_properties,
 };
 use crate::utils::Suspends;
 use css::disassemble_property;
@@ -190,7 +190,15 @@ impl<'a> DevupVisitor<'a> {
         {
             return order;
         }
-        let Some(last) = last_captured(&items, children_suspend) else {
+        let allow_lone_moved = attributes.len() == 1
+            && element.children.is_empty()
+            && matches!(
+                attributes.first(),
+                Some(Attribute(attribute))
+                    if matches!(&attribute.name, Identifier(name) if name.name != "css" && is_style(&name.name, kept))
+            );
+        let Some(last) = last_captured_with_lone_moved(&items, children_suspend, allow_lone_moved)
+        else {
             return order;
         };
         for (index, (item, attribute)) in items
