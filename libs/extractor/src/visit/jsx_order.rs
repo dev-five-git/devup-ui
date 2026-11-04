@@ -156,11 +156,11 @@ impl<'a> DevupVisitor<'a> {
             if css_only || is_unknown_spread(&spread.argument) {
                 continue;
             }
-            let object = match crate::utils::unwrap_syntax_only_mut(&mut spread.argument) {
-                Expression::ObjectExpression(object) => object,
-                _ => continue,
-            };
-            flatten_known(&self.ast, object);
+            if let Expression::ObjectExpression(object) =
+                crate::utils::unwrap_syntax_only_mut(&mut spread.argument)
+            {
+                flatten_known(&self.ast, object);
+            }
         }
         let items = self.attribute_items(attributes, kept, css_only);
         for attribute in attributes.iter_mut() {
@@ -200,15 +200,16 @@ impl<'a> DevupVisitor<'a> {
                     if matches!(&attribute.name, Identifier(name) if name.name != "css" && is_style(&name.name, kept))
             );
         let allow_lone_runs = allow_lone_moved
-            && attributes.first().is_some_and(|attribute| match attribute {
-                Attribute(attribute) => value_of(attribute).is_some_and(|value| {
-                    matches!(
-                        crate::utils::unwrap_syntax_only(value),
-                        Expression::TemplateLiteral(_) | Expression::StaticMemberExpression(_)
-                    )
-                }),
-                SpreadAttribute(_) => false,
-            });
+            && matches!(
+                attributes.first(),
+                Some(Attribute(attribute))
+                    if value_of(attribute).is_some_and(|value| {
+                        matches!(
+                            crate::utils::unwrap_syntax_only(value),
+                            Expression::TemplateLiteral(_) | Expression::StaticMemberExpression(_)
+                        )
+                    })
+            );
         let Some(last) = last_captured_with_lone_moved(
             &items,
             children_suspend,
