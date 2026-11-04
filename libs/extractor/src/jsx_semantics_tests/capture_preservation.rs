@@ -30,6 +30,15 @@ fn lone_dynamic_template_keeps_the_value_in_place_without_an_arrow_wrapper() {
 
 #[test]
 #[serial]
+fn known_object_spreads_are_flattened_before_attribute_ordering() {
+    let actual = output(&format!(
+        r"{BOX}export const a=(color)=><Box {{...{{bg:color}}}}/>;"
+    ));
+    assert!(actual.code.contains("color"), "{}", actual.code);
+}
+
+#[test]
+#[serial]
 fn class_templates_when_captured_keep_their_static_tailwind_rules() {
     let actual = output(&format!(
         "{BOX}export const a=(get,rest)=><Box className={{`${{get()}} text-[#3B82F6] p-4`}} {{...rest}}/>;"
