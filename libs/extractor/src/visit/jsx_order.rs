@@ -202,7 +202,7 @@ impl<'a> DevupVisitor<'a> {
                 Attribute(attribute) => value_of(attribute).is_some_and(|value| {
                     matches!(
                         crate::utils::unwrap_syntax_only(value),
-                        Expression::TemplateLiteral(_)
+                        Expression::TemplateLiteral(_) | Expression::StaticMemberExpression(_)
                     )
                 }),
                 SpreadAttribute(_) => false,

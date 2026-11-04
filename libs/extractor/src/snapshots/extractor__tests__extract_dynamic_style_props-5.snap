@@ -8,11 +8,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupValue0",
+                identifier: "data.a.b.buttonBgColor",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupValue0) => <div className=\"a\" style={{ \"--b\": __devupValue0 }} />)(data.a.b.buttonBgColor);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a\" style={{ \"--b\": data.a.b.buttonBgColor }} />;\n",
 }

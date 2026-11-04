@@ -39,6 +39,22 @@ fn known_object_spreads_are_flattened_before_attribute_ordering() {
 
 #[test]
 #[serial]
+fn lone_static_member_reads_a_getter_once_without_a_capture_wrapper() {
+    let source = format!(
+        r"{BOX}const value={{get p(){{trace.push('p');return 'red';}}}};export const a=()=> <Box bg={{value.p}}/>;"
+    );
+    let actual = whole::evaluate(&source, "a().props");
+    assert_eq!(
+        actual.element["style"]
+            .as_object()
+            .and_then(|style| style.values().next()),
+        Some(&serde_json::json!("red"))
+    );
+    assert_eq!(actual.trace, serde_json::json!(["p"]));
+}
+
+#[test]
+#[serial]
 fn class_templates_when_captured_keep_their_static_tailwind_rules() {
     let actual = output(&format!(
         "{BOX}export const a=(get,rest)=><Box className={{`${{get()}} text-[#3B82F6] p-4`}} {{...rest}}/>;"
