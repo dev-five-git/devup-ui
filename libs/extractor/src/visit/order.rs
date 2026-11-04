@@ -295,7 +295,7 @@ pub(super) fn classify(name: &str, kept: &FxHashSet<String>) -> (Role, bool) {
 /// `children_suspend` tells children that hold an `await` or `yield`, which
 /// only the arguments of the call building the element can hold
 pub(super) fn last_captured(items: &[Item], children_suspend: bool) -> Option<usize> {
-    last_captured_with_lone_moved(items, children_suspend, false)
+    last_captured_with_lone_moved(items, children_suspend, false, false)
 }
 
 /// The last prop to capture, optionally allowing a single style value to stay
@@ -305,13 +305,14 @@ pub(super) fn last_captured_with_lone_moved(
     items: &[Item],
     children_suspend: bool,
     allow_lone_moved: bool,
+    allow_lone_runs: bool,
 ) -> Option<usize> {
     let last = (0..items.len()).rev().find(|index| {
         let item = &items[*index];
         let lone_moved = allow_lone_moved
             && items.len() == 1
             && item.role == Role::Moved
-            && item.reach == Reach::Reads
+            && (item.reach == Reach::Reads || allow_lone_runs && item.reach == Reach::Runs)
             && !item.lost
             && !item.snapshot
             && !item.suspends;

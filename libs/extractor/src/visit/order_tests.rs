@@ -33,13 +33,28 @@ fn generated_length_guard_preserves_argument_reach(#[case] source: &str, #[case]
 #[test]
 fn lone_moved_value_does_not_need_a_capture_wrapper() {
     let items = [item(Role::Moved, Reach::Reads)];
-    assert_eq!(last_captured_with_lone_moved(&items, false, true), None);
+    assert_eq!(
+        last_captured_with_lone_moved(&items, false, true, false),
+        None
+    );
 }
 
 #[test]
 fn lone_moved_call_still_needs_a_capture_wrapper() {
     let items = [item(Role::Moved, Reach::Runs)];
-    assert_eq!(last_captured_with_lone_moved(&items, false, true), Some(0));
+    assert_eq!(
+        last_captured_with_lone_moved(&items, false, true, false),
+        Some(0)
+    );
+}
+
+#[test]
+fn lone_moved_template_can_stay_in_place() {
+    let items = [item(Role::Moved, Reach::Runs)];
+    assert_eq!(
+        last_captured_with_lone_moved(&items, false, true, true),
+        None
+    );
 }
 
 #[test]

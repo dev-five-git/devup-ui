@@ -197,8 +197,22 @@ impl<'a> DevupVisitor<'a> {
                 Some(Attribute(attribute))
                     if matches!(&attribute.name, Identifier(name) if name.name != "css" && is_style(&name.name, kept))
             );
-        let Some(last) = last_captured_with_lone_moved(&items, children_suspend, allow_lone_moved)
-        else {
+        let allow_lone_runs = allow_lone_moved
+            && attributes.first().is_some_and(|attribute| match attribute {
+                Attribute(attribute) => value_of(attribute).is_some_and(|value| {
+                    matches!(
+                        crate::utils::unwrap_syntax_only(value),
+                        Expression::TemplateLiteral(_)
+                    )
+                }),
+                SpreadAttribute(_) => false,
+            });
+        let Some(last) = last_captured_with_lone_moved(
+            &items,
+            children_suspend,
+            allow_lone_moved,
+            allow_lone_runs,
+        ) else {
             return order;
         };
         for (index, (item, attribute)) in items
