@@ -284,7 +284,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => ((__devupValue0) => <div className={`${__devupValue0 || \"\"} b`} />)(override + \" external\");\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${override + \" external\" || \"\"} b`} />;\n",
         },
     ),
     (
@@ -312,7 +312,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => ((__devupValue0) => <div className={`${__devupValue0} external b`} />)(`${override}`);\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${`${override}`} external b`} />;\n",
         },
     ),
     (

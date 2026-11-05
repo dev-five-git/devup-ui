@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+mod capture_elision;
+
 use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
@@ -699,10 +701,14 @@ impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
 /// `body` reads it as often as it needs
 pub(super) fn call_with_values<'a>(
     builder: &AstBuilder<'a>,
-    values: Vec<(String, Expression<'a>)>,
-    body: Expression<'a>,
+    mut values: Vec<(String, Expression<'a>)>,
+    mut body: Expression<'a>,
 ) -> Expression<'a> {
     use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+    capture_elision::inline(&mut values, &mut body);
+    if values.is_empty() {
+        return body;
+    }
     let mut parameters = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
     let mut arguments = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
     for (name, value) in values {

@@ -10,6 +10,7 @@ mod call_diagnostics;
 mod call_spread_attachment;
 mod calls;
 mod capture_edges;
+mod capture_elision;
 mod capture_preservation;
 mod create_element;
 mod create_element_attachment;

@@ -77,5 +77,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <div className={`a ${{\n\t\"0\": \"b c d\",\n\t\"1\": \"e f g\"\n}[__devupChoice0?.[\"0\"]] || \"\"}`} />)([[\"0\"], [\"1\"]][idx]);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a ${{\n\t\"0\": \"b c d\",\n\t\"1\": \"e f g\"\n}[[[\"0\"], [\"1\"]][idx]?.[\"0\"]] || \"\"}`} />;\n",
 }

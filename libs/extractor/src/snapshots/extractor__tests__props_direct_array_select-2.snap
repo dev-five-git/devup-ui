@@ -37,5 +37,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupChoice0) => <div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"c\"\n}[__devupChoice0?.[\"0\"]] || \"\"}`} />)([[\"0\"], [\"1\"]][a]);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a ${{\n\t\"0\": \"b\",\n\t\"1\": \"c\"\n}[[[\"0\"], [\"1\"]][a]?.[\"0\"]] || \"\"}`} />;\n",
 }

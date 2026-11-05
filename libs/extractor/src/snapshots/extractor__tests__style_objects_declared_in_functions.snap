@@ -77,7 +77,7 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { color: c }; return <Box {...inner} />; }",
-        "ToBTreeSet { styles: {Dynamic(ExtractDynamicStyle { property: \"color\", level: 0, identifier: \"__devupValue0\", selector: None, style_order: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f(c) {\\n\\tconst inner = { color: c };\\n\\treturn ((__devupValue0) => <div className=\\\"a\\\" style={{ \\\"--b\\\": __devupValue0 }} />)(inner[\\\"color\\\"]);\\n}\\n\" }",
+        "ToBTreeSet { styles: {Dynamic(ExtractDynamicStyle { property: \"color\", level: 0, identifier: \"__devupValue0\", selector: None, style_order: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport function f(c) {\\n\\tconst inner = { color: c };\\n\\treturn <div className=\\\"a\\\" style={{ \\\"--b\\\": inner[\\\"color\\\"] }} />;\\n}\\n\" }",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { color: 'red' }; const cls = 'x'; return css(inner, cls); }",

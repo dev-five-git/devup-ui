@@ -22,6 +22,6 @@ expression: outputs
     "Error: /src/App.tsx:3:18: `css()` cannot use `brand()` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     "Error: /src/App.tsx:3:18: `css()` cannot use `node()` at build time: its values must be literals, theme tokens or constants, or be computed from them",
     "Error: /src/App.tsx:4:18: `css()` cannot use `f()` at build time: its values must be literals, theme tokens or constants, or be computed from them",
-    "import \"@devup-ui/react/devup-ui-0.css\";\nimport base, { fixed, colors, grid, renamed } from \"./tokens\";\nimport * as tokens from \"./tokens\";\nexport const a = ((__devupValue0) => <div className=\"a-a a-b a-c a-d a-e a-f\" style={{ \"--a\": __devupValue0 }} />)(base.p);\n",
+    "import \"@devup-ui/react/devup-ui-0.css\";\nimport base, { fixed, colors, grid, renamed } from \"./tokens\";\nimport * as tokens from \"./tokens\";\nexport const a = <div className=\"a-a a-b a-c a-d a-e a-f\" style={{ \"--a\": base.p }} />;\n",
     "Error: /src/App.tsx:3:22: `css()` cannot use `again` at build time: its styles must be an object literal or a constant object, or be computed from constants\n/src/tokens.ts:10:26: `base` is changed here, so the build cannot read it as a constant",
 ]

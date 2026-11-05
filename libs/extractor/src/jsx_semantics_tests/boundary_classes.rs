@@ -115,16 +115,30 @@ fn class_boundary_when_only_a_css_value_calls_keeps_its_single_read_inline() {
 }
 
 #[rstest]
-#[case("<Box className={`${read()}`}/>")]
-#[case("<Box className={(read())}/>")]
-#[case("<Box className={read()}>{'child'}</Box>")]
-#[case("<Card className={read()}/>")]
+#[case("<Box className={`${read()}`}/>", false)]
+#[case("<Box className={(read())}/>", false)]
+#[case("<Box className={read()}>{'child'}</Box>", false)]
+#[case("<Card className={read()}/>", true)]
 #[serial]
-fn class_boundary_when_root_or_route_is_not_isolated_remains_captured(#[case] element: &str) {
+fn class_boundary_keeps_capture_only_when_the_component_route_needs_it(
+    #[case] element: &str,
+    #[case] captured: bool,
+) {
     let source = format!(
         "import {{Box,styled}} from '@devup-ui/react';const Card=styled(Box,{{color:'red'}});export const a=(read)=>{element};"
     );
-    assert!(code(&source).contains("__devupValue"));
+    let compiled = code(&source);
+    assert_eq!(compiled.contains("__devupValue"), captured);
+    let actual = super::whole::execute(
+        &format!("const __devupForwardRef=render=>props=>render(props,null);{compiled}"),
+        "a(()=>{trace.push('read');return 'opaque';})",
+    );
+    assert_eq!(actual.trace, serde_json::json!(["read"]));
+    assert!(
+        actual.element["props"]["className"]
+            .as_str()
+            .is_some_and(|value| value.contains("opaque"))
+    );
 }
 
 #[test]

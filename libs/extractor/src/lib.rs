@@ -16848,15 +16848,15 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         "<Box className={`p-${size} mt-4 ${tone}-text`} />",
-        r"((__devupValue0, __devupValue1) => <div className={`p-${__devupValue0} a ${__devupValue1}-text`} />)(`${size}`, `${tone}`)"
+        r"<div className={`p-${`${size}`} a ${`${tone}`}-text`} />"
     )]
     #[case(
         r"<Box className={`p-4 \`q\` \${y} a\\b\rc ${x}`} />",
-        r"((__devupValue0) => <div className={`a \`q\` \${y} a\\b\rc ${__devupValue0}`} />)(`${x}`)"
+        r"<div className={`a \`q\` \${y} a\\b\rc ${`${x}`}`} />"
     )]
     #[case(
         "<Box className={`custom ${on ? 'p-4' : x}`} />",
-        r#"((__devupValue0) => <div className={`custom ${__devupValue0}`} />)(`${on ? "a" : x}`)"#
+        r#"<div className={`custom ${`${on ? "a" : x}`}`} />"#
     )]
     #[case(
         r#"<Box className={on ? "p-4" : "custom"} />"#,
@@ -16877,7 +16877,7 @@ export const base = css(local, { bg: 'white' });",
     #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a" || ""} />"#)]
     #[case(
         "<Box className={`icon-${name} ${a}${b}`} />",
-        "-((__devupValue0, __devupValue1, __devupValue2) => <div className={`icon-${__devupValue0} ${__devupValue1}${__devupValue2}`} />)(`${name}`, `${a}`, `${b}`)"
+        "-<div className={`icon-${`${name}`} ${`${a}`}${`${b}`}`} />"
     )]
     #[case(
         r#"<Box className={("custom")} />"#,
@@ -16893,7 +16893,7 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         "<Box className={`custom ${x}`} />",
-        "-((__devupValue0) => <div className={`custom ${__devupValue0}`} />)(`${x}`)"
+        "-<div className={`custom ${`${x}`}`} />"
     )]
     #[case("<Box className={cls} />", "-<div className={cls || \"\"} />")]
     #[serial]

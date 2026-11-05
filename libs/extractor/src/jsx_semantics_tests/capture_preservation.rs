@@ -113,13 +113,14 @@ fn lone_dynamic_call_preserves_throw_cutoff(
 }
 
 #[rstest]
-#[case("<Box w={read()} id={later()}/>", serde_json::json!(["read", "later"]))]
-#[case("<Box w={read()}>{later()}</Box>", serde_json::json!(["read", "later"]))]
-#[case("<Box boxSize={read()}/>", serde_json::json!(["read"]))]
+#[case("<Box w={read()} id={later()}/>", serde_json::json!(["read", "later"]), true)]
+#[case("<Box w={read()}>{later()}</Box>", serde_json::json!(["read", "later"]), false)]
+#[case("<Box boxSize={read()}/>", serde_json::json!(["read"]), true)]
 #[serial]
 fn dynamic_calls_that_move_or_expand_still_run_once(
     #[case] element: &str,
     #[case] trace: serde_json::Value,
+    #[case] captured: bool,
 ) {
     let source = format!("{BOX}export const a=(read,later)=>{element};");
     let actual = whole::evaluate(
@@ -132,7 +133,7 @@ fn dynamic_calls_that_move_or_expand_still_run_once(
         .unwrap_or_else(|| panic!("missing generated style: {}", actual.element));
     assert_eq!(style.len(), if element.contains("boxSize") { 2 } else { 1 });
     assert!(style.values().all(|value| value == "12px"));
-    assert!(code(&source).contains("__devupValue"));
+    assert_eq!(code(&source).contains("__devupValue"), captured);
 }
 
 #[test]

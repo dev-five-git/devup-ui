@@ -26,5 +26,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n((__devupValue0) => <div className=\"a b\" style={{ \"--c\": __devupValue0 }} />)({\n\ta: 1,\n\tb: .5,\n\t...any\n}[\"b\"]);\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b\" style={{ \"--c\": {\n\ta: 1,\n\tb: .5,\n\t...any\n}[\"b\"] }} />;\n",
 }
