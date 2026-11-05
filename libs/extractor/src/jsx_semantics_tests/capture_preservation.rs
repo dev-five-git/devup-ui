@@ -1,4 +1,5 @@
 use super::*;
+use rstest::rstest;
 use serial_test::serial;
 
 #[test]
@@ -57,6 +58,81 @@ fn lone_static_member_reads_a_getter_once_without_a_capture_wrapper() {
         Some(&serde_json::json!("red"))
     );
     assert_eq!(actual.trace, serde_json::json!(["p"]));
+}
+
+#[rstest]
+#[case("'12px'", serde_json::json!(["12px"]))]
+#[case("undefined", serde_json::json!([null]))]
+#[serial]
+fn lone_dynamic_call_runs_once_without_a_capture_wrapper(
+    #[case] returned: &str,
+    #[case] expected: serde_json::Value,
+) {
+    let source = format!("{BOX}export const a=(getWidth)=><Box w={{getWidth()}}/>;");
+    let actual = whole::evaluate(
+        &source,
+        &format!("Object.values(a(()=>{{trace.push('width');return {returned};}}).props.style)"),
+    );
+    assert_eq!(actual.element, expected);
+    assert_eq!(actual.trace, serde_json::json!(["width"]));
+    assert!(!code(&source).contains("__devupValue"));
+}
+
+#[test]
+#[serial]
+fn lone_dynamic_member_call_keeps_its_receiver_and_argument_evaluation() {
+    let source =
+        format!("{BOX}export const a=(receiver,args)=><Box w={{receiver.read(...args)}}/>;");
+    let actual = whole::evaluate(
+        &source,
+        "Object.values(a({width:'12px',get read(){trace.push('get');return function(value){trace.push(value);return this.width;};}},{[Symbol.iterator](){trace.push('iterator');return ['call'][Symbol.iterator]();}}).props.style)",
+    );
+    assert_eq!(actual.element, serde_json::json!(["12px"]));
+    assert_eq!(actual.trace, serde_json::json!(["get", "iterator", "call"]));
+    assert!(!code(&source).contains("__devupValue"));
+}
+
+#[rstest]
+#[case("{get read(){trace.push('get');throw 'boom';}}", "[]", serde_json::json!(["get"]))]
+#[case("{get read(){trace.push('get');return ()=>{trace.push('call');};}}", "{[Symbol.iterator](){trace.push('iterator');throw 'boom';}}", serde_json::json!(["get","iterator"]))]
+#[case("{get read(){trace.push('get');return ()=>{trace.push('call');throw 'boom';};}}", "[]", serde_json::json!(["get","call"]))]
+#[serial]
+fn lone_dynamic_call_preserves_throw_cutoff(
+    #[case] receiver: &str,
+    #[case] args: &str,
+    #[case] trace: serde_json::Value,
+) {
+    let source =
+        format!("{BOX}export const a=(receiver,args)=><Box w={{receiver.read(...args)}}/>;");
+    let actual = whole::evaluate(
+        &source,
+        &format!("(()=>{{try{{return a({receiver},{args});}}catch(error){{return error;}}}})()"),
+    );
+    assert_eq!(actual.element, "boom");
+    assert_eq!(actual.trace, trace);
+}
+
+#[rstest]
+#[case("<Box w={read()} id={later()}/>", serde_json::json!(["read", "later"]))]
+#[case("<Box w={read()}>{later()}</Box>", serde_json::json!(["read", "later"]))]
+#[case("<Box boxSize={read()}/>", serde_json::json!(["read"]))]
+#[serial]
+fn dynamic_calls_that_move_or_expand_still_run_once(
+    #[case] element: &str,
+    #[case] trace: serde_json::Value,
+) {
+    let source = format!("{BOX}export const a=(read,later)=>{element};");
+    let actual = whole::evaluate(
+        &source,
+        "a(()=>{trace.push('read');return '12px';},()=>{trace.push('later');return 'id';})",
+    );
+    assert_eq!(actual.trace, trace);
+    let style = actual.element["props"]["style"]
+        .as_object()
+        .unwrap_or_else(|| panic!("missing generated style: {}", actual.element));
+    assert_eq!(style.len(), if element.contains("boxSize") { 2 } else { 1 });
+    assert!(style.values().all(|value| value == "12px"));
+    assert!(code(&source).contains("__devupValue"));
 }
 
 #[test]

@@ -61,7 +61,10 @@ fn lone_run_value(value: &Expression<'_>) -> bool {
     if matches!(value, Expression::TemplateLiteral(_)) {
         return true;
     }
-    matches!(value, Expression::StaticMemberExpression(_))
+    matches!(
+        value,
+        Expression::StaticMemberExpression(_) | Expression::CallExpression(_)
+    )
 }
 
 impl<'a> DevupVisitor<'a> {

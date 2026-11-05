@@ -101,11 +101,17 @@ fn class_boundary_when_child_yields_keeps_the_class_before_suspension() {
 
 #[test]
 #[serial]
-fn class_boundary_when_only_a_css_value_calls_still_captures_its_repeated_read() {
+fn class_boundary_when_only_a_css_value_calls_keeps_its_single_read_inline() {
     let source = format!("{BOX}export const a=(read)=><Box p={{read()}}/>;");
     let actual = evaluate(&source, "a(()=>{trace.push('read');return 2;})");
     assert_eq!(actual.trace, serde_json::json!(["read"]));
-    assert!(code(&source).contains("__devupValue"));
+    assert_eq!(
+        actual.element["props"]["style"]
+            .as_object()
+            .and_then(|style| style.values().next()),
+        Some(&serde_json::json!(2))
+    );
+    assert!(!code(&source).contains("__devupValue"));
 }
 
 #[rstest]
