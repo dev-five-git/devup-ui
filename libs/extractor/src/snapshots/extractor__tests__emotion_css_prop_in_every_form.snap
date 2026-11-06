@@ -312,7 +312,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${`${override}`} external b`} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${override} external b`} />;\n",
         },
     ),
     (

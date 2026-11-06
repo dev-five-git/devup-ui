@@ -75,11 +75,24 @@ fn template_interpolations_when_later_props_execute_keep_coercion_order() {
     let source = format!(
         "{BOX}export const a=(value,later)=><Box className={{`${{value}} ${{later()}}`}}/>;"
     );
-    let actual = evaluate(
-        &source,
-        "a({toString(){trace.push('coerce');return 'external';}},()=>{trace.push('later');return 'other';})",
+    // Boa 0.22 evaluates all interpolations before converting them to strings.
+    // Run this ordering check in Node, which converts each interpolation eagerly.
+    let script = format!(
+        "const trace=[];const h=(type,props)=>props;{}\na({{toString(){{trace.push('coerce');return 'external';}}}},()=>{{trace.push('later');return 'other';}});process.stdout.write(JSON.stringify(trace));",
+        whole::plain_script(&code(&source)),
     );
-    assert_eq!(actual.trace, serde_json::json!(["coerce", "later"]));
+    let actual = std::process::Command::new("node")
+        .args(["-e", &script])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("Node is required for template coercion order checks: {error}")
+        });
+    assert!(
+        actual.status.success(),
+        "{}",
+        String::from_utf8_lossy(&actual.stderr)
+    );
+    assert_eq!(actual.stdout, br#"["coerce","later"]"#);
 }
 
 #[rstest]

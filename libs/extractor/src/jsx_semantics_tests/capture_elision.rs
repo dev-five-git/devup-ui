@@ -206,6 +206,71 @@ fn template_captures_keep_object_coercion_after_later_arguments() {
     assert_eq!(actual.trace, serde_json::json!(["last", "coerce"]));
 }
 
+#[rstest]
+#[case("null")]
+#[case("undefined")]
+#[case("false")]
+#[case("0")]
+#[case("Symbol('class')")]
+#[case("({[Symbol.toPrimitive](hint){trace.push(hint);return 'class';}})")]
+#[case("({toString(){trace.push('coerce');throw Error('coercion');}})")]
+fn inlined_template_capture_keeps_one_string_conversion(#[case] value: &str) {
+    let values = [("slot", "`${read()}`")];
+    let body = "`prefix-${slot} external`";
+    let (compiled, parameters) = lowered(&values, body);
+    assert_eq!(parameters, 0, "{compiled}");
+    assert_eq!(compiled, "`prefix-${read()} external`");
+    let probe = "(()=>{try{return ['value',a()];}catch(error){return ['error',String(error)];}})()";
+    let prefix = format!("function read(){{trace.push('read');return {value};}}");
+    let expected = whole::execute(
+        &format!("{prefix}export const a=()=>({});", baseline(&values, body)),
+        probe,
+    );
+    let actual = whole::execute(&format!("{prefix}export const a=()=>({compiled});"), probe);
+    assert_eq!(actual.element, expected.element);
+    assert_eq!(actual.trace, expected.trace);
+}
+
+#[rstest]
+#[case("`${slot} external`", "`prefix-${read()}`", 0)]
+#[case("tag`${slot} external`", "`${read()}`", 1)]
+fn inlined_template_capture_keeps_text_and_tagged_template_values(
+    #[case] body: &str,
+    #[case] value: &str,
+    #[case] retained: usize,
+) {
+    let values = [("slot", value)];
+    let (compiled, parameters) = lowered(&values, body);
+    assert_eq!(parameters, retained, "{compiled}");
+    let prefix = "function read(){trace.push('read');return {toString(){trace.push('coerce');return 'class';}};}function tag(parts,value){return [parts.raw,value];}";
+    let expected = whole::execute(
+        &format!("{prefix}export const a=()=>({});", baseline(&values, body)),
+        "a()",
+    );
+    let actual = whole::execute(&format!("{prefix}export const a=()=>({compiled});"), "a()");
+    assert_eq!(actual.element, expected.element);
+    assert_eq!(actual.trace, expected.trace);
+}
+
+#[test]
+#[serial]
+fn emotion_class_template_keeps_the_original_flat_interpolation() {
+    let source = "import {css} from '@emotion/react';const override=css({color:'blue'});export const a=()=> <div css={{color:'red',margin:0}} className={`${override} external`}/>;";
+    let compiled = compile_emotion(source)
+        .unwrap_or_else(|error| panic!("{error}: {source}"))
+        .code;
+    assert!(
+        compiled.contains("className={`${override} external "),
+        "{compiled}"
+    );
+    assert!(!compiled.contains("__devupValue"), "{compiled}");
+    let actual = whole::execute(&compiled, "a()");
+    assert_eq!(
+        actual.element["props"]["className"],
+        "color-0-blue--255-a external margin-0-0--255-a"
+    );
+}
+
 #[test]
 fn capture_elision_keeps_yield_in_the_original_generator_scope() {
     let values = [("slot", "yield (trace.push('yield'),'pause')")];

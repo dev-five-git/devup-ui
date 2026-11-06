@@ -1,7 +1,7 @@
 //! Remove captures only when their sole read is eager and nothing observable
 //! precedes it. Work backwards to preserve argument evaluation order.
 
-use super::{rewrite_expression, unwrap_syntax_only};
+use super::{rewrite_expression, unwrap_syntax_only, unwrap_syntax_only_mut};
 use oxc_ast::ast::{
     ArrayExpressionElement, ChainElement, Expression, JSXAttributeItem, JSXAttributeValue,
     JSXChild, JSXElementName, ObjectPropertyKind,
@@ -285,6 +285,26 @@ pub(super) fn inline<'a>(values: &mut Vec<(String, Expression<'a>)>, body: &mut 
         }
         let mut replacement = Some(value);
         rewrite_expression(body, &mut |expression| {
+            if let Expression::TemplateLiteral(template) = expression {
+                for slot in &mut template.expressions {
+                    if matches!(unwrap_syntax_only(slot), Expression::Identifier(identifier) if identifier.name == name.as_str())
+                        && let Some(Expression::TemplateLiteral(value)) =
+                            replacement.as_mut().map(unwrap_syntax_only_mut)
+                        && value.quasis.len() == 2
+                        && value.quasis.iter().all(|quasi| {
+                            quasi
+                                .value
+                                .cooked
+                                .is_some_and(|text| text.as_str() == Some(""))
+                        })
+                        && let Some(value) = value.expressions.pop()
+                    {
+                        // The enclosing untagged interpolation already performs ToString.
+                        *slot = value;
+                        replacement = None;
+                    }
+                }
+            }
             if matches!(expression, Expression::Identifier(identifier) if identifier.name == name.as_str())
                 && let Some(value) = replacement.take()
             {
