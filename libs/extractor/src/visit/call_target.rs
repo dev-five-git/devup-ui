@@ -1,7 +1,6 @@
 //! A dynamic `as` value belongs to props evaluation, not the first call argument.
 
 use super::DevupVisitor;
-use crate::utils::call_with_values;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, CallExpression, Expression, FormalParameterKind,
@@ -61,7 +60,7 @@ impl<'a> DevupVisitor<'a> {
             false,
             &self.ast,
         );
-        call_with_values(&self.ast, vec![receiver], bound)
+        self.scoped_values(vec![receiver], bound)
     }
 
     /// Keep factory lookup before props, and trailing arguments after them.
@@ -79,7 +78,7 @@ impl<'a> DevupVisitor<'a> {
             Expression::StringLiteral(_)
         ) {
             let props = call.arguments[1].to_expression_mut().take_in(&self.ast);
-            call.arguments[1] = Argument::from(call_with_values(&self.ast, values, props));
+            call.arguments[1] = Argument::from(self.scoped_values(values, props));
             return;
         }
         let target = call.arguments[0].to_expression_mut().take_in(&self.ast);
@@ -127,8 +126,6 @@ impl<'a> DevupVisitor<'a> {
             call.clone_in_with_semantic_ids(self.ast.allocator()),
             &self.ast,
         ));
-        if let Expression::CallExpression(wrapper) = call_with_values(&self.ast, values, body) {
-            *call = wrapper.unbox();
-        }
+        self.pending_replacement = Some(self.scoped_values(values, body));
     }
 }

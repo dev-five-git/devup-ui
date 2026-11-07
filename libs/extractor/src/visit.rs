@@ -94,7 +94,7 @@ use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
     CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
-    build_time_error, call_with_values, css_prop_error, css_prop_override_error, element_error,
+    build_time_error, css_prop_error, css_prop_override_error, element_error,
     get_key_by_literal_expression, get_string_by_literal_expression, get_string_by_property_key,
     key_error, readable_argument, readable_code, reads_directly, reads_unknown, runtime_classes,
     runtime_value, runtime_value_error, spread_error, string_class, style_arguments,
@@ -4563,8 +4563,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
         }
 
-        if let Expression::JSXElement(_) = it
-            && let Some(replacement) = self.pending_replacement.take()
+        if matches!(
+            it,
+            Expression::JSXElement(_) | Expression::CallExpression(_)
+        ) && let Some(replacement) = self.pending_replacement.take()
         {
             *it = replacement;
         }
@@ -4662,7 +4664,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if !values.is_empty() {
                         let props = it.arguments[1].to_expression_mut();
                         let original = props.take_in(&self.ast);
-                        *props = call_with_values(&self.ast, values, original);
+                        *props = self.scoped_values(values, original);
                     }
                 }
             } else if let Some(kind) = element_kind
@@ -5575,7 +5577,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &self.ast,
                     ))
                 });
-                self.pending_replacement = Some(call_with_values(&self.ast, values, element));
+                self.pending_replacement = Some(self.scoped_values(values, element));
             }
         } else if let Some(css) = css {
             for attribute in &mut elem.opening_element.attributes {
@@ -5628,7 +5630,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &self.ast,
                     )
                 } else {
-                    call_with_values(&self.ast, values, element)
+                    self.scoped_values(values, element)
                 };
                 self.pending_replacement = Some(replacement);
             }

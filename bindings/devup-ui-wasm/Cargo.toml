@@ -60,6 +60,10 @@ wasm-opt = [
     "--flatten",
     "--rereloop",
     "-Oz",
+    # Share similar generated AST constructors after local size optimization.
+    "--merge-similar-functions",
+    # Simplify the merged bodies before judging the resulting module size.
+    "-Oz",
     "--converge",
     "--enable-bulk-memory",
     "--enable-nontrapping-float-to-int",

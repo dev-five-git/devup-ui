@@ -712,19 +712,19 @@ fn static_css_captures_keep_reads_without_unused_calls(
 #[case::component(
     "export const App=(View)=> <View css={css`${base}; color: red;`}/>;",
     "(()=>{const View=()=>0;return App(View).type===View;})()",
-    true,
-    false
+    false,
+    true
 )]
 #[case::capture_like_component(
     "export const App=(__devupValue0)=> <__devupValue0 css={css`${base}; color: red;`}/>;",
     "(()=>{const View=()=>0;return App(View).type===View;})()",
-    true,
-    false
+    false,
+    true
 )]
 #[case::expression_attribute(
     "export const App=(token)=> <div data-token={token} css={css`${base}; color: red;`}/>;",
     "(()=>{const token={};return App(token).props['data-token']===token;})()",
-    true,
+    false,
     true
 )]
 #[case::partial_value(
@@ -748,7 +748,7 @@ fn static_css_captures_keep_reads_without_unused_calls(
 #[case::spread_attribute(
     "export const App=(props)=> <div {...props} css={css`${base}; color: red;`}/>;",
     "(()=>{const token={};return App({token}).props.token===token;})()",
-    true,
+    false,
     true
 )]
 #[serial]

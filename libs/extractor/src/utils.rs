@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-mod capture_elision;
+pub(super) mod capture_elision;
 
 use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
@@ -225,6 +225,29 @@ pub(super) fn unwrap_syntax_only_mut<'a, 'b>(
         Expression::ParenthesizedExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
         _ => expression,
     }
+}
+
+/// Drop a reference and suppress assignment's anonymous-definition name inference.
+/// Share this allocation across emitted captures and indirect styled calls.
+#[inline(never)]
+pub(crate) fn unbound_value<'a>(builder: &AstBuilder<'a>, value: Expression<'a>) -> Expression<'a> {
+    Expression::new_sequence_expression(
+        SPAN,
+        oxc_allocator::Vec::from_array_in(
+            [
+                Expression::new_numeric_literal(
+                    SPAN,
+                    0.0,
+                    None,
+                    oxc_syntax::number::NumberBase::Decimal,
+                    builder,
+                ),
+                value,
+            ],
+            builder,
+        ),
+        builder,
+    )
 }
 
 /// Convert a value to a pixel value.

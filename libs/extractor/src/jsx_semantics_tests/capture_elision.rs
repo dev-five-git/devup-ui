@@ -90,6 +90,50 @@ fn baseline(values: &[(&str, &str)], body: &str) -> String {
 }
 
 #[rstest]
+#[case("'prefix'")]
+#[case("42")]
+#[case("true")]
+#[case("null")]
+#[case("42n")]
+#[case("void 0")]
+#[case("1+2")]
+#[case("`prefix`")]
+#[case("(trace.push('prefix'), 'prefix')")]
+fn captured_primitive_template_prefix_does_not_delay_a_later_argument(
+    #[case] primitive_value: &str,
+) {
+    let values = [
+        ("prefix", primitive_value),
+        ("slot", "(trace.push('read'),'last')"),
+    ];
+    let body = "`${prefix}:${slot}`";
+    let (compiled, parameters) = lowered(&values, body);
+    assert_eq!(parameters, 0, "{compiled}");
+    let observe = |expression: &str| {
+        run(&format!(
+            "const trace=[];const value={expression};return JSON.stringify([value,trace]);"
+        ))
+    };
+    assert_eq!(observe(&compiled), observe(&baseline(&values, body)));
+}
+
+#[rstest]
+#[case("<Slot/>")]
+#[case("<Slot.Part/>")]
+fn captured_component_tags_remain_bound_in_the_emitted_element(#[case] body: &str) {
+    let values = [("Slot", "component")];
+    let (compiled, parameters) = lowered(&values, body);
+    assert_eq!(parameters, 1, "{compiled}");
+    let observe = |expression: &str| {
+        let script = whole::plain_script(&format!("const view=({expression});"));
+        run(&format!(
+            "const component={{Part:'part'}};const h=(type)=>type===component?'direct':type;{script}return JSON.stringify(view);"
+        ))
+    };
+    assert_eq!(observe(&compiled), observe(&baseline(&values, body)));
+}
+
+#[rstest]
 #[case("<div style={{'--v':slot}}>{trace.push('child')}</div>", 0)]
 #[case("<div id={trace.push('prefix')} style={{'--v':slot}}/>", 1)]
 #[case("<div style={{'--a':slot,'--b':slot}}/>", 1)]

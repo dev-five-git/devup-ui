@@ -203,10 +203,6 @@ impl<'a> DevupVisitor<'a> {
             Expression::new_array_expression(SPAN, no, &self.ast),
             &self.ast,
         );
-        captured.push((
-            packet.clone(),
-            crate::utils::call_with_values(&self.ast, left, body),
-        ));
         reads.visit_expression(&mut logical.left);
         reads.visit_expression(&mut logical.right);
         reads.rebase_results(
@@ -215,6 +211,7 @@ impl<'a> DevupVisitor<'a> {
             &self.css_capture_offsets[owned.1..],
             &mut self.captured_class_styles,
         );
+        captured.push((packet.clone(), self.scoped_values(left, body)));
         let left = if logical.operator == LogicalOperator::And {
             Expression::new_boolean_literal(SPAN, false, &self.ast)
         } else {
@@ -295,10 +292,7 @@ impl<'a> DevupVisitor<'a> {
             &self.ast,
         );
         let body = Expression::new_conditional_expression(SPAN, test, selected, skipped, &self.ast);
-        captured.push((
-            name,
-            crate::utils::call_with_values(&self.ast, vec![(left_name, left)], body),
-        ));
+        captured.push((name, self.scoped_values(vec![(left_name, left)], body)));
     }
 
     /// Capture only the expressions of the branch that is actually selected.

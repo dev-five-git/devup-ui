@@ -18,6 +18,17 @@ pub(super) struct Captures {
 }
 
 impl Captures {
+    /// Generated props share the existing scope and direct-eval admission gates.
+    pub(super) fn bindings(&mut self) -> Option<&mut Vec<String>> {
+        if self.context.is_some() {
+            return None;
+        }
+        self.frames
+            .last_mut()
+            .filter(|(visible, _)| !*visible)
+            .map(|(_, names)| names)
+    }
+
     pub fn reserve(&mut self, program: &Program<'_>) {
         self.visit_program(program);
     }

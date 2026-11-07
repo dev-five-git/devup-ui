@@ -151,10 +151,15 @@ fn shorthand_dynamic_values_stay_on_the_element() -> Result<(), Box<dyn std::err
     );
     let left = &variables[0].1;
     let right = &variables[1].1;
-    crate::style_slot_test_support::assert_call_once(
-        &output.code,
-        &format!("(({alias}) => ({{\"{right}\": {alias}, \"{left}\": {alias}}}))(position)"),
+    assert!(
+        output
+            .code
+            .contains(&format!("style={{({alias} = position, {{")),
+        "{}",
+        output.code
     );
+    assert!(output.code.contains(&format!("\"{right}\": {alias}")));
+    assert!(output.code.contains(&format!("\"{left}\": {alias}")));
     assert_eq!(
         crate::style_slot_test_support::identifier_reads(&output.code, "position"),
         1

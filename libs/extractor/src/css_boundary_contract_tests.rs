@@ -90,7 +90,7 @@ fn inline_refusals_preserve_the_element_and_owned_evaluation(
 #[case("<div style={external}/>")]
 fn style_object_capture_refuses_unowned_attribute_shapes(#[case] source: &str) {
     let arena = Allocator::default();
-    let visitor = DevupVisitor::new(&arena, "boundary.tsx", "@devup-ui/react", vec![], None);
+    let mut visitor = DevupVisitor::new(&arena, "boundary.tsx", "@devup-ui/react", vec![], None);
     let mut element = Parser::new(&arena, source, SourceType::tsx())
         .parse_expression()
         .unwrap_or_else(|error| panic!("{error:?}"));

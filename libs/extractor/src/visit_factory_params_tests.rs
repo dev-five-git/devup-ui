@@ -182,7 +182,7 @@ fn captured_native_css_suspension_keeps_static_body_and_runtime_control(
     visitor.takes_css_prop(crate::css_prop::CssProp::Everywhere);
     visitor.visit_program(&mut parsed.program);
     assert!(visitor.errors.is_empty(), "{:?}", visitor.errors);
-    assert_eq!(visitor.jsx.sequences, !runtime_title);
+    assert!(visitor.jsx.sequences);
     let function = parsed
         .program
         .body
@@ -210,7 +210,7 @@ fn captured_native_css_suspension_keeps_static_body_and_runtime_control(
         .unwrap_or_else(|| panic!("return value"));
     let value = crate::utils::unwrap_syntax_only(value);
     if runtime_title {
-        assert!(matches!(value, Expression::CallExpression(_)));
+        assert!(matches!(value, Expression::SequenceExpression(_)));
     } else {
         let Expression::SequenceExpression(sequence) = value else {
             panic!("suspension followed by the static native body");

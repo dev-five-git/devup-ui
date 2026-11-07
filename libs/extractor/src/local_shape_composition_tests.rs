@@ -167,11 +167,11 @@ fn callbacks_when_passed_as_ordinary_props_keep_original_identity()
     let StyleProperty::ClassName(class_name) = metadata else {
         panic!("expected static callback class");
     };
-    crate::style_slot_test_support::assert_call_once(
-        &output.code,
-        &format!(
-            "((DevupAs0, __devupValue0, __devupValue1) => <DevupAs0 {{...{{onClick: __devupValue0, \"data-format\": __devupValue1}}}} className=\"{class_name}\" />)(Custom || \"div\", inner[\"onClick\"], inner[\"data-format\"])",
-        ),
+    assert!(output.code.contains("return DevupAs0 = Custom || \"div\", __devupValue0 = inner[\"onClick\"], __devupValue1 = inner[\"data-format\"], <DevupAs0"), "{}", output.code);
+    assert!(
+        output.code.contains(&format!("className=\"{class_name}\"")),
+        "{}",
+        output.code
     );
     assert_eq!(output.code.matches("click()").count(), 1, "{}", output.code);
     assert_eq!(

@@ -16,23 +16,7 @@ pub(crate) fn capture_statements<'a>(
     let mut statements = Vec::with_capacity_in(bindings.len() + 1, builder);
     for (name, value) in bindings {
         let name = Ident::from_in(name.as_str(), builder.allocator());
-        let value = Expression::new_sequence_expression(
-            SPAN,
-            Vec::from_array_in(
-                [
-                    Expression::new_numeric_literal(
-                        SPAN,
-                        0.0,
-                        None,
-                        oxc_syntax::number::NumberBase::Decimal,
-                        builder,
-                    ),
-                    value,
-                ],
-                builder,
-            ),
-            builder,
-        );
+        let value = crate::utils::unbound_value(builder, value);
         let declaration = VariableDeclarator::new(
             SPAN,
             BindingPattern::new_binding_identifier(SPAN, name, builder),

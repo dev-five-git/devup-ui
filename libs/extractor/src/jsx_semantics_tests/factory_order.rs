@@ -358,19 +358,35 @@ fn rewriting_one_owner_preserves_other_sites_and_capture_fallbacks() {
             let mut slots = Slots(Vec::new());
             slots.visit_program(&parsed.program);
             assert_eq!(slots.0.len(), 2, "{}", output.code);
-            let guard_source = concat!(
-                "((__devupValue) => typeof __devupValue === \"number\" && ",
-                "__devupValue !== 0 ? __devupValue + \"px\" : __devupValue)(first.color)"
-            );
-            let guard = oxc_parser::Parser::new(&arena, guard_source, oxc_span::SourceType::tsx())
-                .parse_expression()
-                .unwrap_or_else(|error| panic!("{error:?}"));
             let guarded_first_reads = slots
                 .0
                 .iter()
                 .filter(|(_, source)| {
                     let expression =
                         oxc_parser::Parser::new(&arena, source, oxc_span::SourceType::tsx())
+                            .parse_expression()
+                            .unwrap_or_else(|error| panic!("{error:?}"));
+                    let Expression::SequenceExpression(sequence) =
+                        expression.get_inner_expression()
+                    else {
+                        return false;
+                    };
+                    let Some(Expression::AssignmentExpression(assignment)) =
+                        sequence.expressions.first()
+                    else {
+                        return false;
+                    };
+                    let oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(identifier) =
+                        &assignment.left
+                    else {
+                        return false;
+                    };
+                    let expected = crate::style_slot_test_support::numeric_with_capture(
+                        "first.color",
+                        identifier.name.as_str(),
+                    );
+                    let guard =
+                        oxc_parser::Parser::new(&arena, &expected, oxc_span::SourceType::tsx())
                             .parse_expression()
                             .unwrap_or_else(|error| panic!("{error:?}"));
                     expression

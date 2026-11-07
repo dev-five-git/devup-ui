@@ -37,11 +37,14 @@ pub(crate) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) 
     crate::utils::wrap_direct_call(builder, &number_length_guard(builder), &[leaf])
 }
 
-fn number_length_guard<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {
-    use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+/// The caller owns a stable captured read; duplicate that read without another function.
+pub(crate) fn number_length_value<'a>(
+    builder: &AstBuilder<'a>,
+    leaf: Expression<'a>,
+) -> Expression<'a> {
     use oxc_span::SPAN;
     use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
-    let value = || Expression::new_identifier(SPAN, "__devupValue", builder);
+    let value = || leaf.clone_in(builder.allocator());
     let condition = Expression::new_logical_expression(
         SPAN,
         Expression::new_binary_expression(
@@ -67,7 +70,7 @@ fn number_length_guard<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {
         ),
         builder,
     );
-    let body = Expression::new_conditional_expression(
+    Expression::new_conditional_expression(
         SPAN,
         condition,
         Expression::new_binary_expression(
@@ -79,6 +82,15 @@ fn number_length_guard<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {
         ),
         value(),
         builder,
+    )
+}
+
+fn number_length_guard<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {
+    use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+    use oxc_span::SPAN;
+    let body = number_length_value(
+        builder,
+        Expression::new_identifier(SPAN, "__devupValue", builder),
     );
     let mut params = oxc_allocator::Vec::new_in(builder);
     params.push(FormalParameter::new(

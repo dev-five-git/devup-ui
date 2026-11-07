@@ -194,11 +194,7 @@ impl<'a> Preparation<'_, '_, 'a> {
                 if matches!(self.origin, Origin::WholeRule) =>
             {
                 let slot = self.reads.capture(source, guard);
-                let direct = Expression::new_sequence_expression(
-                    oxc_span::SPAN,
-                    oxc_allocator::Vec::from_array_in([scalar::zero(builder), slot], builder),
-                    builder,
-                );
+                let direct = crate::utils::unbound_value(builder, slot);
                 Some(crate::utils::wrap_direct_call(
                     builder,
                     &direct,

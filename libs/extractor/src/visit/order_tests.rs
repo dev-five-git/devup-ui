@@ -17,17 +17,17 @@ fn item(role: Role, reach: Reach) -> Item {
 }
 
 #[rstest]
-#[case("input", Reach::Reads)]
-#[case("mark(input)", Reach::Runs)]
-#[case("3", Reach::Constant)]
-fn generated_length_guard_preserves_argument_reach(#[case] source: &str, #[case] expected: Reach) {
+#[case("input")]
+#[case("mark(input)")]
+#[case("3")]
+fn generated_length_guard_enters_capture_lowering_as_a_call(#[case] source: &str) {
     let arena = Allocator::default();
     let ast = oxc_ast::builder::AstBuilder::new(&arena);
     let input = Parser::new(&arena, source, SourceType::tsx())
         .parse_expression()
         .unwrap_or_else(|error| panic!("{error:?}"));
     let generated = crate::imported_constants::local_rule_shapes::number_length(&ast, input);
-    assert!(reach(&crate::scope::Bindings::default(), &generated) == expected);
+    assert!(reach(&crate::scope::Bindings::default(), &generated) == Reach::Runs);
 }
 
 #[test]

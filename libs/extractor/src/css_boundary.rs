@@ -193,7 +193,7 @@ impl<'a> DevupVisitor<'a> {
     /// Keep a necessary shared read inside the original style object. The
     /// outer JSX retains the downstream factory/type lookup before that read.
     pub(super) fn capture_in_style(
-        &self,
+        &mut self,
         element: &mut JSXElement<'a>,
         values: &mut Vec<super::capture::Captured<'a>>,
     ) {
@@ -266,7 +266,7 @@ impl<'a> DevupVisitor<'a> {
             && let Some(value) = container.expression.as_expression_mut()
         {
             let object = value.take_in(&self.ast);
-            *value = crate::utils::call_with_values(&self.ast, std::mem::take(values), object);
+            *value = self.scoped_values(std::mem::take(values), object);
         }
     }
 

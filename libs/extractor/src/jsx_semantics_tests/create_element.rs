@@ -73,7 +73,7 @@ fn create_element_with_props_held_in_a_value_spreads_them() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("createElement(\"div\", ((__devupSpread"),
+        rendered.contains("createElement(\"div\", (__devupSpread"),
         "{rendered}"
     );
     assert!(

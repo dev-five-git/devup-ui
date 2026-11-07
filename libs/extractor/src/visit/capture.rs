@@ -15,6 +15,51 @@ use oxc_span::{GetSpan, SPAN};
 pub(super) type Captured<'a> = (String, Expression<'a>);
 
 impl<'a> DevupVisitor<'a> {
+    /// Keep ordered captures at the expression's original position, using local
+    /// bindings in its existing statement scope instead of another function.
+    pub(super) fn scoped_values(
+        &mut self,
+        mut values: Vec<Captured<'a>>,
+        mut body: Expression<'a>,
+    ) -> Expression<'a> {
+        crate::utils::capture_elision::inline(&self.ast, &mut values, &mut body);
+        if !values.is_empty()
+            && crate::utils::capture_elision::can_transport(&mut body, &values)
+            && let Some(names) = self.stylex_captures.bindings()
+        {
+            let mut sequence = oxc_allocator::Vec::with_capacity_in(values.len() + 1, &self.ast);
+            for (name, value) in values {
+                names.push(name.clone());
+                // Assignment would otherwise infer a name for an anonymous definition.
+                let value = if matches!(
+                    crate::utils::unwrap_syntax_only(&value),
+                    Expression::ArrowFunctionExpression(_)
+                        | Expression::FunctionExpression(_)
+                        | Expression::ClassExpression(_)
+                ) {
+                    crate::utils::unbound_value(&self.ast, value)
+                } else {
+                    value
+                };
+                sequence.push(Expression::new_assignment_expression(
+                    SPAN,
+                    oxc_syntax::operator::AssignmentOperator::Assign,
+                    oxc_ast::ast::AssignmentTarget::new_assignment_target_identifier(
+                        SPAN,
+                        Str::from_in(name.as_str(), self.ast.allocator()),
+                        &self.ast,
+                    ),
+                    value,
+                    &self.ast,
+                ));
+            }
+            sequence.push(body);
+            self.jsx.sequences = true;
+            return Expression::new_sequence_expression(SPAN, sequence, &self.ast);
+        }
+        crate::utils::call_with_values(&self.ast, values, body)
+    }
+
     /// Put `value` under `name`, returning what it was
     pub(super) fn capture_as(&mut self, name: String, value: &mut Expression<'a>) -> Captured<'a> {
         let styles = self.class_styles(value);
@@ -34,6 +79,22 @@ impl<'a> DevupVisitor<'a> {
     /// from evaluating it anywhere else
     fn capture_leaf(&mut self, value: &mut Expression<'a>, captured: &mut Vec<Captured<'a>>) {
         if reach(&self.bindings, value) != Reach::Constant {
+            if let Expression::CallExpression(call) = crate::utils::unwrap_syntax_only(value)
+                && let Some(input) =
+                    crate::imported_constants::local_rule_shapes::number_length_input(call)
+            {
+                let input = input.clone_in_with_semantic_ids(self.ast.allocator());
+                let name = self.names.fresh("__devupValue");
+                let read = Expression::new_identifier(
+                    SPAN,
+                    Str::from_in(name.as_str(), self.ast.allocator()),
+                    &self.ast,
+                );
+                let body = crate::imported_constants::local_rule_shapes::number_length_value(
+                    &self.ast, read,
+                );
+                *value = self.scoped_values(vec![(name, input)], body);
+            }
             let mut important = false;
             if let Expression::BinaryExpression(binary) = unwrap_syntax_only_mut(value)
                 && binary.operator == oxc_syntax::operator::BinaryOperator::Addition

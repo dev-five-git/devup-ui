@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use oxc_ast::ast::{Expression, JSXAttribute, JSXAttributeValue, ObjectProperty};
+use oxc_ast::ast::{JSXAttribute, JSXAttributeValue, ObjectProperty};
 use oxc_ast_visit::{Visit, walk};
 use oxc_span::ContentEq;
 
@@ -31,32 +31,13 @@ fn expression_eq(left: &str, right: &str) -> bool {
 }
 
 pub(crate) fn numeric(read: &str) -> String {
-    format!(
-        "((__devupValue) => typeof __devupValue === \"number\" && __devupValue !== 0 ? __devupValue + \"px\" : __devupValue)({read})"
-    )
+    numeric_with_capture(read, "__devupValue0")
 }
 
-pub(crate) fn assert_call_once(code: &str, expected: &str) {
-    struct Calls<'s> {
-        expected: &'s str,
-        count: usize,
-    }
-    impl<'a> Visit<'a> for Calls<'_> {
-        fn visit_expression(&mut self, expression: &Expression<'a>) {
-            if matches!(expression, Expression::CallExpression(_))
-                && expression_eq(&crate::utils::readable_code(expression), self.expected)
-            {
-                self.count += 1;
-            }
-            walk::walk_expression(self, expression);
-        }
-    }
-    let arena = oxc_allocator::Allocator::default();
-    let parsed = oxc_parser::Parser::new(&arena, code, oxc_span::SourceType::tsx()).parse();
-    assert!(!parsed.fatal_error && parsed.diagnostics.is_empty());
-    let mut calls = Calls { expected, count: 0 };
-    calls.visit_program(&parsed.program);
-    assert_eq!(calls.count, 1, "{code}");
+pub(crate) fn numeric_with_capture(read: &str, name: &str) -> String {
+    format!(
+        "{name} = {read}, typeof {name} === \"number\" && {name} !== 0 ? {name} + \"px\" : {name}"
+    )
 }
 
 pub(crate) fn identifier_reads(code: &str, name: &str) -> usize {

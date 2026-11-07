@@ -144,11 +144,6 @@ pub(super) fn reach(bindings: &Bindings, expression: &Expression<'_>) -> Reach {
             ChainElement::TSNonNullExpression(inner) => of(&inner.expression),
         },
         Expression::CallExpression(call) => {
-            if let Some(input) =
-                crate::imported_constants::local_rule_shapes::number_length_input(call)
-            {
-                return of(input);
-            }
             if !bindings.compiles(&call.callee) && bindings.stylex_function(&call.callee).is_none()
             {
                 return Reach::Runs;

@@ -6,6 +6,50 @@ use oxc_syntax::operator::LogicalOperator;
 use rstest::rstest;
 
 #[rstest]
+#[case("()=>slot", "callback()")]
+#[case("function(){return slot;}", "callback()")]
+#[case("class{static read(){return slot;}}", "callback.read()")]
+fn deferred_capture_reads_keep_a_per_evaluation_binding(#[case] body: &str, #[case] probe: &str) {
+    let arena = Allocator::default();
+    let mut visitor = DevupVisitor::new(&arena, "closure.tsx", "@devup-ui/react", vec![], None);
+    visitor.stylex_captures.push_frame();
+    let parse = |source| {
+        Parser::new(&arena, source, SourceType::tsx())
+            .parse_expression()
+            .unwrap_or_else(|error| panic!("{error:?}"))
+    };
+    let expression = visitor.scoped_values(vec![("slot".into(), parse("index++"))], parse(body));
+    assert_eq!(visitor.stylex_captures.frames[0].1, [] as [String; 0]);
+    let code = crate::utils::readable_code(&expression);
+    let script = format!(
+        "let index=0;const callbacks=[];for(let count=0;count<3;count++)callbacks.push({code});JSON.stringify(callbacks.map(callback=>{probe}));"
+    );
+    let actual = boa_engine::Context::default()
+        .eval(boa_engine::Source::from_bytes(script.as_bytes()))
+        .unwrap_or_else(|error| panic!("{error}: {script}"));
+    assert_eq!(
+        actual
+            .as_string()
+            .and_then(|value| value.to_std_string().ok()),
+        Some("[0,1,2]".into())
+    );
+}
+
+#[test]
+fn opaque_generated_expressions_keep_their_private_capture_scope() {
+    let arena = Allocator::default();
+    let mut visitor = DevupVisitor::new(&arena, "opaque.tsx", "@devup-ui/react", vec![], None);
+    visitor.stylex_captures.push_frame();
+    let value = Parser::new(&arena, "read()", SourceType::tsx())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let body = Expression::new_identifier(SPAN, "unparsed(() => slot)", &visitor.ast);
+    let expression = visitor.scoped_values(vec![("slot".into(), value)], body);
+    assert!(matches!(expression, Expression::CallExpression(_)));
+    assert_eq!(visitor.stylex_captures.frames[0].1, [] as [String; 0]);
+}
+
+#[rstest]
 #[case("``", [true, false, true])]
 #[case("`nonempty`", [false, true, true])]
 #[case("null", [true, false, false])]

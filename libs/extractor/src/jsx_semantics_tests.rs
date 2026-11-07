@@ -25,6 +25,7 @@ mod pass_through;
 mod pass_through_edges;
 mod pass_through_known;
 mod repeated;
+mod scoped_captures;
 mod slots;
 mod spread_repair;
 mod style_order;

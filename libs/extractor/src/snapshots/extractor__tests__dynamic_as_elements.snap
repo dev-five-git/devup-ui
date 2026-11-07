@@ -29,51 +29,51 @@ expression: outputs
     ),
     (
         "<List>{items.map((i) => <Box key={i.id} as={i.href ? 'a' : Link} p={1} />)}</List>",
-        "<List>{items.map((i) => ((__devupValue0, DevupAs0) => <DevupAs0 key={__devupValue0} className=\"a-a\" />)(i.id, (i.href ? \"a\" : Link) || \"div\"))}</List>;",
+        "<List>{items.map((i) => {\n\tlet __devupValue0, DevupAs0;\n\treturn __devupValue0 = i.id, DevupAs0 = (i.href ? \"a\" : Link) || \"div\", <DevupAs0 key={__devupValue0} className=\"a-a\" />;\n})}</List>;",
     ),
     (
         "<Box as={isLink && 'a'} />",
-        "((DevupAs0) => <DevupAs0 />)(isLink && \"a\" || \"div\");",
+        "let DevupAs0;\nDevupAs0 = isLink && \"a\" || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={props.as ?? 'div'} />",
-        "((DevupAs0) => <DevupAs0 />)((props.as ?? \"div\") || \"div\");",
+        "let DevupAs0;\nDevupAs0 = (props.as ?? \"div\") || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={tag} />",
-        "((DevupAs0) => <DevupAs0 />)(tag || \"div\");",
+        "let DevupAs0;\nDevupAs0 = tag || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={`h${level}`} />",
-        "((DevupAs0) => <DevupAs0 />)(`h${level}` || \"div\");",
+        "let DevupAs0;\nDevupAs0 = `h${level}` || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={getTag()} />",
-        "((DevupAs0) => <DevupAs0 />)(getTag() || \"div\");",
+        "let DevupAs0;\nDevupAs0 = getTag() || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={Components[key]} />",
-        "((DevupAs0) => <DevupAs0 />)(Components[key] || \"div\");",
+        "let DevupAs0;\nDevupAs0 = Components[key] || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={getThing().div} />",
-        "((DevupAs0) => <DevupAs0 />)(getThing().div || \"div\");",
+        "let DevupAs0;\nDevupAs0 = getThing().div || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={b ? tag : 'div'} />",
-        "((DevupAs0) => <DevupAs0 />)((b ? tag : \"div\") || \"div\");",
+        "let DevupAs0;\nDevupAs0 = (b ? tag : \"div\") || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={true} />",
-        "((DevupAs0) => <DevupAs0 />)(true || \"div\");",
+        "let DevupAs0;\nDevupAs0 = true || \"div\", <DevupAs0 />;",
     ),
     (
         "<Box as={{ a: 'a', b: 'button' }[kind]} onClick={track()} p={1}>{render()}</Box>",
-        "((DevupAs0) => <DevupAs0 onClick={track()} className=\"a-a\">{render()}</DevupAs0>)({\n\ta: \"a\",\n\tb: \"button\"\n}[kind] || \"div\");",
+        "let DevupAs0;\nDevupAs0 = {\n\ta: \"a\",\n\tb: \"button\"\n}[kind] || \"div\", <DevupAs0 onClick={track()} className=\"a-a\">{render()}</DevupAs0>;",
     ),
     (
         "<Box as={['div', 'a'][i]} {...register('x')} p={1} />",
-        "((DevupAs0, __devupSpread0) => <DevupAs0 {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />)([\"div\", \"a\"][i] || \"div\", {\n\t__proto__: null,\n\t...register(\"x\")\n});",
+        "let DevupAs0, __devupSpread0;\nDevupAs0 = [\"div\", \"a\"][i] || \"div\", __devupSpread0 = {\n\t__proto__: null,\n\t...register(\"x\")\n}, <DevupAs0 {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />;",
     ),
     (
         "<Text as={b ? 'h1' : undefined} />",
@@ -81,6 +81,6 @@ expression: outputs
     ),
     (
         "<Box as={x}><Box as={y} p={1} /></Box>",
-        "((DevupAs1) => <DevupAs1>{((DevupAs0) => <DevupAs0 className=\"a-a\" />)(y || \"div\")}</DevupAs1>)(x || \"div\");",
+        "let DevupAs0, DevupAs1;\nDevupAs1 = x || \"div\", <DevupAs1>{(DevupAs0 = y || \"div\", <DevupAs0 className=\"a-a\" />)}</DevupAs1>;",
     ),
 ]

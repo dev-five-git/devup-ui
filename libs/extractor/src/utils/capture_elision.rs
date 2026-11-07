@@ -295,6 +295,7 @@ fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
 #[derive(Clone, Copy)]
 enum Scan {
     Body,
+    Transport,
     Argument { can_suspend: bool },
 }
 
@@ -302,21 +303,34 @@ fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usiz
     let mut count = 0;
     let mut blocked = false;
     rewrite_expression(expression, &mut |value| {
+        if matches!(scan, Scan::Transport)
+            && matches!(
+                value,
+                Expression::ArrowFunctionExpression(_)
+                    | Expression::FunctionExpression(_)
+                    | Expression::ClassExpression(_)
+            )
+        {
+            blocked |= reads(value, name, Scan::Body) != Some(0);
+            return true;
+        }
         blocked |= match value {
             Expression::Identifier(identifier) => {
                 count += usize::from(identifier.name == name);
                 !is_identifier_name(identifier.name.as_str())
             }
             Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
-                !matches!(scan, Scan::Body)
+                matches!(scan, Scan::Argument { .. })
             }
-            Expression::ClassExpression(_) => true,
+            Expression::ClassExpression(_) => matches!(scan, Scan::Argument { .. }),
             Expression::AwaitExpression(_) | Expression::YieldExpression(_) => {
-                !matches!(scan, Scan::Argument { can_suspend: true })
+                matches!(scan, Scan::Argument { can_suspend: false })
             }
             // Plain assignment targets are not expression reads. Keep parameters
             // that are written, including targets nested in destructuring patterns.
-            Expression::AssignmentExpression(assignment) if matches!(scan, Scan::Body) => {
+            Expression::AssignmentExpression(assignment)
+                if !matches!(scan, Scan::Argument { .. }) =>
+            {
                 match &assignment.left {
                     AssignmentTarget::AssignmentTargetIdentifier(identifier) => {
                         identifier.name == name
@@ -326,10 +340,26 @@ fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usiz
                     _ => false,
                 }
             }
-            Expression::UpdateExpression(update) if matches!(scan, Scan::Body) => {
+            Expression::UpdateExpression(update) if !matches!(scan, Scan::Argument { .. }) => {
                 matches!(&update.argument, SimpleAssignmentTarget::AssignmentTargetIdentifier(identifier) if identifier.name == name)
             }
-            Expression::JSXElement(element) => !intrinsic(&element.opening_element.name),
+            Expression::JSXElement(element) => {
+                if matches!(scan, Scan::Argument { .. }) {
+                    !intrinsic(&element.opening_element.name)
+                } else {
+                    match &element.opening_element.name {
+                        JSXElementName::Identifier(identifier) => {
+                            count += usize::from(identifier.name == name);
+                            false
+                        }
+                        JSXElementName::IdentifierReference(identifier) => {
+                            count += usize::from(identifier.name == name);
+                            false
+                        }
+                        _ => matches!(scan, Scan::Body),
+                    }
+                }
+            }
             Expression::CallExpression(call) => matches!(unwrap_syntax_only(&call.callee),
                 Expression::Identifier(identifier) if identifier.name == "eval"),
             _ => false,
@@ -339,7 +369,15 @@ fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usiz
     (!blocked).then_some(count)
 }
 
-pub(super) fn inline<'a>(
+/// Moving eager reads into their existing statement scope must not turn a
+/// per-evaluation closure binding into one shared by later loop iterations.
+pub(crate) fn can_transport(body: &mut Expression<'_>, values: &Captures<'_>) -> bool {
+    values
+        .iter()
+        .all(|(name, _)| reads(body, name, Scan::Transport).is_some())
+}
+
+pub(crate) fn inline<'a>(
     builder: &AstBuilder<'a>,
     values: &mut Vec<(String, Expression<'a>)>,
     body: &mut Expression<'a>,
