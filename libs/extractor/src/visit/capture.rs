@@ -72,7 +72,12 @@ impl<'a> DevupVisitor<'a> {
                 });
             }
             let name = self.names.fresh("__devupValue");
-            captured.push(self.capture_as(name, value));
+            let (name, mut original) = self.capture_as(name, value);
+            // Style extraction erases these outer wrappers; captures must not restore them.
+            captured.push((
+                name,
+                unwrap_syntax_only_mut(&mut original).take_in(&self.ast),
+            ));
             if important {
                 let read = value.take_in(&self.ast);
                 let quasis = ["", " !important"]

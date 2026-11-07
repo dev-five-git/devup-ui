@@ -29,6 +29,109 @@ fn lone_dynamic_template_keeps_the_value_in_place_without_an_arrow_wrapper() {
     );
 }
 
+#[rstest]
+#[case("data[key as Key] as Value")]
+#[case("(data[key as Key] as Value)")]
+#[case("((data[key as Key] as Value) as Value)")]
+#[case("data[key as Key] satisfies Value")]
+#[case("data[key as Key]!")]
+#[case("(data[key as Key]! as Value) satisfies Value")]
+#[serial]
+fn captured_style_values_do_not_restore_outer_type_wrappers(
+    #[case] value: &str,
+    #[values(false, true)] ordered: bool,
+) {
+    let tail = if ordered { "id={later()}" } else { "" };
+    let source = format!("{BOX}export const a=(data,key,later)=><Box p={{{value}}} {tail}/>;");
+    let compiled = code(&source);
+    assert!(compiled.contains("data[key as Key]"), "{compiled}");
+    for wrapper in ["as Value", "satisfies Value", "data[key as Key]!"] {
+        assert!(!compiled.contains(wrapper), "{compiled}");
+    }
+    let actual = whole::execute(
+        &compiled,
+        "Object.values(a({get width(){trace.push('get');return '12px';}},{toString(){trace.push('key');return 'width';}},()=>{trace.push('later');return 'id';}).props.style)",
+    );
+    assert_eq!(actual.element, serde_json::json!(["12px"]));
+    assert_eq!(
+        actual.trace,
+        if ordered {
+            serde_json::json!(["key", "get", "later"])
+        } else {
+            serde_json::json!(["key", "get"])
+        }
+    );
+}
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+#[serial]
+fn captured_style_type_wrappers_keep_key_and_getter_throw_order(#[case] key_throws: bool) {
+    let source = format!(
+        "{BOX}export const a=(data,key,later)=><Box p={{data[key as Key] as Value}} id={{later()}}/>;"
+    );
+    let key = if key_throws {
+        "throw 'key';"
+    } else {
+        "return 'width';"
+    };
+    let actual = whole::evaluate(
+        &source,
+        &format!(
+            "(()=>{{try{{a({{get width(){{trace.push('get');throw 'get';}}}},{{toString(){{trace.push('key');{key}}}}},()=>{{trace.push('later');return 'id';}});}}catch(error){{return error;}}}})()"
+        ),
+    );
+    assert_eq!(actual.element, if key_throws { "key" } else { "get" });
+    assert_eq!(
+        actual.trace,
+        if key_throws {
+            serde_json::json!(["key"])
+        } else {
+            serde_json::json!(["key", "get"])
+        }
+    );
+}
+
+#[test]
+#[serial]
+fn captured_style_type_wrappers_keep_important_without_restoring_the_assertion() {
+    let source = format!(
+        "{BOX}export const a=(read,later)=><Box p={{(read() + ' !important') as Value}} id={{later()}}/>;"
+    );
+    let compiled = output(&source);
+    assert!(!compiled.code.contains("as Value"), "{}", compiled.code);
+    assert!(
+        compiled
+            .styles
+            .iter()
+            .any(|style| matches!(style, ExtractStyleValue::Dynamic(style) if style.important()))
+    );
+    let actual = whole::execute(
+        &compiled.code,
+        "Object.values(a(()=>{trace.push('read');return '12px';},()=>{trace.push('later');return 'id';}).props.style)",
+    );
+    assert_eq!(actual.element, serde_json::json!(["12px"]));
+    assert_eq!(actual.trace, serde_json::json!(["read", "later"]));
+}
+
+#[test]
+#[serial]
+fn captured_style_type_wrappers_leave_authored_dom_assertions_intact() {
+    let source = format!(
+        "{BOX}export const a=(read,later)=><Box p={{read() as StyleValue}} id={{later() as IdValue}}/>;"
+    );
+    let compiled = code(&source);
+    assert!(!compiled.contains("as StyleValue"), "{compiled}");
+    assert!(compiled.contains("as IdValue"), "{compiled}");
+    let actual = whole::execute(
+        &compiled,
+        "a(()=>{trace.push('read');return '12px';},()=>{trace.push('later');return 'id';}).props",
+    );
+    assert_eq!(actual.element["id"], "id");
+    assert_eq!(actual.trace, serde_json::json!(["read", "later"]));
+}
+
 #[test]
 #[serial]
 fn known_object_spreads_are_flattened_before_attribute_ordering() {
