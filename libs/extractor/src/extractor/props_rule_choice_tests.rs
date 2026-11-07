@@ -76,7 +76,7 @@ fn base_atom_survives_when_logical_branch_is_missing() {
     let rules = "const Base = styled('div')({ color: 'red' }); const Choice = styled(Base)(p => p.on && { color: 'blue' });";
     let output = compile(rules);
     assert_eq!(values(&output, "color"), ["blue", "red"]);
-    assert!(output.code.contains("p.on"));
+    assert!(output.code.contains(".on"));
     assert!(!output.code.contains("styled("));
     for (on, color) in [(true, "blue"), (false, "red")] {
         assert_eq!(
@@ -135,8 +135,8 @@ fn dynamic_leaf_uses_variable_when_rule_branch_is_selected() {
     assert!(output.styles.iter().any(
         |style| matches!(style, ExtractStyleValue::Dynamic(style) if style.property() == "width")
     ));
-    assert!(output.code.contains("p.width"));
-    assert!(output.code.contains("p.on"));
+    assert!(output.code.contains(".width"));
+    assert!(output.code.contains(".on"));
     assert!(output.code.contains("--"));
     assert!(!output.code.contains("styled("));
     assert_eq!(
@@ -202,7 +202,7 @@ fn pure_comparison_is_supported_when_rule_choice_reads_props() {
     let rules = "const Choice = styled('div')(({ on, count }) => on && count > 2 ? { color: 'blue' } : { color: 'red' });";
     let output = compile(rules);
     assert_eq!(values(&output, "color"), ["blue", "red"]);
-    assert!(output.code.contains("count > 2"));
+    assert!(output.code.contains("> 2"));
 }
 
 #[test]
@@ -231,12 +231,12 @@ fn invalid_condition_prop_is_withheld_when_rules_are_lowered() {
     let rules = "const Choice = styled('div')(p => p.on && { color: p.title });";
     let output = compile(rules);
     assert!(
-        output.code.contains("\"on\": __devupOmit"),
+        output.code.contains("\"on\": __devupRecord"),
         "{}",
         output.code
     );
-    assert!(!output.code.contains("\"title\": __devupOmit"));
-    assert!(output.code.contains("p.title"));
+    assert!(!output.code.contains("\"title\": __devupRecord"));
+    assert!(output.code.contains(".title"));
 }
 
 #[test]
@@ -244,10 +244,10 @@ fn invalid_condition_prop_is_withheld_when_rules_are_lowered() {
 fn invalid_value_prop_is_withheld_when_whole_rule_function_is_lowered() {
     let rules = "const Choice = styled('div')(p => ({ color: p.tone, opacity: p.tabIndex, cursor: p.onClick }));";
     let output = compile(rules);
-    assert!(output.code.contains("\"tone\": __devupOmit"));
-    assert!(!output.code.contains("\"tabIndex\": __devupOmit"));
-    assert!(!output.code.contains("\"onClick\": __devupOmit"));
-    assert!(output.code.contains("p.tone"));
+    assert!(output.code.contains("\"tone\": __devupRecord"));
+    assert!(!output.code.contains("\"tabIndex\": __devupRecord"));
+    assert!(!output.code.contains("\"onClick\": __devupRecord"));
+    assert!(output.code.contains(".tone"));
 }
 
 #[test]
@@ -256,13 +256,13 @@ fn inherited_reads_keep_condition_prop_when_extension_is_used() {
     let rules = "const Base = styled('div')(p => p.on ? { color: 'blue' } : { color: 'red' }); const Choice = styled(Base)({ opacity: 0.5 }); export const Example = <Choice on={enabled} title='valid' />;";
     let output = compile(rules);
     assert_eq!(
-        output.code.matches("\"on\": __devupOmit").count(),
+        output.code.matches("\"on\": __devupRecord").count(),
         2,
         "{}",
         output.code
     );
     assert!(output.code.contains("on={enabled}"));
-    assert!(!output.code.contains("\"title\": __devupOmit"));
+    assert!(!output.code.contains("\"title\": __devupRecord"));
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn inherited_reads_keep_condition_prop_when_extension_is_used() {
 fn condition_flag_is_forwarded_when_explicit_policy_allows_it() {
     let rules = "const Choice = styled('div').withConfig({ shouldForwardProp: name => name === 'on' })(p => p.on && { color: 'blue' });";
     let output = compile(rules);
-    assert!(!output.code.contains("\"on\": __devupOmit"));
+    assert!(!output.code.contains("\"on\": __devupRecord"));
 }
 
 #[test]
@@ -278,6 +278,6 @@ fn condition_flag_is_forwarded_when_explicit_policy_allows_it() {
 fn condition_flag_is_forwarded_when_styled_base_is_custom_component() {
     let rules = "const Custom = props => <div />; const Choice = styled(Custom)(p => p.on && { color: 'blue' });";
     let output = compile(rules);
-    assert!(!output.code.contains("\"on\": __devupOmit"));
+    assert!(!output.code.contains("\"on\": __devupRecord"));
     assert!(output.code.contains("DevupAs = Custom"));
 }

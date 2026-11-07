@@ -387,28 +387,30 @@ struct Names<'s, 'a> {
     values: &'s FxHashMap<SymbolId, StyleValue>,
 }
 
-impl<'a> VisitMut<'a> for Names<'_, 'a> {
-    fn visit_expression(&mut self, it: &mut Expression<'a>) {
-        if let Expression::CallExpression(call) = it
-            && call.arguments.is_empty()
-            && let Expression::StaticMemberExpression(member) = &call.callee
-            && member.property.name == "getName"
-            && let Expression::Identifier(identifier) = &member.object
-            && let Some(StyleValue::Keyframes(name)) = identifier
-                .reference_id
-                .get()
-                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| self.values.get(&symbol))
-        {
-            *it = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(name.as_str(), self.ast.allocator()),
-                None,
-                self.ast,
-            );
-            return;
-        }
-        walk_mut::walk_expression(self, it);
+impl<'a> Names<'_, 'a> {
+    fn visit_program(&self, program: &mut oxc_ast::ast::Program<'a>) {
+        crate::utils::rewrite_program(program, &mut |it| {
+            if let Expression::CallExpression(call) = it
+                && call.arguments.is_empty()
+                && let Expression::StaticMemberExpression(member) = &call.callee
+                && member.property.name == "getName"
+                && let Expression::Identifier(identifier) = &member.object
+                && let Some(StyleValue::Keyframes(name)) = identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .and_then(|symbol| self.values.get(&symbol))
+            {
+                *it = Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(name.as_str(), self.ast.allocator()),
+                    None,
+                    self.ast,
+                );
+                return true;
+            }
+            false
+        });
     }
 }
 
@@ -616,22 +618,24 @@ struct ClassReads<'s, 'a> {
 
 impl<'a> VisitMut<'a> for ClassReads<'_, 'a> {
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
-        if let Expression::Identifier(identifier) = it
-            && let Some(text) = identifier
-                .reference_id
-                .get()
-                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| self.texts.get(&symbol))
-        {
-            *it = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(text.as_str(), self.ast.allocator()),
-                None,
-                self.ast,
-            );
-            return;
-        }
-        walk_mut::walk_expression(self, it);
+        crate::utils::rewrite_expression(it, &mut |it| {
+            if let Expression::Identifier(identifier) = it
+                && let Some(text) = identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .and_then(|symbol| self.texts.get(&symbol))
+            {
+                *it = Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(text.as_str(), self.ast.allocator()),
+                    None,
+                    self.ast,
+                );
+                return true;
+            }
+            false
+        });
     }
 }
 

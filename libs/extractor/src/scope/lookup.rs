@@ -38,7 +38,7 @@ impl Bindings {
 
     /// The component `expression` reads
     pub fn kind(&self, expression: &Expression<'_>) -> Option<ExportVariableKind> {
-        match expression {
+        match crate::utils::unwrap_syntax_only(expression) {
             Expression::Identifier(identifier) => self
                 .symbol(identifier)
                 .and_then(|symbol| self.imports.get(&symbol))
@@ -71,6 +71,12 @@ impl Bindings {
     pub fn is_namespace(&self, identifier: &IdentifierReference<'_>) -> bool {
         self.symbol(identifier)
             .is_some_and(|symbol| self.namespaces.contains(&symbol))
+    }
+
+    /// Whether `identifier` reads the global `undefined`, not a binding of
+    /// that name
+    pub fn is_global_undefined(&self, identifier: &IdentifierReference<'_>) -> bool {
+        identifier.name == "undefined" && self.symbol(identifier).is_none()
     }
 
     /// Whether the element `name` is the `Global` component

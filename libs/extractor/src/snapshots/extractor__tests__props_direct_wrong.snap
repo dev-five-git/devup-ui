@@ -20,7 +20,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "gap",
                 level: 0,
-                identifier: "true[1]",
+                identifier: "__devupValue0",
                 selector: None,
                 style_order: None,
             },

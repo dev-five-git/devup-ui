@@ -31,7 +31,7 @@ fn stylex_capture_is_located_when_storage_has_no_execution_local_statement(
 #[case::getter(("const c={get out(){return sx.API((trace.push('once'),true)&&s.base);}}; function render(){return jsx('div',c.out);}", "render()", "[\"once\"]"))]
 #[case::setter(("const c={set out(v){this.value=sx.API((trace.push(v),true)&&s.base);}}; function render(){c.out='once';return jsx('div',c.value);}", "render()", "[\"once\"]"))]
 #[case::recursive(("function choose(n){const out=sx.API((trace.push(n),true)&&s.base,(n>0?(choose(n-1),false):false)&&s.later);return out;} function render(){return jsx('div',choose(1));}", "render()", "[1,0]"))]
-#[case::tdz(("function render(){try{sx.API(value&&s.base);}catch(e){trace.push(e.name);}let value=true;return jsx('div',sx.API(value&&s.base));}", "render()", "[\"ReferenceError\"]"))]
+#[case::deferred_tdz(("const value=false;function render(initial){const read=()=>{trace.push('read');return value;};try{sx.API(read()&&s.base,(trace.push('bad'),true)&&s.later);}catch(e){trace.push(e.name);}let value=initial;return jsx('div',sx.API(read()&&s.base));}", "render(true)", "[\"read\",\"ReferenceError\",\"read\"]"))]
 #[case::shadow_collision(("const _s0=7; function render(){let _s1=9;{let _s2=11;trace.push(_s0,_s1,_s2);return jsx('div',sx.API((trace.push('once'),true)&&s.base));}}", "render()", "[7,9,11,\"once\"]"))]
 #[case::closure_loop(("function render(){const fs=[];for(let i=0;i<2;i++){const out=sx.API((trace.push(i),true)&&s.base);fs.push(()=>out);}return jsx('div',fs[0]());}", "render()", "[0,1]"))]
 #[case::short_circuit(("function render(){false&&sx.API((trace.push('bad'),true)&&s.base);return jsx('div',sx.API((trace.push('once'),true)&&s.base));}", "render()", "[\"once\"]"))]
@@ -62,6 +62,23 @@ fn stylex_capture_preserves_execution_scope_when_bodies_reenter_or_suspend(
     assert_eq!(trace, serde_json::from_str::<serde_json::Value>(sample.2).unwrap(), "{}", output.code);
     assert_eq!(values, ["blue", "red"], "{}", output.code);
     eprintln!("BODY {api} {} bytes={}\n{}", sample.1, output.code.len(), output.code);
+}
+
+#[rstest]
+#[serial]
+fn stylex_immediate_tdz_is_located_before_lowering(#[values("props","attrs")] api: &str) {
+    // Given: the original immediate-TDZ input, including its later initialized read.
+    reset_class_map();
+    reset_file_map();
+    let body="function render(){try{sx.API(value&&s.base);}catch(e){trace.push(e.name);}let value=true;return jsx('div',sx.API(value&&s.base));}".replace("API",api);
+    let body=if api=="attrs" {body.replace("jsx('div',","adapt('div',")}else{body};
+    let source=format!("import * as sx from '@stylexjs/stylex';import {{jsx}} from 'react/jsx-runtime';const s=sx.create({{base:{{color:'red',backgroundColor:'blue'}},later:{{color:'green'}}}});function adapt(tag,p){{return jsx(tag,{{className:p.class}});}}{body}");
+    // When: the known read is classified by the existing initialization boundary.
+    let error=extract("capture-body.js",&source,ExtractOption::default()).unwrap_err().to_string();
+    // Then: both APIs point to the first authored value, with the original ReferenceError cause.
+    assert!(error.starts_with(&format!("capture-body.js:1:{}:",source.find("value&&").unwrap()+1)),"{error}");
+    assert!(error.contains("read before its lexical declaration is initialized")&&error.contains("ReferenceError"),"{error}");
+    eprintln!("IMMEDIATE {api} {error}");
 }
 
 #[test]

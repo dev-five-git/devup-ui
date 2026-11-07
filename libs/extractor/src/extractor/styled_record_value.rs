@@ -1,4 +1,5 @@
 use super::{Origin, Preparation};
+use crate::extractor::extract_style_from_styled::scalar;
 use crate::utils::{get_string_by_literal_expression, unwrap_syntax_only};
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKind};
@@ -8,6 +9,10 @@ use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 #[path = "styled_record_selection.rs"]
 mod selection;
+
+#[cfg(test)]
+#[path = "styled_record_value_tests.rs"]
+mod tests;
 
 fn lookup_object<'a, 'b>(source: &'b Expression<'a>) -> &'b Expression<'a> {
     match source {
@@ -50,7 +55,7 @@ fn template_free_lookup_index(source: &Expression<'_>) -> bool {
 }
 
 /// Only literal data can be replaced by the extractor's finite class lookup.
-fn static_lookup_value(source: &Expression<'_>) -> bool {
+fn static_lookup_value(source: &Expression<'_>, rules: bool) -> bool {
     let source = unwrap_syntax_only(source);
     if pure_lookup_literal(source) && get_string_by_literal_expression(source).is_some() {
         return true;
@@ -62,11 +67,11 @@ fn static_lookup_value(source: &Expression<'_>) -> bool {
                     && selection::property_key(&property.key).is_some()
                     && (property.computed
                         || selection::property_key(&property.key).as_deref() != Some("__proto__"))
-                    && static_lookup_value(&property.value))
+                    && if rules { static_lookup_value(&property.value, true) } else { pure_lookup_literal(&property.value) })
         }),
         Expression::ArrayExpression(array) => array.elements.iter().all(|element| match element {
             ArrayExpressionElement::Elision(_) => true,
-            _ => element.as_expression().is_some_and(static_lookup_value),
+            _ => element.as_expression().is_some_and(|value| if rules { static_lookup_value(value, true) } else { pure_lookup_literal(value) }),
         }),
         Expression::NullLiteral(_) => true,
         _ => false,
@@ -82,6 +87,9 @@ impl<'a> Preparation<'_, '_, 'a> {
     ) -> Option<Expression<'a>> {
         let source = unwrap_syntax_only(source);
         let builder = self.reads.builder;
+        let rules = key.starts_with(['_', '@'])
+            || key == "selectors"
+            || super::super::extract_style_from_expression::is_nested_selector_key(key);
         if get_string_by_literal_expression(source).is_some()
             || crate::utils::unrepresentable_literal(source)
         {
@@ -92,7 +100,7 @@ impl<'a> Preparation<'_, '_, 'a> {
                 if matches!(
                     lookup_object(&member.object),
                     Expression::ObjectExpression(_) | Expression::ArrayExpression(_)
-                ) && static_lookup_value(&member.object)
+                ) && static_lookup_value(&member.object, rules)
                     && template_free_lookup_index(&member.expression) =>
             {
                 let mut member = member.clone_in(builder.allocator());
@@ -182,6 +190,17 @@ impl<'a> Preparation<'_, '_, 'a> {
                     slot,
                 ))
             }
+            Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)
+                if matches!(self.origin, Origin::WholeRule) =>
+            {
+                let slot = self.reads.capture(source, guard);
+                let direct = crate::utils::unbound_value(builder, slot);
+                Some(crate::utils::wrap_direct_call(
+                    builder,
+                    &direct,
+                    &[Expression::new_identifier(oxc_span::SPAN, "rest", builder)],
+                ))
+            }
             Expression::NullLiteral(_)
             | Expression::BigIntLiteral(_)
             | Expression::RegExpLiteral(_)
@@ -193,7 +212,14 @@ impl<'a> Preparation<'_, '_, 'a> {
             {
                 Some(source.clone_in(builder.allocator()))
             }
-            _ => Some(self.reads.capture(source, guard)),
+            _ => {
+                let captured = self.reads.capture(source, guard);
+                Some(if matches!(self.origin, Origin::WholeRule) {
+                    scalar::captured(builder, scalar::Origin::WholeRule(key), captured)
+                } else {
+                    captured
+                })
+            }
         }
     }
 }

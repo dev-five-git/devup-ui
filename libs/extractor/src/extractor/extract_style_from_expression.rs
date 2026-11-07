@@ -38,6 +38,9 @@ use std::collections::BTreeMap;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
+#[cfg(test)]
+mod direct_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteralHandling {
     ExpandResponsiveThemeToken,
@@ -247,27 +250,45 @@ pub(crate) fn extract_with_policy<'a, const LOCATE: bool>(
     level: u8,
     selector: &Option<StyleSelector>,
     literal_handling: LiteralHandling,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
-    extract_projected::<LOCATE>(
+    extract_with_location(
         inputs,
         name,
         expression,
-        (level, selector),
+        (level, selector, LOCATE),
+        literal_handling,
+        prepare,
+    )
+}
+
+pub(super) fn extract_with_location<'a>(
+    inputs: StyleInputs<'_, 'a>,
+    name: Option<&str>,
+    expression: &mut Expression<'a>,
+    (level, selector, locate): (u8, &Option<StyleSelector>, bool),
+    literal_handling: LiteralHandling,
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
+) -> ExtractResult<'a> {
+    extract_projected(
+        inputs,
+        name,
+        expression,
+        (level, selector, locate),
         literal_handling,
         &mut super::style_order_projection::Projection::default(),
         prepare,
     )
 }
 
-pub(super) fn extract_projected<'a, const LOCATE: bool>(
+pub(super) fn extract_projected<'a>(
     inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
-    (level, selector): (u8, &Option<StyleSelector>),
+    (level, selector, locate): (u8, &Option<StyleSelector>, bool),
     literal_handling: LiteralHandling,
     projection: &mut super::style_order_projection::Projection<'a>,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
     let ast_builder = inputs.ast;
     let mut typo = false;
@@ -352,11 +373,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                                         });
                                         let ExtractResult {
                                             styles, tag: _tag, ..
-                                        } = projection.extract::<LOCATE>(
+                                        } = projection.extract(
                                             inputs,
                                             Some(disassembled),
                                             sibling.as_mut().unwrap_or(&mut prop.value),
-                                            (0, &None),
+                                            (0, &None, locate),
                                             LiteralHandling::ExpandResponsiveThemeToken,
                                             prepare,
                                         );
@@ -372,11 +393,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         ObjectPropertyKind::SpreadProperty(prop) => {
                             let ExtractResult {
                                 styles, tag: _tag, ..
-                            } = projection.extract::<LOCATE>(
+                            } = projection.extract(
                                 inputs,
                                 None,
                                 &mut prop.argument,
-                                (0, &None),
+                                (0, &None, locate),
                                 LiteralHandling::ExpandResponsiveThemeToken,
                                 prepare,
                             );
@@ -405,11 +426,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         condition: conditional.test.clone_in(ast_builder.allocator()),
                         consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                             projection
-                                .extract::<LOCATE>(
+                                .extract(
                                     inputs,
                                     None,
                                     &mut conditional.consequent,
-                                    (level, &None),
+                                    (level, &None, locate),
                                     literal_handling,
                                     prepare,
                                 )
@@ -417,11 +438,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         ))),
                         alternate: Some(Box::new(ExtractStyleProp::StaticArray(
                             projection
-                                .extract::<LOCATE>(
+                                .extract(
                                     inputs,
                                     None,
                                     &mut conditional.alternate,
-                                    (level, selector),
+                                    (level, selector, locate),
                                     literal_handling,
                                     prepare,
                                 )
@@ -461,11 +482,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
         let offset = expression.span().start;
         let mut styles = vec![];
         for part in split_selector_list(name) {
-            styles.extend(extract_under_key::<LOCATE>(
+            styles.extend(extract_under_key(
                 inputs,
                 (part, offset),
                 &mut expression.clone_in_with_semantic_ids(ast_builder.allocator()),
-                (level, selector),
+                (level, selector, locate),
                 literal_handling,
                 projection,
                 prepare,
@@ -508,11 +529,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     };
                     let offset = o.key.span().start;
                     for part in split_selector_list(key_name.trim()) {
-                        props.extend(extract_under_key::<LOCATE>(
+                        props.extend(extract_under_key(
                             inputs,
                             (part, offset),
                             &mut o.value.clone_in_with_semantic_ids(ast_builder.allocator()),
-                            (level, selector),
+                            (level, selector, locate),
                             literal_handling,
                             projection,
                             prepare,
@@ -536,11 +557,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     && let Some(layer) = get_string_by_property_key(&o.key)
                 {
                     let mut styles = projection
-                        .extract::<LOCATE>(
+                        .extract(
                             inputs,
                             None,
                             &mut o.value,
-                            (level, selector),
+                            (level, selector, locate),
                             literal_handling,
                             prepare,
                         )
@@ -569,11 +590,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 {
                     props.extend(
                         projection
-                            .extract::<LOCATE>(
+                            .extract(
                                 inputs,
                                 None,
                                 &mut o.value,
-                                (level, &Some(at_selector)),
+                                (level, &Some(at_selector), locate),
                                 literal_handling,
                                 prepare,
                             )
@@ -590,11 +611,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
         if name.starts_with('_') || split_at_rule_key(name).is_some() {
             let offset = expression.span().start;
             return ExtractResult {
-                styles: extract_under_key::<LOCATE>(
+                styles: extract_under_key(
                     inputs,
                     (name, offset),
                     expression,
-                    (level, selector),
+                    (level, selector, locate),
                     literal_handling,
                     projection,
                     prepare,
@@ -719,7 +740,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 None => unreadable(expression),
             },
             Expression::ComputedMemberExpression(mem) => {
-                extract_member::<LOCATE>(inputs, name, mem, level, selector, prepare)
+                extract_member(inputs, name, mem, (level, selector, locate), prepare)
             }
             Expression::TemplateLiteral(_) => {
                 let Some(name) = name else {
@@ -871,7 +892,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),
                     LogicalOperator::Coalesce => nullish,
                 };
-                projection.extract::<LOCATE>(
+                projection.extract(
                     inputs,
                     name,
                     if takes_right {
@@ -879,7 +900,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     } else {
                         &mut logical.left
                     },
-                    (level, selector),
+                    (level, selector, locate),
                     literal_handling,
                     prepare,
                 )
@@ -888,7 +909,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 if literal_truthiness(&conditional.test).is_some() =>
             {
                 let consequent = literal_truthiness(&conditional.test) == Some(true);
-                projection.extract::<LOCATE>(
+                projection.extract(
                     inputs,
                     name,
                     if consequent {
@@ -896,7 +917,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     } else {
                         &mut conditional.alternate
                     },
-                    (level, selector),
+                    (level, selector, locate),
                     literal_handling,
                     prepare,
                 )
@@ -905,11 +926,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                 projection.conditional(logical.operator == LogicalOperator::Coalesce);
                 let res = Some(Box::new(ExtractStyleProp::StaticArray(
                     projection
-                        .extract::<LOCATE>(
+                        .extract(
                             inputs,
                             name,
                             &mut logical.right,
-                            (level, selector),
+                            (level, selector, locate),
                             literal_handling,
                             prepare,
                         )
@@ -955,11 +976,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             ),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 projection
-                                    .extract::<LOCATE>(
+                                    .extract(
                                         inputs,
                                         name,
                                         &mut logical.left,
-                                        (level, selector),
+                                        (level, selector, locate),
                                         literal_handling,
                                         prepare,
                                     )
@@ -988,11 +1009,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                     if let Some(element) = element.as_expression_mut() {
                         props.extend(
                             projection
-                                .extract::<LOCATE>(
+                                .extract(
                                     inputs,
                                     name,
                                     element,
-                                    (idx as u8, selector),
+                                    (idx as u8, selector, locate),
                                     LiteralHandling::KeepSingleClass,
                                     prepare,
                                 )
@@ -1010,11 +1031,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
             }
             Expression::ConditionalExpression(conditional) => {
                 if is_same_expression(&conditional.consequent, &conditional.alternate) {
-                    projection.extract::<LOCATE>(
+                    projection.extract(
                         inputs,
                         name,
                         &mut conditional.consequent,
-                        (level, selector),
+                        (level, selector, locate),
                         literal_handling,
                         prepare,
                     )
@@ -1025,11 +1046,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             condition: conditional.test.clone_in(ast_builder.allocator()),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 projection
-                                    .extract::<LOCATE>(
+                                    .extract(
                                         inputs,
                                         name,
                                         &mut conditional.consequent,
-                                        (level, selector),
+                                        (level, selector, locate),
                                         literal_handling,
                                         prepare,
                                     )
@@ -1037,11 +1058,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             ))),
                             alternate: Some(Box::new(ExtractStyleProp::StaticArray(
                                 projection
-                                    .extract::<LOCATE>(
+                                    .extract(
                                         inputs,
                                         name,
                                         &mut conditional.alternate,
-                                        (level, selector),
+                                        (level, selector, locate),
                                         literal_handling,
                                         prepare,
                                     )
@@ -1071,11 +1092,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                         ObjectPropertyKind::SpreadProperty(spread) => {
                             props.extend(
                                 projection
-                                    .extract::<LOCATE>(
+                                    .extract(
                                         inputs,
                                         None,
                                         &mut spread.argument,
-                                        (level, &selector),
+                                        (level, &selector, locate),
                                         literal_handling,
                                         prepare,
                                     )
@@ -1112,11 +1133,11 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
                             .then(|| o.value.clone_in_with_semantic_ids(ast_builder.allocator()));
                         props.extend(
                             projection
-                                .extract::<LOCATE>(
+                                .extract(
                                     inputs,
                                     Some(name),
                                     sibling.as_mut().unwrap_or(&mut o.value),
-                                    (level, &selector),
+                                    (level, &selector, locate),
                                     literal_handling,
                                     prepare,
                                 )
@@ -1170,7 +1191,7 @@ pub(super) fn extract_projected<'a, const LOCATE: bool>(
             },
         }
     };
-    if LOCATE {
+    if locate {
         for style in &mut result.styles {
             locate_dynamic(style, offset);
         }
@@ -1376,23 +1397,23 @@ impl From<Option<StyleSelector>> for Nested {
     }
 }
 
-fn extract_under_key<'a, const LOCATE: bool>(
+fn extract_under_key<'a>(
     inputs: StyleInputs<'_, 'a>,
     (key, offset): (&str, u32),
     expression: &mut Expression<'a>,
-    (level, selector): (u8, &Option<StyleSelector>),
+    (level, selector, locate): (u8, &Option<StyleSelector>, bool),
     literal_handling: LiteralHandling,
     projection: &mut super::style_order_projection::Projection<'a>,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> Vec<ExtractStyleProp<'a>> {
     match nest_selectors_key(selector.as_ref(), key) {
         Nested::Under(nested) => {
             projection
-                .extract::<LOCATE>(
+                .extract(
                     inputs,
                     None,
                     expression,
-                    (level, &Some(nested)),
+                    (level, &Some(nested), locate),
                     literal_handling,
                     prepare,
                 )
@@ -1512,7 +1533,7 @@ pub fn dynamic_style<'a>(
     expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> ExtractStyleProp<'a> {
     if let Some(map) = get_enum_property_map(name) {
         ExtractStyleProp::Enum {

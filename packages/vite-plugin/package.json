@@ -42,7 +42,7 @@
   "dependencies": {
     "@devup-ui/plugin-utils": "workspace:^",
     "@devup-ui/wasm": "workspace:^",
-    "parse5": "^8.0.1"
+    "parse5": "^8.1.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

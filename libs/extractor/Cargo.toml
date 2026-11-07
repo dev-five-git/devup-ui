@@ -12,15 +12,15 @@ categories = ["development-tools", "wasm", "web-programming"]
 workspace = true
 
 [dependencies]
-oxc_parser = "0.155.0"
-oxc_syntax = "0.155.0"
-oxc_span = "0.155.0"
-oxc_allocator = "0.155.0"
-oxc_ast = "0.155.0"
-oxc_ast_visit = "0.155.0"
-oxc_codegen = "0.155.0"
-oxc_transformer = "0.155.0"
-oxc_semantic = "0.155.0"
+oxc_parser = "0.156.0"
+oxc_syntax = "0.156.0"
+oxc_span = "0.156.0"
+oxc_allocator = "0.156.0"
+oxc_ast = "0.156.0"
+oxc_ast_visit = "0.156.0"
+oxc_codegen = "0.156.0"
+oxc_transformer = "0.156.0"
+oxc_semantic = "0.156.0"
 oxc_sourcemap = "9.0.0"
 css = { path = "../css" }
 phf = "0.14.0"

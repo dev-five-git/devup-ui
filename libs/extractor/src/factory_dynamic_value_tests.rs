@@ -2,6 +2,40 @@ use super::*;
 
 const FILE: &str = "/src/factory-dynamic.tsx";
 
+#[rstest]
+#[case::before("...raw, bg:'red', other:OWN")]
+#[case::after("bg:'red', other:OWN, ...raw")]
+#[case::opaque_literal("bg:'red', other:OWN, ...{bg:'green', ...raw}")]
+#[case::computed("bg:'red', other:OWN, ...raw, [key]:'blue'")]
+#[serial]
+fn compiled_factory_values_when_spreads_are_opaque_keep_explicit_styles_independent(
+    #[case] props: &str,
+    #[values(false, true)] namespace: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given
+    let _state = crate::test_state::TestStateGuard::new();
+    let call = if namespace { "ui.css" } else { "i" };
+    let props = props.replace("OWN", &format!("held({call}({{overflow:'hidden'}}))"));
+    let source = format!(
+        "{} import {{jsx as o}} from 'react/jsx-runtime'; function render(raw,key,trace){{ const held=x=>(trace.push('held'),x); return o(t, (({{{props}}}) as const)); }}",
+        imports(namespace)
+    );
+    // When
+    let output = extract_factory(&source, single_css);
+    // Then: the opaque keys are DOM data, not styling inputs; the utility runs at build time.
+    let projection = "(() => {const result=render({bg:'blue',other:'raw',_hover:'opaque'},'bg',trace);trace.push(result.target,result.props.bg,result.props.other,result.props._hover);return result;})()";
+    assert_eq!(
+        held_observation(&output, projection, single_css),
+        "[[\"held\",\"div\",\"blue\",\"raw\",\"opaque\"],[\"hidden\"]]"
+    );
+    let backgrounds: Vec<_> = output.styles.iter().filter_map(|style| match style {
+        ExtractStyleValue::Static(value) if value.property() == "background" => Some(value.value()),
+        _ => None,
+    }).collect();
+    assert_eq!(backgrounds, ["red"]);
+}
+
 fn imports(namespace: bool) -> &'static str {
     if namespace {
         "import {Box as t} from '@devup-ui/react'; import * as ui from '@devup-ui/react';"
@@ -20,6 +54,34 @@ fn extract_factory(source: &str, single_css: bool) -> ExtractOutput {
         },
     )
     .unwrap_or_else(|error| panic!("{source}\n{error}"))
+}
+
+fn render_observation(output: &ExtractOutput, invocation: &str, filename: Option<&str>) -> String {
+    use oxc_allocator::TakeIn;
+    use oxc_ast_visit::{VisitMut, walk_mut::walk_expression};
+
+    struct Syntax<'a>(AstBuilder<'a>);
+    impl<'a> VisitMut<'a> for Syntax<'a> {
+        fn visit_expression(&mut self, expression: &mut Expression<'a>) {
+            let inner = crate::utils::unwrap_syntax_only_mut(expression);
+            let value = inner.take_in(&self.0);
+            *expression = value;
+            walk_expression(self, expression);
+        }
+    }
+
+    let arena = Allocator::default();
+    let mut parsed = Parser::new(&arena, &output.code, SourceType::tsx()).parse();
+    assert_eq!(parsed.diagnostics.len(), 0, "{}", output.code);
+    Syntax(AstBuilder::new(&arena)).visit_program(&mut parsed.program);
+    let javascript = ExtractOutput {
+        styles: output.styles.clone(),
+        code: Codegen::new().build(&parsed.program).code,
+        map: None,
+        css_file: output.css_file.clone(),
+        dependencies: output.dependencies.clone(),
+    };
+    super::render_observation(&javascript, invocation, filename)
 }
 
 fn held_observation(output: &ExtractOutput, invocation: &str, single_css: bool) -> String {
@@ -61,7 +123,7 @@ fn held_observation(output: &ExtractOutput, invocation: &str, single_css: bool) 
 #[case::member_array(("other:([OWN,OWN])[0]", "[]", 1))]
 #[case::member_dynamic_array(("other:([OWN,OWN])[index]", "[]", 1))]
 #[case::member_spread(("other:({ ...p,a:OWN })[key]", "[]", 1))]
-#[case::array_spread(("other:([OWN,...p])[index]", "[]", 2))]
+#[case::array_spread(("other:([OWN,...p])[index]", "[]", 1))]
 #[case::wrapper(("other:(({ ...p,a:OWN }) as const)[key]", "[]", 1))]
 #[case::static_object(("other:({ a:OWN })['a']", "[]", 1))]
 #[case::shorthand(("mx:OWN", "[]", 2))]

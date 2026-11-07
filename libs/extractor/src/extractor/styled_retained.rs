@@ -207,6 +207,7 @@ impl<'a> StyledDefinition<'a> {
     pub(super) fn with_execution(mut self, ast: &AstBuilder<'a>, inherited: Option<&Self>) -> Self {
         if let Some(inherited) = inherited {
             self.execution = inherited.execution.clone_in(ast.allocator());
+            self.takes_styles = inherited.takes_styles;
         }
         self
     }

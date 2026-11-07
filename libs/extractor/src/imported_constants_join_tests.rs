@@ -175,3 +175,161 @@ fn scoping_when_a_bound_callback_captures_a_local_is_returned_for_reuse()
     assert_eq!(reads.symbols, vec![symbol, symbol]);
     Ok(())
 }
+
+#[test]
+#[serial_test::serial]
+fn scoped_captures_when_exact_dependencies_and_raw_copies_join_keep_their_owners()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: one module mixes captured rules, exact primitives and copy-only versus escaped objects.
+    let source = r"import {Box,styled} from '@devup-ui/react';
+enum E { A=2, B=A+1 }
+const trace=[];
+function make(input){const rest=input.color;const __devupValue0='collision';const first=Math.imul(E.B,2);const gap=first+1;const zero=Math.sign(-0);const copy={p:gap};const changed={color:'raw'};const alias=changed;alias.color='mutated';const local={color:rest,_hover:{opacity:input.opacity}};const callback=p=>({...local,m:gap});const Card=styled(Box)(callback);const view=<Box zIndex={E.B} {...copy} {...changed} title={__devupValue0} data-zero={zero} data-object={changed}/>;return {Card,view,changed,alias};}
+function shadowed(Math,undefined){const value=Math.imul(undefined,2);return <Box zIndex={value}/>;}
+";
+    css::class_map::reset_class_map();
+    css::file_map::reset_file_map();
+    let output = crate::extract(
+        "joined.tsx",
+        source,
+        ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+    )?;
+    // When: both renderers read the original captured object after the initializer has run once.
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("joined.tsx", None),
+        &output,
+        "const made=make({get color(){trace.push('color');return 'navy';},get opacity(){trace.push('opacity');return 0.5;}});const first=render({target:made.Card,props:{}});const second=render({target:made.Card,props:{}});const local=shadowed({imul(a,b){trace.push('math');return a+b;}},9);JSON.stringify([[first,second].map(e=>[values(e,'color'),values(e,'opacity',0,'&:hover'),values(e,'margin')]),values(made.view,'padding'),values(made.view,'z-index'),made.view.props.title,Object.is(made.view.props['data-zero'],-0),made.view.props['data-object']===made.changed,made.changed===made.alias,made.view.props.color,values(local,'z-index'),trace]);",
+    );
+    // Then: shadowed globals and raw object identity survive while only proven styles are extracted.
+    assert_eq!(
+        actual,
+        serde_json::json!([
+            [[["navy"], [0.5], ["28px"]], [["navy"], [0.5], ["28px"]]],
+            ["28px"],
+            ["3"],
+            "collision",
+            true,
+            true,
+            true,
+            "mutated",
+            [11],
+            ["color", "opacity", "math"]
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn initialization_failures_when_namespace_aliases_rewrite_keep_authored_locations()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: namespace and import-alias edits precede an immediate lexical read.
+    let source = concat!(
+        "import * as emotion from '@emotion/css';\n",
+        "export const rule=emotion.css({color:late});\nconst late='green';"
+    );
+    let option = ExtractOption {
+        import_aliases: std::collections::HashMap::from([(
+            "@emotion/css".into(),
+            crate::ImportAlias::NamedToNamed,
+        )]),
+        ..ExtractOption::default()
+    };
+    // When: the original read is terminal, rather than a candidate for value evaluation.
+    let error = crate::extract("joined-tdz.tsx", source, option.clone())
+        .err()
+        .ok_or("TDZ compiled")?
+        .to_string();
+    let offset = source.find("late").ok_or("TDZ use")?;
+    // Then: the error names the authored use; moving the read into a deferred body succeeds.
+    assert!(
+        error.starts_with(&format!(
+            "{}:",
+            crate::locate("joined-tdz.tsx", source, offset)
+        )),
+        "{error}"
+    );
+    assert!(error.contains("ReferenceError"), "{error}");
+    let deferred = concat!(
+        "import * as emotion from '@emotion/css';\n",
+        "export const rule=()=>emotion.css({color:late});\nconst late='green';"
+    );
+    let output = crate::extract("joined-tdz.tsx", deferred, option.clone())?;
+    assert!(output.styles.iter().any(|style| matches!(style, ExtractStyleValue::Static(style) if style.property()=="color" && style.value()=="green")));
+    // Given: an actual evaluator edit precedes the same namespace/alias TDZ suffix.
+    let prefix = "import {css} from '@devup-ui/react';function double(n){return n*2;}const earlier=css({width:double(12345)});\n";
+    let (computed, edits, _) = crate::build_time_values::evaluate_located(
+        prefix,
+        "joined-tdz.tsx",
+        &option,
+        None,
+        &Unknown::default(),
+    )
+    .map_err(|errors| format!("{errors:?}"))?
+    .ok_or("missing evaluated prefix")?;
+    assert_ne!(edits, [] as [(usize, usize, usize); 0]);
+    assert_ne!(prefix.len(), computed.len());
+    let original = format!("{prefix}{source}");
+    let evaluated = format!("{computed}{source}");
+    // When: the recursive extraction seam receives the real earlier replacement map.
+    let error = crate::extract_source(
+        "joined-tdz.tsx",
+        &evaluated,
+        Some((&original, &[edits.as_slice()])),
+        None,
+        option,
+        false,
+        None,
+    )
+    .err()
+    .ok_or("TDZ compiled")?
+    .to_string();
+    // Then: the terminal ReferenceError names the original authored late read.
+    let offset = original.find("late").ok_or("TDZ use")?;
+    assert!(
+        error.starts_with(&format!(
+            "{}:",
+            crate::locate("joined-tdz.tsx", &original, offset)
+        )),
+        "{error}"
+    );
+    assert!(error.contains("ReferenceError"), "{error}");
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn recoverable_local_errors_when_a_later_value_is_forbidden_reach_the_located_sandbox()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: local ownership needs fallback, and a separate computed value reads a forbidden helper.
+    let source = "import * as emotion from '@emotion/css';\nconst compare=Object.getOwnPropertyDescriptor(String.prototype,'localeCompare').value;\nexport function f(props){const inner={color:props.color};observe(inner);return emotion.css(inner);}\nexport const later=emotion.css({width:compare('a','b')});";
+    let option = ExtractOption {
+        import_aliases: std::collections::HashMap::from([(
+            "@emotion/css".into(),
+            crate::ImportAlias::NamedToNamed,
+        )]),
+        ..ExtractOption::default()
+    };
+    // When: public extraction passes recoverable inliner errors to the ordinary fallback pipeline.
+    let error = crate::extract("joined-fallback.tsx", source, option)
+        .err()
+        .ok_or("forbidden helper compiled")?
+        .to_string();
+    // Then: a blanket early return cannot hide the later helper or remap it to generated source.
+    let offset = source
+        .find("Object.getOwnPropertyDescriptor")
+        .ok_or("helper fixture")?;
+    assert!(
+        error.lines().any(|line| line.starts_with(&format!(
+            "{}:",
+            crate::locate("joined-fallback.tsx", source, offset)
+        ))),
+        "{error}"
+    );
+    assert!(error.contains("String.prototype.localeCompare"), "{error}");
+    Ok(())
+}

@@ -14,6 +14,9 @@ mod composition;
 #[path = "local_shape_hygiene_tests.rs"]
 mod hygiene;
 
+#[path = "local_mixed_style_object_tests.rs"]
+mod mixed_style_objects;
+
 fn emotion_option() -> ExtractOption {
     ExtractOption {
         import_aliases: HashMap::from([("@emotion/react".to_string(), ImportAlias::NamedToNamed)]),
@@ -187,7 +190,15 @@ fn runtime_value_when_written_directly_on_an_element_keeps_css_variable()
             .iter()
             .any(|style| matches!(style, ExtractStyleValue::Dynamic(_)))
     );
-    assert!(output.code.contains("gap*4"), "{}", output.code);
+    crate::style_slot_test_support::assert_variables(
+        &output,
+        "local-exact.tsx",
+        &emotion_option(),
+        &[(
+            "padding",
+            crate::style_slot_test_support::numeric("gap * 4"),
+        )],
+    );
     Ok(())
 }
 
@@ -360,12 +371,12 @@ fn dynamic_shape_when_overridden_keeps_only_winning_color(
 }
 
 #[rstest]
-#[case("const inner = { color: props.c }; inner.color = 'blue'; return <Box {...inner} />;")]
-#[case("const inner = { color: props.c }; mutate(inner); return <Box {...inner} />;")]
+#[case("const inner = { color: props.c }; inner.color = 'blue'; return <div css={inner} />;")]
+#[case("const inner = { color: props.c }; mutate(inner); return <div css={inner} />;")]
 #[case("const inner = { color: props.c }; const alias = inner; return <div css={inner} />;")]
 #[case("const inner = { color: props.c }; console.log(inner.color); return <div css={inner} />;")]
-#[case("const inner = { color: props.c }; return <Box {...inner} data-inner={inner} />;")]
-#[case("const inner = { color: props.c }; inner = {}; return <Box {...inner} />;")]
+#[case("const inner = { color: props.c }; return <div css={inner} data-inner={inner} />;")]
+#[case("const inner = { color: props.c }; inner = {}; return <div css={inner} />;")]
 #[case("const inner = { color: red }; const red = 'red'; return <Box {...inner} />;")]
 #[case("const inner = { color: inner }; return <Box {...inner} />;")]
 #[case("return <Box {...inner} />; const inner = { color: props.c };")]
@@ -384,6 +395,85 @@ fn local_runtime_shape_when_changed_or_escaped_is_a_located_error(#[case] body: 
     // Then
     assert!(error.starts_with("local-exact.tsx:2:"), "{error}");
     assert!(error.contains("inner"), "{error}");
+}
+
+#[rstest]
+#[case(
+    "const inner={color:props.c};inner.color='blue';return <Box {...inner}/>;",
+    "blue",
+    false
+)]
+#[case(
+    "const inner={color:props.c};mutate(inner);return <Box {...inner}/>;",
+    "blue",
+    false
+)]
+#[case(
+    "const inner={color:props.c};return <Box {...inner} data-inner={inner}/>;",
+    "red",
+    true
+)]
+#[serial]
+fn raw_local_shapes_when_changed_or_observed_remain_native_data(
+    #[case] body: &str,
+    #[case] color: &str,
+    #[case] observed: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: the former raw-spread safety cases now have explicit-style counterparts above.
+    reset_class_map();
+    reset_file_map();
+    let source = format!("import {{Box}} from '@devup-ui/react';function f(props){{{body}}}");
+    let output = extract(
+        "local-raw.tsx",
+        &source,
+        ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+    )?;
+    // When: the original mutation or observation runs before native object copying.
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("local-raw.tsx", None),
+        &output,
+        "const mutate=inner=>{inner.color='blue';};const e=f({c:'red'});JSON.stringify([e.props.color,e.props['data-inner']?.color??null,e.props.className??'',Object.keys(e.props.style||{})]);",
+    );
+    // Then: no style key is consumed, while genuine style positions still reject the same unsafe object.
+    assert_eq!(output.styles.len(), 0);
+    assert_eq!(
+        actual,
+        serde_json::json!([color, if observed { Some(color) } else { None }, "", []])
+    );
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn raw_local_reassignment_when_the_binding_is_const_keeps_the_native_throw()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: a raw copy does not authorize interpreting an illegal const assignment as styling.
+    let source = "import {Box} from '@devup-ui/react';function f(props){const inner={color:props.c};inner={};return <Box {...inner}/>;}";
+    reset_class_map();
+    reset_file_map();
+    let output = extract(
+        "local-raw.tsx",
+        source,
+        ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+    )?;
+    // When: the emitted application function is invoked.
+    let actual = crate::styled_source_tests::captured_render::execute(
+        ("local-raw.tsx", None),
+        &output,
+        "let result;try{f({c:'red'});result='returned';}catch(error){result=error.name;}JSON.stringify(result);",
+    );
+    // Then: the original JavaScript throw remains observable, with no extracted styles.
+    assert_eq!(actual, "TypeError");
+    assert_eq!(output.styles.len(), 0);
+    Ok(())
 }
 
 #[rstest]

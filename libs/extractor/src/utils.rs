@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+pub(super) mod capture_elision;
+
 use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
@@ -14,9 +16,142 @@ use oxc_ast::{
 
 use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
+mod w22_tests;
+
+#[cfg(test)]
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
+
+/// One preorder walker for expression and program rewrite entries.
+struct Rewrite<'s, 'a>(&'s mut dyn FnMut(&mut Expression<'a>) -> bool, bool);
+impl<'a> oxc_ast_visit::VisitMut<'a> for Rewrite<'_, 'a> {
+    fn visit_span(&mut self, span: &mut oxc_span::Span) {
+        if self.1 {
+            *span = SPAN;
+        }
+    }
+
+    fn visit_expression(&mut self, expression: &mut Expression<'a>) {
+        if !(self.0)(expression) {
+            oxc_ast_visit::walk_mut::walk_expression(self, expression);
+        }
+    }
+}
+
+/// Rewrite an expression before its children, leaving handled replacements untouched.
+pub(super) fn rewrite_expression<'a>(
+    expression: &mut Expression<'a>,
+    rewrite: &mut dyn FnMut(&mut Expression<'a>) -> bool,
+) {
+    oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(rewrite, false), expression);
+}
+
+/// Parsed snippets are generated nodes, so their offsets must not map to authored source.
+pub(super) fn clear_generated_spans(expression: &mut Expression<'_>) {
+    oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(&mut |_| false, true), expression);
+}
+
+/// Rewrite program expressions with the same preorder and replacement boundary.
+pub(super) fn rewrite_program<'a>(
+    program: &mut Program<'a>,
+    rewrite: &mut dyn FnMut(&mut Expression<'a>) -> bool,
+) {
+    oxc_ast_visit::VisitMut::visit_program(&mut Rewrite(rewrite, false), program);
+}
+
+/// The existing reservation policies share traversal while retaining set ownership.
+pub(super) enum ReservedNames<'s, 'a> {
+    Owned(&'s mut rustc_hash::FxHashSet<String>),
+    Borrowed(&'s mut rustc_hash::FxHashSet<&'a str>),
+    CssSlot(&'s mut rustc_hash::FxHashSet<String>),
+}
+
+impl<'a> ReservedNames<'_, 'a> {
+    fn binding_or_reference(&mut self, name: &'a str) {
+        match self {
+            Self::Owned(names) | Self::CssSlot(names) => {
+                names.insert(name.to_string());
+            }
+            Self::Borrowed(names) => {
+                names.insert(name);
+            }
+        }
+    }
+
+    pub(super) fn reserve(mut self, program: &Program<'a>) {
+        oxc_ast_visit::Visit::visit_program(&mut self, program);
+    }
+}
+
+fn static_key_name<'a>(expression: &Expression<'a>) -> Option<&'a str> {
+    match unwrap_syntax_only(expression) {
+        Expression::StringLiteral(literal) => literal.value.as_str(),
+        Expression::TemplateLiteral(template) => template.single_quasi()?.as_str(),
+        Expression::TSTypeAssertion(assertion) => static_key_name(&assertion.expression),
+        _ => None,
+    }
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for ReservedNames<'_, 'a> {
+    fn visit_binding_identifier(&mut self, it: &oxc_ast::ast::BindingIdentifier<'a>) {
+        self.binding_or_reference(it.name.as_str());
+    }
+
+    fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
+        self.binding_or_reference(it.name.as_str());
+    }
+
+    fn visit_identifier_name(&mut self, it: &IdentifierName<'a>) {
+        if let Self::CssSlot(names) = self {
+            names.insert(it.name.to_string());
+        }
+    }
+
+    fn visit_jsx_identifier(&mut self, it: &oxc_ast::ast::JSXIdentifier<'a>) {
+        if let Self::CssSlot(names) = self {
+            names.insert(it.name.to_string());
+        }
+    }
+
+    fn visit_property_key(&mut self, it: &PropertyKey<'a>) {
+        if let Self::CssSlot(names) = self
+            && let Some(name) = it
+                .as_expression()
+                .and_then(static_key_name)
+                .map(str::to_string)
+                .or_else(|| {
+                    it.static_name()
+                        .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+                        .map(std::borrow::Cow::into_owned)
+                })
+        {
+            names.insert(name);
+        }
+        oxc_ast_visit::walk::walk_property_key(self, it);
+    }
+
+    fn visit_computed_member_expression(
+        &mut self,
+        it: &oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) {
+        if let Self::CssSlot(names) = self
+            && let Some(name) =
+                static_key_name(&it.expression).or_else(|| it.static_property_name()?.as_str())
+        {
+            names.insert(name.to_string());
+        }
+        oxc_ast_visit::walk::walk_computed_member_expression(self, it);
+    }
+}
+
+/// Reserve binding and reference names without changing the caller's set ownership.
+pub(super) fn reserve_binding_names(
+    program: &Program<'_>,
+    names: &mut rustc_hash::FxHashSet<String>,
+) {
+    ReservedNames::Owned(names).reserve(program);
+}
 
 /// Check if a filename is a vanilla-extract style file.
 pub(super) fn is_vanilla_extract_file(filename: &str) -> bool {
@@ -90,6 +225,29 @@ pub(super) fn unwrap_syntax_only_mut<'a, 'b>(
         Expression::ParenthesizedExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
         _ => expression,
     }
+}
+
+/// Drop a reference and suppress assignment's anonymous-definition name inference.
+/// Share this allocation across emitted captures and indirect styled calls.
+#[inline(never)]
+pub(crate) fn unbound_value<'a>(builder: &AstBuilder<'a>, value: Expression<'a>) -> Expression<'a> {
+    Expression::new_sequence_expression(
+        SPAN,
+        oxc_allocator::Vec::from_array_in(
+            [
+                Expression::new_numeric_literal(
+                    SPAN,
+                    0.0,
+                    None,
+                    oxc_syntax::number::NumberBase::Decimal,
+                    builder,
+                ),
+                value,
+            ],
+            builder,
+        ),
+        builder,
+    )
 }
 
 /// Convert a value to a pixel value.
@@ -198,6 +356,8 @@ pub(super) enum ParsedStyleOrder<'a> {
         consequent: Option<u8>,
         alternate: Option<u8>,
     },
+    /// A value that is neither of these, which the stylesheet cannot order by
+    Unsupported,
 }
 
 impl ParsedStyleOrder<'_> {
@@ -223,7 +383,10 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    crate::style_order::expression_order(expr, allocator)
+    match crate::style_order::expression_order(expr, allocator) {
+        ParsedStyleOrder::None => ParsedStyleOrder::Unsupported,
+        order => order,
+    }
 }
 
 pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
@@ -566,45 +729,20 @@ impl<'a> oxc_ast_visit::Visit<'a> for Suspends {
     fn visit_class(&mut self, _: &oxc_ast::ast::Class<'a>) {}
 }
 
-/// Whether an element can read its impure spreads once through a function
-/// wrapped around it: what stays in that function (style props, `className`
-/// and `style`) neither waits nor yields, as the spreads and the other
-/// attributes and children before the last of them move out of it
-pub(super) fn reads_spreads_once(element: &oxc_ast::ast::JSXElement<'_>) -> bool {
-    use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
-    use oxc_ast_visit::Visit;
-    let mut impure = false;
-    let mut suspends = Suspends::default();
-    for attribute in &element.opening_element.attributes {
-        match attribute {
-            JSXAttributeItem::SpreadAttribute(spread) => impure |= !is_pure(&spread.argument),
-            JSXAttributeItem::Attribute(attribute) => {
-                if !matches!(&attribute.name, JSXAttributeName::Identifier(name)
-                    if stays_attribute(&name.name))
-                    && let Some(value) = &attribute.value
-                {
-                    suspends.visit_jsx_attribute_value(value);
-                }
-            }
-        }
-    }
-    impure && !suspends.found
-}
-
 /// Whether the prop `name` stays an attribute of the element built, rather
 /// than becoming its classes or style
-pub(super) fn stays_attribute(name: &str) -> bool {
-    css::is_special_property::is_special_property(name) && !matches!(name, "className" | "style")
-}
-
 /// `((name, ...) => body)(value, ...)`: each value is evaluated once, where
 /// `body` reads it as often as it needs
 pub(super) fn call_with_values<'a>(
     builder: &AstBuilder<'a>,
-    values: Vec<(String, Expression<'a>)>,
-    body: Expression<'a>,
+    mut values: Vec<(String, Expression<'a>)>,
+    mut body: Expression<'a>,
 ) -> Expression<'a> {
     use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+    capture_elision::inline(builder, &mut values, &mut body);
+    if values.is_empty() {
+        return body;
+    }
     let mut parameters = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
     let mut arguments = oxc_allocator::Vec::with_capacity_in(values.len(), builder);
     for (name, value) in values {
@@ -736,7 +874,7 @@ pub(super) fn style_arguments<'a>(
     for part in parts {
         match part {
             StylePart::Rules(object) => {
-                merge_style_properties(ast_builder, &mut merged, &object.properties);
+                merge_style_properties(ast_builder, &mut merged, &object.properties, false);
             }
             StylePart::Conditional {
                 test,
@@ -1006,6 +1144,8 @@ pub(super) fn element_error(component: &str, code: &str, requirement: &str) -> S
 pub(super) fn css_prop_error(element: &str, code: &str, requirement: &str) -> String {
     format!("`css` on `<{element}>` cannot use `{code}` at build time: {requirement}")
 }
+
+pub(super) const CSS_PROP_SPREAD: &str = "a spread after the `css` prop may carry a `css` of its own, which replaces it whole where only the runtime could tell: write the spread before `css`";
 
 pub(super) const CSS_PROP_VALUE: &str = "it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them";
 
@@ -1286,7 +1426,12 @@ fn merge_conditional_properties<'a>(
             .any(|value| matches!(value, Some(Expression::ObjectExpression(_))))
         {
             let mut nested = oxc_allocator::Vec::new_in(ast_builder);
-            merge_style_properties(ast_builder, &mut nested, object_properties(fallback)?);
+            merge_style_properties(
+                ast_builder,
+                &mut nested,
+                object_properties(fallback)?,
+                false,
+            );
             merge_conditional_properties(
                 ast_builder,
                 &mut nested,
@@ -1356,6 +1501,7 @@ fn merge_style_properties<'a>(
     ast_builder: &AstBuilder<'a>,
     merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
     properties: &[ObjectPropertyKind<'a>],
+    keep_position: bool,
 ) {
     for property in properties {
         let existing = match property {
@@ -1375,7 +1521,7 @@ fn merge_style_properties<'a>(
             continue;
         };
         let previous = merged.remove(index);
-        if let (
+        let replacement = if let (
             ObjectPropertyKind::ObjectProperty(previous),
             ObjectPropertyKind::ObjectProperty(next),
         ) = (&previous, property)
@@ -1383,13 +1529,19 @@ fn merge_style_properties<'a>(
                 (&previous.value, &next.value)
         {
             let mut nested = oxc_allocator::Vec::new_in(ast_builder);
-            merge_style_properties(ast_builder, &mut nested, &before.properties);
-            merge_style_properties(ast_builder, &mut nested, &after.properties);
+            let layers = get_str_by_property_key(&next.key).as_deref() == Some("@layer");
+            merge_style_properties(ast_builder, &mut nested, &before.properties, layers);
+            merge_style_properties(ast_builder, &mut nested, &after.properties, layers);
             let mut combined = next.clone_in(ast_builder.allocator());
             combined.value = Expression::new_object_expression(SPAN, nested, ast_builder);
-            merged.push(ObjectPropertyKind::ObjectProperty(combined));
+            ObjectPropertyKind::ObjectProperty(combined)
         } else {
-            merged.push(property.clone_in(ast_builder.allocator()));
+            property.clone_in(ast_builder.allocator())
+        };
+        if keep_position {
+            merged.insert(index, replacement);
+        } else {
+            merged.push(replacement);
         }
     }
 }
@@ -1758,7 +1910,7 @@ mod tests {
     }
 
     #[test]
-    fn test_jsx_expression_to_number() {
+    fn test_jsx_expression_to_style_order() {
         let allocator = Allocator::default();
         let builder = oxc_ast::builder::AstBuilder::new(&allocator);
         assert_eq!(
