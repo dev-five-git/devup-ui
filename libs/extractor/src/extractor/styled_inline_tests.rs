@@ -126,6 +126,11 @@ fn execute(render: &str) -> String {
 #[case("__devupProps=>((p)=>([o.tag]=[p.a],[p.b,o.tag]))(__devupProps)")]
 #[case("__devupProps=>((p)=>p())(o.method)")]
 #[case("__devupProps=>((p)=>p('typeof __devupProps'))(eval)")]
+#[case("__devupProps=>((p)=>{'use strict';return p.a;})(__devupProps)")]
+#[case("__devupProps=>((p)=>{const {a}=p;return a;})(__devupProps)")]
+#[case("__devupProps=>((p)=>{const record=['0'];return [record,p.a,<o.method/>];})(__devupProps)")]
+#[case("__devupProps=>(({a})=>[a,<o.method/>])(__devupProps)")]
+#[case("__devupProps=>(([p])=>{const value=p.a;return value;})([__devupProps])")]
 fn renderer_values_effects_and_exceptions_match_the_original(#[case] source: &str) {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
@@ -135,6 +140,44 @@ fn renderer_values_effects_and_exceptions_match_the_original(#[case] source: &st
         execute(&format!("()=>({source})(input())")),
         "{output}"
     );
+}
+
+#[test]
+fn compiler_created_component_tags_keep_their_binding_when_captured() {
+    let allocator = Allocator::default();
+    let ast = AstBuilder::new(&allocator);
+    let mut component = parse(
+        &ast,
+        "__devupProps=>((Tag)=><Tag a={Tag.a}></Tag>)(Component)",
+    );
+    // Compiler-created tags also use JSXIdentifier for dynamic component names.
+    rewrite_expression(&mut component, &mut |value| {
+        if let Expression::JSXElement(element) = value {
+            let JSXElement {
+                opening_element,
+                closing_element,
+                ..
+            } = &mut **element;
+            for tag in std::iter::once(&mut opening_element.name)
+                .chain(closing_element.iter_mut().map(|closing| &mut closing.name))
+            {
+                if let JSXElementName::IdentifierReference(id) = tag {
+                    *tag = JSXElementName::new_identifier(
+                        SPAN,
+                        Str::from_in(id.name.as_str(), ast.allocator()),
+                        &ast,
+                    );
+                }
+            }
+        }
+        false
+    });
+    let original = readable_code(&component);
+    let output = compiled(&ast, component, parse(&ast, "input()"));
+    assert_eq!(output.matches("=>").count(), 1, "{output}");
+    let observed = execute(&output);
+    assert!(observed.contains("\"type\":\"Component\""), "{observed}");
+    assert_eq!(observed, execute(&format!("()=>({original})(input())")));
 }
 
 #[test]
