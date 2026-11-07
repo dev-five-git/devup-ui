@@ -24,8 +24,14 @@ use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 /// One preorder walker for expression and program rewrite entries.
-struct Rewrite<'s, 'a>(&'s mut dyn FnMut(&mut Expression<'a>) -> bool);
+struct Rewrite<'s, 'a>(&'s mut dyn FnMut(&mut Expression<'a>) -> bool, bool);
 impl<'a> oxc_ast_visit::VisitMut<'a> for Rewrite<'_, 'a> {
+    fn visit_span(&mut self, span: &mut oxc_span::Span) {
+        if self.1 {
+            *span = SPAN;
+        }
+    }
+
     fn visit_expression(&mut self, expression: &mut Expression<'a>) {
         if !(self.0)(expression) {
             oxc_ast_visit::walk_mut::walk_expression(self, expression);
@@ -38,7 +44,12 @@ pub(super) fn rewrite_expression<'a>(
     expression: &mut Expression<'a>,
     rewrite: &mut dyn FnMut(&mut Expression<'a>) -> bool,
 ) {
-    oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(rewrite), expression);
+    oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(rewrite, false), expression);
+}
+
+/// Parsed snippets are generated nodes, so their offsets must not map to authored source.
+pub(super) fn clear_generated_spans(expression: &mut Expression<'_>) {
+    oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(&mut |_| false, true), expression);
 }
 
 /// Rewrite program expressions with the same preorder and replacement boundary.
@@ -46,7 +57,7 @@ pub(super) fn rewrite_program<'a>(
     program: &mut Program<'a>,
     rewrite: &mut dyn FnMut(&mut Expression<'a>) -> bool,
 ) {
-    oxc_ast_visit::VisitMut::visit_program(&mut Rewrite(rewrite), program);
+    oxc_ast_visit::VisitMut::visit_program(&mut Rewrite(rewrite, false), program);
 }
 
 /// The existing reservation policies share traversal while retaining set ownership.
@@ -705,7 +716,7 @@ pub(super) fn call_with_values<'a>(
     mut body: Expression<'a>,
 ) -> Expression<'a> {
     use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
-    capture_elision::inline(&mut values, &mut body);
+    capture_elision::inline(builder, &mut values, &mut body);
     if values.is_empty() {
         return body;
     }

@@ -43,22 +43,25 @@ fn class_boundary_when_call_parts_throw_preserves_the_original_cutoff(
 }
 
 #[rstest]
-#[case("<Box className={read()} id={later()}/>", "'id'", "early")]
+#[case("<Box className={read()} id={later()}/>", "'id'", "early", true)]
 #[case(
     "<Box className={read()} {...later()}/>",
     "{className:'override'}",
-    "override"
+    "override",
+    true
 )]
 #[case(
     "<Box className={read()} className={later()}/>",
     "'override'",
-    "override"
+    "override",
+    false
 )]
 #[serial]
-fn class_boundary_when_other_attributes_can_interfere_still_captures(
+fn class_boundary_keeps_evaluation_order_and_only_captures_used_values(
     #[case] element: &str,
     #[case] later: &str,
     #[case] expected: &str,
+    #[case] captured: bool,
 ) {
     let source = format!("{BOX}export const a=(read,later)=>{element};");
     let actual = evaluate(
@@ -69,7 +72,7 @@ fn class_boundary_when_other_attributes_can_interfere_still_captures(
     );
     assert_eq!(actual.trace, serde_json::json!(["read", "later"]));
     assert_eq!(actual.element["props"]["className"], expected);
-    assert!(code(&source).contains("__devupValue"));
+    assert_eq!(code(&source).contains("__devupValue"), captured);
 }
 
 #[test]
@@ -181,7 +184,7 @@ fn class_boundary_when_parameter_shadows_text_and_id_reads_outer_binding_preserv
 
 #[test]
 #[serial]
-fn class_boundary_when_call_argument_yields_retains_capture_in_the_generator_scope() {
+fn class_boundary_when_call_argument_yields_keeps_the_original_generator_scope() {
     let source = format!(
         "{BOX}export function* a(read){{return <Box className={{read(yield (trace.push('yield'),'pause'))}}/>;}}"
     );
@@ -194,7 +197,7 @@ fn class_boundary_when_call_argument_yields_retains_capture_in_the_generator_sco
         serde_json::json!(["yield", "resume", "call:arg"])
     );
     assert_eq!(actual.element["props"]["className"], "opaque");
-    assert!(code(&source).contains("__devupValue"));
+    assert!(!code(&source).contains("__devupValue"));
 }
 
 #[test]

@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr\"import {Box} from '@devu
 ---
 ToBTreeSet {
     styles: {},
-    code: "((__devupChoice0) => <div />)({}[1]);\n",
+    code: "({})[1], <div />;\n",
 }

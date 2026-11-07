@@ -711,36 +711,52 @@ fn static_css_captures_keep_reads_without_unused_calls(
 #[rstest]
 #[case::component(
     "export const App=(View)=> <View css={css`${base}; color: red;`}/>;",
-    "(()=>{const View=()=>0;return App(View).type===View;})()"
+    "(()=>{const View=()=>0;return App(View).type===View;})()",
+    true,
+    false
 )]
 #[case::capture_like_component(
     "export const App=(__devupValue0)=> <__devupValue0 css={css`${base}; color: red;`}/>;",
-    "(()=>{const View=()=>0;return App(View).type===View;})()"
+    "(()=>{const View=()=>0;return App(View).type===View;})()",
+    true,
+    false
 )]
 #[case::expression_attribute(
     "export const App=(token)=> <div data-token={token} css={css`${base}; color: red;`}/>;",
-    "(()=>{const token={};return App(token).props['data-token']===token;})()"
+    "(()=>{const token={};return App(token).props['data-token']===token;})()",
+    true,
+    true
 )]
 #[case::partial_value(
     "export const App=(gap)=> <div css={css`${base}; padding: ${gap};`}/>;",
-    "typeof App('12px').props.style==='object'"
+    "typeof App('12px').props.style==='object'",
+    false,
+    true
 )]
 #[case::expression_child(
     "export const App=(child)=> <div css={css`${base}; color: red;`}>{child}</div>;",
-    "(()=>{const child={};return App(child).children[0]===child;})()"
+    "(()=>{const child={};return App(child).children[0]===child;})()",
+    false,
+    true
 )]
 #[case::nested_element_child(
     "export const App=()=> <div css={css`${base}; color: red;`}><span/></div>;",
-    "App().children[0].type==='span'"
+    "App().children[0].type==='span'",
+    false,
+    true
 )]
 #[case::spread_attribute(
     "export const App=(props)=> <div {...props} css={css`${base}; color: red;`}/>;",
-    "(()=>{const token={};return App({token}).props.token===token;})()"
+    "(()=>{const token={};return App({token}).props.token===token;})()",
+    true,
+    true
 )]
 #[serial]
 fn static_css_capture_elision_keeps_used_values_and_component_names(
     #[case] body: &str,
     #[case] probe: &str,
+    #[case] captured: bool,
+    #[case] sequenced: bool,
     #[values(false, true)] single_css: bool,
 ) {
     let source =
@@ -755,8 +771,8 @@ fn static_css_capture_elision_keeps_used_values_and_component_names(
     )
     .unwrap_or_else(|error| panic!("{error:?}"));
     let work = static_capture_work(&output.code);
-    assert!(work.wrappers > 0, "{}", output.code);
-    assert_eq!(work.sequences, 0, "{}", output.code);
+    assert_eq!(work.wrappers > 0, captured, "{}", output.code);
+    assert_eq!(work.sequences > 0, sequenced, "{}", output.code);
     let observed = whole::execute(&output.code, probe);
     assert_eq!(observed.element, true);
     assert_eq!(observed.trace, serde_json::json!([]));

@@ -1,12 +1,19 @@
-//! Remove captures only when their sole read is eager and nothing observable
-//! precedes it. Work backwards to preserve argument evaluation order.
+//! Inline eager single-use captures and preserve unused arguments as sequences.
+//! Work backwards to preserve evaluation order and suspension scope.
 
 use super::{rewrite_expression, unwrap_syntax_only, unwrap_syntax_only_mut};
+use oxc_allocator::{GetAllocator, TakeIn};
 use oxc_ast::ast::{
-    ArrayExpressionElement, ChainElement, Expression, JSXAttributeItem, JSXAttributeValue,
-    JSXChild, JSXElementName, ObjectPropertyKind,
+    ArrayExpressionElement, AssignmentTarget, ChainElement, Expression, JSXAttributeItem,
+    JSXAttributeValue, JSXChild, JSXElementName, ObjectPropertyKind, SimpleAssignmentTarget,
 };
-use oxc_syntax::{identifier::is_identifier_name, operator::UnaryOperator};
+use oxc_ast::builder::AstBuilder;
+use oxc_parser::Parser;
+use oxc_span::{SPAN, SourceType};
+use oxc_syntax::{
+    identifier::is_identifier_name,
+    operator::{BinaryOperator, UnaryOperator},
+};
 
 type Captures<'a> = [(String, Expression<'a>)];
 
@@ -64,6 +71,18 @@ impl Flow {
     }
 }
 
+/// These literals cannot invoke coercion hooks or mix `BigInt` with Number.
+fn scalar_literal(value: &Expression<'_>) -> bool {
+    super::js_number_literal(value).is_some()
+        || matches!(
+            unwrap_syntax_only(value),
+            Expression::StringLiteral(_)
+                | Expression::BooleanLiteral(_)
+                | Expression::NullLiteral(_)
+        )
+        || matches!(unwrap_syntax_only(value), Expression::TemplateLiteral(template) if template.expressions.is_empty())
+}
+
 /// Whether the eager prefix reaches `name`, ends inertly, or encounters work.
 fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
     match unwrap_syntax_only(value) {
@@ -83,7 +102,9 @@ fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
         | Expression::NumericLiteral(_)
         | Expression::BooleanLiteral(_)
         | Expression::NullLiteral(_)
-        | Expression::BigIntLiteral(_) => Flow::Inert,
+        | Expression::BigIntLiteral(_)
+        | Expression::ArrowFunctionExpression(_)
+        | Expression::FunctionExpression(_) => Flow::Inert,
         Expression::LogicalExpression(logical) => {
             let left = prefix(&logical.left, name, locals);
             if left != Flow::Inert {
@@ -109,7 +130,19 @@ fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
         Expression::BinaryExpression(binary) => {
             let left = prefix(&binary.left, name, locals);
             if left == Flow::Inert {
-                prefix(&binary.right, name, locals).observing()
+                let right = prefix(&binary.right, name, locals);
+                if right == Flow::Inert
+                    && !matches!(
+                        binary.operator,
+                        BinaryOperator::In | BinaryOperator::Instanceof
+                    )
+                    && scalar_literal(&binary.left)
+                    && scalar_literal(&binary.right)
+                {
+                    Flow::Inert
+                } else {
+                    right.observing()
+                }
             } else {
                 left
             }
@@ -191,10 +224,22 @@ fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
                     ObjectPropertyKind::SpreadProperty(spread) => {
                         return prefix(&spread.argument, name, locals).observing();
                     }
-                    ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+                    ObjectPropertyKind::ObjectProperty(property) => {
+                        if property.computed {
+                            let flow = property.key.as_expression().map_or(Flow::Barrier, |key| {
+                                let flow = prefix(key, name, locals);
+                                if flow == Flow::Inert && !primitive(key, locals) {
+                                    Flow::Barrier
+                                } else {
+                                    flow
+                                }
+                            });
+                            if flow != Flow::Inert {
+                                return flow;
+                            }
+                        }
                         &property.value
                     }
-                    ObjectPropertyKind::ObjectProperty(_) => return Flow::Barrier,
                 };
                 let flow = prefix(value, name, locals);
                 if flow != Flow::Inert {
@@ -246,24 +291,44 @@ fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
     }
 }
 
-/// Count expression reads while rejecting scopes and opaque generated code.
-fn reads(expression: &mut Expression<'_>, name: &str) -> Option<usize> {
+/// Suspension may be inlined only when removing the final generated scope.
+#[derive(Clone, Copy)]
+enum Scan {
+    Body,
+    Argument { can_suspend: bool },
+}
+
+fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usize> {
     let mut count = 0;
     let mut blocked = false;
     rewrite_expression(expression, &mut |value| {
         blocked |= match value {
             Expression::Identifier(identifier) => {
                 count += usize::from(identifier.name == name);
-                // Some style slots encode complete JS expressions in the name.
                 !is_identifier_name(identifier.name.as_str())
             }
-            Expression::ArrowFunctionExpression(_)
-            | Expression::FunctionExpression(_)
-            | Expression::ClassExpression(_)
-            | Expression::AssignmentExpression(_)
-            | Expression::UpdateExpression(_)
-            | Expression::AwaitExpression(_)
-            | Expression::YieldExpression(_) => true,
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
+                !matches!(scan, Scan::Body)
+            }
+            Expression::ClassExpression(_) => true,
+            Expression::AwaitExpression(_) | Expression::YieldExpression(_) => {
+                !matches!(scan, Scan::Argument { can_suspend: true })
+            }
+            // Plain assignment targets are not expression reads. Keep parameters
+            // that are written, including targets nested in destructuring patterns.
+            Expression::AssignmentExpression(assignment) if matches!(scan, Scan::Body) => {
+                match &assignment.left {
+                    AssignmentTarget::AssignmentTargetIdentifier(identifier) => {
+                        identifier.name == name
+                    }
+                    AssignmentTarget::ArrayAssignmentTarget(_)
+                    | AssignmentTarget::ObjectAssignmentTarget(_) => true,
+                    _ => false,
+                }
+            }
+            Expression::UpdateExpression(update) if matches!(scan, Scan::Body) => {
+                matches!(&update.argument, SimpleAssignmentTarget::AssignmentTargetIdentifier(identifier) if identifier.name == name)
+            }
             Expression::JSXElement(element) => !intrinsic(&element.opening_element.name),
             Expression::CallExpression(call) => matches!(unwrap_syntax_only(&call.callee),
                 Expression::Identifier(identifier) if identifier.name == "eval"),
@@ -274,10 +339,49 @@ fn reads(expression: &mut Expression<'_>, name: &str) -> Option<usize> {
     (!blocked).then_some(count)
 }
 
-pub(super) fn inline<'a>(values: &mut Vec<(String, Expression<'a>)>, body: &mut Expression<'a>) {
+pub(super) fn inline<'a>(
+    builder: &AstBuilder<'a>,
+    values: &mut Vec<(String, Expression<'a>)>,
+    body: &mut Expression<'a>,
+) {
+    if values.is_empty() {
+        return;
+    }
+    // Generated style slots can carry a whole expression in an identifier's text.
+    // Decode them before counting or replacing references inside that expression.
+    rewrite_expression(body, &mut |expression| {
+        if let Expression::Identifier(identifier) = expression
+            && !is_identifier_name(identifier.name.as_str())
+            && let Ok(mut parsed) = Parser::new(
+                builder.allocator(),
+                identifier.name.as_str(),
+                SourceType::tsx(),
+            )
+            .parse_expression()
+            && reads(&mut parsed, "", Scan::Argument { can_suspend: false }).is_some()
+        {
+            super::clear_generated_spans(&mut parsed);
+            *expression = parsed;
+            return true;
+        }
+        false
+    });
     while let Some((name, mut value)) = values.pop() {
-        if reads(&mut value, "").is_none()
-            || reads(body, &name) != Some(1)
+        let scan = Scan::Argument {
+            can_suspend: values.is_empty(),
+        };
+        let count = reads(body, &name, Scan::Body);
+        if count == Some(0) && reads(&mut value, "", scan).is_some() {
+            // The argument still runs before the body even when its result is unused.
+            *body = Expression::new_sequence_expression(
+                SPAN,
+                oxc_allocator::Vec::from_array_in([value, body.take_in(builder)], builder),
+                builder,
+            );
+            continue;
+        }
+        if reads(&mut value, "", scan).is_none()
+            || count != Some(1)
             || prefix(body, &name, values) != Flow::Read
         {
             values.push((name, value));
