@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledComponent = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = CustomComponent, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst StyledComponent = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tlet __devupRecord0;\n\t__devupRecord0 = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\t{\n\t\tlet { style, className, as: DevupAs = CustomComponent, forwardedAs, ...rest } = __devupRecord0;\n\t\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={style} />;\n\t}\n});\n",
 }

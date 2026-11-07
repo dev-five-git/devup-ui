@@ -110,7 +110,7 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
     );
     assert_eq!(
         calls[0].props[0].1,
-        "Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))"
+        "Object.fromEntries(Object.entries(({\"theme\": __devupRecord0, ...__devupRecord1} = rest, __devupRecord1)).filter(([k]) => k[0] !== \"$\"))"
     );
     assert_eq!(calls[0].props[3].1, "forwardedAs");
     assert!(output.contains("as: \"section\""));

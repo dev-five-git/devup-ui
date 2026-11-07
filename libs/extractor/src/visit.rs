@@ -45,7 +45,7 @@ use crate::extractor::{
     styled_capability::StyledCapability,
     styled_css_slot::StyledContext,
     styled_jsx::StyledJsx,
-    styled_record_evaluation::{Evaluations, bind_render},
+    styled_record_evaluation::Evaluations,
     styled_rule_arrays::refused_controllers,
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
@@ -73,8 +73,8 @@ use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, BinaryOperator, BindingPattern, CallExpression, ChainElement,
     ComputedMemberExpression, ExportDefaultDeclaration, Expression, ExpressionStatement,
-    FormalParameter, FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
+    FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
     JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
     PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
     UnaryOperator, VariableDeclarator,
@@ -503,7 +503,7 @@ impl<'a> DevupVisitor<'a> {
                 {
                     let bindings = reads.bindings;
                     (result, known) = self.composed_class::<false>(call.span.start, captured);
-                    result = bind_render(&self.ast, bindings, result);
+                    result = self.scoped_render(bindings, result);
                 }
             }
         }
@@ -2763,7 +2763,7 @@ impl<'a> DevupVisitor<'a> {
     /// Returns (`class_exprs`, `style_props`) where `style_props` are CSS variable assignments
     /// from dynamic namespace calls like `styles.bar(h)`.
     fn resolve_stylex_props_args(
-        &self,
+        &mut self,
         arguments: &oxc_allocator::Vec<'a, Argument<'a>>,
     ) -> (Vec<Expression<'a>>, Vec<ObjectPropertyKind<'a>>) {
         let mut class_exprs: Vec<Expression<'a>> = vec![];
@@ -2794,13 +2794,19 @@ impl<'a> DevupVisitor<'a> {
         (class_exprs, style_props)
     }
 
-    /// `((v) => typeof v === "number" ? v + unit : v)(value)`: how `StyleX` gives a
-    /// dynamic number its unit without evaluating `value` twice.
-    fn with_number_unit(&self, value: Expression<'a>, unit: &'static str) -> Expression<'a> {
+    /// Give a dynamic `StyleX` number its unit while reading the argument once.
+    fn with_number_unit(&mut self, value: Expression<'a>, unit: &'static str) -> Expression<'a> {
         if unit.is_empty() {
             return value;
         }
-        let param = || Expression::new_identifier(SPAN, "v", &self.ast);
+        let name = self.names.fresh("__devupUnit");
+        let param = || {
+            Expression::new_identifier(
+                SPAN,
+                Str::from_in(name.as_str(), self.ast.allocator()),
+                &self.ast,
+            )
+        };
         let body = Expression::new_conditional_expression(
             SPAN,
             Expression::new_binary_expression(
@@ -2820,48 +2826,11 @@ impl<'a> DevupVisitor<'a> {
             param(),
             &self.ast,
         );
-        let mut params = oxc_allocator::Vec::new_in(&self.ast);
-        params.push(FormalParameter::new(
-            SPAN,
-            oxc_allocator::Vec::new_in(&self.ast),
-            BindingPattern::new_binding_identifier(SPAN, "v", &self.ast),
-            None,
-            None,
-            false,
-            None,
-            false,
-            false,
-            &self.ast,
-        ));
-        let arrow = Expression::new_arrow_function_expression(
-            SPAN,
-            false,
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
-            FormalParameters::boxed(
-                SPAN,
-                FormalParameterKind::ArrowFormalParameters,
-                params,
-                None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
-                &self.ast,
-            ),
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-            body.into(),
-            &self.ast,
-        );
-        let mut arguments = oxc_allocator::Vec::new_in(&self.ast);
-        arguments.push(Argument::from(value));
-        Expression::new_call_expression(
-            SPAN,
-            Expression::new_parenthesized_expression(SPAN, arrow, &self.ast),
-            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
-            arguments,
-            false,
-            &self.ast,
-        )
+        self.scoped_values(vec![(name, value)], body)
     }
     /// Resolve a dynamic namespace call like `styles.bar(h)` to (className, `style_props`).
     fn resolve_stylex_dynamic_call(
-        &self,
+        &mut self,
         call: &CallExpression<'a>,
     ) -> Option<(Expression<'a>, Vec<ObjectPropertyKind<'a>>)> {
         if let Expression::StaticMemberExpression(member) = &call.callee
@@ -2876,8 +2845,9 @@ impl<'a> DevupVisitor<'a> {
                 &self.ast,
             );
 
-            let mut props = Vec::with_capacity(info.css_vars.len());
-            for (param_idx, var_name, unit) in &info.css_vars {
+            let css_vars = info.css_vars.clone();
+            let mut props = Vec::with_capacity(css_vars.len());
+            for (param_idx, var_name, unit) in &css_vars {
                 if let Some(arg) = call.arguments.get(*param_idx)
                     && let Some(arg_expr) = arg.as_expression()
                 {

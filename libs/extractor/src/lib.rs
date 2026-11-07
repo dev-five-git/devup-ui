@@ -15786,6 +15786,28 @@ const Button = styled.button({ bg: 'red' })
         }
     }
 
+    fn styled_renderer<'a>(code: &'a str, name: &str) -> &'a str {
+        let declaration = format!("const {name} = ");
+        let start = code
+            .find(&declaration)
+            .unwrap_or_else(|| panic!("{name}: {code}"));
+        let body = &code[start..];
+        let end = body
+            .find("\nconst ")
+            .into_iter()
+            .chain(body.find("\nexport const "))
+            .min()
+            .unwrap_or(body.len());
+        let body = &body[..end];
+        assert!(
+            body.starts_with(&format!(
+                "{declaration}__devupForwardRef((__devupRefProps, __devupRef) => {{"
+            )),
+            "{body}"
+        );
+        body
+    }
+
     #[test]
     #[serial]
     fn test_styled_extension_composes_base() {
@@ -15802,15 +15824,42 @@ let Changing = styled.div({ color: 'red' })
 const FromChanging = styled(Changing)({ color: 'blue' })
 const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
-        for expected in [
-            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
-            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
-            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
-            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))}",
-            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))}",
-            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-red--3\", className]",
+        for (name, target, classes) in [
+            (
+                "Ext",
+                "\"button\"",
+                Some("color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255"),
+            ),
+            (
+                "ObjExt",
+                "\"div\"",
+                Some("color-0-blue--255 padding-0-8px--255"),
+            ),
+            (
+                "Twice",
+                "\"div\"",
+                Some("margin-0-4px--255 color-0-blue--255 padding-0-8px--255"),
+            ),
+            ("FromRuntime", "Runtime", None),
+            ("FromChanging", "Changing", None),
+            ("Ordered", "\"div\"", Some("color-0-red--3")),
         ] {
-            assert!(code.contains(expected), "{expected}\n{code}");
+            let body = styled_renderer(&code, name);
+            assert!(
+                body.contains(&format!("as: DevupAs = {target}, forwardedAs, ...rest")),
+                "{body}"
+            );
+            assert!(
+                body.contains("Object.fromEntries(Object.entries("),
+                "{body}"
+            );
+            assert!(body.contains("as={forwardedAs}"), "{body}");
+            if let Some(classes) = classes {
+                assert!(
+                    body.contains(&format!("className={{[\"{classes}\", className]")),
+                    "{body}"
+                );
+            }
         }
     }
 
@@ -15830,9 +15879,15 @@ export const Kept = Section.withComponent(make())
 export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />";
         let code = readable_code(source);
+        for (name, target) in [("Aside", "aside"), ("Again", "nav")] {
+            let body = styled_renderer(&code, name);
+            assert!(
+                body.contains(&format!("as: DevupAs = \"{target}\",")),
+                "{body}"
+            );
+            assert!(body.contains(&format!("c-0-{name}")), "{body}");
+        }
         for expected in [
-            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"c-0-Aside color-0-red--255\", className]",
-            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
             "...{ role: \"region\" }",
@@ -15872,8 +15927,8 @@ export const f = <F junk=\"j\" xlink:href=\"#a\" />
 export const k = <K title=\"t\" tone=\"x\" />";
         let code = readable_code(source);
         for expected in [
-            "{...Object.fromEntries(Object.entries((({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
-            "{...Object.fromEntries(Object.entries((({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
+            "({\"tone\": __devupRecord0, ...__devupRecord1} = rest, __devupRecord1)",
+            "({\"x\": __devupRecord0, \"y\": __devupRecord1, \"theme\": __devupRecord2, ...__devupRecord3} = rest, __devupRecord3)",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
@@ -15918,15 +15973,16 @@ const X = styled.div.attrs({ className: 'from-attrs', style: { color: 'green' } 
 const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
 const V = styled.div.attrs(extra)({ color: 'red' })",
         );
+        let compact = code.split_whitespace().collect::<Vec<_>>().join(" ");
         for expected in [
-            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
-            "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
-            "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
-            "...__devupContext.style,\n\t\t...__devupAttrs.style",
-            "((p) => ({ id: p.id }))(__devupContext)",
-            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+            "...{ ...__devupProps, ...{ type: \"text\", title: \"base\" } }, ...{ type: \"password\" }",
+            "className: [__devupRecord6.className, __devupRecord5.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupRecord4.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupRecord6.style, ...__devupRecord5.style",
+            "...{ id: __devupRecord6.id }",
+            "typeof extra === \"function\" ? extra(__devupRecord19) : extra",
         ] {
-            assert!(code.contains(expected), "{expected}\n{code}");
+            assert!(compact.contains(expected), "{expected}\n{code}");
         }
     }
 
@@ -17939,7 +17995,7 @@ const result = stylex.props(styles.dynamic(o, d));",
         assert!(
             output
                 .code
-                .contains(r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#),
+                .contains(r#"(__devupUnit0 = d, typeof __devupUnit0 === "number" ? __devupUnit0 + "ms" : __devupUnit0)"#),
             "{}",
             output.code
         );
@@ -23587,7 +23643,7 @@ export const p = stylex.props(s.box(w, h));",
         )
         .code;
         assert!(
-            code.contains("style: \"--a:\" + ((v) => typeof v === \"number\" ? v + \"px\" : v)(w) + \";--b:\" + ((v) => typeof v === \"number\" ? v + \"px\" : v)(h)"),
+            code.contains("style: \"--a:\" + (__devupUnit0 = w, typeof __devupUnit0 === \"number\" ? __devupUnit0 + \"px\" : __devupUnit0) + \";--b:\" + (__devupUnit1 = h, typeof __devupUnit1 === \"number\" ? __devupUnit1 + \"px\" : __devupUnit1)"),
             "{code}"
         );
         assert!(code.contains("style: {\n\t\t\"--a\":"), "{code}");

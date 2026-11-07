@@ -122,3 +122,77 @@ fn external_tag_keeps_its_own_interpolation_and_capture_boundary() {
     assert_eq!(crate::utils::readable_code(&value), before);
     assert_eq!(visitor.errors, [] as [(u32, String); 0]);
 }
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn sequential_render_captures_keep_initializer_dependencies_and_getter_order(#[case] frame: bool) {
+    let arena = Allocator::default();
+    let mut visitor = DevupVisitor::new(&arena, "sequence.tsx", "@devup-ui/react", vec![], None);
+    if frame {
+        visitor.stylex_captures.push_frame();
+    }
+    let parse = |source| {
+        Parser::new(&arena, source, SourceType::tsx())
+            .parse_expression()
+            .unwrap_or_else(|error| panic!("{error:?}"))
+    };
+    let expression = visitor.scoped_render(
+        vec![
+            ("first".into(), parse("source.value")),
+            ("second".into(), parse("first + source.value")),
+        ],
+        parse("[first,second,first]"),
+    );
+    let declarations = if frame {
+        format!("let {};", visitor.stylex_captures.frames[0].1.join(","))
+    } else {
+        String::new()
+    };
+    let code = crate::utils::readable_code(&expression);
+    let script = format!(
+        "let count=0;const source={{get value(){{return ++count;}}}};{declarations}JSON.stringify([({code}),count]);"
+    );
+    let actual = boa_engine::Context::default()
+        .eval(boa_engine::Source::from_bytes(script.as_bytes()))
+        .unwrap_or_else(|error| panic!("{error}: {script}"));
+    assert_eq!(
+        actual
+            .as_string()
+            .unwrap_or_else(|| panic!("value"))
+            .to_std_string_escaped(),
+        "[[1,3,1],2]",
+        "{script}"
+    );
+}
+
+#[rstest]
+#[case("0", "0px")]
+#[case("12", "12px")]
+#[case("'2rem'", "2rem")]
+fn stylex_number_units_read_their_input_once(#[case] value: &str, #[case] expected: &str) {
+    let arena = Allocator::default();
+    let mut visitor = DevupVisitor::new(&arena, "unit.tsx", "@devup-ui/react", vec![], None);
+    visitor.stylex_captures.push_frame();
+    let input = Parser::new(&arena, "source.value", SourceType::tsx())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let expression = visitor.with_number_unit(input, "px");
+    let code = crate::utils::readable_code(&expression);
+    assert!(!code.contains("=>"), "{code}");
+    let names = visitor.stylex_captures.frames[0].1.join(",");
+    let script = format!(
+        "let {names};let count=0;const source={{get value(){{count++;return {value};}}}};JSON.stringify([({code}),count]);"
+    );
+    let actual = boa_engine::Context::default()
+        .eval(boa_engine::Source::from_bytes(script.as_bytes()))
+        .unwrap_or_else(|error| panic!("{error}: {script}"));
+    assert_eq!(
+        actual
+            .as_string()
+            .unwrap_or_else(|| panic!("value"))
+            .to_std_string_escaped(),
+        format!("[\"{expected}\",1]"),
+        "{script}"
+    );
+}

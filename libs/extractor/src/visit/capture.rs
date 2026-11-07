@@ -19,8 +19,25 @@ impl<'a> DevupVisitor<'a> {
     /// bindings in its existing statement scope instead of another function.
     pub(super) fn scoped_values(
         &mut self,
+        values: Vec<Captured<'a>>,
+        body: Expression<'a>,
+    ) -> Expression<'a> {
+        self.scoped_bindings(values, body, false)
+    }
+
+    pub(super) fn scoped_render(
+        &mut self,
+        values: Vec<Captured<'a>>,
+        body: Expression<'a>,
+    ) -> Expression<'a> {
+        self.scoped_bindings(values, body, true)
+    }
+
+    fn scoped_bindings(
+        &mut self,
         mut values: Vec<Captured<'a>>,
         mut body: Expression<'a>,
+        sequential: bool,
     ) -> Expression<'a> {
         crate::utils::capture_elision::inline(&self.ast, &mut values, &mut body);
         if !values.is_empty()
@@ -57,7 +74,11 @@ impl<'a> DevupVisitor<'a> {
             self.jsx.sequences = true;
             return Expression::new_sequence_expression(SPAN, sequence, &self.ast);
         }
-        crate::utils::call_with_values(&self.ast, values, body)
+        if sequential {
+            crate::extractor::styled_record_evaluation::bind_render(&self.ast, values, body)
+        } else {
+            crate::utils::call_with_values(&self.ast, values, body)
+        }
     }
 
     /// Put `value` under `name`, returning what it was

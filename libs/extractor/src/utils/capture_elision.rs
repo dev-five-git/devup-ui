@@ -335,8 +335,8 @@ fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usiz
                     AssignmentTarget::AssignmentTargetIdentifier(identifier) => {
                         identifier.name == name
                     }
-                    AssignmentTarget::ArrayAssignmentTarget(_)
-                    | AssignmentTarget::ObjectAssignmentTarget(_) => true,
+                    pattern @ (AssignmentTarget::ArrayAssignmentTarget(_)
+                    | AssignmentTarget::ObjectAssignmentTarget(_)) => writes(pattern, name),
                     _ => false,
                 }
             }
@@ -369,12 +369,48 @@ fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usiz
     (!blocked).then_some(count)
 }
 
+fn writes(target: &AssignmentTarget<'_>, name: &str) -> bool {
+    let element = |value: &oxc_ast::ast::AssignmentTargetMaybeDefault<'_>| {
+        value
+            .as_assignment_target()
+            .is_none_or(|target| writes(target, name))
+    };
+    match target {
+        AssignmentTarget::AssignmentTargetIdentifier(id) => id.name == name,
+        AssignmentTarget::ArrayAssignmentTarget(array) => {
+            array.elements.iter().flatten().any(element)
+                || array
+                    .rest
+                    .as_ref()
+                    .is_some_and(|rest| writes(&rest.target, name))
+        }
+        AssignmentTarget::ObjectAssignmentTarget(object) => {
+            object.properties.iter().any(|property| match property {
+                oxc_ast::ast::AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(
+                    property,
+                ) => property.binding.name == name || property.init.is_some(),
+                oxc_ast::ast::AssignmentTargetProperty::AssignmentTargetPropertyProperty(
+                    property,
+                ) => property.computed || element(&property.binding),
+            }) || object
+                .rest
+                .as_ref()
+                .is_some_and(|rest| writes(&rest.target, name))
+        }
+        _ => false,
+    }
+}
+
 /// Moving eager reads into their existing statement scope must not turn a
 /// per-evaluation closure binding into one shared by later loop iterations.
 pub(crate) fn can_transport(body: &mut Expression<'_>, values: &Captures<'_>) -> bool {
     values
         .iter()
-        .all(|(name, _)| reads(body, name, Scan::Transport).is_some())
+        .all(|(name, _)| can_transport_name(body, name))
+}
+
+pub(crate) fn can_transport_name(body: &mut Expression<'_>, name: &str) -> bool {
+    reads(body, name, Scan::Transport).is_some()
 }
 
 pub(crate) fn inline<'a>(

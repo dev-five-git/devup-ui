@@ -68,7 +68,7 @@ fn the_component_keeps_rendering_its_theme_attrs_and_ref() {
     );
     assert!(output.code.contains("ref: __devupRef"), "{}", output.code);
     assert!(
-        output.code.contains("\"theme\": __devupOmit0"),
+        output.code.contains("\"theme\": __devupRecord"),
         "{}",
         output.code
     );

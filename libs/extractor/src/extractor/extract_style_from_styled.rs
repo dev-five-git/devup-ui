@@ -1713,11 +1713,7 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
         "ref",
         identifier(ast_builder, "__devupRef"),
     );
-    let body = wrap_direct_call(
-        ast_builder,
-        &Expression::new_parenthesized_expression(SPAN, component, ast_builder),
-        &[props],
-    );
+    let body = super::styled_inline::body(ast_builder, component, props);
     let render = Expression::new_arrow_function_expression(
         SPAN,
         false,
@@ -1733,7 +1729,7 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
             ast_builder,
         ),
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        body.into(),
+        body,
         ast_builder,
     );
     wrap_direct_call(
