@@ -4,7 +4,10 @@ use super::DevupVisitor;
 use super::branch_capture::BranchReads;
 use super::capture::Captured;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
-use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKind, Str};
+use oxc_ast::ast::{
+    ArrayExpressionElement, ChainElement, ComputedMemberExpression, Expression, ObjectPropertyKind,
+    PropertyKind, Str,
+};
 use oxc_ast_visit::VisitMut;
 use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
@@ -68,16 +71,25 @@ fn literal_own_selection(member: &oxc_ast::ast::ComputedMemberExpression<'_>) ->
 
 impl<'a> DevupVisitor<'a> {
     fn selected_slot(&self, name: &str, index: usize) -> Expression<'a> {
-        Expression::new_computed_member_expression(
+        // Keep the chain node so later member extraction preserves a missing selection.
+        Expression::new_chain_expression(
             SPAN,
-            Expression::new_identifier(SPAN, Str::from_in(name, self.ast.allocator()), &self.ast),
-            Expression::new_string_literal(
+            ChainElement::ComputedMemberExpression(ComputedMemberExpression::boxed(
                 SPAN,
-                Str::from_in(index.to_string().as_str(), self.ast.allocator()),
-                None,
+                Expression::new_identifier(
+                    SPAN,
+                    Str::from_in(name, self.ast.allocator()),
+                    &self.ast,
+                ),
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(index.to_string().as_str(), self.ast.allocator()),
+                    None,
+                    &self.ast,
+                ),
+                true,
                 &self.ast,
-            ),
-            true,
+            )),
             &self.ast,
         )
     }
