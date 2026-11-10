@@ -2,7 +2,7 @@
 //! Work backwards to preserve evaluation order and suspension scope.
 
 use super::{rewrite_expression, unwrap_syntax_only, unwrap_syntax_only_mut};
-use oxc_allocator::{GetAllocator, TakeIn};
+use oxc_allocator::{FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::{
     ArrayExpressionElement, AssignmentTarget, ChainElement, Expression, JSXAttributeItem,
     JSXAttributeValue, JSXChild, JSXElementName, ObjectPropertyKind, SimpleAssignmentTarget,
@@ -440,6 +440,35 @@ pub(crate) fn inline<'a>(
         }
         false
     });
+    for index in 0..values.len() {
+        let name = values[index].0.clone();
+        if !name.starts_with("__devupChoice")
+            || reads(body, &name, Scan::Body) != Some(1)
+            || values.iter_mut().enumerate().any(|(other, (_, value))| {
+                other != index && reads(value, &name, Scan::Body) != Some(0)
+            })
+        {
+            continue;
+        }
+        rewrite_expression(body, &mut |expression| {
+            if let Expression::ComputedMemberExpression(member) = expression
+                && !member.optional
+                && let Some(slot) = super::selection_projection::slot(&member.expression)
+                && matches!(unwrap_syntax_only(&slot.object), Expression::Identifier(id) if id.name == name.as_str())
+                && let Some(projected) =
+                    super::selection_projection::project(builder, &member.object, &values[index].1)
+            {
+                values[index].1 = projected;
+                *expression = Expression::new_identifier(
+                    SPAN,
+                    oxc_ast::ast::Ident::from_in(name.as_str(), builder.allocator()),
+                    builder,
+                );
+                return true;
+            }
+            false
+        });
+    }
     while let Some((name, mut value)) = values.pop() {
         let scan = Scan::Argument {
             can_suspend: values.is_empty(),
@@ -501,4 +530,5 @@ pub(crate) fn inline<'a>(
             false
         });
     }
+    super::selection_projection::direct(builder, body);
 }

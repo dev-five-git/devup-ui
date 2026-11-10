@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 pub(super) mod capture_elision;
+mod selection_projection;
 
 use crate::extract_style::constant::is_maintain_value_property;
 use css::utils::to_kebab_case;
