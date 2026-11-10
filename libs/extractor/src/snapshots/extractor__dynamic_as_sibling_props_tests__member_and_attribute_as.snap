@@ -1,0 +1,11 @@
+---
+source: libs/extractor/src/dynamic_as_sibling_props_tests.rs
+expression: output.code
+---
+import "@devup-ui/react/devup-ui-0.css";
+import Link from "next/link";
+export const Footer = ({ ui }) => <div title={<ui.Link {...{ href: "/title" }} />} className="a">
+    <ui.Link className="a b c" {...{ href: "/privacy" }}>Privacy</ui.Link>
+    <ui.Link {...{ href: "/terms" }}>Terms</ui.Link>
+  </div>;
+export const after = 42;

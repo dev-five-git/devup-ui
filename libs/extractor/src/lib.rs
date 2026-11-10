@@ -30,6 +30,8 @@ mod css_prop_contract_tests;
 mod css_utils;
 #[cfg(test)]
 mod diagnostics_tests;
+#[cfg(test)]
+mod dynamic_as_sibling_props_tests;
 mod emotion_namespace;
 mod evaluation_sandbox;
 pub mod extract_style;

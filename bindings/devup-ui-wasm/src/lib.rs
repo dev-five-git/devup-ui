@@ -28,6 +28,8 @@ use state::TestStateGuard;
 pub use state::{reset_state_for_testing, reset_state_internal};
 #[cfg(test)]
 mod css_output_edge_tests;
+#[cfg(test)]
+mod dynamic_as_sibling_props_tests;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
