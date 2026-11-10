@@ -29,6 +29,7 @@ mod scoped_captures;
 mod simple_selections;
 mod slots;
 mod spread_repair;
+mod spread_selections;
 mod style_order;
 mod styled;
 mod type_imports;

@@ -70,6 +70,64 @@ fn literal_own_selection(member: &oxc_ast::ast::ComputedMemberExpression<'_>) ->
 }
 
 impl<'a> DevupVisitor<'a> {
+    /// Known scalar alternatives remain static even when a spread makes the
+    /// selected position unknown. Compare the captured value without coercion.
+    pub(super) fn capture_spread_selection(
+        &mut self,
+        value: &mut Expression<'a>,
+        captured: &mut Vec<Captured<'a>>,
+    ) -> bool {
+        let Expression::ComputedMemberExpression(member) = crate::utils::unwrap_syntax_only(value)
+        else {
+            return false;
+        };
+        let Expression::ArrayExpression(array) = crate::utils::unwrap_syntax_only(&member.object)
+        else {
+            return false;
+        };
+        if !array
+            .elements
+            .iter()
+            .any(|element| matches!(element, ArrayExpressionElement::SpreadElement(_)))
+        {
+            return false;
+        }
+        let literals: Vec<_> = array
+            .elements
+            .iter()
+            .filter_map(ArrayExpressionElement::as_expression)
+            .map(crate::utils::unwrap_syntax_only)
+            .filter(|value| {
+                matches!(value, Expression::StringLiteral(string) if string.value.as_str().is_some())
+                    || matches!(value, Expression::NumericLiteral(number) if number.value.is_finite())
+            })
+            .map(|value| value.clone_in(self.ast.allocator()))
+            .collect();
+        // Static classes must not require a new function around a field or default.
+        if literals.is_empty() || self.stylex_captures.bindings().is_none() {
+            return false;
+        }
+        let name = self.names.fresh("__devupValue");
+        captured.push(self.capture_as(name, value));
+        let read = value.clone_in(self.ast.allocator());
+        for literal in literals.into_iter().rev() {
+            *value = Expression::new_conditional_expression(
+                SPAN,
+                Expression::new_binary_expression(
+                    SPAN,
+                    read.clone_in(self.ast.allocator()),
+                    oxc_syntax::operator::BinaryOperator::StrictEquality,
+                    literal.clone_in(self.ast.allocator()),
+                    &self.ast,
+                ),
+                literal,
+                value.take_in(&self.ast),
+                &self.ast,
+            );
+        }
+        true
+    }
+
     fn selected_slot(&self, name: &str, index: usize) -> Expression<'a> {
         // Keep the chain node so later member extraction preserves a missing selection.
         Expression::new_chain_expression(

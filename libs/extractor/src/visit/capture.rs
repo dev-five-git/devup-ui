@@ -197,6 +197,9 @@ impl<'a> DevupVisitor<'a> {
         if self.css_capture.is_some() && self.capture_css_boundary(value, captured) {
             return;
         }
+        if self.capture_spread_selection(value, captured) {
+            return;
+        }
         if let Expression::LogicalExpression(logical) = crate::utils::unwrap_syntax_only(value)
             && let Some(left) = literal_choice(&self.bindings, &logical.left, logical.operator)
         {
