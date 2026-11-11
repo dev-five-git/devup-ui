@@ -9,7 +9,7 @@ use oxc_ast::ast::{
     ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, Str,
     TemplateElement, TemplateElementValue,
 };
-use oxc_span::{GetSpan, SPAN};
+use oxc_span::{ContentEq, GetSpan, SPAN};
 
 /// A name, with the expression it is given in the arguments
 pub(super) type Captured<'a> = (String, Expression<'a>);
@@ -183,6 +183,24 @@ impl<'a> DevupVisitor<'a> {
                 logical
                     .right
                     .clone_in_with_semantic_ids(self.ast.allocator())
+            };
+            self.capture_shape(value, captured);
+            return;
+        }
+        // Both branches the same code, the condition only runs before it.
+        if let Expression::ConditionalExpression(conditional) = unwrap_syntax_only_mut(value)
+            && conditional.consequent.content_eq(&conditional.alternate)
+        {
+            let test = conditional.test.take_in(&self.ast);
+            let branch = conditional.consequent.take_in(&self.ast);
+            *value = if reach(&self.bindings, &test) == Reach::Constant {
+                branch
+            } else {
+                Expression::new_sequence_expression(
+                    SPAN,
+                    oxc_allocator::Vec::from_array_in([test, branch], &self.ast),
+                    &self.ast,
+                )
             };
             self.capture_shape(value, captured);
             return;
