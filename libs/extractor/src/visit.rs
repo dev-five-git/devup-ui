@@ -4568,6 +4568,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
+        // The call is rebuilt around what it captured once it and those values
+        // are visited, so no call left in its props takes its replacement and
+        // what they hold is compiled.
+        let mut finish = None;
         if matches!(&it.callee, Expression::Identifier(callee) if callee.name == "cva") {
             let styles = compile_cva(&self.ast, it, self.split_filename.as_deref());
             self.styles.extend(styles);
@@ -4819,10 +4823,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
 
                 it.arguments[0] = Argument::from(tag);
-                self.finish_element_call(it, read_once, kind.to_tag());
+                finish = Some((read_once, kind.to_tag()));
             }
         }
         walk_call_expression(self, it);
+        if let Some((mut read_once, tag)) = finish {
+            for (_, value) in &mut read_once {
+                self.visit_expression(value);
+            }
+            self.finish_element_call(it, read_once, tag);
+        }
     }
 
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {

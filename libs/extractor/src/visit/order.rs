@@ -52,7 +52,7 @@ pub(super) fn reach(bindings: &Bindings, expression: &Expression<'_>) -> Reach {
         | Expression::ArrowFunctionExpression(_)
         | Expression::FunctionExpression(_) => Reach::Constant,
         Expression::Identifier(identifier) => {
-            if bindings.is_global_undefined(identifier) {
+            if bindings.is_global_undefined(identifier) || bindings.is_set_const(identifier) {
                 Reach::Constant
             } else {
                 Reach::Reads
