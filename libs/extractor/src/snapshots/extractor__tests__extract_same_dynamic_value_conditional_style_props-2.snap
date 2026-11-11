@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nlet __devupBranch0;\n__devupBranch0 = a === b ? [true, `${a}`] : [false, `${a}`], <div className=\"a\" style={{ \"--b\": __devupBranch0[\"0\"] ? __devupBranch0[`1`] : __devupBranch0[`1`] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nconst __devupBranch0 = a === b ? [true, `${a}`] : [false, `${a}`];\n<div className=\"a\" style={{ \"--b\": __devupBranch0[\"0\"] ? __devupBranch0[`1`] : __devupBranch0[`1`] }} />;\n",
 }

@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nlet DevupAs0;\nDevupAs0 = [\"div\", \"section\"][b] || \"div\", <DevupAs0 className=\"a b\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nconst DevupAs0 = [\"div\", \"section\"][b] || \"div\";\n<DevupAs0 className=\"a b\" />;\n",
 }

@@ -2,6 +2,7 @@ use super::{
     AstBuilder, BindingPattern, Expression, FxHashSet, GetAllocator, GetSpan, Program, SPAN,
     Statement, UnaryOperator, VariableDeclarator,
 };
+use oxc_allocator::TakeIn;
 use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, VariableDeclarationKind};
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::{ScopeFlags, ScopeId};
@@ -119,6 +120,68 @@ impl<'a> Visit<'a> for Captures {
     }
 }
 
+/// Declare the generated `names` of `statements`. A statement whose own value
+/// opens by assigning them runs those assignments first wherever it runs, so
+/// they become `const` declarations right before it; the rest share one `let`.
+pub(super) fn declare<'a>(
+    ast: &AstBuilder<'a>,
+    statements: &mut oxc_allocator::Vec<'a, Statement<'a>>,
+    mut names: Vec<String>,
+) {
+    let mut index = 0;
+    while index < statements.len() && !names.is_empty() {
+        let value = match &mut statements[index] {
+            Statement::ExpressionStatement(statement) => Some(&mut statement.expression),
+            Statement::ReturnStatement(statement) => statement.argument.as_mut(),
+            _ => None,
+        };
+        let Some(value) = value else {
+            index += 1;
+            continue;
+        };
+        let mut declarations = oxc_allocator::Vec::new_in(ast);
+        while let Expression::SequenceExpression(sequence) = value
+            && sequence.expressions.len() > 1
+            && let Expression::AssignmentExpression(assignment) = &mut sequence.expressions[0]
+            && assignment.operator == AssignmentOperator::Assign
+            && let AssignmentTarget::AssignmentTargetIdentifier(target) = &assignment.left
+            && let Some(position) = names.iter().position(|name| target.name == name.as_str())
+        {
+            names.remove(position);
+            declarations.push(VariableDeclarator::new(
+                SPAN,
+                BindingPattern::new_binding_identifier(SPAN, target.name, ast),
+                None,
+                Some(assignment.right.take_in(ast)),
+                false,
+                ast,
+            ));
+            sequence.expressions.remove(0);
+            if sequence.expressions.len() == 1 {
+                *value = sequence.expressions.remove(0);
+            }
+        }
+        if declarations.is_empty() {
+            index += 1;
+            continue;
+        }
+        statements.insert(
+            index,
+            Statement::new_variable_declaration(
+                SPAN,
+                VariableDeclarationKind::Const,
+                declarations,
+                false,
+                ast,
+            ),
+        );
+        index += 2;
+    }
+    if !names.is_empty() {
+        statements.insert(0, declaration(ast, names));
+    }
+}
+
 pub(super) fn declaration<'a>(ast: &AstBuilder<'a>, names: Vec<String>) -> Statement<'a> {
     let declarations = names.into_iter().map(|name| {
         VariableDeclarator::new(
@@ -138,3 +201,7 @@ pub(super) fn declaration<'a>(ast: &AstBuilder<'a>, names: Vec<String>) -> State
         ast,
     )
 }
+
+#[cfg(test)]
+#[path = "stylex_capture_declare_tests.rs"]
+mod declare_tests;

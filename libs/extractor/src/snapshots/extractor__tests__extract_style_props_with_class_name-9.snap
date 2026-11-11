@@ -21,5 +21,5 @@ ToBTreeSet {
             "buttonS",
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nlet __devupSpread0, __devupValue0, __devupBranch0;\nimport clsx from \"clsx\";\n__devupSpread0 = {\n\t__proto__: null,\n\t...props\n}, __devupValue0 = clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className), __devupBranch0 = isPrimary ? [true, {\n\tsm: [\"sm\"],\n\tmd: [\"md\"]\n}[size]] : [false], <button {...__devupSpread0} className={`${__devupValue0 || \"\"} a ${__devupBranch0[\"0\"] ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[__devupBranch0[\"1\"]?.[\"0\"]] || \"\" : \"\"}`} style={__devupSpread0?.style} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport clsx from \"clsx\";\nconst __devupSpread0 = {\n\t__proto__: null,\n\t...props\n}, __devupValue0 = clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className), __devupBranch0 = isPrimary ? [true, {\n\tsm: [\"sm\"],\n\tmd: [\"md\"]\n}[size]] : [false];\n<button {...__devupSpread0} className={`${__devupValue0 || \"\"} a ${__devupBranch0[\"0\"] ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[__devupBranch0[\"1\"]?.[\"0\"]] || \"\" : \"\"}`} style={__devupSpread0?.style} />;\n",
 }

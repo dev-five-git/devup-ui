@@ -210,7 +210,14 @@ fn captured_native_css_suspension_keeps_static_body_and_runtime_control(
         .unwrap_or_else(|| panic!("return value"));
     let value = crate::utils::unwrap_syntax_only(value);
     if runtime_title {
-        assert!(matches!(value, Expression::SequenceExpression(_)));
+        // The captured attribute runs first, so it is declared right before the return.
+        assert!(matches!(
+            body.statements.iter().rev().nth(1),
+            Some(Statement::VariableDeclaration(declaration))
+                if declaration.kind == oxc_ast::ast::VariableDeclarationKind::Const
+        ));
+        assert!(!matches!(value, Expression::SequenceExpression(sequence)
+            if matches!(sequence.expressions[0], Expression::AssignmentExpression(_))));
     } else {
         let Expression::SequenceExpression(sequence) = value else {
             panic!("suspension followed by the static native body");

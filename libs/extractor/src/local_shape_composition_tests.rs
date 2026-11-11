@@ -167,7 +167,7 @@ fn callbacks_when_passed_as_ordinary_props_keep_original_identity()
     let StyleProperty::ClassName(class_name) = metadata else {
         panic!("expected static callback class");
     };
-    assert!(output.code.contains("return DevupAs0 = Custom || \"div\", __devupValue0 = inner[\"onClick\"], __devupValue1 = inner[\"data-format\"], <DevupAs0"), "{}", output.code);
+    assert!(output.code.contains("const DevupAs0 = Custom || \"div\", __devupValue0 = inner[\"onClick\"], __devupValue1 = inner[\"data-format\"];\n\treturn <DevupAs0"), "{}", output.code);
     assert!(
         output.code.contains(&format!("className=\"{class_name}\"")),
         "{}",

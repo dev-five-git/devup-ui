@@ -3134,9 +3134,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_mut::walk_statements(self, it);
         let (_, names) = self.stylex_captures.frames.pop().unwrap_or_default();
         self.stylex_captures.context = context;
-        if !names.is_empty() {
-            it.insert(0, stylex_capture::declaration(&self.ast, names));
-        }
+        stylex_capture::declare(&self.ast, it, names);
     }
 
     fn visit_formal_parameters(&mut self, it: &mut FormalParameters<'a>) {
@@ -3183,13 +3181,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         self.stylex_captures.context = context;
         if !names.is_empty() {
             let value = it.to_expression_mut().take_in(&self.ast);
-            let statements = oxc_allocator::Vec::from_array_in(
-                [
-                    stylex_capture::declaration(&self.ast, names),
-                    Statement::new_return_statement(SPAN, Some(value), &self.ast),
-                ],
+            let mut statements = oxc_allocator::Vec::from_array_in(
+                [Statement::new_return_statement(
+                    SPAN,
+                    Some(value),
+                    &self.ast,
+                )],
                 &self.ast,
             );
+            stylex_capture::declare(&self.ast, &mut statements, names);
             *it = oxc_ast::ast::ArrowFunctionBody::new_function_body(
                 SPAN,
                 oxc_allocator::Vec::new_in(&self.ast),
