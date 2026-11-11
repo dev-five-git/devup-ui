@@ -2,7 +2,8 @@
 //! statement evaluates first, gives what declaring those values right before
 //! the statement gives: they are evaluated first either way, in the same order.
 //! What the build declares and nothing reads, or declares only to name what
-//! already has a name, goes too.
+//! already has a name, goes too, and a string a template literal holds as a
+//! value is written as its text.
 
 use oxc_allocator::{CloneIn, GetAllocator, TakeIn, Vec};
 use oxc_ast::{
@@ -11,7 +12,8 @@ use oxc_ast::{
         BindingIdentifier, BindingPattern, CallExpression, CatchClause, ExportSpecifier,
         Expression, FormalParameters, Function, FunctionBody, IdentifierReference,
         ImportDeclarationSpecifier, JSXElementName, ObjectProperty, Program,
-        SimpleAssignmentTarget, Statement, VariableDeclarationKind, VariableDeclarator,
+        SimpleAssignmentTarget, Statement, TaggedTemplateExpression, TemplateLiteral,
+        VariableDeclarationKind, VariableDeclarator,
     },
     builder::AstBuilder,
 };
@@ -73,6 +75,19 @@ struct Unwrap<'s, 'a> {
 }
 
 impl<'a> VisitMut<'a> for Unwrap<'_, 'a> {
+    fn visit_template_literal(&mut self, it: &mut TemplateLiteral<'a>) {
+        walk_mut::walk_template_literal(self, it);
+        inline_strings(self.ast, it);
+    }
+
+    fn visit_tagged_template_expression(&mut self, it: &mut TaggedTemplateExpression<'a>) {
+        // A tag reads the parts of its template as written.
+        self.visit_expression(&mut it.tag);
+        for expression in &mut it.quasi.expressions {
+            self.visit_expression(expression);
+        }
+    }
+
     fn visit_program(&mut self, it: &mut Program<'a>) {
         walk_mut::walk_program(self, it);
         statements(self.ast, &mut it.body, &FxHashSet::default(), &self.imports);
@@ -141,6 +156,61 @@ impl<'a> VisitMut<'a> for Unwrap<'_, 'a> {
         walk_mut::walk_static_block(self, it);
         statements(self.ast, &mut it.body, &FxHashSet::default(), &self.imports);
     }
+}
+
+/// Write each string `template` holds as a value as part of its text
+fn inline_strings<'a>(ast: &AstBuilder<'a>, template: &mut TemplateLiteral<'a>) {
+    let mut index = 0;
+    while index < template.expressions.len() {
+        let Expression::StringLiteral(text) = parenthesized(&template.expressions[index]) else {
+            index += 1;
+            continue;
+        };
+        let (Some(before), Some(after)) = (
+            template.quasis[index].value.cooked,
+            template.quasis[index + 1].value.cooked,
+        ) else {
+            index += 1;
+            continue;
+        };
+        let (Some(text), Some(before), Some(after)) =
+            (text.value.as_str(), before.as_str(), after.as_str())
+        else {
+            index += 1;
+            continue;
+        };
+        let raw = format!(
+            "{}{}{}",
+            template.quasis[index].value.raw.as_str(),
+            raw_text(text),
+            template.quasis[index + 1].value.raw.as_str()
+        );
+        let cooked = format!("{before}{text}{after}");
+        template.quasis[index].value.raw = ast.allocator().alloc_str(&raw).into();
+        template.quasis[index].value.cooked = Some(ast.allocator().alloc_str(&cooked).into());
+        template.quasis[index].tail = template.quasis[index + 1].tail;
+        template.quasis.remove(index + 1);
+        template.expressions.remove(index);
+    }
+}
+
+/// `text` as the raw text of a template, which reads back as it
+fn raw_text(text: &str) -> String {
+    let mut raw = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(char) = chars.next() {
+        match char {
+            '\\' | '`' => {
+                raw.push('\\');
+                raw.push(char);
+            }
+            '$' if chars.peek() == Some(&'{') => raw.push_str("\\$"),
+            // A carriage return written raw reads back as a line feed.
+            '\r' => raw.push_str("\\r"),
+            char => raw.push(char),
+        }
+    }
+    raw
 }
 
 fn parenthesized<'s, 'a>(mut value: &'s Expression<'a>) -> &'s Expression<'a> {

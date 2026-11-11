@@ -1587,24 +1587,59 @@ impl Modules<'_> {
         exports
     }
 }
-/// The exports of a `CommonJS` module. A property counts only when the module
-/// assigns it once, as anything assigned again may change after it is read.
+/// The exports of a `CommonJS` module, as its top-level statements leave
+/// them in order: every importer reads them once the module has run. A
+/// property assigned anywhere else, such as in a function, may change after it
+/// is read, and so counts as unknown.
 #[derive(Default)]
 struct CommonJs {
     /// Assignments to each exported property anywhere in the module, `*` for
     /// `module.exports` itself; `void 0` placeholders do not count
     writes: FxHashMap<String, usize>,
-    exports: FxHashMap<String, Constant>,
-    whole: Option<Constant>,
+    /// Of those, the ones a top-level statement makes, which run in order
+    settled: FxHashMap<String, usize>,
+    /// The properties assigned since `module.exports` was, with the value
+    /// the build knows, or `None` for one it does not
+    exports: FxHashMap<String, Option<Constant>>,
+    /// What `module.exports` was last assigned
+    whole: Whole,
     es_module: bool,
     seen: bool,
+}
+
+/// What `module.exports` of a `CommonJS` module was last assigned
+#[derive(Default)]
+enum Whole {
+    #[default]
+    Unassigned,
+    /// A value the build does not know
+    Unknown,
+    Known(Constant),
 }
 
 impl CommonJs {
     fn new(program: &Program<'_>) -> Self {
         let mut commonjs = Self::default();
         commonjs.visit_program(program);
+        for statement in &program.body {
+            if let Statement::ExpressionStatement(statement) = statement
+                && let Expression::AssignmentExpression(assignment) = &statement.expression
+                && !is_placeholder(&assignment.right)
+                && let Some((key, _)) = assignment
+                    .left
+                    .as_simple_assignment_target()
+                    .and_then(|target| target.as_member_expression())
+                    .and_then(commonjs_target)
+            {
+                *commonjs.settled.entry(key).or_default() += 1;
+            }
+        }
         commonjs
+    }
+
+    /// Whether every assignment to `key` is a top-level statement
+    fn is_settled(&self, key: &str) -> bool {
+        self.writes.get(key) == self.settled.get(key)
     }
 
     fn assign(
@@ -1622,7 +1657,7 @@ impl CommonJs {
         let Expression::AssignmentExpression(assignment) = expression else {
             return;
         };
-        let Some(key) = assignment
+        let Some((key, through_module)) = assignment
             .left
             .as_simple_assignment_target()
             .and_then(|target| target.as_member_expression())
@@ -1635,50 +1670,73 @@ impl CommonJs {
             self.es_module = true;
             return;
         }
-        if self.writes.get(&key) != Some(&1) {
+        if is_placeholder(&assignment.right) {
             return;
         }
-        let Some(value) = scope.evaluate(modules, &assignment.right) else {
+        // Once `module.exports` holds another object, `exports` names the one
+        // no importer reads.
+        if !through_module && !matches!(self.whole, Whole::Unassigned) {
             return;
-        };
+        }
+        let value = scope.evaluate(modules, &assignment.right);
         if key == "*" {
             // What `module.exports` holds becomes the module's exports
-            self.whole = Some(match value {
-                Constant::Record(entries) => {
-                    Constant::Object(Rc::new(entries.iter().cloned().collect()))
-                }
-                value => value,
+            self.whole = value.map_or(Whole::Unknown, |value| {
+                Whole::Known(match value {
+                    Constant::Record(entries) => {
+                        Constant::Object(Rc::new(entries.iter().cloned().collect()))
+                    }
+                    value => value,
+                })
             });
+            self.exports.clear();
         } else {
             self.exports.insert(key, value);
         }
     }
 
     fn finish(self, exports: &mut FxHashMap<String, Constant>) {
-        if !self.seen {
+        // What a function may set again, at any time, the build cannot read.
+        if !self.seen || !self.is_settled("*") {
             return;
         }
         let mut properties = FxHashMap::default();
-        if let Some(Constant::Object(object)) = &self.whole {
+        if let Whole::Known(Constant::Object(object)) = &self.whole {
             for (key, value) in object.iter() {
-                if !self.writes.contains_key(key) {
+                if !self.exports.contains_key(key) {
                     properties.insert(key.clone(), value.clone());
                 }
             }
         }
-        properties.extend(self.exports);
+        let unsettled: Vec<String> = self
+            .writes
+            .keys()
+            .filter(|key| !self.is_settled(key))
+            .cloned()
+            .collect();
+        for (key, value) in self.exports {
+            if let Some(value) = value {
+                properties.insert(key, value);
+            }
+        }
+        for key in unsettled {
+            properties.remove(&key);
+        }
         let default = if self.es_module {
             properties.get("default").cloned()
         } else {
             match self.whole {
-                Some(Constant::Object(_)) | None => Some(Constant::Object(Rc::new(
-                    properties
-                        .clone()
-                        .into_iter()
-                        .filter(|(key, _)| key != "default")
-                        .collect(),
-                ))),
-                primitive => primitive,
+                Whole::Known(Constant::Object(_)) | Whole::Unassigned => {
+                    Some(Constant::Object(Rc::new(
+                        properties
+                            .clone()
+                            .into_iter()
+                            .filter(|(key, _)| key != "default")
+                            .collect(),
+                    )))
+                }
+                Whole::Known(primitive) => Some(primitive),
+                Whole::Unknown => None,
             }
         };
         exports.extend(properties);
@@ -1688,16 +1746,19 @@ impl CommonJs {
     }
 }
 
+/// Whether `value` only declares a property, as `void 0` does
+fn is_placeholder(mut value: &Expression<'_>) -> bool {
+    while let Expression::AssignmentExpression(inner) = value {
+        value = &inner.right;
+    }
+    matches!(value, Expression::UnaryExpression(unary)
+        if unary.operator == oxc_syntax::operator::UnaryOperator::Void)
+}
+
 impl<'a> Visit<'a> for CommonJs {
     fn visit_assignment_expression(&mut self, assignment: &oxc_ast::ast::AssignmentExpression<'a>) {
-        let mut value = &assignment.right;
-        while let Expression::AssignmentExpression(inner) = value {
-            value = &inner.right;
-        }
-        let placeholder = matches!(value, Expression::UnaryExpression(unary)
-            if unary.operator == oxc_syntax::operator::UnaryOperator::Void);
-        if !placeholder
-            && let Some(key) = assignment
+        if !is_placeholder(&assignment.right)
+            && let Some((key, _)) = assignment
                 .left
                 .as_simple_assignment_target()
                 .and_then(|target| target.as_member_expression())
@@ -1709,24 +1770,25 @@ impl<'a> Visit<'a> for CommonJs {
     }
 }
 
-/// `exports.x` / `module.exports.x` -> `x`, `module.exports` -> `*`
-fn commonjs_target(member: &oxc_ast::ast::MemberExpression<'_>) -> Option<String> {
+/// `exports.x` / `module.exports.x` -> `x`, `module.exports` -> `*`, and
+/// whether it is written through `module`
+fn commonjs_target(member: &oxc_ast::ast::MemberExpression<'_>) -> Option<(String, bool)> {
     let key = member.static_property_name()?;
     let object = member.object();
     if matches!(object, Expression::Identifier(identifier) if identifier.name == "module") {
-        return (key == "exports").then(|| "*".to_string());
+        return (key == "exports").then(|| ("*".to_string(), true));
     }
-    let is_exports = match object {
-        Expression::Identifier(identifier) => identifier.name == "exports",
-        Expression::StaticMemberExpression(inner) => {
-            inner.property.name == "exports"
-                && matches!(&inner.object, Expression::Identifier(identifier) if identifier.name == "module")
+    let through_module = match object {
+        Expression::Identifier(identifier) if identifier.name == "exports" => false,
+        Expression::StaticMemberExpression(inner)
+            if inner.property.name == "exports"
+                && matches!(&inner.object, Expression::Identifier(identifier) if identifier.name == "module") =>
+        {
+            true
         }
-        _ => false,
+        _ => return None,
     };
-    is_exports
-        .then(|| key.as_str().map(str::to_string))
-        .flatten()
+    key.as_str().map(|key| (key.to_string(), through_module))
 }
 
 /// `Object.defineProperty(exports, '__esModule', ...)`
@@ -2618,6 +2680,20 @@ fn js_string(value: &Constant) -> Option<String> {
     }
 }
 
+/// A length as the number JavaScript gives
+fn length(length: usize) -> Option<Constant> {
+    u32::try_from(length)
+        .ok()
+        .map(|length| Constant::Number(f64::from(length)))
+}
+
+/// The array index `key` names, written as JavaScript writes it
+fn array_index(key: &str) -> Option<usize> {
+    key.parse::<usize>()
+        .ok()
+        .filter(|index| index.to_string() == key)
+}
+
 fn member_of(object: &Constant, key: &str) -> Option<Constant> {
     match object {
         Constant::Object(object) => object.get(key).cloned(),
@@ -2625,11 +2701,15 @@ fn member_of(object: &Constant, key: &str) -> Option<Constant> {
             .iter()
             .find(|(name, _)| name == key)
             .map(|(_, value)| value.clone()),
-        Constant::Array(values) => key
-            .parse::<usize>()
-            .ok()
-            .filter(|index| index.to_string() == key)
-            .and_then(|index| values.get(index).cloned()),
+        Constant::Array(values) if key == "length" => length(values.len()),
+        Constant::Array(values) => array_index(key).and_then(|index| values.get(index).cloned()),
+        // A string has its length and its UTF-16 units; a unit half of a
+        // surrogate pair is no text the build writes.
+        Constant::String(text) if key == "length" => length(text.encode_utf16().count()),
+        Constant::String(text) => array_index(key)
+            .and_then(|index| text.encode_utf16().nth(index))
+            .and_then(|unit| char::from_u32(u32::from(unit)))
+            .map(|unit| Constant::String(unit.to_string())),
         Constant::Vars(vars) => vars
             .get(key)
             .map(|variable| Constant::String(format!("var({variable})"))),

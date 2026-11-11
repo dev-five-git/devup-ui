@@ -58,9 +58,24 @@ struct Found {
     /// A part `css()` or `styled()` composes, which a class computed in its
     /// place would turn into CSS text
     rules_only: bool,
+    /// A prop of an element, which reads `undefined` and an array hole as
+    /// they are: what JSON would write as `null` or leave out is not computed
+    exact: bool,
 }
 
 const UTILS: [&str; 4] = ["css", "globalCss", "keyframes", "createGlobalStyle"];
+
+/// The props of the style components that are no style values: what renders,
+/// what it composes, and how its styles are ordered
+const STYLE_ONLY_PROPS: [&str; 7] = [
+    "as",
+    "className",
+    "style",
+    "styleOrder",
+    "styleVars",
+    "selectors",
+    "props",
+];
 
 /// Whether `code` has a style value that only running the module computes:
 /// one that the constants it reads do not give once inlined
@@ -213,6 +228,8 @@ struct Finder<'s, 'a> {
     known: &'s dyn Fn(&str) -> Option<String>,
     closures: FxHashMap<usize, Option<Closure>>,
     found: Vec<Found>,
+    /// Whether the values found now are props of an element
+    exact: bool,
 }
 
 fn is_evaluated_stylex(name: &str) -> bool {
@@ -244,6 +261,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             known,
             closures: FxHashMap::default(),
             found: Vec::new(),
+            exact: false,
         };
         for (index, statement) in program.body.iter().enumerate() {
             finder.bind(index, statement, is_style);
@@ -610,6 +628,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             closure,
             shorthand: shorthand.map(str::to_string),
             rules_only,
+            exact: self.exact,
         });
         true
     }
@@ -711,14 +730,28 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
                         self.parts(&spread.argument, false);
                     }
                     oxc_ast::ast::JSXAttributeItem::Attribute(attribute) => {
-                        if let oxc_ast::ast::JSXAttributeName::Identifier(name) = &attribute.name
-                            && name.name.starts_with('_')
-                            && let Some(oxc_ast::ast::JSXAttributeValue::ExpressionContainer(
-                                container,
-                            )) = &attribute.value
-                            && let Some(value) = container.expression.as_expression()
-                        {
+                        let oxc_ast::ast::JSXAttributeName::Identifier(name) = &attribute.name
+                        else {
+                            continue;
+                        };
+                        let Some(oxc_ast::ast::JSXAttributeValue::ExpressionContainer(container)) =
+                            &attribute.value
+                        else {
+                            continue;
+                        };
+                        let Some(value) = container.expression.as_expression() else {
+                            continue;
+                        };
+                        if name.name.starts_with('_') {
                             self.parts(value, false);
+                        } else if !STYLE_ONLY_PROPS.contains(&name.name.as_str())
+                            && !css::is_special_property::is_special_property(&name.name)
+                        {
+                            // A style prop the module computes from constants
+                            // is the class of what it computes.
+                            self.exact = true;
+                            self.values(value, None);
+                            self.exact = false;
                         }
                     }
                 }
@@ -1093,8 +1126,9 @@ fn value_script(code: &str, found: &Found) -> Generated {
     };
     let mut generated = Generated::default();
     generated.text = format!(
-        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ if ({handed}) return undefined; return __literal__((",
+        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ if ({handed}) return undefined; return __literal__({}, (",
         statements.join(", "),
+        found.exact,
     );
     generated.copy(code, found.span.start as usize, found.span.end as usize);
     generated

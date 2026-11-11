@@ -249,3 +249,19 @@ fn generated_declarations_go_where_nothing_needs_them(
 ) {
     assert_eq!(unwrapped_jsx(source), expected, "{source}");
 }
+
+#[rstest]
+#[case::text(r#"f(`a${"px"}b${x}`);"#, "f(`apxb${x}`);\n")]
+#[case::whole(r#"f(`${"px"}`);"#, "f(`px`);\n")]
+#[case::escaped(r#"f(`${"`"}${"${"}${"\\"}${"$"}`);"#, "f(`\\`\\${\\\\$`);\n")]
+#[case::carriage_return(r#"f(`${"a\rb"}`);"#, "f(`a\\rb`);\n")]
+#[case::parenthesized(r#"f(`${("px")}`);"#, "f(`px`);\n")]
+#[case::other_value("f(`${1}${x}`);", "f(`${1}${x}`);\n")]
+#[case::invalid_escape(r#"t(`\u{}${"px"}`);"#, "t(`\\u{}${\"px\"}`);\n")]
+#[case::tagged(r#"t`a${"px"}${`${"in"}`}`;"#, "t`a${\"px\"}${`in`}`;\n")]
+fn strings_in_template_literals_are_written_as_their_text(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(unwrapped(source), expected, "{source}");
+}

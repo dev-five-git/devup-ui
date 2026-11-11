@@ -22506,7 +22506,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "import { Box } from '@devup-ui/react';\nconst f = () => 1;\n<Box w={f()} />;",
-                false,
+                true,
             ),
             (
                 "import { css } from 'other';\nconst f = () => 1;\ncss({ w: f() });",
@@ -22725,10 +22725,12 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
             false,
             &memory_resolver(&[("/src/tokens.ts", "export const list = [1, 2];")]),
         );
+        // The length of a constant array is the number it is, which composes
+        // no style, as written.
         assert!(
             partial
                 .as_ref()
-                .is_ok_and(|output| output.styles.is_empty()),
+                .is_err_and(|error| error.to_string().contains("Cannot compose `2`")),
             "{partial:?}"
         );
 

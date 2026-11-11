@@ -275,10 +275,10 @@ impl<'a> DevupVisitor<'a> {
                     == Reach::Constant;
                 if between_constants {
                     self.capture_leaf(&mut conditional.test, captured);
+                    false
                 } else {
-                    self.capture_conditional(conditional, captured);
+                    self.capture_conditional(conditional, captured)
                 }
-                false
             }
             Expression::LogicalExpression(logical) => {
                 if super::order::suspends(&logical.right) {
