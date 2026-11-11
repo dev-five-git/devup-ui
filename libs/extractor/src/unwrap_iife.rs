@@ -1,19 +1,27 @@
 //! A function the build writes only to pass values in, called where a
 //! statement evaluates first, gives what declaring those values right before
 //! the statement gives: they are evaluated first either way, in the same order.
+//! What the build declares and nothing reads, or declares only to name what
+//! already has a name, goes too.
 
 use oxc_allocator::{CloneIn, GetAllocator, TakeIn, Vec};
 use oxc_ast::{
     ast::{
-        Argument, ArrowFunctionBody, ArrowFunctionExpression, BindingIdentifier, BindingPattern,
-        CallExpression, CatchClause, Expression, FormalParameters, Function, FunctionBody,
-        IdentifierReference, Program, Statement, VariableDeclarationKind, VariableDeclarator,
+        Argument, ArrayExpressionElement, ArrowFunctionBody, ArrowFunctionExpression,
+        AssignmentTargetPropertyIdentifier, BindingIdentifier, BindingPattern, CallExpression,
+        CatchClause, ExportSpecifier, Expression, FormalParameters, Function, FunctionBody,
+        IdentifierReference, ImportDeclarationSpecifier, JSXElementName, NumberBase,
+        ObjectProperty, Program, SimpleAssignmentTarget, Statement, VariableDeclarationKind,
+        VariableDeclarator,
     },
     builder::AstBuilder,
 };
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_span::SPAN;
-use oxc_syntax::scope::ScopeFlags;
+use oxc_syntax::{
+    operator::{BinaryOperator, UnaryOperator},
+    scope::ScopeFlags,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Unwrap the generated functions of `program` that only pass values in
@@ -22,9 +30,11 @@ pub(crate) fn unwrap<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     eval.visit_program(program);
     // Code given to direct eval could read a name declared here.
     if !eval.0 {
+        let imports = sole_imports(program);
         Unwrap {
             ast,
             parameters: std::vec::Vec::new(),
+            imports,
         }
         .visit_program(program);
     }
@@ -62,12 +72,14 @@ struct Unwrap<'s, 'a> {
     ast: &'s AstBuilder<'a>,
     /// The names a function body cannot declare again: its parameters
     parameters: std::vec::Vec<FxHashSet<String>>,
+    /// The names the module imports and binds nowhere else
+    imports: FxHashSet<String>,
 }
 
 impl<'a> VisitMut<'a> for Unwrap<'_, 'a> {
     fn visit_program(&mut self, it: &mut Program<'a>) {
         walk_mut::walk_program(self, it);
-        statements(self.ast, &mut it.body, &FxHashSet::default());
+        statements(self.ast, &mut it.body, &FxHashSet::default(), &self.imports);
     }
 
     fn visit_function(&mut self, it: &mut Function<'a>, flags: ScopeFlags) {
@@ -81,30 +93,38 @@ impl<'a> VisitMut<'a> for Unwrap<'_, 'a> {
         self.parameters.push(parameters.clone());
         walk_mut::walk_arrow_function_expression(self, it);
         self.parameters.pop();
-        let Some(value) = it.body.as_expression_mut() else {
-            return;
-        };
-        if candidate(value, false).is_none() {
-            return;
+        if let Some(value) = it.body.as_expression_mut()
+            && candidate(value, false).is_some()
+        {
+            let value = value.take_in(self.ast);
+            let mut body = Vec::from_array_in(
+                [Statement::new_return_statement(SPAN, Some(value), self.ast)],
+                self.ast,
+            );
+            statements(self.ast, &mut body, &parameters, &self.imports);
+            it.body =
+                ArrowFunctionBody::new_function_body(SPAN, Vec::new_in(self.ast), body, self.ast);
         }
-        let value = value.take_in(self.ast);
-        let mut body = Vec::from_array_in(
-            [Statement::new_return_statement(SPAN, Some(value), self.ast)],
-            self.ast,
-        );
-        statements(self.ast, &mut body, &parameters);
-        it.body = ArrowFunctionBody::new_function_body(SPAN, Vec::new_in(self.ast), body, self.ast);
+        // A generated function left only returning a value is written as it.
+        if it.span == SPAN
+            && let ArrowFunctionBody::FunctionBody(body) = &mut it.body
+            && body.directives.is_empty()
+            && let [Statement::ReturnStatement(returned)] = body.statements.as_mut_slice()
+            && let Some(value) = returned.argument.take()
+        {
+            it.body = ArrowFunctionBody::from(value);
+        }
     }
 
     fn visit_function_body(&mut self, it: &mut FunctionBody<'a>) {
         walk_mut::walk_function_body(self, it);
         let parameters = self.parameters.last().cloned().unwrap_or_default();
-        statements(self.ast, &mut it.statements, &parameters);
+        statements(self.ast, &mut it.statements, &parameters, &self.imports);
     }
 
     fn visit_block_statement(&mut self, it: &mut oxc_ast::ast::BlockStatement<'a>) {
         walk_mut::walk_block_statement(self, it);
-        statements(self.ast, &mut it.body, &FxHashSet::default());
+        statements(self.ast, &mut it.body, &FxHashSet::default(), &self.imports);
     }
 
     fn visit_catch_clause(&mut self, it: &mut CatchClause<'a>) {
@@ -113,12 +133,17 @@ impl<'a> VisitMut<'a> for Unwrap<'_, 'a> {
             names.visit_catch_parameter(parameter);
         }
         walk_mut::walk_block_statement(self, &mut it.body);
-        statements(self.ast, &mut it.body.body, &names.0.into_keys().collect());
+        statements(
+            self.ast,
+            &mut it.body.body,
+            &names.0.into_keys().collect(),
+            &self.imports,
+        );
     }
 
     fn visit_static_block(&mut self, it: &mut oxc_ast::ast::StaticBlock<'a>) {
         walk_mut::walk_static_block(self, it);
-        statements(self.ast, &mut it.body, &FxHashSet::default());
+        statements(self.ast, &mut it.body, &FxHashSet::default(), &self.imports);
     }
 }
 
@@ -220,6 +245,7 @@ fn statements<'a>(
     ast: &AstBuilder<'a>,
     statements: &mut Vec<'a, Statement<'a>>,
     parameters: &FxHashSet<String>,
+    imports: &FxHashSet<String>,
 ) {
     let mut index = 0;
     while index < statements.len() {
@@ -257,6 +283,10 @@ fn statements<'a>(
         // What the call gave may be another call to unwrap.
         index += count;
     }
+    for index in 0..statements.len() {
+        packet(ast, statements, index);
+    }
+    while tidy(statements, parameters, imports) {}
 }
 
 /// Replace the generated call `value` by what it returns, giving the
@@ -324,6 +354,394 @@ fn unbound<'a>(ast: &AstBuilder<'a>, value: Expression<'a>) -> Expression<'a> {
     } else {
         value
     }
+}
+
+/// How often each name is bound
+#[derive(Default)]
+struct Bindings(FxHashMap<String, usize>);
+
+impl<'a> Visit<'a> for Bindings {
+    fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
+        *self.0.entry(it.name.to_string()).or_default() += 1;
+    }
+}
+
+/// The imported names `program` binds nowhere else, which every read of them
+/// anywhere reads
+fn sole_imports(program: &Program<'_>) -> FxHashSet<String> {
+    let mut bindings = Bindings::default();
+    bindings.visit_program(program);
+    program
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::ImportDeclaration(import) if !import.import_kind.is_type() => {
+                import.specifiers.as_ref()
+            }
+            _ => None,
+        })
+        .flatten()
+        .filter(|specifier| {
+            !matches!(specifier, ImportDeclarationSpecifier::ImportSpecifier(specifier) if specifier.import_kind.is_type())
+        })
+        .map(|specifier| specifier.local().name.to_string())
+        .filter(|name| bindings.0.get(name) == Some(&1))
+        .collect()
+}
+
+/// The names written, exported by name or naming an element, which a read
+/// renamed could not keep meaning the same
+#[derive(Default)]
+struct Uses {
+    written: FxHashSet<String>,
+    exported: FxHashSet<String>,
+    elements: FxHashSet<String>,
+}
+
+impl<'a> Visit<'a> for Uses {
+    fn visit_simple_assignment_target(&mut self, it: &SimpleAssignmentTarget<'a>) {
+        if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = it {
+            self.written.insert(id.name.to_string());
+        }
+        walk::walk_simple_assignment_target(self, it);
+    }
+
+    fn visit_assignment_target_property_identifier(
+        &mut self,
+        it: &AssignmentTargetPropertyIdentifier<'a>,
+    ) {
+        self.written.insert(it.binding.name.to_string());
+        walk::walk_assignment_target_property_identifier(self, it);
+    }
+
+    fn visit_export_specifier(&mut self, it: &ExportSpecifier<'a>) {
+        self.exported.insert(it.local.name().to_string());
+        walk::walk_export_specifier(self, it);
+    }
+
+    fn visit_jsx_element_name(&mut self, it: &JSXElementName<'a>) {
+        if let JSXElementName::IdentifierReference(id) = it {
+            self.elements.insert(id.name.to_string());
+        }
+        walk::walk_jsx_element_name(self, it);
+    }
+}
+
+/// Read `to` wherever `from` is read
+struct Rename<'n, 'a> {
+    from: &'n str,
+    to: IdentifierReference<'a>,
+}
+
+impl<'a> VisitMut<'a> for Rename<'_, 'a> {
+    fn visit_identifier_reference(&mut self, it: &mut IdentifierReference<'a>) {
+        if it.name == self.from {
+            it.name = self.to.name;
+        }
+    }
+
+    fn visit_object_property(&mut self, it: &mut ObjectProperty<'a>) {
+        // A shorthand property keeps its key once its value reads another name.
+        if it.shorthand && matches!(&it.value, Expression::Identifier(id) if id.name == self.from) {
+            it.shorthand = false;
+        }
+        walk_mut::walk_object_property(self, it);
+    }
+}
+
+/// The name and value of `statement` when it is a generated `const name = value;`
+fn generated_const<'s, 'a>(statement: &'s Statement<'a>) -> Option<(&'s str, &'s Expression<'a>)> {
+    let Statement::VariableDeclaration(declaration) = statement else {
+        return None;
+    };
+    let [declarator] = declaration.declarations.as_slice() else {
+        return None;
+    };
+    let BindingPattern::BindingIdentifier(id) = &declarator.id else {
+        return None;
+    };
+    if declaration.span != SPAN
+        || declaration.kind != VariableDeclarationKind::Const
+        || !id.name.starts_with("__devup")
+    {
+        return None;
+    }
+    declarator
+        .init
+        .as_ref()
+        .map(|value| (id.name.as_str(), value))
+}
+
+/// Remove one generated declaration of `statements` that nothing reads, or
+/// that only names a parameter or import nothing writes, reading that
+/// instead; whether one was
+fn tidy<'a>(
+    statements: &mut Vec<'a, Statement<'a>>,
+    parameters: &FxHashSet<String>,
+    imports: &FxHashSet<String>,
+) -> bool {
+    let mut everywhere = Names::default();
+    let mut bindings = Bindings::default();
+    let mut uses = Uses::default();
+    for statement in statements.iter() {
+        everywhere.visit_statement(statement);
+        bindings.visit_statement(statement);
+        uses.visit_statement(statement);
+    }
+    let named = |name: &str| parameters.contains(name) || imports.contains(name);
+    for index in 0..statements.len() {
+        let Some((name, value)) = generated_const(&statements[index]) else {
+            continue;
+        };
+        if bindings.0.get(name) != Some(&1) || uses.exported.contains(name) {
+            continue;
+        }
+        let value = parenthesized(value);
+        // A value made only to be named is not needed when nothing reads it.
+        if everywhere.0.get(name) == Some(&1)
+            && match value {
+                Expression::ArrayExpression(array) => array.elements.is_empty(),
+                Expression::ObjectExpression(object) => object.properties.is_empty(),
+                Expression::Identifier(id) => named(&id.name),
+                Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => true,
+                value => value.is_literal(),
+            }
+        {
+            statements.remove(index);
+            return true;
+        }
+        let Expression::Identifier(target) = value else {
+            continue;
+        };
+        let mut before = Names::default();
+        for statement in &statements[..index] {
+            before.visit_statement(statement);
+        }
+        // The name read instead must mean what it did everywhere it is read.
+        if !named(&target.name)
+            || bindings.0.contains_key(target.name.as_str())
+            || uses.written.contains(target.name.as_str())
+            || everywhere.0.contains_key("arguments")
+            || before.0.contains_key(name)
+            || (uses.elements.contains(name)
+                && target.name.starts_with(|c: char| c.is_ascii_lowercase()))
+        {
+            continue;
+        }
+        let (from, to) = (name.to_string(), (**target).clone());
+        statements.remove(index);
+        let mut rename = Rename { from: &from, to };
+        for statement in statements.iter_mut() {
+            rename.visit_statement(statement);
+        }
+        return true;
+    }
+    false
+}
+
+/// The slot `value` reads of the generated packet `name`, when it reads one
+fn slot(value: &Expression<'_>, name: &str) -> Option<usize> {
+    let Expression::ComputedMemberExpression(member) = value else {
+        return None;
+    };
+    if member.optional || !matches!(&member.object, Expression::Identifier(id) if id.name == name) {
+        return None;
+    }
+    match &member.expression {
+        Expression::StringLiteral(key) => key.value.as_str()?.parse().ok(),
+        Expression::NumericLiteral(key) => (key.value.fract() == 0.0).then_some(key.value as usize),
+        Expression::TemplateLiteral(key) if key.expressions.is_empty() => key
+            .quasis
+            .first()?
+            .value
+            .cooked
+            .as_ref()?
+            .as_str()?
+            .parse()
+            .ok(),
+        _ => None,
+    }
+}
+
+/// Whether every read of the packet `name` reads its flag or its one value
+struct SlotReads<'n> {
+    name: &'n str,
+    only: bool,
+}
+
+impl<'a> Visit<'a> for SlotReads<'_> {
+    fn visit_expression(&mut self, it: &Expression<'a>) {
+        match slot(it, self.name) {
+            Some(0 | 1) => {}
+            Some(_) => self.only = false,
+            None => walk::walk_expression(self, it),
+        }
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.only &= it.name != self.name;
+    }
+}
+
+/// Read the packet `name` as its one value, `undefined` where the branch
+/// that has none was taken
+struct SlotValue<'s, 'a> {
+    ast: &'s AstBuilder<'a>,
+    name: String,
+    read: Expression<'a>,
+    /// Whether the value is never `undefined` on the branch it is given on,
+    /// and so tells which branch was
+    taken: bool,
+    /// Whether the value is truthy whenever it is given
+    truthy: bool,
+}
+
+impl<'a> SlotValue<'_, 'a> {
+    fn read(&self) -> Expression<'a> {
+        self.read.clone_in(self.ast.allocator())
+    }
+
+    fn flag(&self, test: bool) -> Expression<'a> {
+        if test && self.truthy && self.taken {
+            return self.read();
+        }
+        let operator = if self.taken {
+            BinaryOperator::StrictInequality
+        } else {
+            BinaryOperator::StrictEquality
+        };
+        Expression::new_binary_expression(SPAN, self.read(), operator, void(self.ast), self.ast)
+    }
+}
+
+impl<'a> VisitMut<'a> for SlotValue<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if let Expression::ConditionalExpression(conditional) = it
+            && slot(&conditional.test, &self.name) == Some(0)
+        {
+            conditional.test = self.flag(true);
+            self.visit_expression(&mut conditional.consequent);
+            self.visit_expression(&mut conditional.alternate);
+            return;
+        }
+        match slot(it, &self.name) {
+            Some(0) => *it = self.flag(false),
+            Some(_) => *it = self.read(),
+            None => walk_mut::walk_expression(self, it),
+        }
+    }
+}
+
+fn void<'a>(ast: &AstBuilder<'a>) -> Expression<'a> {
+    Expression::new_unary_expression(
+        SPAN,
+        UnaryOperator::Void,
+        Expression::new_numeric_literal(SPAN, 0.0, None, NumberBase::Decimal, ast),
+        ast,
+    )
+}
+
+/// Whether `value` is never `undefined`, and whether it is always truthy
+fn defined(value: &Expression<'_>) -> Option<bool> {
+    match parenthesized(value) {
+        Expression::TemplateLiteral(template) => Some(template.quasis.iter().any(|quasi| {
+            quasi
+                .value
+                .cooked
+                .as_ref()
+                .is_some_and(|text| !text.is_empty())
+        })),
+        Expression::StringLiteral(text) => Some(!text.value.is_empty()),
+        Expression::NumericLiteral(number) => Some(number.value != 0.0 && !number.value.is_nan()),
+        Expression::BooleanLiteral(boolean) => Some(boolean.value),
+        Expression::ArrayExpression(_)
+        | Expression::ObjectExpression(_)
+        | Expression::ArrowFunctionExpression(_)
+        | Expression::FunctionExpression(_)
+        | Expression::ClassExpression(_) => Some(true),
+        Expression::BinaryExpression(_) => Some(false),
+        Expression::UnaryExpression(unary) if unary.operator != UnaryOperator::Void => Some(false),
+        _ => None,
+    }
+}
+
+/// The generated packet `test ? [true, value] : [false]` of `statement`, with
+/// what is read of it written as `test ? value : void 0`, when it is one
+fn packet<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>, index: usize) -> bool {
+    let Some((name, value)) = generated_const(&statements[index]) else {
+        return false;
+    };
+    if !name.starts_with("__devupBranch") {
+        return false;
+    }
+    let Expression::ConditionalExpression(conditional) = parenthesized(value) else {
+        return false;
+    };
+    let flags = |side: &Expression<'_>| match parenthesized(side) {
+        Expression::ArrayExpression(array) => match array.elements.as_slice() {
+            [ArrayExpressionElement::BooleanLiteral(flag)] => Some((flag.value, None)),
+            [ArrayExpressionElement::BooleanLiteral(flag), value] => {
+                Some((flag.value, value.as_expression().and_then(defined)))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    let (Some((true, consequent)), Some((false, alternate))) = (
+        flags(&conditional.consequent),
+        flags(&conditional.alternate),
+    ) else {
+        return false;
+    };
+    // One branch gives one value never `undefined`; the other gives none.
+    let (taken_first, truthy) = match (consequent, alternate) {
+        (Some(truthy), None) => (true, truthy),
+        (None, Some(truthy)) => (false, truthy),
+        _ => return false,
+    };
+    let mut reads = SlotReads { name, only: true };
+    for statement in statements.iter() {
+        reads.visit_statement(statement);
+    }
+    if !reads.only {
+        return false;
+    }
+    let name = name.to_string();
+    let Statement::VariableDeclaration(declaration) = &mut statements[index] else {
+        return false;
+    };
+    let Some(Expression::ConditionalExpression(conditional)) =
+        &mut declaration.declarations[0].init
+    else {
+        return false;
+    };
+    let given = |side: &mut Expression<'a>| match side {
+        Expression::ArrayExpression(array) if array.elements.len() == 2 => array
+            .elements
+            .pop()
+            .map_or_else(|| void(ast), ArrayExpressionElement::into_expression),
+        _ => void(ast),
+    };
+    conditional.consequent = given(&mut conditional.consequent);
+    conditional.alternate = given(&mut conditional.alternate);
+    let BindingPattern::BindingIdentifier(id) = &declaration.declarations[0].id else {
+        return false;
+    };
+    let read = Expression::new_identifier(SPAN, id.name, ast);
+    // The flag read is true exactly where the consequent ran.
+    let mut values = SlotValue {
+        ast,
+        name,
+        read,
+        taken: taken_first,
+        truthy,
+    };
+    for (at, statement) in statements.iter_mut().enumerate() {
+        if at != index {
+            values.visit_statement(statement);
+        }
+    }
+    true
 }
 
 #[cfg(test)]

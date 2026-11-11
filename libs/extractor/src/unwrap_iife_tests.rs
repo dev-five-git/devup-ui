@@ -7,6 +7,14 @@ use rstest::rstest;
 
 /// Parse `source`, mark every arrow it writes `__g` at as generated, then unwrap.
 fn unwrapped(source: &str) -> String {
+    unwrap_with(source, SourceType::mjs())
+}
+
+fn unwrapped_jsx(source: &str) -> String {
+    unwrap_with(source, SourceType::jsx())
+}
+
+fn unwrap_with(source: &str, source_type: SourceType) -> String {
     struct Generated;
     impl<'a> VisitMut<'a> for Generated {
         fn visit_arrow_function_expression(&mut self, it: &mut ArrowFunctionExpression<'a>) {
@@ -22,11 +30,20 @@ fn unwrapped(source: &str) -> String {
             }
             walk_mut::walk_arrow_function_expression(self, it);
         }
+        fn visit_variable_declaration(&mut self, it: &mut oxc_ast::ast::VariableDeclaration<'a>) {
+            if it.declarations.iter().any(|declarator| {
+                declarator
+                    .id
+                    .get_binding_identifier()
+                    .is_some_and(|id| id.name.starts_with("__devup"))
+            }) {
+                it.span = SPAN;
+            }
+            walk_mut::walk_variable_declaration(self, it);
+        }
     }
     let allocator = Allocator::default();
-    let mut program = Parser::new(&allocator, source, SourceType::mjs())
-        .parse()
-        .program;
+    let mut program = Parser::new(&allocator, source, source_type).parse().program;
     Generated.visit_program(&mut program);
     unwrap(&AstBuilder::new(&allocator), &mut program);
     Codegen::new().build(&program).code
@@ -113,4 +130,185 @@ fn generated_calls_unwrap_where_a_statement_evaluates_them_first(
     #[case] expected: &str,
 ) {
     assert_eq!(unwrapped(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::unused(
+    "function f() { const __devupA = []; return 1; }",
+    "function f() {
+	return 1;
+}
+"
+)]
+#[case::unused_function(
+    "function f() { const __devupA = () => g(); return 1; }",
+    "function f() {
+	return 1;
+}
+"
+)]
+#[case::unused_call(
+    "function f() { const __devupA = g(); return 1; }",
+    "function f() {
+	const __devupA = g();
+	return 1;
+}
+"
+)]
+#[case::authored(
+    "function f() { const a = []; return 1; }",
+    "function f() {
+	const a = [];
+	return 1;
+}
+"
+)]
+#[case::parameter(
+    "function f(p) { const __devupA = p; return g(__devupA, { __devupA }); }",
+    "function f(p) {
+	return g(p, { __devupA: p });
+}
+"
+)]
+#[case::import(
+    "import { D } from 'm'; function f() { const __devupA = D; return <__devupA />; }",
+    "import { D } from \"m\";
+function f() {
+	return <D />;
+}
+"
+)]
+#[case::import_shadowed(
+    "import { D } from 'm'; function f(D) { const __devupA = D; return <__devupA />; }",
+    "import { D } from \"m\";
+function f(D) {
+	return <D />;
+}
+"
+)]
+#[case::lowercase_element(
+    "function f(d) { const __devupA = d; return <__devupA />; }",
+    "function f(d) {
+	const __devupA = d;
+	return <__devupA />;
+}
+"
+)]
+#[case::written(
+    "function f(p) { const __devupA = p; p = 1; return __devupA; }",
+    "function f(p) {
+	const __devupA = p;
+	p = 1;
+	return __devupA;
+}
+"
+)]
+#[case::rebound(
+    "function f(p) { const __devupA = p; return () => { const p = 1; return __devupA; }; }",
+    "function f(p) {
+	const __devupA = p;
+	return () => {
+		const p = 1;
+		return __devupA;
+	};
+}
+"
+)]
+#[case::arguments(
+    "function f(p) { const __devupA = p; arguments[0] = 1; return __devupA; }",
+    "function f(p) {
+	const __devupA = p;
+	arguments[0] = 1;
+	return __devupA;
+}
+"
+)]
+#[case::read_before(
+    "function f(p) { const g = () => __devupA; const __devupA = p; return g; }",
+    "function f(p) {
+	const g = () => __devupA;
+	const __devupA = p;
+	return g;
+}
+"
+)]
+#[case::exported(
+    "const __devupA = 1; export { __devupA };",
+    "const __devupA = 1;
+export { __devupA };
+"
+)]
+#[case::arrow_returning(
+    "const f = (__g0) => { return __g0; };",
+    "const f = (__g0) => __g0;
+"
+)]
+fn generated_declarations_go_where_nothing_needs_them(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(unwrapped_jsx(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::consequent(
+    "const __devupBranch0 = t ? [true, `${a}px`] : [false]; f(__devupBranch0[\"0\"] ? 1 : 2, __devupBranch0[`1`], !__devupBranch0[0]);",
+    "const __devupBranch0 = t ? `${a}px` : void 0;
+f(__devupBranch0 ? 1 : 2, __devupBranch0, !(__devupBranch0 !== void 0));
+"
+)]
+#[case::alternate(
+    "const __devupBranch0 = t ? [true] : [false, a > b]; f(__devupBranch0[0] ? 1 : 2, __devupBranch0[1]);",
+    "const __devupBranch0 = t ? void 0 : a > b;
+f(__devupBranch0 === void 0 ? 1 : 2, __devupBranch0);
+"
+)]
+#[case::falsy(
+    "const __devupBranch0 = t ? [true, \"\"] : [false]; f(__devupBranch0[0] ? 1 : 2);",
+    "const __devupBranch0 = t ? \"\" : void 0;
+f(__devupBranch0 !== void 0 ? 1 : 2);
+"
+)]
+#[case::maybe_undefined(
+    "const __devupBranch0 = t ? [true, a] : [false]; f(__devupBranch0[1]);",
+    "const __devupBranch0 = t ? [true, a] : [false];
+f(__devupBranch0[1]);
+"
+)]
+#[case::both_given(
+    "const __devupBranch0 = t ? [true, 1] : [false, 2]; f(__devupBranch0[1]);",
+    "const __devupBranch0 = t ? [true, 1] : [false, 2];
+f(__devupBranch0[1]);
+"
+)]
+#[case::read_whole(
+    "const __devupBranch0 = t ? [true, 1] : [false]; f(__devupBranch0);",
+    "const __devupBranch0 = t ? [true, 1] : [false];
+f(__devupBranch0);
+"
+)]
+#[case::read_other(
+    "const __devupBranch0 = t ? [true, 1] : [false]; f(__devupBranch0[2], __devupBranch0[k]);",
+    "const __devupBranch0 = t ? [true, 1] : [false];
+f(__devupBranch0[2], __devupBranch0[k]);
+"
+)]
+#[case::other_name(
+    "const __devupValue0 = t ? [true, 1] : [false]; f(__devupValue0[1]);",
+    "const __devupValue0 = t ? [true, 1] : [false];
+f(__devupValue0[1]);
+"
+)]
+#[case::other_shape(
+    "const __devupBranch0 = [true, 1]; const __devupBranch1 = t ? [1, 1] : [false]; f(__devupBranch0[1], __devupBranch1[1]);",
+    "const __devupBranch0 = [true, 1];
+const __devupBranch1 = t ? [1, 1] : [false];
+f(__devupBranch0[1], __devupBranch1[1]);
+"
+)]
+fn branch_packets_with_one_value_never_undefined_are_that_value(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(unwrapped_jsx(source), expected, "{source}");
 }
