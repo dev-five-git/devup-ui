@@ -45,7 +45,7 @@ expression: outputs
     ),
     (
         "<Box as={`h${level}`} />",
-        "const DevupAs0 = `h${level}` || \"div\";\n<DevupAs0 />;",
+        "const DevupAs0 = `h${level}`;\n<DevupAs0 />;",
     ),
     (
         "<Box as={getTag()} />",
@@ -65,7 +65,7 @@ expression: outputs
     ),
     (
         "<Box as={true} />",
-        "const DevupAs0 = true || \"div\";\n<DevupAs0 />;",
+        "const DevupAs0 = true;\n<DevupAs0 />;",
     ),
     (
         "<Box as={{ a: 'a', b: 'button' }[kind]} onClick={track()} p={1}>{render()}</Box>",
@@ -73,7 +73,7 @@ expression: outputs
     ),
     (
         "<Box as={['div', 'a'][i]} {...register('x')} p={1} />",
-        "const DevupAs0 = [\"div\", \"a\"][i] || \"div\", __devupSpread0 = {\n\t__proto__: null,\n\t...register(\"x\")\n};\n<DevupAs0 {...__devupSpread0} className={`${__devupSpread0?.className || \"\"} a-a`} style={__devupSpread0?.style} />;",
+        "const DevupAs0 = [\"div\", \"a\"][i] || \"div\", __devupSpread0 = {\n\t__proto__: null,\n\t...register(\"x\")\n};\n<DevupAs0 {...__devupSpread0} className={`${__devupSpread0.className || \"\"} a-a`} style={__devupSpread0.style} />;",
     ),
     (
         "<Text as={b ? 'h1' : undefined} />",

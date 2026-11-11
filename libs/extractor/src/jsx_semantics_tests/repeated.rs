@@ -119,7 +119,7 @@ fn known_literals_when_styles_are_removed_keep_dom_props() {
     let rendered = code(&format!(
         "{BOX}export const a=(rest)=><Box {{...{{color:'red',id:'x'}}}} {{...rest}}/>;"
     ));
-    assert!(rendered.contains("id: \"x\""), "{rendered}");
+    assert!(rendered.contains("id=\"x\""), "{rendered}");
     assert!(!rendered.contains("color: \"red\""), "{rendered}");
 }
 

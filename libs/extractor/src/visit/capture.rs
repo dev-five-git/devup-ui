@@ -193,15 +193,11 @@ impl<'a> DevupVisitor<'a> {
         {
             let test = conditional.test.take_in(&self.ast);
             let branch = conditional.consequent.take_in(&self.ast);
-            *value = if reach(&self.bindings, &test) == Reach::Constant {
-                branch
-            } else {
-                Expression::new_sequence_expression(
-                    SPAN,
-                    oxc_allocator::Vec::from_array_in([test, branch], &self.ast),
-                    &self.ast,
-                )
-            };
+            *value = Expression::new_sequence_expression(
+                SPAN,
+                oxc_allocator::Vec::from_array_in([test, branch], &self.ast),
+                &self.ast,
+            );
             self.capture_shape(value, captured);
             return;
         }
@@ -293,10 +289,10 @@ impl<'a> DevupVisitor<'a> {
                     == Reach::Constant;
                 if between_constants {
                     self.capture_leaf(&mut conditional.test, captured);
-                    false
                 } else {
-                    self.capture_conditional(conditional, captured)
+                    self.capture_conditional(conditional, captured);
                 }
+                false
             }
             Expression::LogicalExpression(logical) => {
                 if super::order::suspends(&logical.right) {

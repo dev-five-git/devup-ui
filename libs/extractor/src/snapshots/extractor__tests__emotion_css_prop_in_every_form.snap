@@ -284,7 +284,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${override + \" external\" || \"\"} b`} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst override = \"a\";\nexport const App = () => <div className={`${override + \" external\"} b`} />;\n",
         },
     ),
     (
@@ -376,7 +376,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c, w }) => <div className=\"x a c\" style={{\n\t...{\n\t\t\"--b\": ((__devupValue0) => typeof __devupValue0 === \"number\" && __devupValue0 !== 0 ? __devupValue0 + \"px\" : __devupValue0)(c),\n\t\t\"--d\": ((__devupValue2) => typeof __devupValue2 === \"number\" && __devupValue2 !== 0 ? __devupValue2 + \"px\" : __devupValue2)(w)\n\t},\n\t...{ opacity: 1 }\n}} />;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c, w }) => <div className=\"x a c\" style={{\n\t\"--b\": ((__devupValue0) => typeof __devupValue0 === \"number\" && __devupValue0 !== 0 ? __devupValue0 + \"px\" : __devupValue0)(c),\n\t\"--d\": ((__devupValue2) => typeof __devupValue2 === \"number\" && __devupValue2 !== 0 ? __devupValue2 + \"px\" : __devupValue2)(w),\n\topacity: 1\n}} />;\n",
         },
     ),
     (
@@ -540,7 +540,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ cls, s }) => <><div className={`${cls ? \"\" : \"a\"} ${cls ? typeof cls === \"string\" ? cls : \"\" : \"\"}`} /><div className={`${s != null ? \"\" : \"b\"} ${s != null ? typeof s === \"string\" ? s : \"\" : \"\"}`} /><div className=\"a\" /><div className className=\"c\" /></>;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ cls, s }) => <><div className={`${cls ? \"\" : \"a\"} ${typeof cls === \"string\" ? cls : \"\"}`} /><div className={`${s != null ? \"\" : \"b\"} ${s != null ? typeof s === \"string\" ? s : \"\" : \"\"}`} /><div className=\"a\" /><div className className=\"c\" /></>;\n",
         },
     ),
     (
@@ -577,7 +577,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx(\"div\", { id: 1 }), _jsx(\"div\", ((__devupValue0) => ({\n\tclassName: \"a b c\",\n\tstyle: {\n\t\t...{ \"--d\": ((__devupValue1) => typeof __devupValue1 === \"number\" && __devupValue1 !== 0 ? __devupValue1 + \"px\" : __devupValue1)(c) },\n\t\t...__devupValue0\n\t}\n}))(s))];\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsx as _jsx } from \"react/jsx-runtime\";\nconst base = { padding: 2 };\nconst SPACE = 3;\nexport const App = ({ c, s }) => [_jsx(\"div\", { id: 1 }), _jsx(\"div\", ((__devupValue0) => ({\n\tclassName: \"a b c\",\n\tstyle: {\n\t\t\"--d\": ((__devupValue1) => typeof __devupValue1 === \"number\" && __devupValue1 !== 0 ? __devupValue1 + \"px\" : __devupValue1)(c),\n\t\t...__devupValue0\n\t}\n}))(s))];\n",
         },
     ),
 ]

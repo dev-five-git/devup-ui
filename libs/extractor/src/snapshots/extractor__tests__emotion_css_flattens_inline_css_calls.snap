@@ -17,7 +17,7 @@ expression: "library_outputs(&[\"import { css } from '@emotion/react';\\nexport 
     ),
     (
         "import { css } from '@emotion/react';\nexport const a = (cond) => css(cond || css({ color: 'red' }), { margin: 1 });",
-        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = (cond) => {\\n\\treturn `${cond ? typeof cond === \\\"string\\\" ? cond : \\\"\\\" : \\\"\\\"} ${`b ${cond ? \\\"\\\" : \\\"a\\\"}`}`;\\n};\\n\" }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None }), Static(ExtractStaticStyle { property: \"margin\", value: \"1px\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nexport const a = (cond) => {\\n\\treturn `${typeof cond === \\\"string\\\" ? cond : \\\"\\\"} b ${cond ? \\\"\\\" : \\\"a\\\"}`;\\n};\\n\" }",
     ),
     (
         "import { css } from '@emotion/react';\nexport const a = css([css({ color: 'red' }), [css({ margin: 1 }), { color: 'blue' }]]);",

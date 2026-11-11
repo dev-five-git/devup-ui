@@ -30,6 +30,6 @@ Ok(
                 },
             ),
         },
-        code: "\"use strict\";\nimport \"@devup-ui/react/devup-ui.css\";\nObject.defineProperty(exports, Symbol.toStringTag, { value: \"Module\" });\nconst e = require(\"react/jsx-runtime\"), { Box, Text, Flex } = require(\"@devup-ui/react\");\nfunction t() {\n\treturn e.jsxs(\"div\", { children: [e.jsx(\"div\", ((__devupSpread0) => ({\n\t\t...__devupSpread0,\n\t\tchildren: \"hello\",\n\t\tclassName: `${__devupSpread0?.className || \"\"} a b`,\n\t\tstyle: __devupSpread0?.style\n\t}))({\n\t\t__proto__: null,\n\t\t...{ [variable]: \"red\" }\n\t}))] });\n}\nexports.Lib = t;\n",
+        code: "\"use strict\";\nimport \"@devup-ui/react/devup-ui.css\";\nObject.defineProperty(exports, Symbol.toStringTag, { value: \"Module\" });\nconst e = require(\"react/jsx-runtime\"), { Box, Text, Flex } = require(\"@devup-ui/react\");\nfunction t() {\n\treturn e.jsxs(\"div\", { children: [e.jsx(\"div\", ((__devupSpread0) => ({\n\t\t...__devupSpread0,\n\t\tchildren: \"hello\",\n\t\tclassName: `${__devupSpread0.className || \"\"} a b`,\n\t\tstyle: __devupSpread0.style\n\t}))({\n\t\t__proto__: null,\n\t\t[variable]: \"red\"\n\t}))] });\n}\nexports.Lib = t;\n",
     },
 )

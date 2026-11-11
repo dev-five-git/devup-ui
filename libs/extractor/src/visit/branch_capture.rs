@@ -295,14 +295,12 @@ impl<'a> DevupVisitor<'a> {
         captured.push((name, self.scoped_values(vec![(left_name, left)], body)));
     }
 
-    /// Capture only the expressions of the branch that is actually selected;
-    /// whether the conditional is one value whole instead, each branch being
-    /// a value the styles read as it is, which it is left to be captured as
+    /// Capture only the expressions of the branch that is actually selected.
     pub(super) fn capture_conditional(
         &mut self,
         conditional: &mut oxc_ast::ast::ConditionalExpression<'a>,
         captured: &mut Vec<Captured<'a>>,
-    ) -> bool {
+    ) {
         let start = (self.css_capture_rules.len(), self.css_capture_offsets.len());
         let mut consequent = Vec::new();
         self.capture_shape(&mut conditional.consequent, &mut consequent);
@@ -310,19 +308,6 @@ impl<'a> DevupVisitor<'a> {
         let mut alternate = Vec::new();
         self.capture_shape(&mut conditional.alternate, &mut alternate);
         let end = (self.css_capture_rules.len(), self.css_capture_offsets.len());
-        let is_leaf = |branch: &Expression<'_>, values: &[Captured<'_>]| matches!((branch, values), (Expression::Identifier(read), [(leaf, _)]) if read.name == leaf.as_str());
-        // Either branch gives the styles the same one value: which ran tells
-        // nothing they need.
-        if start == end
-            && is_leaf(&conditional.consequent, &consequent)
-            && is_leaf(&conditional.alternate, &alternate)
-            && let (Some((_, consequent)), Some((_, alternate))) =
-                (consequent.pop(), alternate.pop())
-        {
-            conditional.consequent = consequent;
-            conditional.alternate = alternate;
-            return true;
-        }
         let name = self.names.fresh("__devupBranch");
         // One branch giving one value never `undefined`, the other none, tells
         // which branch ran by whether the value is given: the packet is it.
@@ -405,7 +390,6 @@ impl<'a> DevupVisitor<'a> {
             );
             captured.push((name, values));
         }
-        false
     }
 }
 

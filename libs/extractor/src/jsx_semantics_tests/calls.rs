@@ -142,5 +142,5 @@ fn create_element_when_props_are_opaque_keeps_native_merging() {
         "{CREATE_ELEMENT}{BOX}export const a=(p)=>createElement(Box,p,'x');"
     ));
     assert!(rendered.contains("...p"), "{rendered}");
-    assert!(rendered.contains("?.className"), "{rendered}");
+    assert!(rendered.contains("__devupSpread0.className"), "{rendered}");
 }

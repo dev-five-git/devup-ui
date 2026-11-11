@@ -69,7 +69,7 @@ fn create_element_with_props_held_in_a_value_spreads_them() {
 
     assert!(rendered.contains("...p"), "{rendered}");
     assert!(
-        rendered.contains("className: __devupSpread0?.className || \"\""),
+        rendered.contains("className: __devupSpread0.className || \"\""),
         "{rendered}"
     );
     assert!(

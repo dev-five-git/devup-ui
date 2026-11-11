@@ -83,6 +83,7 @@ mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
 
+mod peephole;
 mod source_map;
 #[cfg(test)]
 mod source_reconciliation_tests;
@@ -973,6 +974,7 @@ fn extract_source(
         CodegenOptions::default()
     };
     unwrap_iife::unwrap(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
+    peephole::simplify(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
     header_pragmas.reanchor(&mut program);
     let mut result = Codegen::new().with_options(codegen_options).build(&program);
     if visitor.jsx.sequences {
@@ -15892,7 +15894,7 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />";
         for expected in [
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
-            "...{ role: \"region\" }",
+            "...__devupProps,\n\t\trole: \"region\"",
             "<Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
@@ -15977,12 +15979,12 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
         );
         let compact = code.split_whitespace().collect::<Vec<_>>().join(" ");
         for expected in [
-            "...{ ...__devupProps, ...{ type: \"text\", title: \"base\" } }, ...{ type: \"password\" }",
+            "{ ...__devupProps, type: \"text\", title: \"base\", type: \"password\" }",
             "className: [__devupRecord4.className, __devupRecord3.className].filter(Boolean).join(\" \") || undefined",
             "className: [__devupRecord2.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
             "...__devupRecord4.style, ...__devupRecord3.style",
-            "...{ id: __devupRecord4.id }",
-            "typeof extra === \"function\" ? extra(__devupRecord5) : extra",
+            "= { id: __devupRecord4.id };",
+            "typeof extra === \"function\" ? extra(__devupRecord2) : extra",
         ] {
             assert!(compact.contains(expected), "{expected}\n{code}");
         }
@@ -16007,7 +16009,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
     )]
     #[case(
         "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
-        "className: \"first\",\n\t\t...rest"
+        "className: \"first\",\n\t...rest"
     )]
     #[case(
         "<Box className=<i /> color=\"red\" />",
@@ -16015,7 +16017,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
     )]
     #[case(
         "<Box {...rest} {...more} />",
-        "className={(\"className\" in __devupSpread1 ? __devupSpread1.className : __devupSpread0?.className) || \"\"}"
+        "className={(\"className\" in __devupSpread1 ? __devupSpread1.className : __devupSpread0.className) || \"\"}"
     )]
     #[serial]
     fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
@@ -16024,6 +16026,34 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
 export const a = {element}"
         ));
         assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    // Branches of the same code give one value whichever runs; a condition
+    // the build knows needs no running
+    #[rstest]
+    #[case(
+        "const on = true",
+        "margin={on ? `${m}` : `${m}`}",
+        "\"--margin-0-\": `${m}`"
+    )]
+    #[case("", "margin={on ? `${m}` : `${m}`}", "\"--margin-0-\": (on, `${m}`)")]
+    #[case("", "margin={1 > 2 ? `${m}` : `${m}`}", "\"--margin-0-\": `${m}`")]
+    #[serial]
+    fn test_same_branches_read_as_one_value(
+        #[case] declaration: &str,
+        #[case] prop: &str,
+        #[case] expected: &str,
+    ) {
+        let code = readable_code(&format!(
+            "import {{Box}} from '@devup-ui/core'
+{declaration}
+export const a = (m) => <Box {prop} />"
+        ));
+        assert!(
+            code.contains(expected),
+            "{expected}
+{code}"
+        );
     }
 
     // StyleX merges namespaces key by key: a later key wins and `null` removes it
@@ -16918,28 +16948,25 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         r#"<Box className={on ? "p-4" : "custom"} />"#,
-        r#"<div className={(on ? "a" : "custom") || ""} />"#
+        r#"<div className={on ? "a" : "custom"} />"#
     )]
     #[case(
         r#"<Box className={on ? "custom" : "p-4"} />"#,
-        r#"<div className={(on ? "custom" : "a") || ""} />"#
+        r#"<div className={on ? "custom" : "a"} />"#
     )]
     #[case(
         r#"<Box className={on && "p-4"} />"#,
         r#"<div className={on && "a" || ""} />"#
     )]
-    #[case(
-        r#"<Box className={"p-4" || x} />"#,
-        r#"<div className={"a" || x || ""} />"#
-    )]
-    #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a" || ""} />"#)]
+    #[case(r#"<Box className={"p-4" || x} />"#, r#"<div className={"a"} />"#)]
+    #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a"} />"#)]
     #[case(
         "<Box className={`icon-${name} ${a}${b}`} />",
         "-<div className={`icon-${name} ${a}${b}`} />"
     )]
     #[case(
         r#"<Box className={("custom")} />"#,
-        r#"-<div className={"custom" || ""} />"#
+        r#"-<div className={"custom"} />"#
     )]
     #[case(
         r#"<Box className={on && "custom"} />"#,
@@ -16947,7 +16974,7 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         r#"<Box className={on ? "a1" : "b1"} />"#,
-        r#"-<div className={(on ? "a1" : "b1") || ""} />"#
+        r#"-<div className={on ? "a1" : "b1"} />"#
     )]
     #[case(
         "<Box className={`custom ${x}`} />",
