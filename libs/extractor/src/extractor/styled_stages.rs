@@ -1,7 +1,7 @@
 use super::{
     AstBuilder, Base, CloneIn, Evaluations, Execution, Expression, FromIn, GetAllocator, Naming,
     SPAN, StyledDefinition, StyledJsx, gen_class_names, gen_styles,
-    merge_expression_for_class_name, residual, sets_plain_props, withheld, without_props,
+    merge_expression_for_class_name, residual, sets_plain_props, withheld,
 };
 use crate::utils::readable_code as code;
 use oxc_ast::ast::{Ident, Program};
@@ -79,7 +79,6 @@ pub(super) fn create<'a>(
     let own_default = fresh();
     let resolver = fresh();
     let resolved = fresh();
-    let input_as = fresh();
     let plain = definition.attrs.iter().all(sets_plain_props);
     let hybrid_value = if plain {
         format!("{control}?{control}[2]:false")
@@ -147,7 +146,11 @@ pub(super) fn create<'a>(
         definition.native(),
         definition.forward.as_ref(),
     );
-    let forwarded = super::super::styled_transient::filter(ast, without_props(ast, &withheld));
+    let forwarded = super::super::styled_transient::filter(
+        ast,
+        Expression::new_identifier(SPAN, "rest", ast),
+        &withheld,
+    );
     let finish = format!(
         "{result}[4]({{...{},as:{result}[3],forwardedAs:{props}.forwardedAs,className:({result}[0].length||{result}[2]!==void 0)?[...{result}[0],{result}[2],{props}.className].filter(Boolean).join(' '):{props}.className,style:{result}[1]===void 0?{props}.style:{{...{result}[1],...{props}.style}}}})",
         code(&forwarded),
@@ -220,7 +223,7 @@ pub(super) fn create<'a>(
                 .as_ref()
                 .map_or_else(|| format!("{:?}", context.base.name), code);
             let style_body = format!(
-                "({props})=>{{const {{style,className,as:{input_as},forwardedAs,...rest}}={props};let DevupAs={input_as};if(DevupAs===void 0){{if({resolver}){{DevupAs = (0,{resolver})();}}else{{DevupAs = {target};}}}}const {resolved}=DevupAs;{bindings}const {result}=[{control}?[{class_values}]:{ordinary},{variables},{markers},{resolved},{},rest];return {dispatch};}}",
+                "({props})=>{{const {{style,className,as:{resolved}={resolver}?(0,{resolver})():{target},forwardedAs,...rest}}={props};{bindings}const {result}=[{control}?[{class_values}]:{ordinary},{variables},{markers},{resolved},{},rest];return {dispatch};}}",
                 code(&terminal)
             );
             format!(

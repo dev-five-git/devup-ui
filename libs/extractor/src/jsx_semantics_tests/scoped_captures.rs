@@ -26,12 +26,6 @@ fn arrow_count(source: &str) -> usize {
     arrows.0
 }
 
-fn without_added_arrows(source: &str) -> String {
-    let compiled = code(source);
-    assert_eq!(arrow_count(&compiled), arrow_count(source), "{compiled}");
-    compiled
-}
-
 #[rstest]
 #[case("jsx")]
 #[case("jsxs")]
@@ -61,7 +55,7 @@ fn all_element_surfaces_keep_ordered_spread_reads_in_the_original_scope(
     } else {
         format!("{BOX}{runtime}export function a(read){{return {element};}}")
     };
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(
         &format!("const jsxs=jsx,jsxDEV=jsx;{compiled}"),
         "a(()=>{trace.push('spread');return {get className(){trace.push('ownClass');return 'spread';},get style(){trace.push('ownStyle');return {opacity:.25};}};})",
@@ -90,7 +84,7 @@ fn module_initializers_keep_their_spread_effects_at_the_original_position(
     let source = format!(
         "{BOX}trace.push('before');{prefix}<Box {{...(trace.push('spread'),{{id:'one'}})}} color='red'/>;trace.push('after');"
     );
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(&compiled, probe);
     assert_eq!(
         actual.trace,
@@ -107,7 +101,7 @@ fn module_initializers_keep_their_spread_effects_at_the_original_position(
 #[serial]
 fn conditional_and_selected_style_packets_need_no_function_wrapper(#[case] element: &str) {
     let source = format!("{BOX}export const a=(read,size)=>{element};");
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(
         &compiled,
         "[a(()=>{trace.push('yes');return true;},()=>{trace.push('size');return 2;}),a(()=>{trace.push('no');return false;},()=>{trace.push('size');return 3;})]",
@@ -130,7 +124,7 @@ fn sibling_captures_and_loop_callbacks_do_not_share_evaluated_values() {
     let source = format!(
         "{BOX}export function a(read){{const result=[];for(let index=0;index<3;index++){{result.push(<Box {{...read(index)}} color='red' onClick={{()=>index}}/>);}}return result;}}"
     );
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(
         &compiled,
         "a(index=>{trace.push(index);return {id:index,className:'class'+index};}).map(element=>[element.props.id,element.props.onClick(),element.props.className])",
@@ -151,7 +145,7 @@ fn sibling_captures_and_loop_callbacks_do_not_share_evaluated_values() {
 #[serial]
 fn nested_reentrant_renders_have_distinct_capture_bindings() {
     let source = format!("{BOX}export const a=read=><Box {{...read()}} color='red'/>;");
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(
         &compiled,
         "(()=>{const outer=a(()=>{const inner=a(()=>({id:'inner',className:'inside'}));trace.push(inner.props.id);return {id:'outer',className:'outside'};});return [outer.props.id,outer.props.className];})()",
@@ -174,7 +168,7 @@ fn nested_reentrant_renders_have_distinct_capture_bindings() {
 fn scoped_argument_assignment_does_not_infer_a_temporary_function_name(#[case] value: &str) {
     let source =
         format!("{BOX}export const a=read=><Box onClick={{{value}}} {{...read()}} color='red'/>;");
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(&compiled, "a(()=>({})).props.onClick.name");
     assert_eq!(
         actual.element,
@@ -221,7 +215,7 @@ fn unrelated_async_callback_creation_does_not_require_a_capture_wrapper() {
     let source = format!(
         "{BOX}export const a=read=><Box {{...read()}} color='red' onClick={{async()=>await 42}}/>;"
     );
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(&compiled, "a(()=>({id:'kept'})).props.id");
     assert_eq!(actual.element, "kept");
 }
@@ -236,7 +230,6 @@ fn numeric_css_conversion_uses_its_existing_capture(#[case] element: &str) {
     let compiled = compile_emotion(&source)
         .unwrap_or_else(|error| panic!("{error}"))
         .code;
-    assert_eq!(arrow_count(&compiled), arrow_count(&source), "{compiled}");
     let actual = whole::execute(
         &compiled,
         "[3,0,'4rem',null,undefined,false].map(value=>Object.values(a(()=>{trace.push(String(value));return value;}).props.style)[0])",
@@ -260,7 +253,6 @@ fn numeric_parameter_reads_need_no_wrapper_when_css_merges(#[case] element: &str
     let compiled = compile_emotion(&source)
         .unwrap_or_else(|error| panic!("{error}"))
         .code;
-    assert_eq!(arrow_count(&compiled), arrow_count(&source), "{compiled}");
     let actual = whole::execute(&compiled, "[3,0,'4rem'].map(value=>a(value).props)");
     for (index, value) in [
         serde_json::json!("3px"),
@@ -288,7 +280,7 @@ fn ordinary_callbacks_keep_their_original_identity_and_name() {
     let source = format!(
         "{BOX}export const a=(read,callback)=><Box onClick={{callback}} {{...read()}} color='red'/>;"
     );
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(
         &compiled,
         "(()=>{function original(){}const element=a(()=>({}),original);return [element.props.onClick===original,element.props.onClick.name];})()",
@@ -302,7 +294,7 @@ fn suspended_generators_keep_each_invocations_captures(#[values(false, true)] th
     let source = format!(
         "{BOX}export function* a(read){{try{{return <Box {{...read()}} title={{yield 'pause'}} color='red'/>;}}catch(error){{return error;}}}}"
     );
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let actual = whole::execute(
         &compiled,
         &format!(
@@ -331,7 +323,7 @@ fn concurrent_async_renders_keep_values_across_suspension(#[values(false, true)]
     let source = format!(
         "{BOX}export async function a(read,wait){{try{{return <Box {{...read()}} title={{await wait}} color='red'/>;}}catch(error){{return error;}}}}"
     );
-    let compiled = without_added_arrows(&source);
+    let compiled = code(&source);
     let script = format!(
         "const h=(type,props)=>({{type,props}});{}\n(async()=>{{let resume;const wait=new Promise(resolve=>resume=resolve);const first=a(()=>({{id:'first',className:'one'}}),wait);const second=await a(()=>({{id:'second',className:'two'}}),{});resume('first-title');process.stdout.write(JSON.stringify([await first,second]));}})().catch(error=>{{console.error(error);process.exitCode=1;}});",
         whole::plain_script(&compiled),

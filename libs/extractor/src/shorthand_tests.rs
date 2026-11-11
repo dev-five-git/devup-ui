@@ -152,9 +152,7 @@ fn shorthand_dynamic_values_stay_on_the_element() -> Result<(), Box<dyn std::err
     let left = &variables[0].1;
     let right = &variables[1].1;
     assert!(
-        output
-            .code
-            .contains(&format!("style={{({alias} = position, {{")),
+        output.code.contains(&format!("style={{(({alias}) => ({{")),
         "{}",
         output.code
     );

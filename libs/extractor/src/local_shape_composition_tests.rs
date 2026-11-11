@@ -129,11 +129,7 @@ fn styled_callback_when_local_matches_inline_semantics(
         );
     } else {
         assert!(local.code.contains("tone=\"purple\""), "{}", local.code);
-        assert!(
-            local.code.contains("\"tone\": __devupRecord"),
-            "{}",
-            local.code
-        );
+        assert!(local.code.contains("k !== \"tone\""), "{}", local.code);
         assert!(local.code.contains(".tone"), "{}", local.code);
     }
     Ok(())

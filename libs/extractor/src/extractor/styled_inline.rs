@@ -13,6 +13,7 @@ use oxc_ast::{
     },
     builder::AstBuilder,
 };
+use oxc_ast_visit::VisitMut;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::AssignmentOperator;
 
@@ -113,6 +114,8 @@ pub(super) fn body<'a>(
         eval |= matches!(value, Expression::CallExpression(call) if matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(id) if id.name == "eval"));
         false
     });
+    let original = component.clone_in_with_semantic_ids(ast.allocator());
+    let original_props = props.clone_in_with_semantic_ids(ast.allocator());
     if !eval {
         render.frames(&mut component);
     }
@@ -124,16 +127,38 @@ pub(super) fn body<'a>(
         false,
         ast,
     );
+    let mut frames = super::styled_inline_simplify::Frames {
+        ast,
+        slots: &render.slots,
+    };
     if eval || !Render::tail_call(&call) {
+        frames.visit_expression(&mut call);
         return call.into();
     }
     let mut statements = Vec::new_in(ast);
     render.complete(&mut statements, call.take_in(ast), None);
+    let mut frames = super::styled_inline_simplify::Frames {
+        ast,
+        slots: &render.slots,
+    };
+    frames.visit_statements(&mut statements);
     super::styled_inline_simplify::simplify(
         ast,
         &mut statements,
         &["__devupRefProps", "__devupRef"],
     );
+    // A slot only some branch assigns stays a variable; keep the calls instead.
+    if super::styled_inline_simplify::leaves_slot(&statements, &render.slots) {
+        return Expression::new_call_expression(
+            SPAN,
+            original,
+            None,
+            Vec::from_array_in([Argument::from(original_props)], ast),
+            false,
+            ast,
+        )
+        .into();
+    }
     ArrowFunctionBody::new_function_body(SPAN, Vec::new_in(ast), statements, ast)
 }
 
@@ -534,6 +559,7 @@ impl<'a> Render<'_, 'a> {
                 unreachable!()
             };
             let name = self.names.fresh_name();
+            self.slots.push(name.clone());
             statements.push(declaration(self.ast, binding(self.ast, &name), None));
             self.complete(
                 statements,

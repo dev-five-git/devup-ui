@@ -596,33 +596,27 @@ fn static_capture_work(source: &str) -> StaticCaptureWork {
 #[rstest]
 #[case::original_focused(
     "export const App = () => <div css={css`${base}; color: red;`} />;",
-    "App()",
-    false
+    "App()"
 )]
 #[case::original_mixed(
     "export const App = ({ cls }) => <><div css={[base, { color: 'red' }]} /><div css={css`${base}; color: red;`} /><div css={css({ color: 'red' }, cond && { color: 'blue' })} /><div css={[cls, { color: 'red' }]} /></>;",
-    "(()=>{globalThis.cond=false;return App({cls:'external'}).children[1];})()",
-    false
+    "(()=>{globalThis.cond=false;return App({cls:'external'}).children[1];})()"
 )]
 #[case::nested_child(
     "export const App=()=> <section><div css={css`${base}; color: red;`}/></section>;",
-    "App().children[0]",
-    false
+    "App().children[0]"
 )]
 #[case::nested_attribute(
     "export const App=()=> <section child={<div css={css`${base}; color: red;`}/>}/>;",
-    "App().props.child",
-    false
+    "App().props.child"
 )]
 #[case::fragment(
     "export const App=()=> <><aside/><div css={css`${base}; color: red;`}/></>;",
-    "App().children[1]",
-    false
+    "App().children[1]"
 )]
 #[case::text(
     "export const App=()=> <div css={css`${base}; color: red;`}>ready</div>;",
-    "App()",
-    false
+    "App()"
 )]
 #[case::multiple_reads(
     concat!(
@@ -636,14 +630,12 @@ fn static_capture_work(source: &str) -> StaticCaptureWork {
     "{",
     "extra}; color: red;`}/>;",
 ),
-    "App()",
-    true
+    "App()"
 )]
 #[serial]
-fn static_css_captures_keep_reads_without_unused_calls(
+fn static_css_captures_drop_reads_of_set_constants(
     #[case] body: &str,
     #[case] probe: &str,
-    #[case] multiple: bool,
     #[values(false, true)] single_css: bool,
 ) {
     struct RestoreDebug(bool);
@@ -669,19 +661,9 @@ fn static_css_captures_keep_reads_without_unused_calls(
         "{}",
         output.code
     );
-    assert!(
-        work.sequences > 0,
-        "original reads must remain: {}",
-        output.code
-    );
-    assert_eq!(
-        work.class_reads,
-        if multiple {
-            vec!["base", "extra"]
-        } else {
-            vec!["base"]
-        }
-    );
+    // Set constants read in order give nothing to keep.
+    assert_eq!(work.sequences, 0, "{}", output.code);
+    assert!(work.class_reads.is_empty(), "{}", output.code);
     let observed = whole::execute(&output.code, probe);
     assert_eq!(observed.element["type"], "div");
     let names: Vec<_> = observed.element["props"]["className"]
@@ -713,43 +695,43 @@ fn static_css_captures_keep_reads_without_unused_calls(
     "export const App=(View)=> <View css={css`${base}; color: red;`}/>;",
     "(()=>{const View=()=>0;return App(View).type===View;})()",
     false,
-    true
+    false
 )]
 #[case::capture_like_component(
     "export const App=(__devupValue0)=> <__devupValue0 css={css`${base}; color: red;`}/>;",
     "(()=>{const View=()=>0;return App(View).type===View;})()",
     false,
-    true
+    false
 )]
 #[case::expression_attribute(
     "export const App=(token)=> <div data-token={token} css={css`${base}; color: red;`}/>;",
     "(()=>{const token={};return App(token).props['data-token']===token;})()",
     false,
-    true
+    false
 )]
 #[case::partial_value(
     "export const App=(gap)=> <div css={css`${base}; padding: ${gap};`}/>;",
     "typeof App('12px').props.style==='object'",
     false,
-    true
+    false
 )]
 #[case::expression_child(
     "export const App=(child)=> <div css={css`${base}; color: red;`}>{child}</div>;",
     "(()=>{const child={};return App(child).children[0]===child;})()",
     false,
-    true
+    false
 )]
 #[case::nested_element_child(
     "export const App=()=> <div css={css`${base}; color: red;`}><span/></div>;",
     "App().children[0].type==='span'",
     false,
-    true
+    false
 )]
 #[case::spread_attribute(
     "export const App=(props)=> <div {...props} css={css`${base}; color: red;`}/>;",
     "(()=>{const token={};return App({token}).props.token===token;})()",
     false,
-    true
+    false
 )]
 #[serial]
 fn static_css_capture_elision_keeps_used_values_and_component_names(

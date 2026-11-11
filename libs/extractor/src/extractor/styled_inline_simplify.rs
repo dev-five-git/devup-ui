@@ -6,14 +6,15 @@ use crate::utils::{rewrite_expression, unwrap_syntax_only};
 use oxc_allocator::{CloneIn, GetAllocator, TakeIn, Vec};
 use oxc_ast::{
     ast::{
-        AssignmentOperator, AssignmentTarget, AssignmentTargetMaybeDefault,
-        AssignmentTargetProperty, AssignmentTargetPropertyIdentifier, BindingPattern,
-        BindingProperty, BindingRestElement, Expression, IdentifierReference,
-        SimpleAssignmentTarget, Statement, VariableDeclarationKind, VariableDeclarator,
+        ArrayExpressionElement, ArrowFunctionBody, ArrowFunctionExpression, AssignmentOperator,
+        AssignmentTarget, AssignmentTargetMaybeDefault, AssignmentTargetProperty,
+        AssignmentTargetPropertyIdentifier, BindingPattern, BindingProperty, BindingRestElement,
+        Expression, IdentifierReference, SimpleAssignmentTarget, Statement,
+        VariableDeclarationKind, VariableDeclarator,
     },
     builder::AstBuilder,
 };
-use oxc_ast_visit::{Visit, walk};
+use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_span::SPAN;
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -153,10 +154,159 @@ pub(super) fn simplify<'a>(
     parameters: &[&str],
 ) {
     flatten(statements, parameters);
+    split(ast, statements);
     assign_once(ast, statements);
     omit_ahead(ast, statements);
+    // Moving a value into its declaration can bring a sequence to split; each
+    // round that goes on adds or removes statements.
+    loop {
+        let count = statements.len();
+        single_use(statements);
+        split(ast, statements);
+        assign_once(ast, statements);
+        if statements.len() == count {
+            break;
+        }
+    }
     single_use(statements);
     constants(statements);
+}
+
+/// Whether `statements` still declare one of `names` without a value
+pub(super) fn leaves_slot(statements: &[Statement<'_>], names: &[String]) -> bool {
+    struct Slots<'n> {
+        names: &'n [String],
+        found: bool,
+    }
+    impl<'a> Visit<'a> for Slots<'_> {
+        fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+            let mut bound_names = FxHashSet::default();
+            bound(&it.id, &mut bound_names);
+            self.found |= it.init.is_none()
+                && bound_names
+                    .iter()
+                    .any(|name| self.names.iter().any(|slot| slot == name));
+            walk::walk_variable_declarator(self, it);
+        }
+    }
+    let mut slots = Slots {
+        names,
+        found: false,
+    };
+    for statement in statements {
+        slots.visit_statement(statement);
+    }
+    slots.found
+}
+
+/// Simplifies the frames left around calls that were not inlined, innermost
+/// first, once inlining no longer reads their slots.
+pub(super) struct Frames<'s, 'a> {
+    pub ast: &'s AstBuilder<'a>,
+    pub slots: &'s [String],
+}
+
+impl<'a> VisitMut<'a> for Frames<'_, 'a> {
+    fn visit_arrow_function_expression(&mut self, arrow: &mut ArrowFunctionExpression<'a>) {
+        walk_mut::walk_arrow_function_expression(self, arrow);
+        if let ArrowFunctionBody::FunctionBody(body) = &mut arrow.body
+            && leaves_slot(&body.statements, self.slots)
+        {
+            let parameters: std::vec::Vec<_> = arrow
+                .params
+                .items
+                .iter()
+                .filter_map(|parameter| parameter.pattern.get_binding_identifier())
+                .map(|id| id.name.as_str())
+                .collect();
+            simplify(self.ast, &mut body.statements, &parameters);
+        }
+    }
+}
+
+/// The value a statement evaluates last, as a sequence, then whatever runs
+/// before it as statements of their own: a sequence runs its parts in order.
+fn split<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>) {
+    let mut index = 0;
+    while index < statements.len() {
+        let alone = matches!(&statements[index], Statement::ExpressionStatement(_));
+        let value = match &mut statements[index] {
+            Statement::ExpressionStatement(statement) => Some(&mut statement.expression),
+            Statement::ReturnStatement(statement) => statement.argument.as_mut(),
+            Statement::VariableDeclaration(declaration) if declaration.declarations.len() == 1 => {
+                declaration.declarations[0].init.as_mut()
+            }
+            _ => None,
+        };
+        let Some(value) = value.and_then(head_sequence) else {
+            index += 1;
+            continue;
+        };
+        let Expression::SequenceExpression(sequence) = value else {
+            index += 1;
+            continue;
+        };
+        let Some(tail) = sequence.expressions.last().map(unwrap_syntax_only) else {
+            index += 1;
+            continue;
+        };
+        // A string alone in a statement could read as a directive.
+        if alone && matches!(tail, Expression::StringLiteral(_)) {
+            index += 1;
+            continue;
+        }
+        // An anonymous definition read through a sequence is not named after its binding.
+        let unbound = matches!(
+            tail,
+            Expression::ArrowFunctionExpression(_)
+                | Expression::FunctionExpression(_)
+                | Expression::ClassExpression(_)
+        );
+        let mut parts: std::vec::Vec<_> = sequence.expressions.drain(..).collect();
+        let Some(tail) = parts.pop() else {
+            index += 1;
+            continue;
+        };
+        *value = if unbound {
+            crate::utils::unbound_value(ast, tail)
+        } else {
+            tail
+        };
+        let parts: std::vec::Vec<_> = parts
+            .into_iter()
+            .filter(|part| !unwrap_syntax_only(part).is_literal())
+            .collect();
+        let count = parts.len();
+        for (offset, part) in parts.into_iter().enumerate() {
+            statements.insert(
+                index + offset,
+                Statement::new_expression_statement(SPAN, part, ast),
+            );
+        }
+        // What the sequence ended with may be another sequence to split.
+        index += count + usize::from(unbound);
+    }
+}
+
+/// The sequence that `value` evaluates before anything else in it
+fn head_sequence<'b, 'a>(value: &'b mut Expression<'a>) -> Option<&'b mut Expression<'a>> {
+    let value = crate::utils::unwrap_syntax_only_mut(value);
+    if matches!(value, Expression::SequenceExpression(_)) {
+        return Some(value);
+    }
+    match value {
+        Expression::ArrayExpression(array) => array
+            .elements
+            .first_mut()
+            .and_then(ArrayExpressionElement::as_expression_mut)
+            .and_then(head_sequence),
+        Expression::LogicalExpression(logical) => head_sequence(&mut logical.left),
+        Expression::BinaryExpression(binary) => head_sequence(&mut binary.left),
+        Expression::ConditionalExpression(conditional) => head_sequence(&mut conditional.test),
+        Expression::StaticMemberExpression(member) => head_sequence(&mut member.object),
+        Expression::ComputedMemberExpression(member) => head_sequence(&mut member.object),
+        _ => None,
+    }
 }
 
 /// Splice a trailing block into its list when what it declares neither
@@ -183,39 +333,137 @@ fn flatten<'a>(statements: &mut Vec<'a, Statement<'a>>, parameters: &[&str]) {
     }
 }
 
-/// `let x; …; x = value;` as `let x = value;` where that is its only assignment
-/// and nothing between reads it.
+/// `let x; …; x = value;` as `let x = value;`, and likewise for a pattern of
+/// such names, where that is their only assignment and nothing before reads them.
 fn assign_once<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>) {
     let mut index = 0;
     while index < statements.len() {
-        let Some(name) = bare_let(&statements[index]).map(str::to_string) else {
-            index += 1;
-            continue;
-        };
         let uses = Uses::of(statements);
-        let first = (index + 1..statements.len())
-            .find(|&later| Uses::of(&statements[later..=later]).reads(&name) > 0);
-        let Some(later) = first.filter(|&later| {
-            uses.writes(&name) == 1
-                && matches!(&statements[later], Statement::ExpressionStatement(statement)
-                    if matches!(&statement.expression, Expression::AssignmentExpression(assignment)
-                        if assignment.operator == AssignmentOperator::Assign
-                            && matches!(&assignment.left, AssignmentTarget::AssignmentTargetIdentifier(id) if id.name == name.as_str())))
-                && Uses::of(&statements[later..=later]).reads(&name) == 1
+        let before = Uses::of(&statements[..index]);
+        let here = Uses::of(&statements[index..=index]);
+        let slots: FxHashSet<&str> = statements[..index].iter().filter_map(bare_let).collect();
+        let mut names = std::vec::Vec::new();
+        let pattern = match &statements[index] {
+            Statement::ExpressionStatement(statement) => {
+                match unwrap_syntax_only(&statement.expression) {
+                    Expression::AssignmentExpression(assignment)
+                        if assignment.operator == AssignmentOperator::Assign =>
+                    {
+                        binding_of(ast, &assignment.left, &mut names)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let Some(pattern) = pattern.filter(|_| {
+            names.iter().all(|name| {
+                slots.contains(name.as_str())
+                    && uses.writes(name) == 1
+                    && before.reads(name) == 0
+                    && here.reads(name) == 1
+            })
         }) else {
             index += 1;
             continue;
         };
-        if let Statement::ExpressionStatement(statement) = &mut statements[later]
-            && let Expression::AssignmentExpression(assignment) = &mut statement.expression
+        if let Statement::ExpressionStatement(statement) = &mut statements[index]
+            && let Expression::AssignmentExpression(assignment) =
+                crate::utils::unwrap_syntax_only_mut(&mut statement.expression)
         {
             let value = assignment.right.take_in(ast);
-            let pattern =
-                BindingPattern::new_binding_identifier(SPAN, ast.allocator().alloc_str(&name), ast);
-            statements[later] = declaration(ast, VariableDeclarationKind::Let, pattern, value);
+            statements[index] = declaration(ast, VariableDeclarationKind::Let, pattern, value);
         }
-        statements.remove(index);
+        let length = statements.len();
+        statements.retain(|statement| {
+            bare_let(statement).is_none_or(|name| names.iter().all(|taken| taken != name))
+        });
+        index = index + 1 - (length - statements.len());
     }
+}
+
+/// The declaration pattern binding what `target` assigns, where it assigns
+/// only plain names without defaults or computed keys
+fn binding_of<'a>(
+    ast: &AstBuilder<'a>,
+    target: &AssignmentTarget<'a>,
+    names: &mut std::vec::Vec<String>,
+) -> Option<BindingPattern<'a>> {
+    Some(match target {
+        AssignmentTarget::AssignmentTargetIdentifier(id) => {
+            names.push(id.name.to_string());
+            BindingPattern::new_binding_identifier(SPAN, id.name, ast)
+        }
+        AssignmentTarget::ArrayAssignmentTarget(array) => {
+            let mut elements = Vec::new_in(ast);
+            for element in &array.elements {
+                elements.push(match element {
+                    Some(element) => Some(binding_of(ast, element.as_assignment_target()?, names)?),
+                    None => None,
+                });
+            }
+            let rest = match &array.rest {
+                Some(rest) => Some(BindingRestElement::boxed(
+                    SPAN,
+                    binding_of(ast, &rest.target, names)?,
+                    ast,
+                )),
+                None => None,
+            };
+            BindingPattern::new_array_pattern(SPAN, elements, rest, ast)
+        }
+        AssignmentTarget::ObjectAssignmentTarget(object) => {
+            let mut properties = Vec::new_in(ast);
+            for property in &object.properties {
+                properties.push(match property {
+                    AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(property)
+                        if property.init.is_none() =>
+                    {
+                        names.push(property.binding.name.to_string());
+                        BindingProperty::new(
+                            SPAN,
+                            oxc_ast::ast::PropertyKey::new_static_identifier(
+                                SPAN,
+                                property.binding.name,
+                                ast,
+                            ),
+                            BindingPattern::new_binding_identifier(
+                                SPAN,
+                                property.binding.name,
+                                ast,
+                            ),
+                            true,
+                            false,
+                            ast,
+                        )
+                    }
+                    AssignmentTargetProperty::AssignmentTargetPropertyProperty(property)
+                        if !property.computed =>
+                    {
+                        BindingProperty::new(
+                            SPAN,
+                            property.name.clone_in(ast.allocator()),
+                            binding_of(ast, property.binding.as_assignment_target()?, names)?,
+                            false,
+                            false,
+                            ast,
+                        )
+                    }
+                    _ => return None,
+                });
+            }
+            let rest = match &object.rest {
+                Some(rest) => Some(BindingRestElement::boxed(
+                    SPAN,
+                    binding_of(ast, &rest.target, names)?,
+                    ast,
+                )),
+                None => None,
+            };
+            BindingPattern::new_object_pattern(SPAN, properties, rest, ast)
+        }
+        _ => return None,
+    })
 }
 
 /// The trailing return's `({ theme: a, ...b } = rest, b)`, where `rest` is an

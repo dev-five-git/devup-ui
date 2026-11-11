@@ -46,40 +46,6 @@ impl<'a> DevupVisitor<'a> {
         crate::utils::capture_elision::inline(&self.ast, &mut values, &mut body);
         elided.retain(|(name, _)| values.iter().all(|(kept, _)| kept != name));
         self.styles.restore_captures(&elided);
-        if !values.is_empty()
-            && crate::utils::capture_elision::can_transport(&mut body, &values)
-            && let Some(names) = self.stylex_captures.bindings()
-        {
-            let mut sequence = oxc_allocator::Vec::with_capacity_in(values.len() + 1, &self.ast);
-            for (name, value) in values {
-                names.push(name.clone());
-                // Assignment would otherwise infer a name for an anonymous definition.
-                let value = if matches!(
-                    crate::utils::unwrap_syntax_only(&value),
-                    Expression::ArrowFunctionExpression(_)
-                        | Expression::FunctionExpression(_)
-                        | Expression::ClassExpression(_)
-                ) {
-                    crate::utils::unbound_value(&self.ast, value)
-                } else {
-                    value
-                };
-                sequence.push(Expression::new_assignment_expression(
-                    SPAN,
-                    oxc_syntax::operator::AssignmentOperator::Assign,
-                    oxc_ast::ast::AssignmentTarget::new_assignment_target_identifier(
-                        SPAN,
-                        Str::from_in(name.as_str(), self.ast.allocator()),
-                        &self.ast,
-                    ),
-                    value,
-                    &self.ast,
-                ));
-            }
-            sequence.push(body);
-            self.jsx.sequences = true;
-            return Expression::new_sequence_expression(SPAN, sequence, &self.ast);
-        }
         if sequential {
             crate::extractor::styled_record_evaluation::bind_render(&self.ast, values, body)
         } else {
@@ -393,7 +359,11 @@ impl<'a> DevupVisitor<'a> {
         {
             let value = unwrap_syntax_only_mut(&mut template.expressions[index]);
             if tagged && matches!(place, crate::css_utils::Place::Statement) {
-                self.capture_shape(value, captured);
+                // A mixin read from a set constant gives the same rules wherever it is read.
+                if !matches!(value, Expression::Identifier(mixin) if self.bindings.is_set_const(mixin))
+                {
+                    self.capture_shape(value, captured);
+                }
             } else if reach(&self.bindings, value) != Reach::Constant
                 || (!tagged
                     && matches!(

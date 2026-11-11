@@ -48,7 +48,6 @@ fn static_typography_selects_classes_and_only_retains_required_tag_arrays(
     );
     let compiled = code(&source);
     assert_eq!(array_count(&compiled), arrays, "{compiled}");
-    assert_eq!(compiled.matches("=>").count(), 1, "{compiled}");
     assert!(!compiled.contains("__devupChoice"), "{compiled}");
     let actual = execute(
         &compiled,
@@ -72,7 +71,6 @@ fn projected_selection_coerces_once_before_later_props_and_stays_eager_on_error(
         "import {{Text}} from '@devup-ui/react';export const a=(index,later,child)=><Text typography={{{table}[index]}} id={{later()}}>{{child()}}</Text>;"
     );
     let compiled = code(&source);
-    assert_eq!(compiled.matches("=>").count(), 1, "{compiled}");
     let resolve = if throws { "throw 'key-failed'" } else { "" };
     let actual = execute(
         &compiled,

@@ -137,6 +137,7 @@ mod tailwind_theme;
 pub mod test_state;
 #[cfg(test)]
 mod unresolved_global_inputs_tests;
+mod unwrap_iife;
 #[cfg(test)]
 mod utf16_boundary_tests;
 mod util_type;
@@ -971,6 +972,7 @@ fn extract_source(
     } else {
         CodegenOptions::default()
     };
+    unwrap_iife::unwrap(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
     header_pragmas.reanchor(&mut program);
     let mut result = Codegen::new().with_options(codegen_options).build(&program);
     if visitor.jsx.sequences {
@@ -15927,8 +15929,8 @@ export const f = <F junk=\"j\" xlink:href=\"#a\" />
 export const k = <K title=\"t\" tone=\"x\" />";
         let code = readable_code(source);
         for expected in [
-            "const { \"tone\": __devupRecord0, ...__devupRecord1 } = rest;",
-            "const { \"x\": __devupRecord0, \"y\": __devupRecord1, \"theme\": __devupRecord2, ...__devupRecord3 } = rest;",
+            "k[0] !== \"$\" && k !== \"tone\"))",
+            "k[0] !== \"$\" && k !== \"x\" && k !== \"y\" && k !== \"theme\"))",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
@@ -15976,11 +15978,11 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
         let compact = code.split_whitespace().collect::<Vec<_>>().join(" ");
         for expected in [
             "...{ ...__devupProps, ...{ type: \"text\", title: \"base\" } }, ...{ type: \"password\" }",
-            "className: [__devupRecord6.className, __devupRecord5.className].filter(Boolean).join(\" \") || undefined",
-            "className: [__devupRecord4.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
-            "...__devupRecord6.style, ...__devupRecord5.style",
-            "...{ id: __devupRecord6.id }",
-            "typeof extra === \"function\" ? extra(__devupRecord19) : extra",
+            "className: [__devupRecord4.className, __devupRecord3.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupRecord2.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupRecord4.style, ...__devupRecord3.style",
+            "...{ id: __devupRecord4.id }",
+            "typeof extra === \"function\" ? extra(__devupRecord5) : extra",
         ] {
             assert!(compact.contains(expected), "{expected}\n{code}");
         }
@@ -16051,7 +16053,7 @@ export const a = {element}"
     )]
     #[case(
         "stylex.props(on && s.red, on && s.red)",
-        "(_s0 = !!on, { className: on ? \"color-0-red--255\" : _s0 ? \"color-0-red--255\" : \"\" })"
+        "((_s0) => ({ className: on ? \"color-0-red--255\" : _s0 ? \"color-0-red--255\" : \"\" }))(!!on)"
     )]
     #[case(
         "stylex.props(s['blue'], s.hover)",
@@ -17995,7 +17997,7 @@ const result = stylex.props(styles.dynamic(o, d));",
         assert!(
             output
                 .code
-                .contains(r#"(__devupUnit0 = d, typeof __devupUnit0 === "number" ? __devupUnit0 + "ms" : __devupUnit0)"#),
+                .contains(r#"((__devupUnit0) => typeof __devupUnit0 === "number" ? __devupUnit0 + "ms" : __devupUnit0)(d)"#),
             "{}",
             output.code
         );
@@ -23669,7 +23671,7 @@ export const p = stylex.props(s.box(w, h));",
         )
         .code;
         assert!(
-            code.contains("style: \"--a:\" + (__devupUnit0 = w, typeof __devupUnit0 === \"number\" ? __devupUnit0 + \"px\" : __devupUnit0) + \";--b:\" + (__devupUnit1 = h, typeof __devupUnit1 === \"number\" ? __devupUnit1 + \"px\" : __devupUnit1)"),
+            code.contains("style: \"--a:\" + ((__devupUnit0) => typeof __devupUnit0 === \"number\" ? __devupUnit0 + \"px\" : __devupUnit0)(w) + \";--b:\" + ((__devupUnit1) => typeof __devupUnit1 === \"number\" ? __devupUnit1 + \"px\" : __devupUnit1)(h)"),
             "{code}"
         );
         assert!(code.contains("style: {\n\t\t\"--a\":"), "{code}");

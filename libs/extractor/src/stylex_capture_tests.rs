@@ -120,6 +120,17 @@ fn callable_count(source: &str) -> usize {
             self.0 += 1;
             walk::walk_arrow_function_expression(self, it);
         }
+        // An arrow called where it is written passes values in; it is no callable the code keeps.
+        fn visit_call_expression(&mut self, it: &oxc_ast::ast::CallExpression<'a>) {
+            if let oxc_ast::ast::Expression::ArrowFunctionExpression(arrow) = it.callee.get_inner_expression() {
+                walk::walk_arrow_function_expression(self, arrow);
+                for argument in &it.arguments {
+                    self.visit_argument(argument);
+                }
+                return;
+            }
+            walk::walk_call_expression(self, it);
+        }
     }
     let arena = Allocator::default();
     let parsed = Parser::new(&arena, source, SourceType::mjs()).parse();

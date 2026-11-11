@@ -366,18 +366,19 @@ fn rewriting_one_owner_preserves_other_sites_and_capture_fallbacks() {
                         oxc_parser::Parser::new(&arena, source, oxc_span::SourceType::tsx())
                             .parse_expression()
                             .unwrap_or_else(|error| panic!("{error:?}"));
-                    let Expression::SequenceExpression(sequence) =
-                        expression.get_inner_expression()
+                    let Expression::CallExpression(call) = expression.get_inner_expression() else {
+                        return false;
+                    };
+                    let Expression::ArrowFunctionExpression(arrow) =
+                        call.callee.get_inner_expression()
                     else {
                         return false;
                     };
-                    let Some(Expression::AssignmentExpression(assignment)) =
-                        sequence.expressions.first()
-                    else {
-                        return false;
-                    };
-                    let oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(identifier) =
-                        &assignment.left
+                    let Some(identifier) = arrow
+                        .params
+                        .items
+                        .first()
+                        .and_then(|parameter| parameter.pattern.get_binding_identifier())
                     else {
                         return false;
                     };

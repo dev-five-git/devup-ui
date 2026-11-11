@@ -104,7 +104,7 @@ impl<'a> DevupVisitor<'a> {
             .map(|value| value.clone_in(self.ast.allocator()))
             .collect();
         // Static classes must not require a new function around a field or default.
-        if literals.is_empty() || self.stylex_captures.bindings().is_none() {
+        if literals.is_empty() || !self.stylex_captures.binds() {
             return false;
         }
         let name = self.names.fresh("__devupValue");

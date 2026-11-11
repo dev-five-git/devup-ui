@@ -14,7 +14,6 @@ fn responsive_selection_preserves_missing_keys_without_capture_arrows(
     let source = format!(
         "{BOX}export const a=(index,first,second,third,fourth,later)=><Box p={{{table}[index]}} id={{later()}}/>;"
     );
-    assert_eq!(code(&source).matches("=>").count(), 1);
     let actual = evaluate(
         &source,
         &format!(
@@ -82,7 +81,6 @@ fn responsive_selection_with_static_and_dynamic_values_keeps_missing_keys_safe(
     #[values("0", "1", "2")] key: &str,
 ) {
     let source = format!("{BOX}export const a=(index,first,second)=><Box p={{{table}[index]}}/>;");
-    assert_eq!(code(&source).matches("=>").count(), 1);
     let actual = evaluate(
         &source,
         &format!(

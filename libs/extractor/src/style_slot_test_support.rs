@@ -36,7 +36,7 @@ pub(crate) fn numeric(read: &str) -> String {
 
 pub(crate) fn numeric_with_capture(read: &str, name: &str) -> String {
     format!(
-        "{name} = {read}, typeof {name} === \"number\" && {name} !== 0 ? {name} + \"px\" : {name}"
+        "(({name}) => typeof {name} === \"number\" && {name} !== 0 ? {name} + \"px\" : {name})({read})"
     )
 }
 

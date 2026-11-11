@@ -67,11 +67,7 @@ fn the_component_keeps_rendering_its_theme_attrs_and_ref() {
         output.code
     );
     assert!(output.code.contains("ref: __devupRef"), "{}", output.code);
-    assert!(
-        output.code.contains("\"theme\": __devupRecord"),
-        "{}",
-        output.code
-    );
+    assert!(output.code.contains("k !== \"theme\""), "{}", output.code);
     assert!(
         output.code.contains("background-0-white--255"),
         "{}",

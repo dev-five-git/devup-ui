@@ -52,55 +52,55 @@ fn simplified(source: &str, parameters: &[&str]) -> String {
 )]
 #[case::rest_read_twice(
     "let { ...rest } = p; let o; let d; g(rest); return ({ theme: o, ...d } = rest, d);",
-    "const { ...rest } = p;\nlet o;\nlet d;\ng(rest);\nreturn {theme: o, ...d} = rest, d;\n"
+    "const { ...rest } = p;\ng(rest);\nconst { theme: o, ...d } = rest;\nreturn d;\n"
 )]
 #[case::not_a_rest(
     "let rest = p; let o; let d; return ({ theme: o, ...d } = rest, d);",
-    "const rest = p;\nlet o;\nlet d;\nreturn {theme: o, ...d} = rest, d;\n"
+    "const { theme: o, ...d } = p;\nreturn d;\n"
 )]
 #[case::other_read(
     "let { ...rest } = p; let o; let d; return ({ theme: o, ...d } = rest, o);",
-    "const { ...rest } = p;\nlet o;\nlet d;\nreturn {theme: o, ...d} = rest, o;\n"
+    "const { ...rest } = p;\nconst { theme: o, ...d } = rest;\nreturn o;\n"
 )]
 #[case::computed_key(
     "let { ...rest } = p; let o; let d; return ({ [k]: o, ...d } = rest, d);",
-    "const { ...rest } = p;\nlet o;\nlet d;\nreturn {[k]: o, ...d} = rest, d;\n"
+    "const { ...rest } = p;\nlet o;\nlet d;\n({[k]: o, ...d} = rest);\nreturn d;\n"
 )]
 #[case::default_value(
     "let { ...rest } = p; let o; let d; return ({ theme: o = 1, ...d } = rest, d);",
-    "const { ...rest } = p;\nlet o;\nlet d;\nreturn {theme: o = 1, ...d} = rest, d;\n"
+    "const { ...rest } = p;\nlet o;\nlet d;\n({theme: o = 1, ...d} = rest);\nreturn d;\n"
 )]
 #[case::shorthand(
     "let { ...rest } = p; let o; let d; return ({ o, ...d } = rest, d);",
-    "const { ...rest } = p;\nlet o;\nlet d;\nreturn {o, ...d} = rest, d;\n"
+    "const { ...rest } = p;\nconst { o, ...d } = rest;\nreturn d;\n"
 )]
 #[case::not_a_slot(
     "let { ...rest } = p; let d; return ({ theme: o, ...d } = rest, d);",
-    "const { ...rest } = p;\nlet d;\nreturn {theme: o, ...d} = rest, d;\n"
+    "const { ...rest } = p;\nlet d;\n({theme: o, ...d} = rest);\nreturn d;\n"
 )]
 #[case::no_rest(
     "let { ...rest } = p; let o; return ({ theme: o } = rest, o);",
-    "const { ...rest } = p;\nlet o;\nreturn {theme: o} = rest, o;\n"
+    "const { ...rest } = p;\nconst { theme: o } = rest;\nreturn o;\n"
 )]
 #[case::member_rest(
     "let { ...rest } = p; let o; return ({ theme: o, ...q.d } = rest, q.d);",
-    "const { ...rest } = p;\nlet o;\nreturn {theme: o, ...q.d} = rest, q.d;\n"
+    "const { ...rest } = p;\nlet o;\n({theme: o, ...q.d} = rest);\nreturn q.d;\n"
 )]
 #[case::array_target(
     "let { ...rest } = p; let o; return ([o] = rest, o);",
-    "const { ...rest } = p;\nlet o;\nreturn [o] = rest, o;\n"
+    "const { ...rest } = p;\nconst [o] = rest;\nreturn o;\n"
 )]
 #[case::member_source(
     "let o; let d; return ({ theme: o, ...d } = q.rest, d);",
-    "let o;\nlet d;\nreturn {theme: o, ...d} = q.rest, d;\n"
+    "const { theme: o, ...d } = q.rest;\nreturn d;\n"
 )]
 #[case::three_parts(
     "let { ...rest } = p; let o; let d; return ({ theme: o, ...d } = rest, f(), d);",
-    "const { ...rest } = p;\nlet o;\nlet d;\nreturn {theme: o, ...d} = rest, f(), d;\n"
+    "const { ...rest } = p;\nconst { theme: o, ...d } = rest;\nf();\nreturn d;\n"
 )]
 #[case::compound_source(
     "let { ...rest } = p; let d; return (d += rest, d);",
-    "const { ...rest } = p;\nlet d;\nreturn d += rest, d;\n"
+    "const { ...rest } = p;\nlet d;\nd += rest;\nreturn d;\n"
 )]
 #[case::empty_return("let a = g(); return;", "const a = g();\nreturn;\n")]
 #[case::no_return("let a = g(); f(a);", "const a = g();\nf(a);\n")]
@@ -125,6 +125,31 @@ fn simplified(source: &str, parameters: &[&str]) -> String {
     "let [a] = p;\n[a] = q;\nfor (const x of y) a++;\nreturn a;\n"
 )]
 #[case::var_kept("var a = g(); return a;", "var a = g();\nreturn a;\n")]
+#[case::split_declaration(
+    "let r; let { a } = (r = f(), { a: r }); return a;",
+    "const r = f();\nconst { a } = { a: r };\nreturn a;\n"
+)]
+#[case::split_nested(
+    "let r; let a = (0, (r = f(), g(r))); return a;",
+    "const r = f();\nconst a = g(r);\nreturn a;\n"
+)]
+#[case::split_keeps_unbound(
+    "let a = (f(), () => 1); return a;",
+    "f();\nconst a = (0, () => 1);\nreturn a;\n"
+)]
+#[case::split_keeps_directive_like("(f(), \"x\"); return 1;", "f(), \"x\";\nreturn 1;\n")]
+#[case::split_object_pattern(
+    "let a; let b; ({ k: a, j: [b] } = p); return a + b;",
+    "const { k: a, j: [b] } = p;\nreturn a + b;\n"
+)]
+#[case::pattern_with_default(
+    "let a; ([a = 1] = p); return a;",
+    "let a;\n[a = 1] = p;\nreturn a;\n"
+)]
+#[case::pattern_read_before(
+    "let a; f(a); ([a] = p); return a;",
+    "let a;\nf(a);\n[a] = p;\nreturn a;\n"
+)]
 fn compiler_owned_renderers_shrink(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(simplified(source, &["p"]), expected, "{source}");
 }

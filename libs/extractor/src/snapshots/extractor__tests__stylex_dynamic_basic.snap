@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nlet __devupUnit0;\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"bar\": \"b\" };\nconst result = {\n\tclassName: \"b\",\n\tstyle: { \"--a\": (__devupUnit0 = h, typeof __devupUnit0 === \"number\" ? __devupUnit0 + \"px\" : __devupUnit0) }\n};\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst styles = { \"bar\": \"b\" };\nconst result = {\n\tclassName: \"b\",\n\tstyle: { \"--a\": ((__devupUnit0) => typeof __devupUnit0 === \"number\" ? __devupUnit0 + \"px\" : __devupUnit0)(h) }\n};\n",
 }

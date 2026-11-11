@@ -71,7 +71,7 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, ArrayExpressionElement, BinaryOperator, BindingPattern, CallExpression, ChainElement,
+    Argument, ArrayExpressionElement, BinaryOperator, CallExpression, ChainElement,
     ComputedMemberExpression, ExportDefaultDeclaration, Expression, ExpressionStatement,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
@@ -2523,7 +2523,7 @@ impl<'a> DevupVisitor<'a> {
     fn compose_stylex_props(
         &mut self,
         arguments: &oxc_allocator::Vec<'a, Argument<'a>>,
-    ) -> Option<(Expression<'a>, Vec<Expression<'a>>)> {
+    ) -> Option<(Expression<'a>, stylex_capture::Evaluations<'a>)> {
         let mut parts = Vec::new();
         for argument in arguments {
             self.stylex_parts(argument.as_expression()?, &mut parts)?;
@@ -2603,22 +2603,33 @@ impl<'a> DevupVisitor<'a> {
             .into_iter()
             .enumerate()
             .map(|(index, test)| {
-                if uses[index] == 0 {
-                    evaluations.push(test);
+                // A test that suspends is passed in, never read inside the function.
+                let suspends = order::suspends(&test);
+                if uses[index] == 0 && !suspends {
+                    evaluations.push((None, test));
                     return Expression::new_boolean_literal(SPAN, false, &self.ast);
                 }
-                match uses[index] {
-                    1 if Some(index) == last => test,
-                    _ => match self.stylex_captures.capture(&self.ast, test) {
-                        Ok((reference, assignment)) => {
-                            evaluations.push(assignment);
+                if uses[index] == 1 && Some(index) == last && !suspends {
+                    return test;
+                }
+                match self.stylex_captures.capture(&self.ast, test) {
+                    Ok((name, value)) => {
+                        let reference = Expression::new_identifier(
+                            SPAN,
+                            self.ast.allocator().alloc_str(&name),
+                            &self.ast,
+                        );
+                        evaluations.push((Some(name), value));
+                        if uses[index] == 0 {
+                            Expression::new_boolean_literal(SPAN, false, &self.ast)
+                        } else {
                             reference
                         }
-                        Err(error) => {
-                            self.errors.push(error);
-                            Expression::new_boolean_literal(SPAN, false, &self.ast)
-                        }
-                    },
+                    }
+                    Err(error) => {
+                        self.errors.push(error);
+                        Expression::new_boolean_literal(SPAN, false, &self.ast)
+                    }
                 }
             })
             .collect();
@@ -3132,9 +3143,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let context = self.stylex_captures.context.take();
         self.stylex_captures.push_frame();
         walk_mut::walk_statements(self, it);
-        let (_, names) = self.stylex_captures.frames.pop().unwrap_or_default();
+        self.stylex_captures.frames.pop();
         self.stylex_captures.context = context;
-        stylex_capture::declare(&self.ast, it, names);
     }
 
     fn visit_formal_parameters(&mut self, it: &mut FormalParameters<'a>) {
@@ -3177,26 +3187,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let context = self.stylex_captures.context.take();
         self.stylex_captures.push_frame();
         self.visit_expression(it.to_expression_mut());
-        let (_, names) = self.stylex_captures.frames.pop().unwrap_or_default();
+        self.stylex_captures.frames.pop();
         self.stylex_captures.context = context;
-        if !names.is_empty() {
-            let value = it.to_expression_mut().take_in(&self.ast);
-            let mut statements = oxc_allocator::Vec::from_array_in(
-                [Statement::new_return_statement(
-                    SPAN,
-                    Some(value),
-                    &self.ast,
-                )],
-                &self.ast,
-            );
-            stylex_capture::declare(&self.ast, &mut statements, names);
-            *it = oxc_ast::ast::ArrowFunctionBody::new_function_body(
-                SPAN,
-                oxc_allocator::Vec::new_in(&self.ast),
-                statements,
-                &self.ast,
-            );
-        }
     }
 
     fn visit_expression_statement(&mut self, it: &mut ExpressionStatement<'a>) {
@@ -3994,14 +3986,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Expression::CallExpression(call) = it
             && let Some(class_attribute) = self.stylex_class_attribute(&call.callee)
         {
-            let (class_exprs, style_props, mut evaluations) =
-                if let Some((class_name, evaluations)) = self.compose_stylex_props(&call.arguments)
-                {
-                    (vec![class_name], Vec::new(), evaluations)
-                } else {
-                    let (classes, styles) = self.resolve_stylex_props_args(&call.arguments);
-                    (classes, styles, Vec::new())
-                };
+            let (class_exprs, style_props, evaluations) = if let Some((class_name, evaluations)) =
+                self.compose_stylex_props(&call.arguments)
+            {
+                (vec![class_name], Vec::new(), evaluations)
+            } else {
+                let (classes, styles) = self.resolve_stylex_props_args(&call.arguments);
+                (classes, styles, Vec::new())
+            };
 
             // Build className expression using existing merge utility
             let class_name_expr = merge_expression_for_class_name(&self.ast, class_exprs)
@@ -4050,12 +4042,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             *it = Expression::new_object_expression(SPAN, props, &self.ast);
             if !evaluations.is_empty() {
-                evaluations.push(it.take_in(&self.ast));
-                *it = Expression::new_sequence_expression(
-                    SPAN,
-                    oxc_allocator::Vec::from_iter_in(evaluations, &self.ast),
-                    &self.ast,
-                );
+                // Each result is passed in where its test runs; a test whose
+                // result is unused runs ahead of the next one.
+                let mut values = Vec::new();
+                let mut pending = Vec::new();
+                for (name, value) in evaluations {
+                    pending.push(value);
+                    if let Some(name) = name {
+                        values.push((name, stylex_capture::sequence(&self.ast, &mut pending)));
+                    }
+                }
+                pending.push(it.take_in(&self.ast));
+                let body = stylex_capture::sequence(&self.ast, &mut pending);
+                *it = crate::utils::call_with_values(&self.ast, values, body);
             }
         }
 

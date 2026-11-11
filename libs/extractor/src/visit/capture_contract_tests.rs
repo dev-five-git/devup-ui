@@ -19,7 +19,6 @@ fn deferred_capture_reads_keep_a_per_evaluation_binding(#[case] body: &str, #[ca
             .unwrap_or_else(|error| panic!("{error:?}"))
     };
     let expression = visitor.scoped_values(vec![("slot".into(), parse("index++"))], parse(body));
-    assert_eq!(visitor.stylex_captures.frames[0].1, [] as [String; 0]);
     let code = crate::utils::readable_code(&expression);
     let script = format!(
         "let index=0;const callbacks=[];for(let count=0;count<3;count++)callbacks.push({code});JSON.stringify(callbacks.map(callback=>{probe}));"
@@ -46,7 +45,6 @@ fn opaque_generated_expressions_keep_their_private_capture_scope() {
     let body = Expression::new_identifier(SPAN, "unparsed(() => slot)", &visitor.ast);
     let expression = visitor.scoped_values(vec![("slot".into(), value)], body);
     assert!(matches!(expression, Expression::CallExpression(_)));
-    assert_eq!(visitor.stylex_captures.frames[0].1, [] as [String; 0]);
 }
 
 #[rstest]
@@ -144,14 +142,9 @@ fn sequential_render_captures_keep_initializer_dependencies_and_getter_order(#[c
         ],
         parse("[first,second,first]"),
     );
-    let declarations = if frame {
-        format!("let {};", visitor.stylex_captures.frames[0].1.join(","))
-    } else {
-        String::new()
-    };
     let code = crate::utils::readable_code(&expression);
     let script = format!(
-        "let count=0;const source={{get value(){{return ++count;}}}};{declarations}JSON.stringify([({code}),count]);"
+        "let count=0;const source={{get value(){{return ++count;}}}};JSON.stringify([({code}),count]);"
     );
     let actual = boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(script.as_bytes()))
@@ -179,10 +172,8 @@ fn stylex_number_units_read_their_input_once(#[case] value: &str, #[case] expect
         .unwrap_or_else(|error| panic!("{error:?}"));
     let expression = visitor.with_number_unit(input, "px");
     let code = crate::utils::readable_code(&expression);
-    assert!(!code.contains("=>"), "{code}");
-    let names = visitor.stylex_captures.frames[0].1.join(",");
     let script = format!(
-        "let {names};let count=0;const source={{get value(){{count++;return {value};}}}};JSON.stringify([({code}),count]);"
+        "let count=0;const source={{get value(){{count++;return {value};}}}};JSON.stringify([({code}),count]);"
     );
     let actual = boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(script.as_bytes()))

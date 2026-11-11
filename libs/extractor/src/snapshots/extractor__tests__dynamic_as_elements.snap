@@ -81,6 +81,6 @@ expression: outputs
     ),
     (
         "<Box as={x}><Box as={y} p={1} /></Box>",
-        "let DevupAs0;\nconst DevupAs1 = x || \"div\";\n<DevupAs1>{(DevupAs0 = y || \"div\", <DevupAs0 className=\"a-a\" />)}</DevupAs1>;",
+        "const DevupAs1 = x || \"div\";\n<DevupAs1>{((DevupAs0) => <DevupAs0 className=\"a-a\" />)(y || \"div\")}</DevupAs1>;",
     ),
 ]

@@ -182,7 +182,7 @@ fn captured_native_css_suspension_keeps_static_body_and_runtime_control(
     visitor.takes_css_prop(crate::css_prop::CssProp::Everywhere);
     visitor.visit_program(&mut parsed.program);
     assert!(visitor.errors.is_empty(), "{:?}", visitor.errors);
-    assert!(visitor.jsx.sequences);
+    assert_eq!(visitor.jsx.sequences, !runtime_title);
     let function = parsed
         .program
         .body
@@ -210,14 +210,17 @@ fn captured_native_css_suspension_keeps_static_body_and_runtime_control(
         .unwrap_or_else(|| panic!("return value"));
     let value = crate::utils::unwrap_syntax_only(value);
     if runtime_title {
-        // The captured attribute runs first, so it is declared right before the return.
+        // The captured attribute runs first, then the suspension, both passed
+        // in where the generator can still pause.
+        let Expression::CallExpression(call) = value else {
+            panic!("captured values passed in");
+        };
         assert!(matches!(
-            body.statements.iter().rev().nth(1),
-            Some(Statement::VariableDeclaration(declaration))
-                if declaration.kind == oxc_ast::ast::VariableDeclarationKind::Const
+            call.arguments
+                .last()
+                .and_then(|argument| argument.as_expression()),
+            Some(Expression::YieldExpression(_))
         ));
-        assert!(!matches!(value, Expression::SequenceExpression(sequence)
-            if matches!(sequence.expressions[0], Expression::AssignmentExpression(_))));
     } else {
         let Expression::SequenceExpression(sequence) = value else {
             panic!("suspension followed by the static native body");

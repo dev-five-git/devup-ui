@@ -314,6 +314,26 @@ fn reads(expression: &mut Expression<'_>, name: &str, scan: Scan) -> Option<usiz
             blocked |= reads(value, name, Scan::Body) != Some(0);
             return true;
         }
+        // An arrow called where it is written runs there and leaves nothing behind.
+        if matches!(scan, Scan::Argument { .. })
+            && let Expression::CallExpression(call) = value
+            && !call.optional
+            && let Expression::ArrowFunctionExpression(arrow) = unwrap_syntax_only(&call.callee)
+            && !arrow.r#async
+            && arrow.body.as_expression().is_some()
+        {
+            blocked |= reads(&mut call.callee, name, Scan::Body) != Some(0);
+            for argument in &mut call.arguments {
+                match argument
+                    .as_expression_mut()
+                    .map(|value| reads(value, name, scan))
+                {
+                    Some(Some(found)) => count += found,
+                    _ => blocked = true,
+                }
+            }
+            return true;
+        }
         blocked |= match value {
             Expression::Identifier(identifier) => {
                 count += usize::from(identifier.name == name);
