@@ -68,7 +68,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupValue0",
+                identifier: "theme.colors[key]",
                 selector: None,
                 style_order: None,
             },
@@ -77,7 +77,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "__devupValue1",
+                identifier: "({ a: \"red\", ...theme.more })[\"b\"]",
                 selector: None,
                 style_order: None,
             },

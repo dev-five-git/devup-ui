@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "__devupValue0",
+                identifier: "data[d as A]",
                 selector: None,
                 style_order: None,
             },

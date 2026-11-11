@@ -39,7 +39,13 @@ impl<'a> DevupVisitor<'a> {
         mut body: Expression<'a>,
         sequential: bool,
     ) -> Expression<'a> {
+        let mut elided: Vec<_> = values
+            .iter()
+            .map(|(name, value)| (name.clone(), crate::utils::readable_code(value)))
+            .collect();
         crate::utils::capture_elision::inline(&self.ast, &mut values, &mut body);
+        elided.retain(|(name, _)| values.iter().all(|(kept, _)| kept != name));
+        self.styles.restore_captures(&elided);
         if !values.is_empty()
             && crate::utils::capture_elision::can_transport(&mut body, &values)
             && let Some(names) = self.stylex_captures.bindings()
@@ -397,6 +403,13 @@ impl<'a> DevupVisitor<'a> {
             {
                 if tagged {
                     self.capture_leaf(value, captured);
+                } else if !matches!(
+                    value,
+                    Expression::ObjectExpression(_) | Expression::ArrayExpression(_)
+                ) {
+                    // A style variable takes the value as the text it reads
+                    let name = self.names.fresh("__devupValue");
+                    captured.push(self.capture_as(name, value));
                 } else {
                     let expression = value.take_in(&self.ast);
                     let quasis = [false, true].map(|tail| {

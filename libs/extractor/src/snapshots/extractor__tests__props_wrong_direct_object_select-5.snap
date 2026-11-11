@@ -20,7 +20,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "opacity",
                 level: 0,
-                identifier: "__devupValue0",
+                identifier: "({ ...rest, a: 1, b: .5 })[\"nonexistent\"]",
                 selector: None,
                 style_order: None,
             },

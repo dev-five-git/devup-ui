@@ -18,7 +18,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupValue3",
+                identifier: "new X()",
                 selector: None,
                 style_order: None,
             },
@@ -27,7 +27,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "__devupValue4",
+                identifier: "tag`x`",
                 selector: None,
                 style_order: None,
             },
@@ -36,7 +36,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "height",
                 level: 0,
-                identifier: "__devupValue2",
+                identifier: "f(), 2",
                 selector: None,
                 style_order: None,
             },
@@ -45,7 +45,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupValue5",
+                identifier: "f.n++",
                 selector: None,
                 style_order: None,
             },
@@ -54,7 +54,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "padding",
                 level: 0,
-                identifier: "__devupValue6",
+                identifier: "f.v = 3",
                 selector: None,
                 style_order: None,
             },
@@ -72,7 +72,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "__devupValue1",
+                identifier: "await f()",
                 selector: None,
                 style_order: None,
             },

@@ -379,7 +379,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "flood-color",
                 level: 0,
-                identifier: "__devupValue14",
+                identifier: "twice.A",
                 selector: None,
                 style_order: None,
             },
@@ -415,7 +415,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "order",
                 level: 0,
-                identifier: "__devupValue16",
+                identifier: "\"red\"[\"length\"]",
                 selector: None,
                 style_order: None,
             },
@@ -433,7 +433,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "outline-color",
                 level: 0,
-                identifier: "__devupValue13",
+                identifier: "MUTATED",
                 selector: None,
                 style_order: None,
             },
@@ -460,7 +460,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "z-index",
                 level: 0,
-                identifier: "__devupValue15",
+                identifier: "\"red\".length",
                 selector: None,
                 style_order: None,
             },

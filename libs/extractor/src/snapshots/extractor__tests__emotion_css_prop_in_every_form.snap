@@ -361,7 +361,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "color",
                         level: 0,
-                        identifier: "__devupValue1",
+                        identifier: "__devupValue0 = c, typeof __devupValue0 === \"number\" && __devupValue0 !== 0 ? __devupValue0 + \"px\" : __devupValue0",
                         selector: None,
                         style_order: None,
                     },
@@ -370,7 +370,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "width",
                         level: 0,
-                        identifier: "__devupValue3",
+                        identifier: "__devupValue2 = w, typeof __devupValue2 === \"number\" && __devupValue2 !== 0 ? __devupValue2 + \"px\" : __devupValue2",
                         selector: None,
                         style_order: None,
                     },
@@ -407,13 +407,13 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "color",
                         level: 0,
-                        identifier: "`${c}`",
+                        identifier: "c",
                         selector: None,
                         style_order: None,
                     },
                 ),
             },
-            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c }) => <><div className=\"a b\" /><div className=\"c\" style={{ \"--d\": `${c}` }} /><div /><div /><div /><div /><div /><div /></>;\n",
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport const App = ({ c }) => <><div className=\"a b\" /><div className=\"c\" style={{ \"--d\": c }} /><div /><div /><div /><div /><div /><div /></>;\n",
         },
     ),
     (
@@ -571,7 +571,7 @@ expression: "emotion_outputs(&[(\"test.tsx\",\n\"export const App = () => <div c
                     ExtractDynamicStyle {
                         property: "color",
                         level: 0,
-                        identifier: "__devupValue2",
+                        identifier: "__devupValue1 = c, typeof __devupValue1 === \"number\" && __devupValue1 !== 0 ? __devupValue1 + \"px\" : __devupValue1",
                         selector: None,
                         style_order: None,
                     },

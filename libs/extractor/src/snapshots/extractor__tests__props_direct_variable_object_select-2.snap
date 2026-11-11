@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "__devupValue0",
+                identifier: "SOME_VAR[idx]",
                 selector: None,
                 style_order: None,
             },

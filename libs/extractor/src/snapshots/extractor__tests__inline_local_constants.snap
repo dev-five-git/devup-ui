@@ -172,7 +172,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "width",
                 level: 0,
-                identifier: "__devupValue0",
+                identifier: "`${\"px\"}${other}`",
                 selector: None,
                 style_order: None,
             },
