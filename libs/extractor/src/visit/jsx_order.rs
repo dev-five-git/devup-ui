@@ -301,6 +301,11 @@ impl<'a> DevupVisitor<'a> {
                         continue;
                     }
                     match item.role {
+                        // What comes before is captured and nothing after is, so
+                        // a name or a choice of names stays where the element
+                        // evaluates it first.
+                        Role::Hoisted
+                            if index == last && crate::as_visit::is_static(&self.ast, value) => {}
                         Role::Hoisted => {
                             let as_name = self.names.fresh("DevupAs");
                             let (name, original) = self.capture_as(as_name.clone(), value);

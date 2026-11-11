@@ -29,7 +29,7 @@ expression: outputs
     ),
     (
         "<List>{items.map((i) => <Box key={i.id} as={i.href ? 'a' : Link} p={1} />)}</List>",
-        "<List>{items.map((i) => {\n\tconst __devupValue0 = i.id, DevupAs0 = (i.href ? \"a\" : Link) || \"div\";\n\treturn <DevupAs0 key={__devupValue0} className=\"a-a\" />;\n})}</List>;",
+        "<List>{items.map((i) => {\n\tconst __devupValue0 = i.id;\n\treturn i.href ? <a key={__devupValue0} className=\"a-a\" /> : <Link key={__devupValue0} className=\"a-a\" />;\n})}</List>;",
     ),
     (
         "<Box as={isLink && 'a'} />",

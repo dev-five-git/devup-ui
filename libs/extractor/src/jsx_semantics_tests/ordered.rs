@@ -142,3 +142,26 @@ fn logical_branches_when_captured_keep_short_circuit_evaluation(#[case] active: 
     );
     assert!(static_styles(&output(&source)).contains(&("padding".into(), "8px".into())));
 }
+
+#[rstest]
+#[case(true, "a")]
+#[case(false, "section")]
+#[serial]
+fn a_choice_of_names_splits_the_element_after_the_props_written_before_it(
+    #[case] linked: bool,
+    #[case] tag: &str,
+) {
+    let source = format!(
+        "{BOX}export const a=(i)=><Box key={{i.id}} as={{i.href ? 'a' : 'section'}} p={{1}}/>;"
+    );
+    let compiled = code(&source);
+    assert!(!compiled.contains("DevupAs"), "{compiled}");
+    let actual = evaluate(
+        &source,
+        &format!(
+            "a({{get id(){{trace.push('id');return 'k';}},get href(){{trace.push('href');return {linked};}}}})"
+        ),
+    );
+    assert_eq!(actual.trace, serde_json::json!(["id", "href"]));
+    assert_eq!(actual.element["type"], tag);
+}

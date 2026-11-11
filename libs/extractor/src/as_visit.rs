@@ -45,6 +45,17 @@ pub fn resolve<'a>(
     ))
 }
 
+/// Whether `value` names the element, or chooses between names, so that the
+/// element built evaluates it before anything else it reads
+pub fn is_static<'a>(ast: &AstBuilder<'a>, value: &Expression<'a>) -> bool {
+    match unwrap_syntax_only(value) {
+        Expression::ConditionalExpression(conditional) => {
+            is_static(ast, &conditional.consequent) && is_static(ast, &conditional.alternate)
+        }
+        value => element_name(ast, value, "").is_some(),
+    }
+}
+
 /// Name `element` `name`
 pub fn rename<'a>(ast: &AstBuilder<'a>, element: &mut JSXElement<'a>, name: JSXElementName<'a>) {
     if let Some(closing) = &mut element.closing_element {
