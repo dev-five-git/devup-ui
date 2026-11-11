@@ -1141,6 +1141,13 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
         self.modules.borrow().exports.keys().cloned().collect()
     }
 
+    /// The paths in what `name` holds that the module hands on where the
+    /// build cannot read it, at which what the build runs must find no object
+    pub(crate) fn handed(&self, name: &str) -> Vec<Vec<Option<String>>> {
+        let mut modules = self.modules.borrow_mut();
+        self.scope.borrow_mut().handed(&mut modules, name)
+    }
+
     pub(crate) fn is_changed(&self, name: &str) -> bool {
         let mut modules = self.modules.borrow_mut();
         let mut scope = self.scope.borrow_mut();
@@ -1931,18 +1938,7 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
             return change.clone();
         }
         self.changes.insert(name.to_string(), None);
-        let uses = if let Some(uses) = &self.uses {
-            uses.clone()
-        } else {
-            let option = modules.option;
-            let uses = Rc::new(crate::mutations::uses(
-                self.program,
-                &|name| self.is_style_import(option, name),
-                self.css_prop,
-            ));
-            self.uses = Some(uses.clone());
-            uses
-        };
+        let uses = self.uses(modules);
         let namespace = matches!(self.imports.get(name), Some((_, Imported::Namespace)));
         let value = self.lookup_raw(modules, name);
         let mut change = None;
@@ -1979,6 +1975,45 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
         self.changes.insert(name.to_string(), change.clone());
         change
+    }
+
+    /// How code uses each top-level binding of the module
+    fn uses(&mut self, modules: &Modules<'_>) -> Rc<FxHashMap<String, Vec<crate::mutations::Use>>> {
+        if let Some(uses) = &self.uses {
+            return uses.clone();
+        }
+        let option = modules.option;
+        let uses = Rc::new(crate::mutations::uses(
+            self.program,
+            &|name| self.is_style_import(option, name),
+            self.css_prop,
+        ));
+        self.uses = Some(uses.clone());
+        uses
+    }
+
+    /// The paths in what `name` holds that code hands on or calls a method
+    /// of while the build cannot read it here: the code the build runs may
+    /// still find an object there, which that code could change
+    fn handed(&mut self, modules: &mut Modules<'_>, name: &str) -> Vec<Vec<Option<String>>> {
+        let uses = self.uses(modules);
+        if matches!(self.imports.get(name), Some((_, Imported::Namespace))) {
+            return Vec::new();
+        }
+        let paths: Vec<Vec<Option<String>>> = uses
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter_map(|found| match found {
+                crate::mutations::Use::Escapes { path, .. }
+                | crate::mutations::Use::Calls { path, .. } => Some(path.clone()),
+                crate::mutations::Use::Changes { .. } => None,
+            })
+            .collect();
+        if paths.is_empty() || self.lookup_raw(modules, name).is_some() {
+            return Vec::new();
+        }
+        paths
     }
 
     fn binds(&self, name: &str) -> bool {

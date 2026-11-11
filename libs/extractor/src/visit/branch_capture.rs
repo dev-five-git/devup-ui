@@ -302,35 +302,83 @@ impl<'a> DevupVisitor<'a> {
         captured: &mut Vec<Captured<'a>>,
     ) {
         let name = self.names.fresh("__devupBranch");
+        let start = (self.css_capture_rules.len(), self.css_capture_offsets.len());
+        let mut consequent = Vec::new();
+        self.capture_shape(&mut conditional.consequent, &mut consequent);
+        let middle = (self.css_capture_rules.len(), self.css_capture_offsets.len());
+        let mut alternate = Vec::new();
+        self.capture_shape(&mut conditional.alternate, &mut alternate);
+        let end = (self.css_capture_rules.len(), self.css_capture_offsets.len());
+        // One branch giving one value never `undefined`, the other none, tells
+        // which branch ran by whether the value is given: the packet is it.
+        let single = match (consequent.as_slice(), alternate.as_slice()) {
+            ([(_, value)], []) => defined(value).map(|truthy| (true, truthy)),
+            ([], [(_, value)]) => defined(value).map(|truthy| (false, truthy)),
+            _ => None,
+        };
+        let packet = || {
+            Expression::new_identifier(
+                SPAN,
+                Str::from_in(name.as_str(), self.ast.allocator()),
+                &self.ast,
+            )
+        };
         let mut branches = Vec::new();
-        for (selected, branch) in [
-            (true, &mut conditional.consequent),
-            (false, &mut conditional.alternate),
+        for (selected, branch, values, owned) in [
+            (
+                true,
+                &mut conditional.consequent,
+                consequent,
+                (start, middle),
+            ),
+            (false, &mut conditional.alternate, alternate, (middle, end)),
         ] {
-            let owned = (self.css_capture_rules.len(), self.css_capture_offsets.len());
-            let mut values = Vec::new();
-            self.capture_shape(branch, &mut values);
             let mut reads = BranchReads {
                 ast: &self.ast,
                 reads: FxHashMap::default(),
             };
             let mut elements = oxc_allocator::Vec::new_in(&self.ast);
             elements.push(Expression::new_boolean_literal(SPAN, selected, &self.ast).into());
+            let mut given = None;
             for (index, (leaf, value)) in values.into_iter().enumerate() {
-                reads.reads.insert(leaf, self.branch_slot(&name, index + 1));
+                let read = if single.is_some() {
+                    packet()
+                } else {
+                    self.branch_slot(&name, index + 1)
+                };
+                reads.reads.insert(leaf, read);
+                given = Some(value.clone_in(self.ast.allocator()));
                 elements.push(value.into());
             }
             reads.visit_expression(branch);
             reads.rebase_results(
-                &mut self.css_capture_rules[owned.0..],
+                &mut self.css_capture_rules[owned.0.0..owned.1.0],
                 &mut self.inline_css_parts,
-                &self.css_capture_offsets[owned.1..],
+                &self.css_capture_offsets[owned.0.1..owned.1.1],
                 &mut self.captured_class_styles,
             );
-            branches.push(Expression::new_array_expression(SPAN, elements, &self.ast));
+            branches.push(if single.is_some() {
+                given.unwrap_or_else(|| void(&self.ast))
+            } else {
+                Expression::new_array_expression(SPAN, elements, &self.ast)
+            });
         }
         let test = conditional.test.take_in(&self.ast);
-        conditional.test = self.branch_slot(&name, 0);
+        conditional.test = match single {
+            Some((true, true)) => packet(),
+            Some((given, _)) => Expression::new_binary_expression(
+                SPAN,
+                packet(),
+                if given {
+                    BinaryOperator::StrictInequality
+                } else {
+                    BinaryOperator::StrictEquality
+                },
+                void(&self.ast),
+                &self.ast,
+            ),
+            None => self.branch_slot(&name, 0),
+        };
         let mut branches = branches.into_iter();
         if let (Some(consequent), Some(alternate)) = (branches.next(), branches.next()) {
             let values = Expression::new_conditional_expression(
@@ -342,6 +390,45 @@ impl<'a> DevupVisitor<'a> {
             );
             captured.push((name, values));
         }
+    }
+}
+
+fn void<'a>(ast: &oxc_ast::builder::AstBuilder<'a>) -> Expression<'a> {
+    Expression::new_unary_expression(
+        SPAN,
+        UnaryOperator::Void,
+        Expression::new_numeric_literal(
+            SPAN,
+            0.0,
+            None,
+            oxc_syntax::number::NumberBase::Decimal,
+            ast,
+        ),
+        ast,
+    )
+}
+
+/// Whether `value` is never `undefined`, and whether it is always truthy
+fn defined(value: &Expression<'_>) -> Option<bool> {
+    match crate::utils::unwrap_syntax_only(value) {
+        Expression::TemplateLiteral(template) => Some(template.quasis.iter().any(|quasi| {
+            quasi
+                .value
+                .cooked
+                .as_ref()
+                .is_some_and(|text| !text.is_empty())
+        })),
+        Expression::StringLiteral(text) => Some(!text.value.is_empty()),
+        Expression::NumericLiteral(number) => Some(number.value != 0.0 && !number.value.is_nan()),
+        Expression::BooleanLiteral(boolean) => Some(boolean.value),
+        Expression::ArrayExpression(_)
+        | Expression::ObjectExpression(_)
+        | Expression::ArrowFunctionExpression(_)
+        | Expression::FunctionExpression(_)
+        | Expression::ClassExpression(_) => Some(true),
+        Expression::BinaryExpression(_) => Some(false),
+        Expression::UnaryExpression(unary) if unary.operator != UnaryOperator::Void => Some(false),
+        _ => None,
     }
 }
 

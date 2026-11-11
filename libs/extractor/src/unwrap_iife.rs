@@ -7,21 +7,17 @@
 use oxc_allocator::{CloneIn, GetAllocator, TakeIn, Vec};
 use oxc_ast::{
     ast::{
-        Argument, ArrayExpressionElement, ArrowFunctionBody, ArrowFunctionExpression,
-        AssignmentTargetPropertyIdentifier, BindingIdentifier, BindingPattern, CallExpression,
-        CatchClause, ExportSpecifier, Expression, FormalParameters, Function, FunctionBody,
-        IdentifierReference, ImportDeclarationSpecifier, JSXElementName, NumberBase,
-        ObjectProperty, Program, SimpleAssignmentTarget, Statement, VariableDeclarationKind,
-        VariableDeclarator,
+        Argument, ArrowFunctionBody, ArrowFunctionExpression, AssignmentTargetPropertyIdentifier,
+        BindingIdentifier, BindingPattern, CallExpression, CatchClause, ExportSpecifier,
+        Expression, FormalParameters, Function, FunctionBody, IdentifierReference,
+        ImportDeclarationSpecifier, JSXElementName, ObjectProperty, Program,
+        SimpleAssignmentTarget, Statement, VariableDeclarationKind, VariableDeclarator,
     },
     builder::AstBuilder,
 };
 use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_span::SPAN;
-use oxc_syntax::{
-    operator::{BinaryOperator, UnaryOperator},
-    scope::ScopeFlags,
-};
+use oxc_syntax::scope::ScopeFlags;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Unwrap the generated functions of `program` that only pass values in
@@ -283,9 +279,6 @@ fn statements<'a>(
         // What the call gave may be another call to unwrap.
         index += count;
     }
-    for index in 0..statements.len() {
-        packet(ast, statements, index);
-    }
     while tidy(statements, parameters, imports) {}
 }
 
@@ -537,211 +530,6 @@ fn tidy<'a>(
         return true;
     }
     false
-}
-
-/// The slot `value` reads of the generated packet `name`, when it reads one
-fn slot(value: &Expression<'_>, name: &str) -> Option<usize> {
-    let Expression::ComputedMemberExpression(member) = value else {
-        return None;
-    };
-    if member.optional || !matches!(&member.object, Expression::Identifier(id) if id.name == name) {
-        return None;
-    }
-    match &member.expression {
-        Expression::StringLiteral(key) => key.value.as_str()?.parse().ok(),
-        Expression::NumericLiteral(key) => (key.value.fract() == 0.0).then_some(key.value as usize),
-        Expression::TemplateLiteral(key) if key.expressions.is_empty() => key
-            .quasis
-            .first()?
-            .value
-            .cooked
-            .as_ref()?
-            .as_str()?
-            .parse()
-            .ok(),
-        _ => None,
-    }
-}
-
-/// Whether every read of the packet `name` reads its flag or its one value
-struct SlotReads<'n> {
-    name: &'n str,
-    only: bool,
-}
-
-impl<'a> Visit<'a> for SlotReads<'_> {
-    fn visit_expression(&mut self, it: &Expression<'a>) {
-        match slot(it, self.name) {
-            Some(0 | 1) => {}
-            Some(_) => self.only = false,
-            None => walk::walk_expression(self, it),
-        }
-    }
-
-    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        self.only &= it.name != self.name;
-    }
-}
-
-/// Read the packet `name` as its one value, `undefined` where the branch
-/// that has none was taken
-struct SlotValue<'s, 'a> {
-    ast: &'s AstBuilder<'a>,
-    name: String,
-    read: Expression<'a>,
-    /// Whether the value is never `undefined` on the branch it is given on,
-    /// and so tells which branch was
-    taken: bool,
-    /// Whether the value is truthy whenever it is given
-    truthy: bool,
-}
-
-impl<'a> SlotValue<'_, 'a> {
-    fn read(&self) -> Expression<'a> {
-        self.read.clone_in(self.ast.allocator())
-    }
-
-    fn flag(&self, test: bool) -> Expression<'a> {
-        if test && self.truthy && self.taken {
-            return self.read();
-        }
-        let operator = if self.taken {
-            BinaryOperator::StrictInequality
-        } else {
-            BinaryOperator::StrictEquality
-        };
-        Expression::new_binary_expression(SPAN, self.read(), operator, void(self.ast), self.ast)
-    }
-}
-
-impl<'a> VisitMut<'a> for SlotValue<'_, 'a> {
-    fn visit_expression(&mut self, it: &mut Expression<'a>) {
-        if let Expression::ConditionalExpression(conditional) = it
-            && slot(&conditional.test, &self.name) == Some(0)
-        {
-            conditional.test = self.flag(true);
-            self.visit_expression(&mut conditional.consequent);
-            self.visit_expression(&mut conditional.alternate);
-            return;
-        }
-        match slot(it, &self.name) {
-            Some(0) => *it = self.flag(false),
-            Some(_) => *it = self.read(),
-            None => walk_mut::walk_expression(self, it),
-        }
-    }
-}
-
-fn void<'a>(ast: &AstBuilder<'a>) -> Expression<'a> {
-    Expression::new_unary_expression(
-        SPAN,
-        UnaryOperator::Void,
-        Expression::new_numeric_literal(SPAN, 0.0, None, NumberBase::Decimal, ast),
-        ast,
-    )
-}
-
-/// Whether `value` is never `undefined`, and whether it is always truthy
-fn defined(value: &Expression<'_>) -> Option<bool> {
-    match parenthesized(value) {
-        Expression::TemplateLiteral(template) => Some(template.quasis.iter().any(|quasi| {
-            quasi
-                .value
-                .cooked
-                .as_ref()
-                .is_some_and(|text| !text.is_empty())
-        })),
-        Expression::StringLiteral(text) => Some(!text.value.is_empty()),
-        Expression::NumericLiteral(number) => Some(number.value != 0.0 && !number.value.is_nan()),
-        Expression::BooleanLiteral(boolean) => Some(boolean.value),
-        Expression::ArrayExpression(_)
-        | Expression::ObjectExpression(_)
-        | Expression::ArrowFunctionExpression(_)
-        | Expression::FunctionExpression(_)
-        | Expression::ClassExpression(_) => Some(true),
-        Expression::BinaryExpression(_) => Some(false),
-        Expression::UnaryExpression(unary) if unary.operator != UnaryOperator::Void => Some(false),
-        _ => None,
-    }
-}
-
-/// The generated packet `test ? [true, value] : [false]` of `statement`, with
-/// what is read of it written as `test ? value : void 0`, when it is one
-fn packet<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>, index: usize) -> bool {
-    let Some((name, value)) = generated_const(&statements[index]) else {
-        return false;
-    };
-    if !name.starts_with("__devupBranch") {
-        return false;
-    }
-    let Expression::ConditionalExpression(conditional) = parenthesized(value) else {
-        return false;
-    };
-    let flags = |side: &Expression<'_>| match parenthesized(side) {
-        Expression::ArrayExpression(array) => match array.elements.as_slice() {
-            [ArrayExpressionElement::BooleanLiteral(flag)] => Some((flag.value, None)),
-            [ArrayExpressionElement::BooleanLiteral(flag), value] => {
-                Some((flag.value, value.as_expression().and_then(defined)))
-            }
-            _ => None,
-        },
-        _ => None,
-    };
-    let (Some((true, consequent)), Some((false, alternate))) = (
-        flags(&conditional.consequent),
-        flags(&conditional.alternate),
-    ) else {
-        return false;
-    };
-    // One branch gives one value never `undefined`; the other gives none.
-    let (taken_first, truthy) = match (consequent, alternate) {
-        (Some(truthy), None) => (true, truthy),
-        (None, Some(truthy)) => (false, truthy),
-        _ => return false,
-    };
-    let mut reads = SlotReads { name, only: true };
-    for statement in statements.iter() {
-        reads.visit_statement(statement);
-    }
-    if !reads.only {
-        return false;
-    }
-    let name = name.to_string();
-    let Statement::VariableDeclaration(declaration) = &mut statements[index] else {
-        return false;
-    };
-    let Some(Expression::ConditionalExpression(conditional)) =
-        &mut declaration.declarations[0].init
-    else {
-        return false;
-    };
-    let given = |side: &mut Expression<'a>| match side {
-        Expression::ArrayExpression(array) if array.elements.len() == 2 => array
-            .elements
-            .pop()
-            .map_or_else(|| void(ast), ArrayExpressionElement::into_expression),
-        _ => void(ast),
-    };
-    conditional.consequent = given(&mut conditional.consequent);
-    conditional.alternate = given(&mut conditional.alternate);
-    let BindingPattern::BindingIdentifier(id) = &declaration.declarations[0].id else {
-        return false;
-    };
-    let read = Expression::new_identifier(SPAN, id.name, ast);
-    // The flag read is true exactly where the consequent ran.
-    let mut values = SlotValue {
-        ast,
-        name,
-        read,
-        taken: taken_first,
-        truthy,
-    };
-    for (at, statement) in statements.iter_mut().enumerate() {
-        if at != index {
-            values.visit_statement(statement);
-        }
-    }
-    true
 }
 
 #[cfg(test)]

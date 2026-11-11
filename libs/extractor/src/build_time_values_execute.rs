@@ -11,6 +11,12 @@ use crate::{ExtractOption, ModuleResolver};
 
 const HELPERS: &str = r#"const __failed__ = (() => { const fail = () => { throw new ReferenceError("its value threw"); }; return new Proxy(function () {}, { get: fail, apply: fail, construct: fail, getPrototypeOf: fail }); })();
 const __failed_statements__ = new Set();
+const __handed__ = (value, path) => {
+  if (typeof value !== "object" || value === null) return false;
+  if (path.length === 0) return true;
+  const [key, ...rest] = path;
+  return (key === null ? Object.values(value) : [value[key]]).some((item) => __handed__(item, rest));
+};
 const __try__ = (compute, statement) => { try { return compute(); } catch { __failed_statements__.add(statement); return __failed__; } };
 const __literal__ = (value) => {
   const plain = (item) => item === undefined || item === null || typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item))
@@ -111,6 +117,7 @@ pub(super) fn compute(
         &is_style,
         unknown,
         &|name| changes.is_changed(name),
+        &|name| changes.handed(name),
         &|name| changes.known(name),
     );
     if found.is_empty() {

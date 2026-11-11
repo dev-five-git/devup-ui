@@ -42,6 +42,10 @@ struct Closure {
     statements: BTreeSet<usize>,
     /// The imports it reads, by local name, each as the value the build knows
     imports: BTreeMap<String, String>,
+    /// The checks, as JavaScript, that the bindings it reads hold no object
+    /// where the module hands them to other code while the build cannot tell
+    /// what they hold: that code may change it, so it then computes nothing
+    handed: BTreeSet<String>,
 }
 
 /// An expression whose reads the build can run
@@ -92,6 +96,7 @@ pub(crate) fn has_build_time_values(
         &|source| crate::package_specifier::is_package(source, &option.package),
         &inlined.unknown,
         &|name| changes.is_changed(name),
+        &|name| changes.handed(name),
         &|name| changes.known(name),
     )
     .is_empty()
@@ -153,16 +158,27 @@ fn find(
     is_style: &dyn Fn(&str) -> bool,
     unknown: &crate::imported_constants::Unknown,
     is_changed: &dyn Fn(&str) -> bool,
+    is_handed: &Handed<'_>,
     known: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<Found> {
     let scoping = SemanticBuilder::new()
         .build(program)
         .semantic
         .into_scoping();
-    let mut finder = Finder::new(program, &scoping, is_style, unknown, is_changed, known);
+    let mut finder = Finder::new(
+        program,
+        &scoping,
+        is_style,
+        unknown,
+        (is_changed, is_handed),
+        known,
+    );
     finder.visit_program(program);
     finder.found
 }
+
+/// The paths in a binding the build cannot read that the module hands on
+type Handed<'s> = dyn Fn(&str) -> Vec<Vec<Option<String>>> + 's;
 
 /// A top-level binding: the statement declaring it, and whether the module
 /// can run it without the style packages
@@ -189,6 +205,9 @@ struct Finder<'s, 'a> {
     /// Whether a binding holds an object or array code changes, which the
     /// module would compute from as declared
     is_changed: &'s dyn Fn(&str) -> bool,
+    /// The paths of a binding the build cannot read that the module hands to
+    /// other code
+    is_handed: &'s Handed<'s>,
     /// The value of an import as JavaScript source, when the build knows all
     /// of it; the module it comes from never runs
     known: &'s dyn Fn(&str) -> Option<String>,
@@ -206,7 +225,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         scoping: &'s Scoping,
         is_style: &dyn Fn(&str) -> bool,
         unknown: &'s crate::imported_constants::Unknown,
-        is_changed: &'s dyn Fn(&str) -> bool,
+        (is_changed, is_handed): (&'s dyn Fn(&str) -> bool, &'s Handed<'s>),
         known: &'s dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let mut finder = Self {
@@ -221,6 +240,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             components: FxHashSet::default(),
             unknown,
             is_changed,
+            is_handed,
             known,
             closures: FxHashMap::default(),
             found: Vec::new(),
@@ -622,9 +642,24 @@ impl<'s, 'a> Finder<'s, 'a> {
                 continue;
             }
             closure.statements.insert(statement);
+            for path in (self.is_handed)(name) {
+                let keys: Vec<String> = path
+                    .iter()
+                    .map(|key| {
+                        key.as_ref().map_or_else(
+                            || "null".to_string(),
+                            |key| serde_json::to_string(key).unwrap_or_default(),
+                        )
+                    })
+                    .collect();
+                closure
+                    .handed
+                    .insert(format!("__handed__({name}, [{}])", keys.join(", ")));
+            }
             let inner = self.statement_closure(statement)?;
             closure.statements.extend(inner.statements);
             closure.imports.extend(inner.imports);
+            closure.handed.extend(inner.handed);
         }
         Some(closure)
     }
@@ -1050,10 +1085,16 @@ fn value_script(code: &str, found: &Found) -> Generated {
         .iter()
         .map(ToString::to_string)
         .collect();
+    let handed: Vec<&str> = found.closure.handed.iter().map(String::as_str).collect();
+    let handed = if handed.is_empty() {
+        "false".to_string()
+    } else {
+        handed.join(" || ")
+    };
     let mut generated = Generated::default();
     generated.text = format!(
-        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ return __literal__((",
-        statements.join(", ")
+        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ if ({handed}) return undefined; return __literal__((",
+        statements.join(", "),
     );
     generated.copy(code, found.span.start as usize, found.span.end as usize);
     generated

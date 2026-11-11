@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
-                identifier: "__devupBranch0[`1`]",
+                identifier: "__devupBranch0",
                 selector: None,
                 style_order: None,
             },

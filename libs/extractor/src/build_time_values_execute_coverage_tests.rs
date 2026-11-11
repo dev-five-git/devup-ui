@@ -70,6 +70,7 @@ fn definitions_skip_ambient_declarators_when_generating_initialized_values() -> 
         closure: Closure {
             statements: [0, 1].into_iter().collect(),
             imports: Default::default(),
+            handed: Default::default(),
         },
         shorthand: None,
         rules_only: false,
