@@ -56,24 +56,7 @@ workspace = true
 # only the features listed here, so it has to be allowed explicitly. It is part
 # of the WebAssembly 2.0 baseline (Chrome 74, Firefox 62, Safari 14.1, Node 12).
 wasm-opt = [
-    # Simplify the Rust output before expanding its control-flow expressions.
     "-Oz",
-    "--converge",
-    # Flattening gives the relooper the simple IR it needs to compact control flow.
-    "--flatten",
-    "--rereloop",
-    "-Oz",
-    "--converge",
-    # Share similar generated AST constructors after local size optimization.
-    "--merge-similar-functions",
-    # Simplify the merged bodies before judging the resulting module size.
-    "-Oz",
-    "--converge",
-    # Normalize the emitted control flow before whole-program value analysis.
-    "--roundtrip",
-    "--gufa",
-    "-Oz",
-    "--converge",
     "--enable-bulk-memory",
     "--enable-nontrapping-float-to-int",
     "--enable-sign-ext",
