@@ -1,15 +1,16 @@
 ---
 source: libs/extractor/src/lib.rs
+assertion_line: 22109
 expression: outputs
 ---
 [
     (
         "export const A = styled(motion.div)`color: red;`;",
-        "export const A = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = motion.div, forwardedAs, ...rest } = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />;\n});",
+        "export const A = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = motion.div, forwardedAs, ...rest } = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />;\n});",
     ),
     (
         "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
-        "export const B = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = (Motion as any).Div.Inner, forwardedAs, ...rest } = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />;\n});",
+        "export const B = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = (Motion as any).Div.Inner, forwardedAs, ...rest } = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />;\n});",
     ),
     (
         "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
@@ -17,10 +18,10 @@ expression: outputs
     ),
     (
         "export const D = (tag) => styled(tag, { color: 'red' });",
-        "export const D = (tag) => {\n\tconst DevupStyled = tag;\n\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\n\t\tconst { style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest } = {\n\t\t\t...__devupRefProps,\n\t\t\tref: __devupRef\n\t\t};\n\t\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a-a\", className].filter(Boolean).join(\" \")} style={style} />;\n\t});\n};",
+        "export const D = (tag) => {\n\tconst DevupStyled = tag;\n\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\n\t\tconst { style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest } = {\n\t\t\t...__devupRefProps,\n\t\t\tref: __devupRef\n\t\t};\n\t\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a-a ${className}` : \"a-a\"} style={style} />;\n\t});\n};",
     ),
     (
         "export const E = styled(getThing().div)`color: red;`;",
-        "export const E = ((DevupStyled) => __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest } = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a--a a-a\", className].filter(Boolean).join(\" \")} style={style} />;\n}))(getThing().div);",
+        "export const E = ((DevupStyled) => __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest } = {\n\t\t...__devupRefProps,\n\t\tref: __devupRef\n\t};\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />;\n}))(getThing().div);",
     ),
 ]

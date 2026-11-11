@@ -218,6 +218,39 @@ fn templates(#[case] source: &str, #[case] expected: &str) {
 }
 
 #[rstest]
+#[case::after(
+    r#"const { className } = p; f(["a b", className].filter(Boolean).join(" "));"#,
+    "const { className } = p;\nf(className ? `a b ${className}` : \"a b\");\n"
+)]
+#[case::between(
+    r#"f(["a", "", __devupA, "b", "c"].filter(Boolean).join("-"));"#,
+    "f(__devupA ? `a-${__devupA}-b-c` : \"a-b-c\");\n"
+)]
+#[case::alone(
+    r#"f([__devupA].filter(Boolean).join(" "));"#,
+    "f(__devupA ? `${__devupA}` : \"\");\n"
+)]
+#[case::undeclared_kept(
+    r#"f(["a", x].filter(Boolean).join(" "));"#,
+    "f([\"a\", x].filter(Boolean).join(\" \"));\n"
+)]
+#[case::two_names_kept(
+    r#"f([__devupA, __devupB].filter(Boolean).join(" "));"#,
+    "f([__devupA, __devupB].filter(Boolean).join(\" \"));\n"
+)]
+#[case::member_kept(
+    r#"f(["a", __devupA.b].filter(Boolean).join(" "));"#,
+    "f([\"a\", __devupA.b].filter(Boolean).join(\" \"));\n"
+)]
+#[case::escaped_kept(
+    r#"f(["a$", __devupA].filter(Boolean).join(" "));"#,
+    "f([\"a$\", __devupA].filter(Boolean).join(\" \"));\n"
+)]
+fn joins_around_a_name(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
 #[case::literal("f((1, `${x}`));", "f(`${x}`);\n")]
 #[case::literals(r#"f((1, "a", null, true, g()));"#, "f(g());\n")]
 #[case::compared("f((1 > 2, g()));", "f(g());\n")]

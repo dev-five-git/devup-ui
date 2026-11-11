@@ -414,6 +414,115 @@ fn pure_name<'s>(value: &'s Expression<'_>) -> Option<&'s str> {
 
 /// The text `[...].filter(Boolean).join(separator)` gives of strings
 fn joined(call: &CallExpression<'_>) -> Option<String> {
+    let (parts, separator) = join_parts(call)?;
+    let parts = parts
+        .iter()
+        .map(|part| match part {
+            ArrayExpressionElement::StringLiteral(text) => text.value.as_str(),
+            _ => None,
+        })
+        .collect::<Option<std::vec::Vec<_>>>()?;
+    Some(
+        parts
+            .into_iter()
+            .filter(|text| !text.is_empty())
+            .collect::<std::vec::Vec<_>>()
+            .join(separator),
+    )
+}
+
+/// `[...texts, name, ...texts].filter(Boolean).join(separator)` as
+/// `name ? `texts name texts` : "texts texts"`, reading `name` once more to
+/// test it as `filter` does
+fn joined_around<'a>(
+    ast: &AstBuilder<'a>,
+    call: &CallExpression<'a>,
+    declared: &FxHashSet<String>,
+) -> Option<Expression<'a>> {
+    let (parts, separator) = join_parts(call)?;
+    let mut name = None;
+    let (mut before, mut after) = (std::vec::Vec::new(), std::vec::Vec::new());
+    for part in parts {
+        match part {
+            ArrayExpressionElement::Identifier(id)
+                if name.is_none()
+                    && (generated(&id.name) || declared.contains(id.name.as_str())) =>
+            {
+                name = Some(id);
+            }
+            ArrayExpressionElement::StringLiteral(text) => {
+                let text = text.value.as_str()?;
+                if !text.is_empty() {
+                    if name.is_some() {
+                        &mut after
+                    } else {
+                        &mut before
+                    }
+                    .push(text);
+                }
+            }
+            _ => return None,
+        }
+    }
+    let name = name?;
+    // Texts a template reads as they are written
+    if std::iter::once(&separator)
+        .chain(&before)
+        .chain(&after)
+        .any(|text| text.contains(['\\', '`', '$']))
+    {
+        return None;
+    }
+    let (before, after) = (before.join(separator), after.join(separator));
+    let quasis = [
+        if before.is_empty() {
+            before.clone()
+        } else {
+            format!("{before}{separator}")
+        },
+        if after.is_empty() {
+            after.clone()
+        } else {
+            format!("{separator}{after}")
+        },
+    ];
+    let template = Expression::new_template_literal(
+        SPAN,
+        Vec::from_iter_in(
+            quasis.iter().enumerate().map(|(index, text)| {
+                oxc_ast::ast::TemplateElement::new(
+                    SPAN,
+                    crate::utils::template_element_value(text, ast),
+                    index == 1,
+                    ast,
+                )
+            }),
+            ast,
+        ),
+        Vec::from_array_in(
+            [Expression::Identifier(name.clone_in(ast.allocator()))],
+            ast,
+        ),
+        ast,
+    );
+    let rest = [before, after]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<std::vec::Vec<_>>()
+        .join(separator);
+    Some(Expression::new_conditional_expression(
+        SPAN,
+        Expression::Identifier(name.clone_in(ast.allocator())),
+        template,
+        Expression::new_string_literal(SPAN, ast.allocator().alloc_str(&rest), None, ast),
+        ast,
+    ))
+}
+
+/// The elements `[...].filter(Boolean).join(separator)` joins, and the separator
+fn join_parts<'s, 'a>(
+    call: &'s CallExpression<'a>,
+) -> Option<(&'s [ArrayExpressionElement<'a>], &'s str)> {
     let Expression::StaticMemberExpression(join) = unwrapped(&call.callee) else {
         return None;
     };
@@ -440,17 +549,7 @@ fn joined(call: &CallExpression<'_>) -> Option<String> {
     {
         return None;
     }
-    let mut parts = std::vec::Vec::new();
-    for element in &array.elements {
-        let ArrayExpressionElement::StringLiteral(text) = element else {
-            return None;
-        };
-        let text = text.value.as_str()?;
-        if !text.is_empty() {
-            parts.push(text);
-        }
-    }
-    Some(parts.join(separator.value.as_str()?))
+    Some((array.elements.as_slice(), separator.value.as_str()?))
 }
 
 /// Whether `key` can be written as the name of a JSX attribute
@@ -528,6 +627,10 @@ impl<'a> Simplify<'_, 'a> {
                 if let Some(text) = joined(call) {
                     let text: &'a str = self.ast.allocator().alloc_str(&text);
                     *it = Expression::new_string_literal(SPAN, text, None, self.ast);
+                    return true;
+                }
+                if let Some(value) = joined_around(self.ast, call, &self.declared) {
+                    *it = value;
                     return true;
                 }
                 false

@@ -15860,7 +15860,9 @@ const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
             assert!(body.contains("as={forwardedAs}"), "{body}");
             if let Some(classes) = classes {
                 assert!(
-                    body.contains(&format!("className={{[\"{classes}\", className]")),
+                    body.contains(&format!(
+                        "className={{className ? `{classes} ${{className}}` : \"{classes}\"}}"
+                    )),
                     "{body}"
                 );
             }

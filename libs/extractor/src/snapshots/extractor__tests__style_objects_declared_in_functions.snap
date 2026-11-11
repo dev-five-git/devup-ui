@@ -1,5 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
+assertion_line: 24463
 expression: "library_outputs(&borrowed, SIZE_MODULES)"
 ---
 [
@@ -37,11 +38,11 @@ expression: "library_outputs(&borrowed, SIZE_MODULES)"
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { color: 'red' }; return styled.div(inner); }",
-        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\\n\\t\\tconst { style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest } = {\\n\\t\\t\\t...__devupRefProps,\\n\\t\\t\\tref: __devupRef\\n\\t\\t};\\n\\t\\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \\\"$\\\" && k !== \\\"theme\\\"))} as={forwardedAs} className={[\\\"a\\\", className].filter(Boolean).join(\\\" \\\")} style={style} />;\\n\\t});\\n}\\n\" }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\\n\\t\\tconst { style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest } = {\\n\\t\\t\\t...__devupRefProps,\\n\\t\\t\\tref: __devupRef\\n\\t\\t};\\n\\t\\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \\\"$\\\" && k !== \\\"theme\\\"))} as={forwardedAs} className={className ? `a ${className}` : \\\"a\\\"} style={style} />;\\n\\t});\\n}\\n\" }",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f() { const inner = { color: 'red' }; return styled('div')(inner); }",
-        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\\n\\t\\tconst { style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest } = {\\n\\t\\t\\t...__devupRefProps,\\n\\t\\t\\tref: __devupRef\\n\\t\\t};\\n\\t\\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \\\"$\\\" && k !== \\\"theme\\\"))} as={forwardedAs} className={[\\\"a\\\", className].filter(Boolean).join(\\\" \\\")} style={style} />;\\n\\t});\\n}\\n\" }",
+        "ToBTreeSet { styles: {Static(ExtractStaticStyle { property: \"color\", value: \"red\", level: 0, selector: None, style_order: None, layer: None })}, code: \"import \\\"@devup-ui/react/devup-ui.css\\\";\\nimport { forwardRef as __devupForwardRef } from \\\"react\\\";\\nexport function f() {\\n\\tconst inner = { color: \\\"red\\\" };\\n\\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\\n\\t\\tconst { style, className, as: DevupAs = \\\"div\\\", forwardedAs, ...rest } = {\\n\\t\\t\\t...__devupRefProps,\\n\\t\\t\\tref: __devupRef\\n\\t\\t};\\n\\t\\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \\\"$\\\" && k !== \\\"theme\\\"))} as={forwardedAs} className={className ? `a ${className}` : \\\"a\\\"} style={style} />;\\n\\t});\\n}\\n\" }",
     ),
     (
         "import { css, styled, globalCss, keyframes, Box } from '@devup-ui/react';\nexport function f(c) { const inner = { color: c }; return styled.div(inner); }",
