@@ -22182,6 +22182,32 @@ export const g = <Global styles={{ html: { animationName: fadeIn } }} />;",
         }
     }
 
+    #[rstest]
+    #[case::template("animation={`${slide} 3s`}", "{...{ animation: `${slide} 3s` }}")]
+    #[case::binding("animation={slide}", "{...{ animation: slide }}")]
+    #[serial]
+    fn test_spread_entries_read_style_results_as_attributes_do(
+        #[case] attribute: &str,
+        #[case] spread: &str,
+    ) {
+        let code = |props: &str| {
+            reset_class_map();
+            reset_file_map();
+            extract(
+                "test.tsx",
+                &format!(
+                    "import {{ Box, css, keyframes }} from '@devup-ui/react';\nconst slide = keyframes({{ from: {{ left: 0 }} }});\nconst card = css({{ p: 1 }});\nexport const d = <Box {props} />;"
+                ),
+                ExtractOption::default(),
+            )
+            .unwrap()
+            .code
+        };
+        let expected = code(attribute);
+        assert!(!expected.contains("style="), "{expected}");
+        assert_eq!(code(spread), expected);
+    }
+
     #[test]
     #[serial]
     fn test_dynamic_values_keep_the_code_as_written() {

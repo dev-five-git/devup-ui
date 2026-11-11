@@ -191,6 +191,23 @@ impl<'a> DevupVisitor<'a> {
                         self.style_values.read_in(&self.ast, value);
                     }
                 }
+            } else if let SpreadAttribute(spread) = attribute
+                && !css_only
+                && !is_unknown_spread(&spread.argument)
+                && let Expression::ObjectExpression(object) =
+                    crate::utils::unwrap_syntax_only_mut(&mut spread.argument)
+            {
+                // Known spread style entries read recorded values as attributes do
+                for property in &mut object.properties {
+                    if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) = property
+                        && property
+                            .key
+                            .static_name()
+                            .is_none_or(|key| key != "className")
+                    {
+                        self.style_values.read_in(&self.ast, &mut property.value);
+                    }
+                }
             }
         }
         // A lone primitive class call stays in one final `call() || ""` slot;
