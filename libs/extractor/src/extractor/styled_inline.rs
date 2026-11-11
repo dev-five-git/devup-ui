@@ -129,6 +129,11 @@ pub(super) fn body<'a>(
     }
     let mut statements = Vec::new_in(ast);
     render.complete(&mut statements, call.take_in(ast), None);
+    super::styled_inline_simplify::simplify(
+        ast,
+        &mut statements,
+        &["__devupRefProps", "__devupRef"],
+    );
     ArrowFunctionBody::new_function_body(SPAN, Vec::new_in(ast), statements, ast)
 }
 

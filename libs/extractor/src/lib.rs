@@ -15927,8 +15927,8 @@ export const f = <F junk=\"j\" xlink:href=\"#a\" />
 export const k = <K title=\"t\" tone=\"x\" />";
         let code = readable_code(source);
         for expected in [
-            "({\"tone\": __devupRecord0, ...__devupRecord1} = rest, __devupRecord1)",
-            "({\"x\": __devupRecord0, \"y\": __devupRecord1, \"theme\": __devupRecord2, ...__devupRecord3} = rest, __devupRecord3)",
+            "const { \"tone\": __devupRecord0, ...__devupRecord1 } = rest;",
+            "const { \"x\": __devupRecord0, \"y\": __devupRecord1, \"theme\": __devupRecord2, ...__devupRecord3 } = rest;",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
