@@ -121,13 +121,17 @@ fn duplicate_keys_keep_the_last_static_variant() {
     assert_eq!(actual.element["props"]["className"], "typo-buttonLg");
 }
 
+// A literal key the table neither holds nor inherits from an untouched
+// prototype selects no style at build time; one the build cannot place is read
+// once, in order.
 #[rstest]
-#[case("({a:.5,b:1})", "Object")]
-#[case("[.5,1]", "Array")]
+#[case("({a:.5,b:1})", "Object", &["later"][..])]
+#[case("[.5,1]", "Array", &["inherited", "later"][..])]
 #[serial]
-fn projection_keeps_one_inherited_lookup_before_later_attributes(
+fn projection_reads_an_absent_key_once_only_where_the_build_cannot_place_it(
     #[case] table: &str,
     #[case] prototype: &str,
+    #[case] trace: &[&str],
 ) {
     let source = format!(
         "{BOX}export const a=(later)=><Box opacity={{{table}['missing']}} id={{later()}}/>;"
@@ -139,8 +143,11 @@ fn projection_keeps_one_inherited_lookup_before_later_attributes(
         ),
         "a(()=>{trace.push('later');return 'id';})",
     );
-    assert_eq!(actual.trace, serde_json::json!(["inherited", "later"]));
-    assert_eq!(actual.element["props"]["className"], "");
+    assert_eq!(actual.trace, serde_json::json!(trace));
+    assert_eq!(
+        actual.element["props"]["className"].as_str().unwrap_or(""),
+        ""
+    );
 }
 
 #[test]

@@ -6,32 +6,41 @@ use super::capture::Captured;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
 use oxc_ast::ast::{
     ArrayExpressionElement, ChainElement, ComputedMemberExpression, Expression, ObjectPropertyKind,
-    PropertyKind, Str,
+    PropertyKey, PropertyKind, Str,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_span::SPAN;
+use oxc_syntax::operator::UnaryOperator;
 use rustc_hash::FxHashMap;
 
 #[cfg(test)]
 #[path = "selected_capture_tests.rs"]
 mod tests;
 
-/// Only an own array position whose entire table has no observable evaluation
-/// can keep its literal key for the existing member extractor to prune.
+/// Names every object inherits, which a key its table does not hold still reads.
+const INHERITED: [&str; 12] = [
+    "__defineGetter__",
+    "__defineSetter__",
+    "__lookupGetter__",
+    "__lookupSetter__",
+    "__proto__",
+    "constructor",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+    "toString",
+    "valueOf",
+];
+
+/// A literal key into a table with no observable evaluation keeps its key for
+/// the existing member extractor to prune: an own position selects its value,
+/// and one the table neither holds nor inherits selects no style.
 fn literal_own_selection(member: &oxc_ast::ast::ComputedMemberExpression<'_>) -> bool {
     if member.optional {
         return false;
     }
-    let mut key = &member.expression;
-    while let Expression::ParenthesizedExpression(inner) = key {
-        key = &inner.expression;
-    }
-    let Expression::NumericLiteral(key) = key else {
-        return false;
-    };
-    if !key.value.is_finite() || key.value < 0.0 || key.value.fract() != 0.0 {
-        return false;
-    }
+    let key = crate::utils::unwrap_syntax_only(&member.expression);
     let mut table = &member.object;
     loop {
         table = match table {
@@ -40,23 +49,94 @@ fn literal_own_selection(member: &oxc_ast::ast::ComputedMemberExpression<'_>) ->
             _ => break,
         };
     }
-    let Expression::ArrayExpression(array) = table else {
-        return false;
+    let selects = match table {
+        // An array inherits no number: one it does not hold reads `undefined`
+        Expression::ArrayExpression(_) => array_index(key),
+        Expression::ObjectExpression(object) => object_key(key).is_some_and(|key| {
+            !INHERITED.contains(&key.as_str())
+                || object
+                    .properties
+                    .iter()
+                    .any(|property| own_key(property).is_some_and(|own| own == key))
+        }),
+        _ => false,
     };
-    if !array.elements.iter().enumerate().any(|(index, _)| {
-        u32::try_from(index).is_ok_and(|index| f64::from(index).total_cmp(&key.value).is_eq())
-    }) {
-        return false;
+    selects && evaluates_nothing(table)
+}
+
+/// `1` or `-1`, which every array reads at the same place
+fn array_index(key: &Expression<'_>) -> bool {
+    let key = match key {
+        Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::UnaryNegation => {
+            crate::utils::unwrap_syntax_only(&unary.argument)
+        }
+        key => key,
+    };
+    matches!(key, Expression::NumericLiteral(_))
+}
+
+/// The property a literal key names, spelled as JavaScript spells it
+fn object_key(key: &Expression<'_>) -> Option<String> {
+    match key {
+        Expression::StringLiteral(text) => text.value.as_str().map(str::to_string),
+        Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
+            .quasis
+            .first()
+            .and_then(|quasi| quasi.value.cooked.as_ref())
+            .and_then(|text| text.as_str().map(str::to_string)),
+        Expression::NumericLiteral(number)
+            if number.value.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER).contains(&number.value) =>
+        {
+            Some(number.value.to_string())
+        }
+        _ => None,
     }
-    let mut pending = vec![table];
-    while let Some(value) = pending.pop() {
+}
+
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+/// The key a plain property of a table holds as its own
+fn own_key(property: &ObjectPropertyKind<'_>) -> Option<String> {
+    let ObjectPropertyKind::ObjectProperty(property) = property else {
+        return None;
+    };
+    if property.kind != PropertyKind::Init || property.method || property.computed {
+        return None;
+    }
+    let key = match &property.key {
+        PropertyKey::StaticIdentifier(name) => name.name.as_str().to_string(),
+        PropertyKey::StringLiteral(text) => text.value.as_str()?.to_string(),
+        _ => return None,
+    };
+    // `__proto__:` written as is sets the prototype, not a property
+    (key != "__proto__").then_some(key)
+}
+
+/// Whether reading the table evaluates nothing the code can observe
+fn evaluates_nothing(table: &Expression<'_>) -> bool {
+    let mut pending = vec![(table, true)];
+    while let Some((value, top)) = pending.pop() {
         match value {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
-                    let Some(value) = element.as_expression() else {
+                    match element {
+                        // A hole reads `undefined` only where it is selected
+                        ArrayExpressionElement::Elision(_) if top => {}
+                        element => match element.as_expression() {
+                            Some(value) => pending.push((value, false)),
+                            None => return false,
+                        },
+                    }
+                }
+            }
+            Expression::ObjectExpression(object) if top => {
+                for property in &object.properties {
+                    let (Some(_), ObjectPropertyKind::ObjectProperty(property)) =
+                        (own_key(property), property)
+                    else {
                         return false;
                     };
-                    pending.push(value);
+                    pending.push((&property.value, false));
                 }
             }
             Expression::StringLiteral(_)

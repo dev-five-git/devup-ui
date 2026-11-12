@@ -16,26 +16,6 @@ ToBTreeSet {
                 layer: None,
             },
         ),
-        Static(
-            ExtractStaticStyle {
-                property: "opacity",
-                value: ".5",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "opacity",
-                value: "1",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a ${{\n\ta: \"b\",\n\tb: \"c\"\n}[1] || \"\"}`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a\" />;\n",
 }
