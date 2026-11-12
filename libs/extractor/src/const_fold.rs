@@ -189,7 +189,7 @@ impl<'a> Fold<'_, 'a> {
 }
 
 /// Whether the literal `value` is truthy
-fn truthiness(value: &Expression<'_>) -> Option<bool> {
+pub(crate) fn truthiness(value: &Expression<'_>) -> Option<bool> {
     match unwrap_syntax_only(value) {
         Expression::BooleanLiteral(literal) => Some(literal.value),
         Expression::NullLiteral(_) => Some(false),
@@ -221,7 +221,7 @@ fn truthiness(value: &Expression<'_>) -> Option<bool> {
 }
 
 /// Whether the literal `value` is `null` or `undefined`
-fn nullish(value: &Expression<'_>) -> Option<bool> {
+pub(crate) fn nullish(value: &Expression<'_>) -> Option<bool> {
     truthiness(value)?;
     Some(match unwrap_syntax_only(value) {
         Expression::NullLiteral(_) => true,

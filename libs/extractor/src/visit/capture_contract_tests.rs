@@ -53,6 +53,8 @@ fn opaque_generated_expressions_keep_their_private_capture_scope() {
 #[case("null", [true, false, false])]
 #[case("false", [true, false, true])]
 #[case("0", [true, false, true])]
+#[case("''", [true, false, true])]
+#[case("'a'", [false, true, true])]
 fn literal_selection_distinguishes_truthiness_from_nullishness(
     #[case] source: &str,
     #[case] left: [bool; 3],

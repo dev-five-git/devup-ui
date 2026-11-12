@@ -83,6 +83,9 @@ fn literal_tests_and_arithmetic_are_written_as_their_value(
 #[case("[1, ...x][0]", "[1, ...x][0]")]
 // The value read is evaluated as written; the others are left out only as literals
 #[case("[1, x][1]", "x")]
+#[case("[[1, , 2], 3][1]", "3")]
+#[case("[{ a: 1, ...{ b: [2] } }, 3][1]", "3")]
+#[case("[{ a() {} }, 3][1]", "[{ a() {} }, 3][1]")]
 #[case("[x, 2][1]", "[x, 2][1]")]
 #[case("'ab'[0]", "\"ab\"[0]")]
 #[case("({ a: 1, b: 2 }).b", "2")]

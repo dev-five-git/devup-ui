@@ -77,14 +77,8 @@ pub(crate) fn unreadable<'a>(expression: &Expression<'a>) -> ExtractResult<'a> {
 /// build knows picks its branch there, as once constants are inlined
 fn literal_truthiness(expression: &Expression<'_>) -> Option<bool> {
     match unwrap_syntax_only(expression) {
-        Expression::BooleanLiteral(literal) => Some(literal.value),
-        Expression::NullLiteral(_) => Some(false),
-        Expression::NumericLiteral(literal) => {
-            Some(literal.value != 0.0 && !literal.value.is_nan())
-        }
-        Expression::StringLiteral(literal) => Some(!literal.value.is_empty()),
         Expression::Identifier(identifier) if identifier.name == "undefined" => Some(false),
-        _ => None,
+        literal => crate::const_fold::truthiness(literal),
     }
 }
 
@@ -883,10 +877,8 @@ pub(super) fn extract_projected<'a>(
             Expression::LogicalExpression(logical)
                 if literal_truthiness(&logical.left).is_some() =>
             {
-                let nullish = matches!(
-                    unwrap_syntax_only(&logical.left),
-                    Expression::NullLiteral(_)
-                ) || matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined");
+                let nullish = matches!(unwrap_syntax_only(&logical.left), Expression::Identifier(identifier) if identifier.name == "undefined")
+                    || crate::const_fold::nullish(&logical.left) == Some(true);
                 let takes_right = match logical.operator {
                     LogicalOperator::And => literal_truthiness(&logical.left) == Some(true),
                     LogicalOperator::Or => literal_truthiness(&logical.left) == Some(false),

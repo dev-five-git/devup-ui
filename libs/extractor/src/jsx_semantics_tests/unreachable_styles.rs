@@ -36,6 +36,55 @@ fn known_values_emit_only_the_styles_they_select(#[case] code: &str, #[case] exp
     assert!(!compiled.code.contains("\"--"), "{}", compiled.code);
 }
 
+// `undefined`, which a binding may name, is read where it is evaluated
+#[rstest]
+#[case("undefined ?? c", true)]
+#[case("undefined || c", true)]
+#[case("undefined && c", false)]
+#[case("undefined ? c : 0.5", true)]
+#[serial]
+fn undefined_tests_select_what_they_read(#[case] value: &str, #[case] applied: bool) {
+    let source = format!("{BOX}export const render = (c) => <Box opacity={{{value}}} />;");
+    let rendered = whole::evaluate(&source, "render(0.5)");
+    let class = rendered.element["props"]["className"]
+        .as_str()
+        .unwrap_or("");
+    assert_eq!(!class.is_empty(), applied, "{}", output(&source).code);
+}
+
+// ... and around values read by calls, which it is captured with
+#[rstest]
+#[case("undefined ?? read(0.5)", true)]
+#[case("undefined || read(0.5)", true)]
+#[case("undefined && read(0.5)", false)]
+#[serial]
+fn captured_undefined_tests_select_what_they_read(#[case] value: &str, #[case] applied: bool) {
+    let source = format!(
+        "{BOX}export const render = (read) => <Box id={{read('id')}} opacity={{{value}}} title={{read('title')}} />;"
+    );
+    let rendered = whole::evaluate(&source, "render((value) => (trace.push(value), value))");
+    let class = rendered.element["props"]["className"]
+        .as_str()
+        .unwrap_or("");
+    assert_eq!(!class.is_empty(), applied, "{}", output(&source).code);
+    assert_eq!(rendered.trace[0], "id");
+    assert_eq!(
+        rendered.trace[rendered.trace.as_array().map_or(0, Vec::len) - 1],
+        "title"
+    );
+}
+
+// A key no literal fold reads is read by the runtime
+#[test]
+#[serial]
+fn styled_lookups_the_build_cannot_fold_run_as_written() {
+    let compiled = output(&format!(
+        "{APIS}export const A = styled.div({{ opacity: [1, 0.5]['length'] }});"
+    ));
+    assert!(static_styles(&compiled).is_empty(), "{}", compiled.code);
+    assert!(compiled.code.contains("\"length\""), "{}", compiled.code);
+}
+
 // A conditional key reads what the table holds there, as the runtime does
 #[rstest]
 #[case("<Box opacity={[1, 0.5, 0.2][c ? 0 : 1]} />")]
