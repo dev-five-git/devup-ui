@@ -371,11 +371,17 @@ impl<'a> StyledDefinition<'a> {
             && self.styles.iter().all(fixed)
     }
 
-    fn with_css_slot(mut self, slot: Option<&StyledCapability>, inherited: Option<&Self>) -> Self {
+    fn with_css_slot(
+        mut self,
+        slot: Option<&StyledCapability>,
+        inherited: Option<&Self>,
+        shared: bool,
+    ) -> Self {
         self.capability = slot
             .filter(|_| {
-                (!self.fixed_summary() && !self.portable())
-                    || (self.fixed_native() && !self.bindings.is_empty())
+                (shared
+                    && ((!self.fixed_summary() && !self.portable())
+                        || (self.fixed_native() && !self.bindings.is_empty())))
                     || !self.execution.replays()
                     || (!self.native()
                         && self.fixed_summary()
@@ -977,7 +983,7 @@ pub fn extract_style_from_styled<'a>(
                 &bindings,
             )
             .with_execution(ast_builder, inherited)
-            .with_css_slot(context.capability, inherited)
+            .with_css_slot(context.capability, inherited, context.shared)
             .with_markers(markers, inherited);
         let staged = stages::create(
             ast_builder,
@@ -1138,7 +1144,7 @@ pub fn extract_style_from_styled<'a>(
             )
             .with_composition_styles(composition_styles)
             .with_execution(ast_builder, inherited)
-            .with_css_slot(context.capability, inherited)
+            .with_css_slot(context.capability, inherited, context.shared)
             .with_markers(markers, inherited);
         let staged = stages::create(
             ast_builder,

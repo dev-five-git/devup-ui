@@ -283,6 +283,11 @@ pub struct DevupVisitor<'a> {
     /// The marker classes of the exported or selected styled component the
     /// declaration being visited defines, with where its definition starts
     pending_marker: Option<(u32, Vec<(String, usize)>)>,
+    /// Where the styled components start that no other module nor `css`
+    /// reaches: the module exports none, and renders each only as a tag
+    private_styled: FxHashSet<u32>,
+    /// The references rendering a tag given no `css`
+    rendered: FxHashSet<oxc_syntax::reference::ReferenceId>,
     /// What the file exports, whose components carry markers other files
     /// select them by
     exports: Exports,
@@ -1233,6 +1238,8 @@ impl<'a> DevupVisitor<'a> {
             devup_styled: FxHashSet::default(),
             selected_components: FxHashSet::default(),
             pending_marker: None,
+            private_styled: FxHashSet::default(),
+            rendered: FxHashSet::default(),
             exports: Exports::default(),
             local_markers: 0,
             imported_styled: FxHashMap::default(),
@@ -3266,6 +3273,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
             self.selected_components = crate::style_values::selected(it, &self.style_values);
+            self.rendered = crate::style_values::rendered(it);
             let imported: Vec<_> = self
                 .selected_components
                 .iter()
@@ -3532,6 +3540,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     filename: &self.filename,
                     jsx: &mut self.styled_jsx,
                     capability: self.styled_capability.as_ref(),
+                    shared: !self.private_styled.contains(&start),
                 },
             );
             self.errors.extend(errors);
@@ -3583,6 +3592,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     filename: &self.filename,
                     jsx: &mut self.styled_jsx,
                     capability: self.styled_capability.as_ref(),
+                    shared: !self.private_styled.contains(&call.span.start),
                 },
             )
         {
@@ -4845,6 +4855,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         .and_then(|util| Some((util, self.style_values.constant(&it.id)?)));
         let start = it.init.as_ref().map(|init| init.span().start);
         let styled_binding = self.style_values.constant(&it.id);
+        if let Some(((symbol, start), id)) = styled_binding
+            .zip(start)
+            .zip(it.id.get_binding_identifier())
+            && (self.style_values.is_local(symbol) || self.exports.of(&id.name).is_empty())
+            && self.style_values.read_only_by(symbol, &self.rendered)
+        {
+            self.private_styled.insert(start);
+        }
         if self.css_prop != CssProp::Off
             && matches!(
                 it.init.as_ref().map(unwrap_syntax_only),

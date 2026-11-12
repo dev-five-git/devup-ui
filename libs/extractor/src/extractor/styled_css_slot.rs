@@ -17,6 +17,9 @@ pub(crate) struct StyledContext<'s> {
     pub filename: &'s str,
     pub jsx: &'s mut Option<StyledJsx>,
     pub capability: Option<&'s StyledCapability>,
+    /// Whether another module may read the component: only a component the
+    /// module exports takes what extending it there sends
+    pub shared: bool,
 }
 
 pub(crate) enum CssPropLowering {

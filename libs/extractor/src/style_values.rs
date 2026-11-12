@@ -105,6 +105,20 @@ impl<'a> StyleValues<'a> {
             .is_some_and(|scoping| scoping.symbol_scope_id(symbol) != scoping.root_scope_id())
     }
 
+    /// Whether every read of `symbol` is one of `references`
+    pub fn read_only_by(
+        &self,
+        symbol: SymbolId,
+        references: &FxHashSet<oxc_syntax::reference::ReferenceId>,
+    ) -> bool {
+        self.scoping.as_ref().is_some_and(|scoping| {
+            scoping
+                .get_resolved_reference_ids(symbol)
+                .iter()
+                .all(|reference| references.contains(reference))
+        })
+    }
+
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
         self.values.insert(symbol, value);
     }
@@ -325,6 +339,38 @@ impl<'a> StyleValues<'a> {
             },
         )
     }
+}
+
+/// The references that only render what they name, as the tag of a JSX
+/// element given no `css`
+pub fn rendered(
+    program: &oxc_ast::ast::Program<'_>,
+) -> FxHashSet<oxc_syntax::reference::ReferenceId> {
+    #[derive(Default)]
+    struct Rendered(FxHashSet<oxc_syntax::reference::ReferenceId>);
+    impl<'a> oxc_ast_visit::Visit<'a> for Rendered {
+        fn visit_jsx_element(&mut self, it: &oxc_ast::ast::JSXElement<'a>) {
+            let css = it.opening_element.attributes.iter().any(|item| {
+                matches!(item, oxc_ast::ast::JSXAttributeItem::Attribute(attribute)
+                    if matches!(&attribute.name, oxc_ast::ast::JSXAttributeName::Identifier(name) if name.name == "css"))
+            });
+            if !css {
+                for name in std::iter::once(&it.opening_element.name)
+                    .chain(it.closing_element.as_ref().map(|closing| &closing.name))
+                {
+                    if let oxc_ast::ast::JSXElementName::IdentifierReference(id) = name
+                        && let Some(reference) = id.reference_id.get()
+                    {
+                        self.0.insert(reference);
+                    }
+                }
+            }
+            oxc_ast_visit::walk::walk_jsx_element(self, it);
+        }
+    }
+    let mut rendered = Rendered::default();
+    oxc_ast_visit::Visit::visit_program(&mut rendered, program);
+    rendered.0
 }
 
 /// The bindings styles read as selectors: interpolated in CSS text where a

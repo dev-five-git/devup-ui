@@ -15966,6 +15966,31 @@ const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ colo
         let _proof = crate::retained_render_assertions::forwarding(source);
     }
 
+    // Only a component another module or `css` may extend takes what
+    // extending it sends
+    #[rstest]
+    #[case::rendered("export const x = <A />;", false)]
+    #[case::rendered_with_children("export const x = <A><b /></A>;", false)]
+    #[case::in_function(
+        "export function f() { let d = 'blue'; const B = styled.div`color: ${d};`; return <B />; }",
+        false
+    )]
+    #[case::exported_later("export { A };", true)]
+    #[case::exported_as("export { A as B };", true)]
+    #[case::default("export default A;", true)]
+    #[case::read_as_value("export const x = [A];", true)]
+    #[case::given_css("export const x = <A css={{ color: 'blue' }} />;", true)]
+    #[serial]
+    fn test_styled_takes_composition_only_where_reachable(
+        #[case] usage: &str,
+        #[case] composable: bool,
+    ) {
+        let code = readable_code(&format!(
+            "import {{styled}} from '@devup-ui/core'\nlet c = 'red'\nconst A = styled.div`color: ${{c}};`\n{usage}"
+        ));
+        assert_eq!(code.contains("__devupCss"), composable, "{code}");
+    }
+
     #[test]
     #[serial]
     fn test_styled_attrs_merge_in_order() {
@@ -15984,7 +16009,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
             "className: [__devupRecord2.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
             "...__devupRecord4.style, ...__devupRecord3.style",
             "= { id: __devupRecord4.id };",
-            "typeof extra === \"function\" ? extra(__devupRecord2) : extra",
+            "{ ...typeof extra === \"function\" ? extra(__devupRecord4) : extra }",
         ] {
             assert!(compact.contains(expected), "{expected}\n{code}");
         }
