@@ -473,6 +473,21 @@ impl<'s, 'a> Finder<'s, 'a> {
             .is_some_and(|symbol| self.styled.contains(&symbol))
     }
 
+    /// What the prop `name` of a component gives `value` to: the parts of a
+    /// selector, or a style the module computes from constants, which is
+    /// the class of what it computes
+    fn prop(&mut self, name: &str, value: &Expression<'a>) {
+        if name.starts_with('_') {
+            self.parts(value, false);
+        } else if !STYLE_ONLY_PROPS.contains(&name)
+            && !css::is_special_property::is_special_property(name)
+        {
+            self.exact = true;
+            self.values(value, None);
+            self.exact = false;
+        }
+    }
+
     /// The parts `css()` and `styled()` compose: rule objects, whose values
     /// are read when `rules` is set, and classes, which only rules the module
     /// computes replace
@@ -730,28 +745,13 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
                         self.parts(&spread.argument, false);
                     }
                     oxc_ast::ast::JSXAttributeItem::Attribute(attribute) => {
-                        let oxc_ast::ast::JSXAttributeName::Identifier(name) = &attribute.name
-                        else {
-                            continue;
-                        };
-                        let Some(oxc_ast::ast::JSXAttributeValue::ExpressionContainer(container)) =
-                            &attribute.value
-                        else {
-                            continue;
-                        };
-                        let Some(value) = container.expression.as_expression() else {
-                            continue;
-                        };
-                        if name.name.starts_with('_') {
-                            self.parts(value, false);
-                        } else if !STYLE_ONLY_PROPS.contains(&name.name.as_str())
-                            && !css::is_special_property::is_special_property(&name.name)
+                        if let oxc_ast::ast::JSXAttributeName::Identifier(name) = &attribute.name
+                            && let Some(oxc_ast::ast::JSXAttributeValue::ExpressionContainer(
+                                container,
+                            )) = &attribute.value
+                            && let Some(value) = container.expression.as_expression()
                         {
-                            // A style prop the module computes from constants
-                            // is the class of what it computes.
-                            self.exact = true;
-                            self.values(value, None);
-                            self.exact = false;
+                            self.prop(&name.name, value);
                         }
                     }
                 }

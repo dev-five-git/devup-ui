@@ -246,19 +246,17 @@ fn head<'s, 'a>(statement: &'s mut Statement<'a>) -> Option<(&'s mut Expression<
 }
 
 /// The names a generated call declares once unwrapped, when it can be
-fn candidate(value: &Expression<'_>, alone: bool) -> Option<std::vec::Vec<String>> {
-    let Expression::CallExpression(call) = parenthesized(value) else {
+fn candidate(value: &mut Expression<'_>, alone: bool) -> Option<std::vec::Vec<String>> {
+    let call = generated_call(value)?;
+    if call.optional || call.arguments.iter().any(Argument::is_spread) {
         return None;
-    };
-    let Expression::ArrowFunctionExpression(arrow) = parenthesized(&call.callee) else {
-        return None;
-    };
-    if call.optional
-        || arrow.span != SPAN
+    }
+    let count = call.arguments.len();
+    let arrow = called_arrow(&mut call.callee)?;
+    if arrow.span != SPAN
         || arrow.r#async
         || arrow.params.rest.is_some()
-        || arrow.params.items.len() != call.arguments.len()
-        || call.arguments.iter().any(Argument::is_spread)
+        || arrow.params.items.len() != count
     {
         return None;
     }
@@ -272,17 +270,14 @@ fn candidate(value: &Expression<'_>, alone: bool) -> Option<std::vec::Vec<String
         }
         names.push(id.name.to_string());
     }
-    let returned = match &arrow.body {
+    let returned = match &mut arrow.body {
         ArrowFunctionBody::FunctionBody(body) => {
-            let (Statement::ReturnStatement(returned), declarations) =
-                body.statements.split_last()?
-            else {
-                return None;
-            };
             if !body.directives.is_empty() {
                 return None;
             }
-            for statement in declarations {
+            let (last, declarations) = body.statements.split_last_mut()?;
+            let returned = return_value(last)?.as_ref()?;
+            for statement in &*declarations {
                 let Statement::VariableDeclaration(declaration) = statement else {
                     return None;
                 };
@@ -296,7 +291,7 @@ fn candidate(value: &Expression<'_>, alone: bool) -> Option<std::vec::Vec<String
                     names.push(id.name.to_string());
                 }
             }
-            returned.argument.as_ref()?
+            returned
         }
         body => body.as_expression()?,
     };
@@ -359,13 +354,9 @@ fn unwrap_call<'a>(
     value: &mut Expression<'a>,
     declaration: bool,
 ) -> Option<Vec<'a, Statement<'a>>> {
-    let Expression::CallExpression(call) = parenthesized_mut(value) else {
-        return None;
-    };
+    let call = generated_call(value)?;
     let arguments = call.arguments.take_in(ast);
-    let Expression::ArrowFunctionExpression(arrow) = parenthesized_mut(&mut call.callee) else {
-        return None;
-    };
+    let arrow = called_arrow(&mut call.callee)?;
     let mut declarators = Vec::new_in(ast);
     for (parameter, argument) in arrow.params.items.iter().zip(arguments) {
         declarators.push(VariableDeclarator::new(
@@ -378,12 +369,11 @@ fn unwrap_call<'a>(
         ));
     }
     let (mut body, returned) = match arrow.body.take_in(ast) {
-        ArrowFunctionBody::FunctionBody(mut body) => match body.statements.pop() {
-            Some(Statement::ReturnStatement(mut returned)) => {
-                (body.statements.take_in(ast), returned.argument.take()?)
-            }
-            _ => return None,
-        },
+        ArrowFunctionBody::FunctionBody(mut body) => {
+            let returned = body.statements.last_mut().and_then(return_value)?.take()?;
+            body.statements.pop();
+            (body.statements.take_in(ast), returned)
+        }
         body => (Vec::new_in(ast), body.into_expression()),
     };
     *value = if declaration {
@@ -403,6 +393,34 @@ fn unwrap_call<'a>(
     }
     statements.append(&mut body);
     Some(statements)
+}
+
+/// The call `value` makes
+fn generated_call<'s, 'a>(value: &'s mut Expression<'a>) -> Option<&'s mut CallExpression<'a>> {
+    match parenthesized_mut(value) {
+        Expression::CallExpression(call) => Some(call),
+        _ => None,
+    }
+}
+
+/// The arrow `callee` is
+fn called_arrow<'s, 'a>(
+    callee: &'s mut Expression<'a>,
+) -> Option<&'s mut ArrowFunctionExpression<'a>> {
+    match parenthesized_mut(callee) {
+        Expression::ArrowFunctionExpression(arrow) => Some(arrow),
+        _ => None,
+    }
+}
+
+/// What the return `statement` returns
+fn return_value<'s, 'a>(
+    statement: &'s mut Statement<'a>,
+) -> Option<&'s mut Option<Expression<'a>>> {
+    match statement {
+        Statement::ReturnStatement(returned) => Some(&mut returned.argument),
+        _ => None,
+    }
 }
 
 /// `value`, without taking the name of the binding it initializes

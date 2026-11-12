@@ -117,6 +117,7 @@ fn unwrap_with(source: &str, source_type: SourceType) -> String {
 )]
 #[case::empty_return("(() => { return; })();", "(() => {\n\treturn;\n})();\n")]
 #[case::no_return("(() => {})();", "(() => {})();\n")]
+#[case::statement_last("(() => { a(); })();", "(() => {\n\ta();\n})();\n")]
 #[case::directive_body(
     "(() => { 'use strict'; return f(); })();",
     "(() => {\n\t\"use strict\";\n\treturn f();\n})();\n"
@@ -133,6 +134,22 @@ fn generated_calls_unwrap_where_a_statement_evaluates_them_first(
 }
 
 #[rstest]
+#[case::unused_object(
+    "function f() { const __devupA = {}; return 1; }",
+    "function f() {
+	return 1;
+}
+"
+)]
+#[case::written_in_pattern(
+    "function f(p) { const __devupA = p; ({ p } = q); return __devupA; }",
+    "function f(p) {
+	const __devupA = p;
+	({p} = q);
+	return __devupA;
+}
+"
+)]
 #[case::unused(
     "function f() { const __devupA = []; return 1; }",
     "function f() {

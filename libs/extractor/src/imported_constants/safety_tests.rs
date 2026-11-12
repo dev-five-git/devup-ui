@@ -125,3 +125,14 @@ fn nested_math_constant_when_read_by_computed_key_keeps_its_exact_value() {
         vec!["3.141592653589793".to_string()]
     );
 }
+
+#[rstest]
+#[case::namespace("import * as ns from './m'; f(ns);", "ns")]
+#[case::changed("const o = { a: [] }; o.a = 2;", "o")]
+fn handed_values_leave_out_namespaces_and_changes(#[case] source: &str, #[case] name: &str) {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::tsx()).parse();
+    let option = ExtractOption::default();
+    let changes = ChangeCheck::new(&parsed.program, "handed.tsx", &option, None);
+    assert!(changes.handed(name).is_empty(), "{source}");
+}

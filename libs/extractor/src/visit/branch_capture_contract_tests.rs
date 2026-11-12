@@ -200,3 +200,29 @@ fn coalesce_capture_when_executed_distinguishes_falsy_values_from_null() {
         assert_eq!(actual, expected, "{literal}: {script}");
     }
 }
+
+#[rstest]
+#[case("`a`", Some(true))]
+#[case("``", Some(false))]
+#[case("'a'", Some(true))]
+#[case("''", Some(false))]
+#[case("1", Some(true))]
+#[case("0", Some(false))]
+#[case("true", Some(true))]
+#[case("false", Some(false))]
+#[case("[]", Some(true))]
+#[case("() => 0", Some(true))]
+#[case("a + b", Some(false))]
+#[case("-a", Some(false))]
+#[case("void a", None)]
+#[case("a", None)]
+fn literals_tell_whether_they_are_defined_and_truthy(
+    #[case] source: &str,
+    #[case] expected: Option<bool>,
+) {
+    let arena = Allocator::default();
+    let value = Parser::new(&arena, source, SourceType::tsx())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(defined(&value), expected);
+}

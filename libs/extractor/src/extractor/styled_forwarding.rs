@@ -118,3 +118,20 @@ pub(crate) fn without_props<'a>(
         &[props],
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::without_props;
+    use oxc_allocator::Allocator;
+    use oxc_ast::{ast::Expression, builder::AstBuilder};
+    use oxc_span::SPAN;
+
+    #[test]
+    fn nothing_withheld_keeps_the_props() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let props = Expression::new_identifier(SPAN, "props", &builder);
+        let kept = without_props(&builder, props, &[]);
+        assert!(matches!(kept, Expression::Identifier(id) if id.name == "props"));
+    }
+}

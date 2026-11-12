@@ -9,8 +9,8 @@ use oxc_ast::{
         ArrayExpressionElement, ArrowFunctionBody, ArrowFunctionExpression, AssignmentOperator,
         AssignmentTarget, AssignmentTargetMaybeDefault, AssignmentTargetProperty,
         AssignmentTargetPropertyIdentifier, BindingPattern, BindingProperty, BindingRestElement,
-        Expression, IdentifierReference, SimpleAssignmentTarget, Statement,
-        VariableDeclarationKind, VariableDeclarator,
+        Expression, Ident, IdentifierReference, ObjectAssignmentTarget, PropertyKey,
+        SimpleAssignmentTarget, Statement, VariableDeclarationKind, VariableDeclarator,
     },
     builder::AstBuilder,
 };
@@ -238,44 +238,13 @@ fn split<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>) {
             }
             _ => None,
         };
-        let Some(value) = value.and_then(head_sequence) else {
+        let Some((parts, unbound)) = value
+            .and_then(head_sequence)
+            .and_then(|value| unsequence(ast, value, alone))
+        else {
             index += 1;
             continue;
         };
-        let Expression::SequenceExpression(sequence) = value else {
-            index += 1;
-            continue;
-        };
-        let Some(tail) = sequence.expressions.last().map(unwrap_syntax_only) else {
-            index += 1;
-            continue;
-        };
-        // A string alone in a statement could read as a directive.
-        if alone && matches!(tail, Expression::StringLiteral(_)) {
-            index += 1;
-            continue;
-        }
-        // An anonymous definition read through a sequence is not named after its binding.
-        let unbound = matches!(
-            tail,
-            Expression::ArrowFunctionExpression(_)
-                | Expression::FunctionExpression(_)
-                | Expression::ClassExpression(_)
-        );
-        let mut parts: std::vec::Vec<_> = sequence.expressions.drain(..).collect();
-        let Some(tail) = parts.pop() else {
-            index += 1;
-            continue;
-        };
-        *value = if unbound {
-            crate::utils::unbound_value(ast, tail)
-        } else {
-            tail
-        };
-        let parts: std::vec::Vec<_> = parts
-            .into_iter()
-            .filter(|part| !unwrap_syntax_only(part).is_literal())
-            .collect();
         let count = parts.len();
         for (offset, part) in parts.into_iter().enumerate() {
             statements.insert(
@@ -286,6 +255,44 @@ fn split<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>) {
         // What the sequence ended with may be another sequence to split.
         index += count + usize::from(unbound);
     }
+}
+
+/// The parts the sequence `value` runs before its last, which `value` is left
+/// as, and whether that last is a definition no longer named after a binding
+fn unsequence<'a>(
+    ast: &AstBuilder<'a>,
+    value: &mut Expression<'a>,
+    alone: bool,
+) -> Option<(std::vec::Vec<Expression<'a>>, bool)> {
+    // A string alone in a statement could read as a directive.
+    if let Expression::SequenceExpression(sequence) = value
+        && !(alone
+            && matches!(
+                sequence.expressions.last().map(unwrap_syntax_only),
+                Some(Expression::StringLiteral(_))
+            ))
+        && let Some(tail) = sequence.expressions.pop()
+    {
+        // An anonymous definition read through a sequence is not named after its binding.
+        let unbound = matches!(
+            unwrap_syntax_only(&tail),
+            Expression::ArrowFunctionExpression(_)
+                | Expression::FunctionExpression(_)
+                | Expression::ClassExpression(_)
+        );
+        let parts = sequence
+            .expressions
+            .drain(..)
+            .filter(|part| !unwrap_syntax_only(part).is_literal())
+            .collect();
+        *value = if unbound {
+            crate::utils::unbound_value(ast, tail)
+        } else {
+            tail
+        };
+        return Some((parts, unbound));
+    }
+    None
 }
 
 /// The sequence that `value` evaluates before anything else in it
@@ -493,38 +500,32 @@ fn omit_ahead<'a>(ast: &AstBuilder<'a>, statements: &mut Vec<'a, Statement<'a>>)
         .map(str::to_string)
         .collect();
     let mut hoisted = std::vec::Vec::new();
-    let Some(Statement::ReturnStatement(returned)) = statements.last_mut() else {
-        return;
-    };
-    let Some(argument) = returned.argument.as_mut() else {
-        return;
-    };
-    rewrite_expression(argument, &mut |value| {
-        if matches!(
-            value,
-            Expression::ArrowFunctionExpression(_)
-                | Expression::FunctionExpression(_)
-                | Expression::ClassExpression(_)
-        ) {
-            return true;
-        }
-        let Some(pattern) = omission(ast, value, &rests, &slots, &uses) else {
-            return false;
-        };
-        let Expression::SequenceExpression(sequence) = value else {
-            return false;
-        };
-        let Some(read) = sequence.expressions.pop() else {
-            return false;
-        };
-        let source = match sequence.expressions.pop() {
-            Some(Expression::AssignmentExpression(mut assignment)) => assignment.right.take_in(ast),
-            _ => return false,
-        };
-        hoisted.push((pattern, source));
-        *value = read;
-        true
-    });
+    if let Some(Statement::ReturnStatement(returned)) = statements.last_mut()
+        && let Some(argument) = returned.argument.as_mut()
+    {
+        rewrite_expression(argument, &mut |value| {
+            if matches!(
+                value,
+                Expression::ArrowFunctionExpression(_)
+                    | Expression::FunctionExpression(_)
+                    | Expression::ClassExpression(_)
+            ) {
+                return true;
+            }
+            let Some(pattern) = omission(ast, value, &rests, &slots, &uses) else {
+                return false;
+            };
+            if let Expression::SequenceExpression(sequence) = value
+                && let Some(read) = sequence.expressions.pop()
+                && let Some(Expression::AssignmentExpression(mut assignment)) =
+                    sequence.expressions.pop()
+            {
+                hoisted.push((pattern, assignment.right.take_in(ast)));
+                *value = read;
+            }
+            true
+        });
+    }
     for (pattern, source) in hoisted {
         let mut names = FxHashSet::default();
         bound(&pattern, &mut names);
@@ -558,9 +559,6 @@ fn omission<'a>(
     let Expression::Identifier(source) = unwrap_syntax_only(&assignment.right) else {
         return None;
     };
-    let AssignmentTarget::ObjectAssignmentTarget(target) = &assignment.left else {
-        return None;
-    };
     let slot = |name: &str| slots.contains(name) && uses.writes(name) == 1;
     if assignment.operator != AssignmentOperator::Assign
         || !rests.contains(source.name.as_str())
@@ -569,28 +567,23 @@ fn omission<'a>(
     {
         return None;
     }
-    let rest = target.rest.as_ref()?;
-    let AssignmentTarget::AssignmentTargetIdentifier(rest) = &rest.target else {
-        return None;
-    };
-    if rest.name != read.name || !slot(rest.name.as_str()) {
+    let target = object_target(&assignment.left)?;
+    let rest = rest_name(target)?;
+    if rest != read.name
+        || !slot(rest.as_str())
+        || !target
+            .properties
+            .iter()
+            .all(|property| property_name(property).is_some_and(|(_, id)| slot(id.as_str())))
+    {
         return None;
     }
     let mut properties = Vec::new_in(ast);
-    for property in &target.properties {
-        let AssignmentTargetProperty::AssignmentTargetPropertyProperty(property) = property else {
-            return None;
-        };
-        let AssignmentTargetMaybeDefault::AssignmentTargetIdentifier(id) = &property.binding else {
-            return None;
-        };
-        if property.computed || !slot(id.name.as_str()) {
-            return None;
-        }
+    for (key, id) in target.properties.iter().filter_map(property_name) {
         properties.push(BindingProperty::new(
             SPAN,
-            property.name.clone_in(ast.allocator()),
-            BindingPattern::new_binding_identifier(SPAN, id.name, ast),
+            key.clone_in(ast.allocator()),
+            BindingPattern::new_binding_identifier(SPAN, id, ast),
             false,
             false,
             ast,
@@ -601,11 +594,49 @@ fn omission<'a>(
         properties,
         Some(BindingRestElement::boxed(
             SPAN,
-            BindingPattern::new_binding_identifier(SPAN, rest.name, ast),
+            BindingPattern::new_binding_identifier(SPAN, rest, ast),
             ast,
         )),
         ast,
     ))
+}
+
+/// The object pattern `target` assigns
+fn object_target<'s, 'a>(
+    target: &'s AssignmentTarget<'a>,
+) -> Option<&'s ObjectAssignmentTarget<'a>> {
+    match target {
+        AssignmentTarget::ObjectAssignmentTarget(target) => Some(target),
+        _ => None,
+    }
+}
+
+/// The name the rest of the object pattern `target` assigns
+fn rest_name<'a>(target: &ObjectAssignmentTarget<'a>) -> Option<Ident<'a>> {
+    match &target.rest.as_ref()?.target {
+        AssignmentTarget::AssignmentTargetIdentifier(rest) => Some(rest.name),
+        _ => None,
+    }
+}
+
+/// The key of `property` and the name it assigns, where it assigns a name
+/// under a key written as is
+fn property_name<'s, 'a>(
+    property: &'s AssignmentTargetProperty<'a>,
+) -> Option<(&'s PropertyKey<'a>, Ident<'a>)> {
+    match property {
+        AssignmentTargetProperty::AssignmentTargetPropertyProperty(property)
+            if !property.computed =>
+        {
+            match &property.binding {
+                AssignmentTargetMaybeDefault::AssignmentTargetIdentifier(id) => {
+                    Some((&property.name, id.name))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 /// `let x = value; let pattern = x;` as `let pattern = value;` where nothing
@@ -629,10 +660,9 @@ fn single_use(statements: &mut Vec<'_, Statement<'_>>) {
             index += 1;
             continue;
         }
-        let Statement::VariableDeclaration(mut declaration) = statements.remove(index) else {
-            continue;
-        };
-        if let Statement::VariableDeclaration(next) = &mut statements[index] {
+        if let Statement::VariableDeclaration(mut declaration) = statements.remove(index)
+            && let Statement::VariableDeclaration(next) = &mut statements[index]
+        {
             next.declarations[0].init = declaration.declarations[0].init.take();
         }
     }

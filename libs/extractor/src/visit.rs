@@ -1882,11 +1882,6 @@ impl<'a> DevupVisitor<'a> {
 
     /// The styles of the classes the file knows that `class_name` always holds
     fn class_styles(&self, class_name: &Expression<'a>) -> Vec<ExtractStyleValue> {
-        if let Expression::Identifier(identifier) = unwrap_syntax_only(class_name)
-            && let Some(styles) = self.captured_class_styles.get(identifier.name.as_str())
-        {
-            return styles.clone();
-        }
         match unwrap_syntax_only(class_name) {
             Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
                 let mut styles = self.class_styles(&binary.left);
@@ -1899,11 +1894,21 @@ impl<'a> DevupVisitor<'a> {
                 .flat_map(|class| self.class_styles(class))
                 .collect(),
             class => self
-                .style_values
-                .styles(class)
+                .captured_class(class)
+                .or_else(|| self.style_values.styles(class))
                 .map(<[ExtractStyleValue]>::to_vec)
                 .unwrap_or_default(),
         }
+    }
+
+    /// The styles of the class a captured name holds
+    fn captured_class(&self, class: &Expression<'a>) -> Option<&[ExtractStyleValue]> {
+        let Expression::Identifier(identifier) = class else {
+            return None;
+        };
+        self.captured_class_styles
+            .get(identifier.name.as_str())
+            .map(Vec::as_slice)
     }
 
     /// The classes and CSS variables `props` compile to, which an element

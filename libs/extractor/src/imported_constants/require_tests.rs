@@ -96,3 +96,17 @@ fn unbound_require_when_reading_module_constants_still_loads() {
         output.code
     );
 }
+
+#[test]
+#[serial]
+fn commonjs_exports_the_build_cannot_read_give_no_value() {
+    let (_, output) = require_probe("module.exports = load(); exports.COLOR = 'green';");
+    let output = output.unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        !output.styles.iter().any(
+            |style| matches!(style, ExtractStyleValue::Static(style) if style.value == "green")
+        ),
+        "{}",
+        output.code
+    );
+}

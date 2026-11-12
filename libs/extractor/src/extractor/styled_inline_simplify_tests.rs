@@ -153,3 +153,40 @@ fn simplified(source: &str, parameters: &[&str]) -> String {
 fn compiler_owned_renderers_shrink(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(simplified(source, &["p"]), expected, "{source}");
 }
+
+#[rstest]
+#[case::omitted("({ theme: o, ...d } = rest, d)", true)]
+#[case::computed_key("({ [k]: o, ...d } = rest, d)", false)]
+#[case::default_value("({ theme: o = 1, ...d } = rest, d)", false)]
+#[case::shorthand("({ o, ...d } = rest, d)", false)]
+#[case::not_a_slot("({ theme: x, ...d } = rest, d)", false)]
+#[case::rest_not_a_slot("({ theme: o, ...x } = rest, x)", false)]
+#[case::other_read("({ theme: o, ...d } = rest, o)", false)]
+#[case::member_rest("({ theme: o, ...q.d } = rest, d)", false)]
+#[case::no_rest("({ theme: o } = rest, d)", false)]
+#[case::array_target("([o, ...d] = rest, d)", false)]
+fn omissions_bind_only_slots_under_keys_written_as_is(#[case] source: &str, #[case] omitted: bool) {
+    let arena = Allocator::default();
+    let source = format!("let o; let d; f({source});");
+    let program = Parser::new(&arena, &source, SourceType::mjs())
+        .parse()
+        .program;
+    let Some(Statement::ExpressionStatement(statement)) = program.body.last() else {
+        panic!("expected a call")
+    };
+    let Expression::CallExpression(call) = &statement.expression else {
+        panic!("expected a call")
+    };
+    let value = call.arguments[0]
+        .as_expression()
+        .unwrap_or_else(|| panic!("expected a value"));
+    let rests = FxHashSet::from_iter(["rest".to_string()]);
+    let slots = FxHashSet::from_iter(["o".to_string(), "d".to_string()]);
+    let uses = Uses::of(&program.body);
+    let ast = AstBuilder::new(&arena);
+    assert_eq!(
+        omission(&ast, unwrap_syntax_only(value), &rests, &slots, &uses).is_some(),
+        omitted,
+        "{source}"
+    );
+}

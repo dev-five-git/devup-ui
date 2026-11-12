@@ -456,6 +456,19 @@ impl<'a> Known<'a> {
         }
     }
 
+    /// How many times `statements` read `symbol`
+    fn reads(&self, symbol: SymbolId, statements: &[Statement<'a>]) -> usize {
+        let mut count = Count {
+            known: self,
+            symbol,
+            reads: 0,
+        };
+        for statement in statements {
+            count.visit_statement(statement);
+        }
+        count.reads
+    }
+
     /// `const __devupA = { ... }; ... { ...__devupA }` as `{ ...{ ... } }`
     /// where nothing else reads it: building the object reads nothing that
     /// may change, so it builds the same where it is spread
@@ -485,17 +498,7 @@ impl<'a> Known<'a> {
             };
             // What is read only to be spread, the statements now read once.
             if let Some(symbol) = symbol
-                && {
-                    let mut count = Count {
-                        known: self,
-                        symbol,
-                        reads: 0,
-                    };
-                    for statement in statements.iter() {
-                        count.visit_statement(statement);
-                    }
-                    count.reads == 1
-                }
+                && self.reads(symbol, statements) == 1
                 && let (head, rest) = statements.split_at_mut(index + 1)
                 && let Statement::VariableDeclaration(declaration) = &mut head[index]
                 && let Some(value) = declaration.declarations[0].init.take()

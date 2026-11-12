@@ -42,15 +42,7 @@ pub(super) fn share<'a>(
     let mut index = 0;
     let names = shared
         .iter()
-        .map(|_| {
-            loop {
-                let name = format!("{OMIT}{index}");
-                index += 1;
-                if !declared.contains(&name) {
-                    break name;
-                }
-            }
-        })
+        .map(|_| fresh(declared, &mut index))
         .collect::<std::vec::Vec<_>>();
     let mut predicates = std::vec::Vec::new();
     let mut functions = std::vec::Vec::new();
@@ -232,6 +224,17 @@ impl<'a> VisitMut<'a> for Calls<'_, 'a> {
             );
         }
     }
+}
+
+/// The first function name from `index` on the module does not declare
+fn fresh(declared: &FxHashSet<String>, index: &mut usize) -> String {
+    let mut name = format!("{OMIT}{index}");
+    while declared.contains(&name) {
+        *index += 1;
+        name = format!("{OMIT}{index}");
+    }
+    *index += 1;
+    name
 }
 
 fn code(expression: &Expression<'_>) -> String {
