@@ -126,6 +126,7 @@ fn authored_props_when_a_computed_dom_key_is_unknown_keep_its_evaluation() {
         (&ast).into(),
         object,
         &mut FxHashSet::default(),
+        &FxHashSet::default(),
         &mut |_| {},
     );
 

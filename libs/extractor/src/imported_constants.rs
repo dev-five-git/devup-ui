@@ -3059,6 +3059,25 @@ impl<'a> Inline<'_, 'a> {
                 })
     }
 
+    /// Whether a side of `value` is a proven own-data record naming styles
+    fn names_rules(&self, value: &Expression<'a>) -> bool {
+        match crate::utils::unwrap_syntax_only(value) {
+            Expression::ConditionalExpression(branch) => {
+                self.names_rules(&branch.consequent) || self.names_rules(&branch.alternate)
+            }
+            Expression::LogicalExpression(branch) => {
+                self.names_rules(&branch.left) || self.names_rules(&branch.right)
+            }
+            value => self.rules(value),
+        }
+    }
+
+    fn rules(&self, value: &Expression<'a>) -> bool {
+        (self.known_record_spread(value) || self.proven_copy(value))
+            && matches!(self.constant(value), Some(Constant::Record(entries))
+                if entries.iter().any(|(key, _)| !css::is_special_property::is_special_property(key)))
+    }
+
     /// Inline only original, proven own-data arms; an opaque local stays opaque.
     fn spread_branch(&mut self, value: &mut Expression<'a>) -> bool {
         match crate::utils::unwrap_syntax_only_mut(value) {
@@ -3077,9 +3096,7 @@ impl<'a> Inline<'_, 'a> {
                     || self.known_record_spread(value)
                     || (self.proven_copy(value)
                         && matches!(self.constant(value), Some(Constant::Record(_))));
-                let rules = (self.known_record_spread(value) || self.proven_copy(value))
-                    && matches!(self.constant(value), Some(Constant::Record(entries))
-                        if entries.iter().any(|(key, _)| !css::is_special_property::is_special_property(key)));
+                let rules = self.rules(value);
                 self.reading_objects(own, |inline| inline.visit_expression(value));
                 rules
             }
@@ -3315,10 +3332,13 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         }
         if self.styles
             && self.objects
-            && matches!(
-                crate::utils::unwrap_syntax_only(&spread.argument),
-                Expression::ConditionalExpression(_)
-            )
+            && match crate::utils::unwrap_syntax_only(&spread.argument) {
+                Expression::ConditionalExpression(_) => true,
+                // Read for the styles it may give, as `rest || styles` would
+                // otherwise hand them to the element as props
+                Expression::LogicalExpression(_) => self.names_rules(&spread.argument),
+                _ => false,
+            }
         {
             let offset = crate::utils::unwrap_syntax_only(&spread.argument)
                 .span()

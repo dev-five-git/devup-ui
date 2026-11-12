@@ -91,8 +91,10 @@ pub(super) fn hidden_styles<'a>(
             Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::Void => {}
             Expression::Identifier(name)
                 if matches!(name.name.as_str(), "undefined" | "NaN" | "Infinity") => {}
-            // Any other side gives the styles the build reads from it, or
-            // props only the running code knows
+            // Only the last expression is what spreads
+            Expression::SequenceExpression(sequence) => pending.extend(sequence.expressions.last()),
+            // Any other side holds props only the running code knows, when
+            // the build cannot read it
             value => {
                 let mut copy = value.clone_in_with_semantic_ids(inputs.ast.allocator());
                 let styles = extract_style_from_expression(
@@ -109,8 +111,6 @@ pub(super) fn hidden_styles<'a>(
                     .any(|style| matches!(style, ExtractStyleProp::Unreadable { .. }))
                 {
                     unknown.get_or_insert(value);
-                } else if !styles.is_empty() {
-                    styled = true;
                 }
             }
         }
@@ -129,9 +129,15 @@ fn names_styles<'a>(inputs: StyleInputs<'_, 'a>, object: &ObjectExpression<'a>) 
                 && !property.method
                 && get_str_by_property_key(&property.key).is_some())
     });
-    !extract_props(inputs, &mut known, &mut FxHashSet::default(), &mut |_| {})
-        .styles
-        .is_empty()
+    !extract_props(
+        inputs,
+        &mut known,
+        &mut FxHashSet::default(),
+        &FxHashSet::default(),
+        &mut |_| {},
+    )
+    .styles
+    .is_empty()
 }
 
 /// `on && { … }` spreads what `on ? { … } : null` does, as a falsy left side is
@@ -280,18 +286,39 @@ pub(super) fn retains_target(
     }
 }
 
-/// Extract only authored properties; opaque spreads never enter the style extractor.
+/// Extract only authored properties and the conditional rules starting at
+/// `branches`; opaque spreads never enter the style extractor.
 pub(super) fn extract_props<'a>(
     inputs: StyleInputs<'_, 'a>,
     object: &mut ObjectExpression<'a>,
     written: &mut FxHashSet<Cow<'a, str>>,
+    branches: &FxHashSet<u32>,
     prepare: &mut impl FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
     let ast = inputs.ast;
     let mut result = ExtractResult::default();
     for index in (0..object.properties.len()).rev() {
-        let ObjectPropertyKind::ObjectProperty(property) = &object.properties[index] else {
-            continue;
+        let property = match &mut object.properties[index] {
+            ObjectPropertyKind::SpreadProperty(spread) if branches.contains(&spread.span.start) => {
+                result.styles.extend(
+                    extract_with_policy::<false>(
+                        inputs,
+                        None,
+                        &mut spread.argument,
+                        0,
+                        &None,
+                        LiteralHandling::ExpandResponsiveThemeToken,
+                        prepare,
+                    )
+                    .styles,
+                );
+                if !has_runtime_props(&spread.argument) {
+                    object.properties.remove(index);
+                }
+                continue;
+            }
+            ObjectPropertyKind::SpreadProperty(_) => continue,
+            ObjectPropertyKind::ObjectProperty(property) => property,
         };
         let Some(key) = get_str_by_property_key(&property.key) else {
             continue;

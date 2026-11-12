@@ -14,22 +14,25 @@ use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKin
 use rustc_hash::FxHashSet;
 
 impl<'a> DevupVisitor<'a> {
-    fn property_items(&self, object: &ObjectExpression<'a>, kept: &FxHashSet<String>) -> Vec<Item> {
+    fn property_items(
+        &self,
+        object: &ObjectExpression<'a>,
+        kept: &FxHashSet<String>,
+        css_only: bool,
+    ) -> Vec<Item> {
         let mut written = FxHashSet::default();
         let mut items = Vec::new();
         for property in object.properties.iter().rev() {
             let item = match property {
                 ObjectPropertyKind::SpreadProperty(spread) => {
                     written.extend(written_properties(&spread.argument));
+                    let branch = !css_only && self.is_rule_branch(&spread.argument);
+                    let unknown = is_unknown_spread(&spread.argument) && !branch;
                     Item {
-                        role: if is_unknown_spread(&spread.argument) {
-                            Role::Stays
-                        } else {
-                            Role::Moved
-                        },
+                        role: if unknown { Role::Stays } else { Role::Moved },
                         reach: reach(&self.bindings, &spread.argument),
-                        lost: !is_unknown_spread(&spread.argument),
-                        snapshot: is_unknown_spread(&spread.argument),
+                        lost: !unknown && !branch,
+                        snapshot: unknown,
                         suspends: suspends(&spread.argument),
                     }
                 }
@@ -111,7 +114,7 @@ impl<'a> DevupVisitor<'a> {
             flatten_known(&self.ast, object);
         }
         let css_entry = css_element.and_then(|_| object.properties.iter().rposition(|property| matches!(property, ObjectPropertyKind::ObjectProperty(property) if !property.computed && property.key.static_name().is_some_and(|key|key=="css"))));
-        let items = self.property_items(object, kept);
+        let items = self.property_items(object, kept, css_only);
         for property in &mut object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property
                 && property.key.static_name().is_none_or(|key| key != "css")
@@ -148,6 +151,13 @@ impl<'a> DevupVisitor<'a> {
             }
             let mut captured = Vec::new();
             match property {
+                ObjectPropertyKind::SpreadProperty(spread)
+                    if !css_only && self.is_rule_branch(&spread.argument) =>
+                {
+                    if !super::element_props::unreadable_branch(&spread.argument) {
+                        self.capture_shape(&mut spread.argument, &mut captured);
+                    }
+                }
                 ObjectPropertyKind::SpreadProperty(spread) => {
                     let name = self.names.fresh("__devupSpread");
                     if unsafe_to_extract(&spread.argument) {

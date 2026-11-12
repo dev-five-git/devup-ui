@@ -4683,6 +4683,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let mut props_styles = vec![];
                 let ast = AstBuilder::new(self.ast.allocator());
                 let absence = self.style_values.absence_proof();
+                let mut branches = FxHashSet::default();
+                if let Expression::ObjectExpression(object) =
+                    unwrap_syntax_only_mut(it.arguments[1].to_expression_mut())
+                {
+                    for property in &mut object.properties {
+                        if let ObjectPropertyKind::SpreadProperty(spread) = property
+                            && self.is_rule_branch(&spread.argument)
+                        {
+                            self.style_values.read_in(&self.ast, &mut spread.argument);
+                            crate::style_order_validation::validate_rules(
+                                &spread.argument,
+                                &self.style_values,
+                                &mut self.errors,
+                            );
+                            branches.insert(spread.span.start);
+                        }
+                    }
+                }
                 let ExtractResult {
                     styles,
                     tag: _tag,
@@ -4694,6 +4712,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         StyleInputs::with_values(&ast, &absence),
                         object,
                         &mut FxHashSet::default(),
+                        &branches,
                         &mut |value| match value {
                             Expression::Identifier(_) => {}
                             _ => self.visit_expression(value),
@@ -5409,6 +5428,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             StyleInputs::with_values(&self.ast, &self.style_values),
                             object,
                             &mut duplicate_set,
+                            &FxHashSet::default(),
                             &mut |_| {},
                         );
                         if matches!(parsed_style_order, ParsedStyleOrder::None) {

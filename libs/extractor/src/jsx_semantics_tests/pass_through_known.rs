@@ -110,6 +110,11 @@ fn conditional_props_without_a_proven_rule_owner_keep_raw_values(
 #[case("cond ? knownImport : rest", "cannot use `rest`")]
 #[case(concat!("rest || {", "p:1}"), "cannot use `rest`")]
 #[case(concat!("cond && {", "p:1,...rest}"), crate::utils::SPREAD_KEYS)]
+#[case("rest || knownImport", "cannot use `rest`")]
+#[case("rest ?? knownImport", "cannot use `rest`")]
+#[case("rest || (knownImport || null)", "cannot use `rest`")]
+#[case("rest || (cond ? knownImport : null)", "cannot use `rest`")]
+#[case(concat!("rest || (cond, {", "p:1})"), "cannot use `rest`")]
 #[serial]
 fn conditional_props_with_styles_next_to_runtime_props_are_build_errors(
     #[case] branch: &str,
@@ -126,14 +131,42 @@ fn conditional_props_with_styles_next_to_runtime_props_are_build_errors(
     assert_eq!(error.lines().count(), 1, "{error}");
 }
 
+// `jsx()` reads a conditional spread as JSX does
+#[rstest]
+#[case(concat!("cond ? {", "p:1} : rest"), "cannot use `rest`")]
+#[case(concat!("rest || {", "p:1}"), "cannot use `rest`")]
+#[case(concat!("cond ? {", "p:1} : other"), "cannot use `other`")]
+#[serial]
+fn called_conditional_props_with_styles_next_to_runtime_props_are_build_errors(
+    #[case] branch: &str,
+    #[case] message: &str,
+) {
+    let source = format!(
+        "{BOX}{JSX_RUNTIME}import {{other}} from './other';export const render=(cond,rest)=>jsx(Box,{{...({branch})}});"
+    );
+    let error = compile(&source)
+        .err()
+        .unwrap_or_else(|| panic!("{branch} compiles"));
+    assert!(error.contains(message), "{error}");
+    assert_eq!(error.lines().count(), 1, "{error}");
+}
+
 // `cond && { … }` spreads what `cond ? { … } : null` does
 #[rstest]
 #[case(concat!("cond && {", "p:1}"))]
 #[case(concat!("cond ? {", "p:1} : null"))]
 #[case(concat!("(cond) && ({", "p:1})"))]
 #[serial]
-fn conditional_style_objects_alone_compile_to_classes(#[case] branch: &str) {
-    let source = format!("{BOX}{JSX_RUNTIME}export const render=(cond)=><Box {{...({branch})}}/>;");
+fn conditional_style_objects_alone_compile_to_classes(
+    #[case] branch: &str,
+    #[values(false, true)] called: bool,
+) {
+    let element = if called {
+        format!("jsx(Box,{{...({branch})}})")
+    } else {
+        format!("<Box {{...({branch})}}/>")
+    };
+    let source = format!("{BOX}{JSX_RUNTIME}export const render=(cond)=>{element};");
     let compiled = output(&source);
     assert_eq!(
         static_styles(&compiled),
@@ -150,6 +183,71 @@ fn conditional_style_objects_alone_compile_to_classes(#[case] branch: &str) {
     );
     let off = whole::evaluate(&source, "render(0)");
     assert_eq!(off.element["props"]["className"].as_str().unwrap_or(""), "");
+}
+
+// The props a conditional names next to its styles still reach the element
+#[rstest]
+#[case(concat!("jsx(Box,{m:1,...(cond && {", "p:1,id:cond}),bg:'red'})"))]
+#[case(concat!("<Box m={1} {...(cond && {", "p:1,id:cond})} bg='red'/>"))]
+#[serial]
+fn conditional_props_next_to_styles_reach_the_element(#[case] element: &str) {
+    let source = format!("{BOX}{JSX_RUNTIME}export const render=(cond)=>{element};");
+    let compiled = output(&source);
+    assert_eq!(
+        static_styles(&compiled),
+        vec![
+            ("background".into(), "red".into()),
+            ("margin".into(), "4px".into()),
+            ("padding".into(), "4px".into())
+        ]
+    );
+    let on = whole::evaluate(&source, "render('kept')");
+    assert_eq!(on.element["props"]["id"], "kept", "{}", compiled.code);
+    assert!(on.element["props"]["p"].is_null(), "{}", compiled.code);
+    let classes = |actual: &whole::Evaluation| {
+        actual.element["props"]["className"]
+            .as_str()
+            .unwrap_or("")
+            .split_whitespace()
+            .count()
+    };
+    assert_eq!(classes(&on), 3, "{}", compiled.code);
+    let off = whole::evaluate(&source, "render(0)");
+    assert!(off.element["props"]["id"].is_null(), "{}", compiled.code);
+    assert_eq!(classes(&off), 2, "{}", compiled.code);
+}
+
+// An imported style object behind a guard is read as a written one; one
+// naming no styles is spread as written
+#[rstest]
+#[case("cond && knownImport", true)]
+#[case("rest || idOnly", false)]
+#[serial]
+fn imported_objects_behind_a_guard_are_read_for_their_styles(
+    #[case] branch: &str,
+    #[case] styled: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!(
+        "{BOX}import {{styles as knownImport, id as idOnly}} from './known';export const render=(cond,rest)=><Box {{...({branch})}}/>;"
+    );
+    let compiled = compile_imported_spread(
+        &source,
+        "export const styles = { bg: 'red' }; export const id = { id: 'kept' }",
+        single_css,
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        static_styles(&compiled),
+        if styled {
+            vec![("background".into(), "red".into())]
+        } else {
+            vec![]
+        },
+        "{}",
+        compiled.code
+    );
+    assert_eq!(compiled.code.contains(branch), !styled, "{}", compiled.code);
 }
 
 #[rstest]
