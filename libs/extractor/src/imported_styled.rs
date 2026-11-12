@@ -1009,7 +1009,7 @@ mod tests {
         .unwrap();
         // Then
         assert!(output.code.contains("DevupAs = \"div\""), "{}", output.code);
-        assert!(output.code.contains("id: \"known\""), "{}", output.code);
+        assert!(output.code.contains("id=\"known\""), "{}", output.code);
         assert_eq!(output.styles.len(), 2);
         assert_eq!(output.dependencies, ["/src/base.ts"]);
     }

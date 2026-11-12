@@ -1,16 +1,16 @@
 ---
 source: libs/extractor/src/lib.rs
-assertion_line: 22111
+assertion_line: 22109
 expression: outputs
 ---
 [
     (
         "export const A = styled(motion.div)`color: red;`;",
-        "export const A = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = motion.div, forwardedAs, ...rest } = __devupRefProps;\n\trest.ref = __devupRef;\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />;\n});",
+        "export const A = __devupForwardRef(({ style, className, as: DevupAs = motion.div, forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />);",
     ),
     (
         "export const B = styled((Motion as any).Div.Inner)({ color: 'red' });",
-        "export const B = __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = (Motion as any).Div.Inner, forwardedAs, ...rest } = __devupRefProps;\n\trest.ref = __devupRef;\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />;\n});",
+        "export const B = __devupForwardRef(({ style, className, as: DevupAs = (Motion as any).Div.Inner, forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />);",
     ),
     (
         "export const C = styled(forwardRef((p, r) => <div ref={r} {...p} />)).attrs({ role: 'x' })`color: red;`;",
@@ -18,10 +18,10 @@ expression: outputs
     ),
     (
         "export const D = (tag) => styled(tag, { color: 'red' });",
-        "export const D = (tag) => {\n\tconst DevupStyled = tag;\n\treturn __devupForwardRef((__devupRefProps, __devupRef) => {\n\t\tconst { style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest } = __devupRefProps;\n\t\trest.ref = __devupRef;\n\t\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a-a ${className}` : \"a-a\"} style={style} />;\n\t});\n};",
+        "export const D = (tag) => {\n\tconst DevupStyled = tag;\n\treturn __devupForwardRef(({ style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupRef} as={forwardedAs} className={className ? `a-a ${className}` : \"a-a\"} style={style} />);\n};",
     ),
     (
         "export const E = styled(getThing().div)`color: red;`;",
-        "export const E = ((DevupStyled) => __devupForwardRef((__devupRefProps, __devupRef) => {\n\tconst { style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest } = __devupRefProps;\n\trest.ref = __devupRef;\n\treturn <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />;\n}))(getThing().div);",
+        "export const E = ((DevupStyled) => __devupForwardRef(({ style, className, as: DevupAs = DevupStyled, forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a ${className}` : \"a--a a-a\"} style={style} />))(getThing().div);",
     ),
 ]

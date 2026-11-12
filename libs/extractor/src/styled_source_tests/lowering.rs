@@ -116,7 +116,10 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
     assert!(output.contains("as: \"section\""));
     assert!(output.contains("ref: callerRef"));
     assert!(output.contains("children: \"child\""));
-    assert!(output.contains("role:"));
+    assert!(
+        output.contains("role:") || output.contains("rest.role = "),
+        "{output}"
+    );
 }
 
 #[rstest]

@@ -92,7 +92,7 @@ pub(super) fn share<'a>(
 /// The value `call` filters and the predicate it filters with, when `call`
 /// is `Object.fromEntries(Object.entries(value).filter(predicate))` of a
 /// predicate reading nothing but its key
-fn filtered<'s, 'a>(
+pub(super) fn filtered<'s, 'a>(
     call: &'s CallExpression<'a>,
 ) -> Option<(&'s Expression<'a>, &'s Expression<'a>)> {
     let object_member = |callee: &Expression<'_>, property: &str| {

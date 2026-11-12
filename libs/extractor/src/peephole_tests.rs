@@ -131,8 +131,26 @@ fn fallbacks(#[case] source: &str, #[case] expected: &str) {
 #[case::void("f(void 0 ? a : b);", "f(b);\n")]
 #[case::void_text(r#"f(void "" ? a : b);"#, "f(b);\n")]
 #[case::void_value_kept("f(void x ? a : b);", "f(void x ? a : b);\n")]
-#[case::same_branches("f(__devupA ? x : x);", "f(x);\n")]
-#[case::same_branches_authored_kept("f(c ? x : x);", "f(c ? x : x);\n")]
+#[case::same_branches("const x = 1; f(__devupA ? x : x);", "const x = 1;\nf(x);\n")]
+#[case::same_branches_undeclared("f(__devupA ? x : x);", "f((__devupA, x));\n")]
+#[case::same_branches_authored("f(c ? x : x);", "f((c, x));\n")]
+#[case::same_branches_compared(
+    "function c(a, b) { return a === b ? `${a}` : `${a}`; }",
+    "function c(a, b) {\n\treturn `${a}`;\n}\n"
+)]
+#[case::same_branches_constants_kept(
+    "const a = 1, b = 2; f(a === b ? `${a}` : `${a}`);",
+    "const a = 1, b = 2;\nf((a === b, `${a}`));\n"
+)]
+#[case::same_branches_class_import_kept(
+    "import a from \"m\"; class b {} f(a === b ? `${a}` : `${a}`);",
+    "import a from \"m\";\nclass b {}\nf((a === b, `${a}`));\n"
+)]
+#[case::same_branches_loosely_compared_kept(
+    "function c(a, b) { return a == b ? `${a}` : `${a}`; }",
+    "function c(a, b) {\n\treturn a == b, `${a}`;\n}\n"
+)]
+#[case::same_elements("b ? <div /> : <div />;", "b, <div />;\n")]
 #[case::same_test_again(
     "f(__devupA ? __devupA ? a : b : __devupA ? c : d);",
     "f(__devupA ? a : d);\n"
@@ -259,6 +277,217 @@ fn shares_filters(#[case] source: &str, #[case] expected: &str) {
 }
 
 #[rstest]
+#[case::guarded(
+    "const __devupB = c ? `${c}px` : void 0; <div className={__devupB ? \"a\" : \"\"} />;",
+    "const __devupB = c ? `${c}px` : void 0;\n<div className={__devupB && \"a\"} />;\n"
+)]
+#[case::component_kept(
+    "const __devupB = c ? `${c}px` : void 0; <A className={__devupB ? \"a\" : \"\"} />;",
+    "const __devupB = c ? `${c}px` : void 0;\n<A className={__devupB ? \"a\" : \"\"} />;\n"
+)]
+#[case::maybe_empty_kept(
+    "const __devupB = c ? `${c}` : void 0; <div className={__devupB ? \"a\" : \"\"} />;",
+    "const __devupB = c ? `${c}` : void 0;\n<div className={__devupB ? \"a\" : \"\"} />;\n"
+)]
+#[case::false_kept(
+    "const __devupB = c ? \"x\" : false; <div className={__devupB ? \"a\" : \"\"} />;",
+    "const __devupB = c ? \"x\" : false;\n<div className={__devupB ? \"a\" : \"\"} />;\n"
+)]
+#[case::boolean_test_kept(
+    "<div className={a === b ? \"a\" : \"\"} />;",
+    "<div className={a === b ? \"a\" : \"\"} />;\n"
+)]
+#[case::other_attribute_kept(
+    "const __devupB = c ? `${c}px` : void 0; <div title={__devupB ? \"a\" : \"\"} />;",
+    "const __devupB = c ? `${c}px` : void 0;\n<div title={__devupB ? \"a\" : \"\"} />;\n"
+)]
+#[case::other_fallback_kept(
+    "const __devupB = c ? `${c}px` : void 0; <div className={__devupB ? \"a\" : \"b\"} id=\"x\" {...p} />;",
+    "const __devupB = c ? `${c}px` : void 0;\n<div className={__devupB ? \"a\" : \"b\"} id=\"x\" {...p} />;\n"
+)]
+#[case::assigned_kept(
+    "let __devupB = c ? `${c}px` : void 0; __devupB = 0; <div className={__devupB ? \"a\" : \"\"} />;",
+    "let __devupB = c ? `${c}px` : void 0;\n__devupB = 0;\n<div className={__devupB ? \"a\" : \"\"} />;\n"
+)]
+fn class_or_none(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::attrs(
+    "function c(__devupP, __devupR) { const __devupProps = { ...__devupP, ref: __devupR }; const { a, ...rest } = { ...__devupProps, role: \"note\" }; return rest; }",
+    "function c(__devupP, __devupR) {\n\tconst { a, ...rest } = __devupP;\n\trest.ref = __devupR;\n\trest.role = \"note\";\n\treturn rest;\n}\n"
+)]
+#[case::attrs_in_arrow(
+    "f((__devupP, __devupR) => { const __devupProps = { ...__devupP, ref: __devupR }; const { a, ...rest } = { ...__devupProps, type: \"text\", title: \"t\", type: \"password\" }; return <b {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f(({ a, ...rest }, __devupR) => <b {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupR} type=\"password\" title=\"t\" />);\n"
+)]
+#[case::read_again_kept(
+    "const __devupProps = { ...p }; const { ...rest } = { ...__devupProps, a: __devupProps.a };",
+    "const __devupProps = { ...p };\nconst { ...rest } = {\n\t...__devupProps,\n\ta: __devupProps.a\n};\n"
+)]
+#[case::not_first_kept(
+    "const __devupProps = { ...p }; const { ...rest } = { a: 1, ...__devupProps };",
+    "const __devupProps = { ...p };\nconst { ...rest } = {\n\ta: 1,\n\t...__devupProps\n};\n"
+)]
+#[case::authored_kept(
+    "const props = { ...p }; const { ...rest } = { ...props, a: 1 };",
+    "const props = { ...p };\nconst { ...rest } = {\n\t...props,\n\ta: 1\n};\n"
+)]
+#[case::let_kept(
+    "let __devupProps = { ...p }; const { ...rest } = { ...__devupProps, a: 1 };",
+    "let __devupProps = { ...p };\nconst { ...rest } = __devupProps;\nrest.a = 1;\n"
+)]
+#[case::not_spread_next_kept(
+    "const __devupProps = { ...p }; f(__devupProps); const { ...rest } = { a: 1 };",
+    "const __devupProps = { ...p };\nf(__devupProps);\nconst { ...rest } = { a: 1 };\n"
+)]
+#[case::spread_other_kept(
+    "const __devupProps = { ...p }; const { ...rest } = { ...q, a: __devupProps };",
+    "const __devupProps = { ...p };\nconst { ...rest } = {\n\t...q,\n\ta: __devupProps\n};\n"
+)]
+#[case::whole_value(
+    "const __devupProps = { ...p }; const { ...rest } = __devupProps;",
+    "const { ...rest } = { ...p };\n"
+)]
+#[case::named_function_kept(
+    "const __devupF = () => 1; const f = __devupF;",
+    "const __devupF = () => 1;\nconst f = __devupF;\n"
+)]
+#[case::not_set_next_kept(
+    "const __devupA = g(); let b; f(__devupA);",
+    "const __devupA = g();\nlet b;\nf(__devupA);\n"
+)]
+#[case::two_declarators_kept(
+    "const __devupProps = { ...p }, b = 1; const { ...rest } = { ...__devupProps }; const c = 1, d = { ...e };",
+    "const __devupProps = { ...p }, b = 1;\nconst { ...rest } = { ...__devupProps };\nconst c = 1, d = { ...e };\n"
+)]
+#[case::pattern_kept(
+    "const { __devupProps } = { ...p }; const { ...rest } = { ...__devupProps };",
+    "const { __devupProps } = { ...p };\nconst { ...rest } = { ...__devupProps };\n"
+)]
+#[case::two_declarators_next_kept(
+    "const __devupA = g(); const b = __devupA, c = 1;",
+    "const __devupA = g();\nconst b = __devupA, c = 1;\n"
+)]
+fn spreads_inline(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::filtered(
+    "f((__devupP, __devupR) => { const { style, as: A = \"div\", ...rest } = __devupP; rest.ref = __devupR; return <A {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\" && k !== \"theme\"))} style={style} />; });",
+    "f(({ style, as: A = \"div\", ...rest }, __devupR) => <A {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\" && k !== \"theme\"))} ref={__devupR} style={style} />);\n"
+)]
+#[case::kept_by_equality(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => !(k === \"x\")))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => !(k === \"x\")))} />;\n});\n"
+)]
+#[case::ref_withheld_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== \"ref\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== \"ref\"))} />;\n});\n"
+)]
+#[case::first_letter_r_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] === \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] === \"$\"))} />;\n});\n"
+)]
+#[case::rest_read_again_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k))} b={rest} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k))} b={rest} />;\n});\n"
+)]
+#[case::props_read_again_kept(
+    "f((__devupP, __devupR) => { const { a = __devupP.b, ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { a = __devupP.b, ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::ref_read_again(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} b={__devupR} />; });",
+    "f(({ ...rest }, __devupR) => <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupR} b={__devupR} />);\n"
+)]
+#[case::values(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; rest[\"aria-label\"] = \"x\"; rest.a = 1; rest.b = \"q\\\"\"; rest.a = 2; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f(({ ...rest }, __devupR) => <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={__devupR} aria-label=\"x\" a={2} b={\"q\\\"\"} />);\n"
+)]
+#[case::not_assigned_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; if (c) {} return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\tif (c) {}\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::called_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; g(); return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\tg();\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::name_assigned_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; __devupX = 1; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\t__devupX = 1;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::other_object_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; q.a = 1; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\tq.a = 1;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::not_attribute_name_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest[\"a b\"] = 1; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest[\"a b\"] = 1;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::running_value_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.a = g(); return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.a = g();\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::attribute_written_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.b = 1; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} b={2} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.b = 1;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} b={2} />;\n});\n"
+)]
+#[case::nothing_assigned_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::not_filtered_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...rest} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...rest} />;\n});\n"
+)]
+#[case::other_assignment_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.key = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.key = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::compound_assignment_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref += __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref += __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::other_value(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = 1; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} b={__devupR} />; });",
+    "f(({ ...rest }, __devupR) => <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} ref={1} b={__devupR} />);\n"
+)]
+#[case::let_kept(
+    "f((__devupP, __devupR) => { let { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tlet { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::other_init_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = q; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} b={__devupP} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = q;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} b={__devupP} />;\n});\n"
+)]
+#[case::authored_kept(
+    "f((p, r) => { const { ...rest } = p; rest.ref = r; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((p, r) => {\n\tconst { ...rest } = p;\n\trest.ref = r;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::strict_kept(
+    "f((__devupP, __devupR) => { \"use strict\"; const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; });",
+    "f((__devupP, __devupR) => {\n\t\"use strict\";\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n});\n"
+)]
+#[case::shapes_kept(
+    "f((__devupP) => 1, (__devupP, __devupR, ...__devupS) => { return 1; }, ({ a }, __devupR) => { return 1; }, (__devupP, __devupR) => 1, (__devupP, __devupR) => { return 1; }, (__devupP, __devupR) => { const a = 1, b = 2; f(); return <a />; }, (__devupP, __devupR) => { const [a] = __devupP; f(); return <a />; }, (__devupP, __devupR) => { const { a } = __devupP; f(); return <a />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; f(); return <a />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return 1; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest[r] = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k.length))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[1] !== \"$\"))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== n))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter((k) => k))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([, k]) => k))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => { return k; }))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(q).filter(([k]) => k[0] !== \"#\"))} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...g(rest)} />; }, (__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return; });",
+    "f((__devupP) => 1, (__devupP, __devupR, ...__devupS) => {\n\treturn 1;\n}, ({ a }, __devupR) => {\n\treturn 1;\n}, (__devupP, __devupR) => 1, (__devupP, __devupR) => {\n\treturn 1;\n}, (__devupP, __devupR) => {\n\tconst a = 1, b = 2;\n\tf();\n\treturn <a />;\n}, (__devupP, __devupR) => {\n\tconst [a] = __devupP;\n\tf();\n\treturn <a />;\n}, (__devupP, __devupR) => {\n\tconst { a } = __devupP;\n\tf();\n\treturn <a />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\tf();\n\treturn <a />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn 1;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest[r] = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k.length))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[1] !== \"$\"))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== n))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter((k) => k))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([, k]) => k))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => {\n\t\treturn k;\n\t}))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(q).filter(([k]) => k[0] !== \"#\"))} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...g(rest)} />;\n}, (__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn;\n});\n"
+)]
+#[case::loosely_compared_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k != \"x\"))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k != \"x\"))} />;\n});\n"
+)]
+#[case::compared_to_name_kept(
+    "f((__devupP, __devupR) => { const { ...rest } = __devupP; rest.ref = __devupR; return <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== k))} />; });",
+    "f((__devupP, __devupR) => {\n\tconst { ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn <a {...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== k))} />;\n});\n"
+)]
+fn ref_as_attribute(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
 #[case::rest(
     "function c(__devupP, __devupR) { const { a, b: d = 1, ...rest } = { ...__devupP, ref: __devupR }; return rest; }",
     "function c(__devupP, __devupR) {\n\tconst { a, b: d = 1, ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn rest;\n}\n"
@@ -279,9 +508,25 @@ fn shares_filters(#[case] source: &str, #[case] expected: &str) {
     "const { ...rest } = { ...p, ref: __devupR };",
     "const { ...rest } = {\n\t...p,\n\tref: __devupR\n};\n"
 )]
-#[case::other_key_kept(
-    "const { ...rest } = { ...__devupP, key: __devupR };",
-    "const { ...rest } = {\n\t...__devupP,\n\tkey: __devupR\n};\n"
+#[case::props(
+    "const { a, ...rest } = { ...__devupP, ref: __devupR, role: \"note\", \"data-x\": 1 };",
+    "const { a, ...rest } = __devupP;\nrest.ref = __devupR;\nrest.role = \"note\";\nrest[\"data-x\"] = 1;\n"
+)]
+#[case::named_prop_kept(
+    "const { role, ...rest } = { ...__devupP, role: \"note\" };",
+    "const { role, ...rest } = {\n\t...__devupP,\n\trole: \"note\"\n};\n"
+)]
+#[case::running_value_kept(
+    "const { ...rest } = { ...__devupP, role: g() };",
+    "const { ...rest } = {\n\t...__devupP,\n\trole: g()\n};\n"
+)]
+#[case::spread_after_kept(
+    "const { ...rest } = { ...__devupP, ...__devupQ };",
+    "const { ...rest } = {\n\t...__devupP,\n\t...__devupQ\n};\n"
+)]
+#[case::proto_kept(
+    "const { ...rest } = { ...__devupP, __proto__: null };",
+    "const { ...rest } = {\n\t...__devupP,\n\t__proto__: null\n};\n"
 )]
 #[case::getter_kept(
     "const { ...rest } = { ...__devupP, get ref() { return 1; } };",
@@ -483,48 +728,56 @@ fn array_elements(#[case] source: &str, #[case] expected: &str) {
     "function a() {\n\tconst __devupA = g();\n\treturn __devupA;\n}\nfunction b() {\n\tconst __devupA = h();\n\treturn __devupA;\n}\n"
 )]
 #[case::shadowed_kept(
-    "const __devupA = 1; const __devupB = __devupA; f(() => { const __devupA = 2; return __devupB; });",
-    "const __devupA = 1;\nconst __devupB = __devupA;\nf(() => {\n\tconst __devupA = 2;\n\treturn __devupB;\n});\n"
+    "const __devupA = 1; g(); const __devupB = __devupA; f(() => { const __devupA = 2; return __devupB; });",
+    "const __devupA = 1;\ng();\nconst __devupB = __devupA;\nf(() => {\n\tconst __devupA = 2;\n\treturn __devupB;\n});\n"
 )]
 #[case::written_kept(
     "let __devupA = g(); const __devupB = __devupA; __devupA = 1; f(__devupB);",
     "let __devupA = g();\nconst __devupB = __devupA;\n__devupA = 1;\nf(__devupB);\n"
 )]
 #[case::let_kept(
-    "const __devupA = g(); let __devupB = __devupA; f(__devupB);",
-    "const __devupA = g();\nlet __devupB = __devupA;\nf(__devupB);\n"
+    "const __devupA = g(); h(); let __devupB = __devupA; f(__devupB);",
+    "const __devupA = g();\nh();\nlet __devupB = __devupA;\nf(__devupB);\n"
 )]
 #[case::authored_kept(
-    "const __devupA = g(); const b = __devupA; f(b);",
-    "const __devupA = g();\nconst b = __devupA;\nf(b);\n"
+    "const __devupA = g(); h(); const b = __devupA; f(b);",
+    "const __devupA = g();\nh();\nconst b = __devupA;\nf(b);\n"
 )]
-#[case::authored_constant(
+#[case::constant_set_before(
+    "const a = g(); const __devupB = a; f(() => __devupB);",
+    "const a = g();\nf(() => a);\n"
+)]
+#[case::constant_of_outer_statements_kept(
     "const a = g(); function c() { const __devupB = a; return () => __devupB; }",
-    "const a = g();\nfunction c() {\n\treturn () => a;\n}\n"
+    "const a = g();\nfunction c() {\n\tconst __devupB = a;\n\treturn () => __devupB;\n}\n"
 )]
-#[case::import(
+#[case::constant_set_after_kept(
+    "function c() { const __devupB = a; return () => __devupB; } const a = g();",
+    "function c() {\n\tconst __devupB = a;\n\treturn () => __devupB;\n}\nconst a = g();\n"
+)]
+#[case::import_kept(
     "import { a } from \"m\"; const __devupB = a; f(__devupB);",
-    "import { a } from \"m\";\nf(a);\n"
+    "import { a } from \"m\";\nconst __devupB = a;\nf(__devupB);\n"
 )]
-#[case::authored_let_kept(
+#[case::let_set_before(
     "let a = g(); const __devupB = a; f(__devupB);",
-    "let a = g();\nconst __devupB = a;\nf(__devupB);\n"
+    "let a = g();\nf(a);\n"
 )]
-#[case::authored_var_kept(
+#[case::var_kept(
     "var a = g(); const __devupB = a; f(__devupB);",
     "var a = g();\nconst __devupB = a;\nf(__devupB);\n"
 )]
-#[case::parameter_kept(
+#[case::parameter(
     "function c(a) { const __devupB = a; return () => __devupB; }",
-    "function c(a) {\n\tconst __devupB = a;\n\treturn () => __devupB;\n}\n"
+    "function c(a) {\n\treturn () => a;\n}\n"
 )]
-#[case::global_kept(
-    "const __devupB = __devupA; f(__devupB);",
-    "const __devupB = __devupA;\nf(__devupB);\n"
+#[case::function(
+    "function a() {} const __devupB = a; f(__devupB);",
+    "function a() {}\nf(a);\n"
 )]
-#[case::loop_kept(
-    "const __devupA = g(); for (const __devupB = __devupA;;) f(__devupB);",
-    "const __devupA = g();\nfor (const __devupB = __devupA;;) f(__devupA);\n"
+#[case::constant_same_statement(
+    "const a = g(), __devupB = a; f(__devupB);",
+    "const a = g();\nf(a);\n"
 )]
 fn aliases(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(simplified(source), expected, "{source}");

@@ -1,5 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
+assertion_line: 22072
 expression: outputs
 ---
 [
@@ -9,7 +10,7 @@ expression: outputs
     ),
     (
         "<Box as={b ? false : ''} />",
-        "b ? <div /> : <div />;",
+        "b, <div />;",
     ),
     (
         "<Box as={motion.div} p={1} />",

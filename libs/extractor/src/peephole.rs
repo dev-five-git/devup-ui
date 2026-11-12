@@ -19,6 +19,22 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Write what `program` writes in a longer form than it means as the code it means
 pub(crate) fn simplify<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
+    // Code the build wrote as text is read as the code it is.
+    crate::utils::rewrite_program(program, &mut |value| {
+        if let Expression::Identifier(id) = value
+            && !oxc_syntax::identifier::is_identifier_name(id.name.as_str())
+            && let Ok(mut parsed) = oxc_parser::Parser::new(
+                ast.allocator(),
+                id.name.as_str(),
+                oxc_span::SourceType::tsx(),
+            )
+            .parse_expression()
+        {
+            crate::utils::clear_generated_spans(&mut parsed);
+            *value = parsed;
+        }
+        false
+    });
     let mut literals = Literals::default();
     literals.visit_program(program);
     if !literals.alias.is_empty() {
@@ -30,7 +46,9 @@ pub(crate) fn simplify<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
         ast,
         guards: literals.guards(),
         declared: literals.bound.keys().cloned().collect(),
+        settled: literals.settled(),
         objects: literals.objects(),
+        defined: literals.defined(),
     };
     simplify.visit_program(program);
     omit::share(ast, program, &simplify.declared);
@@ -71,6 +89,11 @@ struct Literals {
     /// The generated constants declared as `guard ? value : undefined`,
     /// with that guard
     guard: FxHashMap<String, String>,
+    /// The generated constants declared as `test ? truthy : undefined`
+    defined: FxHashSet<String>,
+    /// The names bound where a read may come before them: `let`, `const`,
+    /// `var`, classes and imports
+    unset: FxHashSet<String>,
 }
 
 impl Literals {
@@ -86,6 +109,25 @@ impl Literals {
                 self.bound.get(*name) == Some(*count) && !self.written.contains(*name)
             })
             .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// The generated constants falsy only when `undefined`
+    fn defined(&self) -> FxHashSet<String> {
+        self.defined
+            .iter()
+            .filter(|name| self.constant(name))
+            .cloned()
+            .collect()
+    }
+
+    /// The names bound only where they are set before any read: parameters,
+    /// `catch` parameters and functions
+    fn settled(&self) -> FxHashSet<String> {
+        self.bound
+            .keys()
+            .filter(|name| !self.unset.contains(*name))
+            .cloned()
             .collect()
     }
 
@@ -118,6 +160,11 @@ impl<'a> Visit<'a> for Literals {
     }
 
     fn visit_variable_declaration(&mut self, it: &oxc_ast::ast::VariableDeclaration<'a>) {
+        for declarator in &it.declarations {
+            for id in declarator.id.get_binding_identifiers() {
+                self.unset.insert(id.name.to_string());
+            }
+        }
         if it.kind == VariableDeclarationKind::Const {
             for declarator in &it.declarations {
                 self.literal(&declarator.id, declarator.init.as_ref());
@@ -133,6 +180,14 @@ impl<'a> Visit<'a> for Literals {
                         Expression::ConditionalExpression(conditional)
                             if is_undefined(&conditional.alternate) =>
                         {
+                            if truthy(&conditional.consequent)
+                                && !matches!(
+                                    unwrapped(&conditional.alternate),
+                                    Expression::BooleanLiteral(_)
+                                )
+                            {
+                                self.defined.insert(id.name.to_string());
+                            }
                             if let Some(guard) = pure_name(&conditional.test) {
                                 self.guard.insert(id.name.to_string(), guard.to_string());
                             }
@@ -160,6 +215,20 @@ impl<'a> Visit<'a> for Literals {
         walk::walk_call_expression(self, it);
     }
 
+    fn visit_class(&mut self, it: &oxc_ast::ast::Class<'a>) {
+        if let Some(id) = &it.id {
+            self.unset.insert(id.name.to_string());
+        }
+        walk::walk_class(self, it);
+    }
+
+    fn visit_import_declaration(&mut self, it: &oxc_ast::ast::ImportDeclaration<'a>) {
+        for specifier in it.specifiers.iter().flatten() {
+            self.unset.insert(specifier.local().name.to_string());
+        }
+        walk::walk_import_declaration(self, it);
+    }
+
     fn visit_simple_assignment_target(&mut self, it: &oxc_ast::ast::SimpleAssignmentTarget<'a>) {
         if let oxc_ast::ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = it {
             self.written.insert(id.name.to_string());
@@ -177,8 +246,9 @@ impl<'a> Visit<'a> for Literals {
 }
 
 /// Read each generated constant declared as another as the one it holds,
-/// where that name reads it, and drop its declaration: a generated name, or
-/// a constant or import of the module, which holds one value once read
+/// where that name reads it, and drop its declaration: a generated name, a
+/// parameter or function, or a constant the same statements set before it,
+/// each holding the one value it held where the alias read it
 fn inline_aliases<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     let scoping = oxc_semantic::SemanticBuilder::new()
         .build(program)
@@ -187,14 +257,14 @@ fn inline_aliases<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     let mut declared = Declared::default();
     declared.visit_program(program);
     let mut targets = FxHashMap::default();
-    for (alias, target) in declared.aliases {
+    for (alias, target, set) in declared.aliases {
         if let Some(symbol) = scoping.get_reference(target).symbol_id()
             && !scoping.symbol_is_mutated(alias)
             && !scoping.symbol_is_mutated(symbol)
-            && (generated(scoping.symbol_name(symbol)) || {
-                let flags = scoping.symbol_flags(symbol);
-                flags.is_const_variable() || flags.is_import()
-            })
+            && (generated(scoping.symbol_name(symbol))
+                || set
+                || declared.settled.contains(&symbol)
+                || scoping.symbol_flags(symbol).is_function())
         {
             targets.insert(alias, symbol);
         }
@@ -223,28 +293,63 @@ fn inline_aliases<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     }
 }
 
-/// The generated constants declared as another name
+/// The generated constants declared as another name, with whether the
+/// statements before it in its list set that name
 #[derive(Default)]
 struct Declared {
-    aliases: std::vec::Vec<(oxc_semantic::SymbolId, oxc_semantic::ReferenceId)>,
+    aliases: std::vec::Vec<(oxc_semantic::SymbolId, oxc_semantic::ReferenceId, bool)>,
+    /// The names each list of statements set, of the statements visited
+    set: std::vec::Vec<FxHashSet<String>>,
+    /// The parameters, which are set before their function runs
+    settled: FxHashSet<oxc_semantic::SymbolId>,
 }
 
 impl<'a> Visit<'a> for Declared {
+    fn visit_statements(&mut self, it: &Vec<'a, oxc_ast::ast::Statement<'a>>) {
+        self.set.push(FxHashSet::default());
+        walk::walk_statements(self, it);
+        self.set.pop();
+    }
+
+    fn visit_formal_parameter(&mut self, it: &oxc_ast::ast::FormalParameter<'a>) {
+        self.settled.extend(
+            it.pattern
+                .get_binding_identifiers()
+                .into_iter()
+                .filter_map(|id| id.symbol_id.get()),
+        );
+        walk::walk_formal_parameter(self, it);
+    }
+
     fn visit_variable_declaration(&mut self, it: &oxc_ast::ast::VariableDeclaration<'a>) {
-        if it.kind == VariableDeclarationKind::Const {
-            for declarator in &it.declarations {
-                if let BindingPattern::BindingIdentifier(id) = &declarator.id
-                    && generated(&id.name)
-                    && let Some(symbol) = id.symbol_id.get()
-                    && let Some(Expression::Identifier(target)) =
-                        declarator.init.as_ref().map(unwrapped)
-                    && let Some(reference) = target.reference_id.get()
-                {
-                    self.aliases.push((symbol, reference));
-                }
+        for declarator in &it.declarations {
+            if it.kind == VariableDeclarationKind::Const
+                && let BindingPattern::BindingIdentifier(id) = &declarator.id
+                && generated(&id.name)
+                && let Some(symbol) = id.symbol_id.get()
+                && let Some(Expression::Identifier(target)) =
+                    declarator.init.as_ref().map(unwrapped)
+                && let Some(reference) = target.reference_id.get()
+            {
+                let set = self
+                    .set
+                    .last()
+                    .is_some_and(|set| set.contains(target.name.as_str()));
+                self.aliases.push((symbol, reference, set));
+            }
+            self.visit_variable_declarator(declarator);
+            if it.kind != VariableDeclarationKind::Var
+                && let Some(set) = self.set.last_mut()
+            {
+                set.extend(
+                    declarator
+                        .id
+                        .get_binding_identifiers()
+                        .into_iter()
+                        .map(|id| id.name.to_string()),
+                );
             }
         }
-        walk::walk_variable_declaration(self, it);
     }
 }
 
@@ -301,8 +406,12 @@ struct Simplify<'s, 'a> {
     guards: FxHashMap<String, String>,
     /// Every name the module declares
     declared: FxHashSet<String>,
+    /// The declared names no read comes before
+    settled: FxHashSet<String>,
     /// The generated names holding an object or array
     objects: FxHashSet<String>,
+    /// The generated constants falsy only when `undefined`
+    defined: FxHashSet<String>,
 }
 
 /// Whether `value` is truthy whatever it reads
@@ -388,8 +497,9 @@ fn known_test(value: &Expression<'_>) -> Option<bool> {
 }
 
 /// Whether reading `value` runs no code nor throws: a literal, a generated
-/// name, or literals compared or combined
-fn inert(value: &Expression<'_>) -> bool {
+/// name, a name `settled` holds, literals combined, or such values compared
+/// strictly, which compares without converting either
+fn inert(value: &Expression<'_>, settled: &FxHashSet<String>) -> bool {
     let literal = |value: &Expression<'_>| {
         matches!(
             unwrapped(value),
@@ -400,15 +510,17 @@ fn inert(value: &Expression<'_>) -> bool {
         )
     };
     match unwrapped(value) {
-        Expression::BinaryExpression(binary) => {
-            !matches!(
-                binary.operator,
-                oxc_syntax::operator::BinaryOperator::In
-                    | oxc_syntax::operator::BinaryOperator::Instanceof
-            ) && literal(&binary.left)
-                && literal(&binary.right)
-        }
-        value => literal(value) || pure_name(value).is_some(),
+        Expression::BinaryExpression(binary) => match binary.operator {
+            oxc_syntax::operator::BinaryOperator::StrictEquality
+            | oxc_syntax::operator::BinaryOperator::StrictInequality => {
+                inert(&binary.left, settled) && inert(&binary.right, settled)
+            }
+            oxc_syntax::operator::BinaryOperator::In
+            | oxc_syntax::operator::BinaryOperator::Instanceof => false,
+            _ => literal(&binary.left) && literal(&binary.right),
+        },
+        Expression::Identifier(id) => generated(&id.name) || settled.contains(id.name.as_str()),
+        value => literal(value),
     }
 }
 
@@ -686,13 +798,21 @@ impl<'a> Simplify<'_, 'a> {
                     *it = conditional.consequent.take_in(self.ast);
                     return true;
                 }
+                // Either branch gives the same value: the condition runs only
+                // for what reading it does.
+                if conditional.consequent.content_eq(&conditional.alternate) {
+                    let test = conditional.test.take_in(self.ast);
+                    let branch = conditional.consequent.take_in(self.ast);
+                    *it = Expression::new_sequence_expression(
+                        SPAN,
+                        Vec::from_array_in([test, branch], self.ast),
+                        self.ast,
+                    );
+                    return true;
+                }
                 let Some(name) = pure_name(&conditional.test).map(str::to_string) else {
                     return false;
                 };
-                if conditional.consequent.content_eq(&conditional.alternate) {
-                    *it = conditional.consequent.take_in(self.ast);
-                    return true;
-                }
                 // The same name read again holds what it held.
                 let conditional = &mut **conditional;
                 let mut changed = false;
@@ -716,11 +836,14 @@ impl<'a> Simplify<'_, 'a> {
             Expression::TemplateLiteral(template) => self.splice(template),
             // A value read only to be dropped, which reading runs no code of
             // A member or a name read alone binds `this`, calls `eval` directly
-            // or reads a name `typeof` would not throw on, and a function
+            // or reads a name `typeof` would not throw on unless the module
+            // declares it, and a function
             // assigned alone takes the name it is assigned to: those stay read so.
             Expression::SequenceExpression(sequence)
-                if inert(&sequence.expressions[0])
+                if inert(&sequence.expressions[0], &self.settled)
                     && (sequence.expressions.len() > 2
+                        || matches!(unwrapped(&sequence.expressions[1]), Expression::Identifier(id)
+                            if id.name != "eval" && (generated(&id.name) || self.declared.contains(id.name.as_str())))
                         || !matches!(
                             unwrapped(&sequence.expressions[1]),
                             Expression::Identifier(_)
@@ -919,13 +1042,16 @@ impl<'a> Simplify<'_, 'a> {
     }
 }
 
-/// `const { ...rest } = { ...props, ref }` as `const { ...rest } = props;
-/// rest.ref = ref;`: the rest is a new object either way, which takes `ref`
-/// last or where `props` held it, and copying `props` once is enough
-fn rest_then_ref<'a>(
+/// `const { ...rest } = { ...props, ref, role: "x" }` as
+/// `const { ...rest } = props; rest.ref = ref; rest.role = "x";`: the rest is
+/// a new object either way, which takes each property last or where `props`
+/// held it, and copying `props` once is enough. Values reading nothing run
+/// the same after the pattern as before it.
+fn rest_then_props<'a>(
     ast: &AstBuilder<'a>,
+    settled: &FxHashSet<String>,
     statement: &mut oxc_ast::ast::Statement<'a>,
-) -> Option<oxc_ast::ast::Statement<'a>> {
+) -> Option<std::vec::Vec<oxc_ast::ast::Statement<'a>>> {
     let oxc_ast::ast::Statement::VariableDeclaration(declaration) = statement else {
         return None;
     };
@@ -936,60 +1062,433 @@ fn rest_then_ref<'a>(
         return None;
     };
     let rest = pattern.rest.as_ref()?.argument.get_binding_identifier()?;
-    // A property the pattern names itself reads `ref` from the copy.
-    if pattern.properties.iter().any(|property| {
-        property.computed
-            || property
-                .key
-                .static_name()
-                .is_none_or(|key| key.as_str() == Some("ref"))
-    }) {
-        return None;
-    }
+    let named = pattern
+        .properties
+        .iter()
+        .map(|property| {
+            if property.computed {
+                None
+            } else {
+                property.key.static_name()?.as_str().map(str::to_string)
+            }
+        })
+        .collect::<Option<FxHashSet<_>>>()?;
     let Some(Expression::ObjectExpression(object)) = declarator.init.as_mut().map(unwrapped_mut)
     else {
         return None;
     };
-    let [
-        ObjectPropertyKind::SpreadProperty(props),
-        ObjectPropertyKind::ObjectProperty(reference),
-    ] = object.properties.as_mut_slice()
+    let [ObjectPropertyKind::SpreadProperty(props), properties @ ..] =
+        object.properties.as_mut_slice()
     else {
         return None;
     };
+    // A property the pattern names itself reads it from the copy.
+    let assigned = |property: &ObjectPropertyKind<'_>| match property {
+        ObjectPropertyKind::ObjectProperty(property) => {
+            !property.computed
+                && property.kind == PropertyKind::Init
+                && !property.method
+                && inert(&property.value, settled)
+                && property.key.static_name().and_then(|key| {
+                    key.as_str()
+                        .map(|key| key != "__proto__" && !named.contains(key))
+                }) == Some(true)
+        }
+        ObjectPropertyKind::SpreadProperty(_) => false,
+    };
     if pure_name(&props.argument).is_none()
-        || pure_name(&reference.value).is_none()
-        || reference.computed
-        || reference.kind != PropertyKind::Init
-        || reference.method
-        || reference
-            .key
-            .static_name()
-            .is_none_or(|key| key.as_str() != Some("ref"))
+        || properties.is_empty()
+        || !properties.iter().all(assigned)
     {
         return None;
     }
-    let target = oxc_ast::ast::AssignmentTarget::StaticMemberExpression(
-        oxc_ast::ast::StaticMemberExpression::boxed(
-            SPAN,
-            Expression::new_identifier(SPAN, ast.allocator().alloc_str(&rest.name), ast),
-            oxc_ast::ast::IdentifierName::new(SPAN, "ref", ast),
-            false,
-            ast,
-        ),
-    );
-    let assignment = Expression::new_assignment_expression(
-        SPAN,
-        oxc_syntax::operator::AssignmentOperator::Assign,
-        target,
-        reference.value.take_in(ast),
-        ast,
-    );
+    let rest: &'a str = ast.allocator().alloc_str(&rest.name);
+    let mut assignments = std::vec::Vec::new();
+    for property in properties.iter_mut() {
+        if let ObjectPropertyKind::ObjectProperty(property) = property {
+            let key: &'a str = property
+                .key
+                .static_name()
+                .and_then(|key| key.as_str().map(|key| ast.allocator().alloc_str(key)))
+                .unwrap_or_default();
+            let target = if oxc_syntax::identifier::is_identifier_name(key) {
+                oxc_ast::ast::AssignmentTarget::StaticMemberExpression(
+                    oxc_ast::ast::StaticMemberExpression::boxed(
+                        SPAN,
+                        Expression::new_identifier(SPAN, rest, ast),
+                        oxc_ast::ast::IdentifierName::new(SPAN, key, ast),
+                        false,
+                        ast,
+                    ),
+                )
+            } else {
+                oxc_ast::ast::AssignmentTarget::ComputedMemberExpression(
+                    oxc_ast::ast::ComputedMemberExpression::boxed(
+                        SPAN,
+                        Expression::new_identifier(SPAN, rest, ast),
+                        Expression::new_string_literal(SPAN, key, None, ast),
+                        false,
+                        ast,
+                    ),
+                )
+            };
+            let assignment = Expression::new_assignment_expression(
+                SPAN,
+                oxc_syntax::operator::AssignmentOperator::Assign,
+                target,
+                property.value.take_in(ast),
+                ast,
+            );
+            assignments.push(oxc_ast::ast::Statement::new_expression_statement(
+                SPAN, assignment, ast,
+            ));
+        }
+    }
     let props = props.argument.take_in(ast);
     declarator.init = Some(props);
-    Some(oxc_ast::ast::Statement::new_expression_statement(
-        SPAN, assignment, ast,
-    ))
+    Some(assignments)
+}
+
+/// How often the statements read `name`
+#[derive(Default)]
+struct Reads<'n> {
+    name: &'n str,
+    count: usize,
+}
+
+impl<'a> Visit<'a> for Reads<'_> {
+    fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
+        if it.name == self.name {
+            self.count += 1;
+        }
+    }
+}
+
+fn reads(name: &str, visit: impl FnOnce(&mut Reads<'_>)) -> usize {
+    let mut reads = Reads { name, count: 0 };
+    visit(&mut reads);
+    reads.count
+}
+
+/// `const __devupX = value; const pattern = { ...__devupX, ... };` as
+/// `const pattern = { ...value, ... };`, or `const pattern = __devupX;` as
+/// `const pattern = value;`, where nothing else reads it: the read is the
+/// first thing the next statement runs
+fn inline_spread<'a>(statements: &mut Vec<'a, oxc_ast::ast::Statement<'a>>) -> bool {
+    let mut inlined = false;
+    let mut index = 0;
+    while index + 1 < statements.len() {
+        let name = match &statements[index] {
+            oxc_ast::ast::Statement::VariableDeclaration(declaration)
+                if declaration.kind == VariableDeclarationKind::Const =>
+            {
+                match declaration.declarations.as_slice() {
+                    [declarator] => match &declarator.id {
+                        BindingPattern::BindingIdentifier(id) if generated(&id.name) => {
+                            declarator.init.as_ref().map(|init| {
+                                (id.name.to_string(), init.is_anonymous_function_definition())
+                            })
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let spread = name.as_ref().and_then(|(name, anonymous)| {
+            let oxc_ast::ast::Statement::VariableDeclaration(next) = &statements[index + 1] else {
+                return None;
+            };
+            let [declarator] = next.declarations.as_slice() else {
+                return None;
+            };
+            let read = match declarator.init.as_ref().map(unwrapped) {
+                Some(Expression::ObjectExpression(object)) => match object.properties.first() {
+                    Some(ObjectPropertyKind::SpreadProperty(spread)) => &spread.argument,
+                    _ => return None,
+                },
+                // A function the alias named would take the name of the next.
+                Some(init) if !anonymous => init,
+                _ => return None,
+            };
+            (matches!(unwrapped(read), Expression::Identifier(id) if id.name == name.as_str())
+                && reads(name, |reads| {
+                    for statement in statements.iter().skip(index + 1) {
+                        reads.visit_statement(statement);
+                    }
+                }) == 1)
+                .then_some(())
+        });
+        if spread.is_none() {
+            index += 1;
+            continue;
+        }
+        if let Some((name, _)) = name
+            && let oxc_ast::ast::Statement::VariableDeclaration(mut declaration) =
+                statements.remove(index)
+            && let Some(value) = declaration.declarations[0].init.take()
+        {
+            Replace {
+                name: &name,
+                value: Some(value),
+            }
+            .visit_statement(&mut statements[index]);
+            inlined = true;
+        }
+    }
+    inlined
+}
+
+/// Puts `value` where the statement reads `name`
+struct Replace<'n, 'a> {
+    name: &'n str,
+    value: Option<Expression<'a>>,
+}
+
+impl<'a> VisitMut<'a> for Replace<'_, 'a> {
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        if matches!(it, Expression::Identifier(id) if id.name == self.name)
+            && let Some(value) = self.value.take()
+        {
+            *it = value;
+        }
+        walk_mut::walk_expression(self, it);
+    }
+}
+
+/// Whether `predicate`, `([k]) => k[0] !== "$" && k !== "a" ...`, keeps `key`
+fn keeps(predicate: &Expression<'_>, key: &str) -> bool {
+    fn holds(test: &Expression<'_>, parameter: &str, key: &str) -> Option<bool> {
+        match unwrapped(test) {
+            Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+                Some(
+                    holds(&logical.left, parameter, key)? && holds(&logical.right, parameter, key)?,
+                )
+            }
+            Expression::BinaryExpression(binary)
+                if matches!(
+                    binary.operator,
+                    oxc_syntax::operator::BinaryOperator::StrictInequality
+                        | oxc_syntax::operator::BinaryOperator::StrictEquality
+                ) =>
+            {
+                let read = match unwrapped(&binary.left) {
+                    Expression::Identifier(id) if id.name == parameter => key.to_string(),
+                    Expression::ComputedMemberExpression(member)
+                        if !member.optional
+                            && matches!(unwrapped(&member.object), Expression::Identifier(id) if id.name == parameter)
+                            && matches!(unwrapped(&member.expression), Expression::NumericLiteral(index) if index.value == 0.0) =>
+                    {
+                        key.chars().next()?.to_string()
+                    }
+                    _ => return None,
+                };
+                let Expression::StringLiteral(text) = unwrapped(&binary.right) else {
+                    return None;
+                };
+                let equal = text.value.as_str() == Some(read.as_str());
+                Some(
+                    equal
+                        == (binary.operator
+                            == oxc_syntax::operator::BinaryOperator::StrictEquality),
+                )
+            }
+            _ => None,
+        }
+    }
+    if let Expression::ArrowFunctionExpression(arrow) = unwrapped(predicate)
+        && let Some(BindingPattern::ArrayPattern(pattern)) = arrow
+            .params
+            .items
+            .first()
+            .map(|parameter| &parameter.pattern)
+        && let Some(Some(BindingPattern::BindingIdentifier(parameter))) = pattern.elements.first()
+        && let Some(test) = arrow.body.as_expression()
+    {
+        holds(test, &parameter.name, key) == Some(true)
+    } else {
+        false
+    }
+}
+
+/// `(props, ref) => { const { a, ...rest } = props; rest.ref = ref; rest.b =
+/// "x"; return <A {...filtered(rest)} c />; }` as `({ a, ...rest }, ref) =>
+/// <A {...filtered(rest)} ref={ref} b="x" c />` where nothing else reads
+/// `rest` and the filter keeps each name: each value, reading nothing, reaches
+/// the element where it did, last of what the spread gives, in the order the
+/// object first took its name
+fn ref_as_attribute<'a>(
+    ast: &AstBuilder<'a>,
+    settled: &FxHashSet<String>,
+    arrow: &mut oxc_ast::ast::ArrowFunctionExpression<'a>,
+) -> Option<()> {
+    let [props, reference] = arrow.params.items.as_slice() else {
+        return None;
+    };
+    let (BindingPattern::BindingIdentifier(props), BindingPattern::BindingIdentifier(reference)) =
+        (&props.pattern, &reference.pattern)
+    else {
+        return None;
+    };
+    let oxc_ast::ast::ArrowFunctionBody::FunctionBody(function) = &arrow.body else {
+        return None;
+    };
+    if arrow.params.rest.is_some()
+        || !function.directives.is_empty()
+        || !generated(&props.name)
+        || !generated(&reference.name)
+    {
+        return None;
+    }
+    let props = props.name.as_str();
+    let [
+        oxc_ast::ast::Statement::VariableDeclaration(declaration),
+        assignments @ ..,
+        oxc_ast::ast::Statement::ReturnStatement(returned),
+    ] = function.statements.as_slice()
+    else {
+        return None;
+    };
+    let [declarator] = declaration.declarations.as_slice() else {
+        return None;
+    };
+    let BindingPattern::ObjectPattern(pattern) = &declarator.id else {
+        return None;
+    };
+    let rest = pattern
+        .rest
+        .as_ref()?
+        .argument
+        .get_binding_identifier()?
+        .name
+        .as_str();
+    let Some(Expression::JSXElement(element)) = returned.argument.as_ref().map(unwrapped) else {
+        return None;
+    };
+    let attributes = &element.opening_element.attributes;
+    let (spread, predicate) = attributes.iter().enumerate().find_map(|(index, item)| {
+        let JSXAttributeItem::SpreadAttribute(spread) = item else {
+            return None;
+        };
+        let Expression::CallExpression(call) = unwrapped(&spread.argument) else {
+            return None;
+        };
+        let (value, predicate) = omit::filtered(call)?;
+        matches!(unwrapped(value), Expression::Identifier(id) if id.name == rest)
+            .then_some((index, predicate))
+    })?;
+    let mut names = std::vec::Vec::new();
+    for statement in assignments {
+        let oxc_ast::ast::Statement::ExpressionStatement(statement) = statement else {
+            return None;
+        };
+        let Expression::AssignmentExpression(assignment) = unwrapped(&statement.expression) else {
+            return None;
+        };
+        let (object, name) = match &assignment.left {
+            oxc_ast::ast::AssignmentTarget::StaticMemberExpression(member) => {
+                (&member.object, member.property.name.as_str())
+            }
+            oxc_ast::ast::AssignmentTarget::ComputedMemberExpression(member) => {
+                match unwrapped(&member.expression) {
+                    Expression::StringLiteral(name) => (&member.object, name.value.as_str()?),
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+        let named = |item: &JSXAttributeItem<'_>| {
+            matches!(item, JSXAttributeItem::Attribute(attribute)
+            if matches!(&attribute.name, JSXAttributeName::Identifier(id) if id.name == name))
+        };
+        if assignment.operator != oxc_syntax::operator::AssignmentOperator::Assign
+            || !matches!(unwrapped(object), Expression::Identifier(id) if id.name == rest)
+            || !attribute_name(name)
+            || !keeps(predicate, name)
+            || !inert(&assignment.right, settled)
+            || attributes.iter().any(named)
+        {
+            return None;
+        }
+        names.push(name);
+    }
+    let body = |reads: &mut Reads<'_>| reads.visit_function_body(function);
+    if names.is_empty()
+        || declaration.kind != VariableDeclarationKind::Const
+        || !matches!(declarator.init.as_ref().map(unwrapped), Some(Expression::Identifier(id)) if id.name == props)
+        || reads(props, body) != 1
+        || reads(rest, body) != 1 + names.len()
+    {
+        return None;
+    }
+    let names = names
+        .into_iter()
+        .map(|name| -> &'a str { ast.allocator().alloc_str(name) })
+        .collect::<std::vec::Vec<_>>();
+    if let oxc_ast::ast::ArrowFunctionBody::FunctionBody(function) = &mut arrow.body
+        && let [
+            oxc_ast::ast::Statement::VariableDeclaration(declaration),
+            assignments @ ..,
+            oxc_ast::ast::Statement::ReturnStatement(returned),
+        ] = function.statements.as_mut_slice()
+        && let Some(mut element) = returned.argument.take()
+    {
+        // A name set again keeps the place it first took, with the last value.
+        let mut values: std::vec::Vec<(&'a str, Expression<'a>)> = std::vec::Vec::new();
+        for (statement, name) in assignments.iter_mut().zip(names) {
+            if let oxc_ast::ast::Statement::ExpressionStatement(statement) = statement
+                && let Expression::AssignmentExpression(assignment) =
+                    unwrapped_mut(&mut statement.expression)
+            {
+                let value = assignment.right.take_in(ast);
+                match values.iter_mut().find(|(set, _)| *set == name) {
+                    Some((_, set)) => *set = value,
+                    None => values.push((name, value)),
+                }
+            }
+        }
+        if let Expression::JSXElement(element) = unwrapped_mut(&mut element) {
+            for (index, (name, value)) in values.into_iter().enumerate() {
+                let value = match value {
+                    Expression::StringLiteral(text) if quotable(&text) => {
+                        JSXAttributeValue::StringLiteral(text)
+                    }
+                    value => JSXAttributeValue::new_expression_container(SPAN, value.into(), ast),
+                };
+                element.opening_element.attributes.insert(
+                    spread + 1 + index,
+                    JSXAttributeItem::new_attribute(
+                        SPAN,
+                        JSXAttributeName::new_identifier(SPAN, name, ast),
+                        Some(value),
+                        ast,
+                    ),
+                );
+            }
+        }
+        let pattern = declaration.declarations[0].id.take_in(ast);
+        arrow.params.items[0].pattern = pattern;
+        arrow.body = element.into();
+    }
+    Some(())
+}
+
+impl<'a> Simplify<'_, 'a> {
+    fn rest_then_props(&self, statements: &mut Vec<'a, oxc_ast::ast::Statement<'a>>) {
+        let mut index = 0;
+        while index < statements.len() {
+            if let Some(assignments) =
+                rest_then_props(self.ast, &self.settled, &mut statements[index])
+            {
+                for assignment in assignments {
+                    index += 1;
+                    statements.insert(index, assignment);
+                }
+            }
+            index += 1;
+        }
+    }
 }
 
 impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
@@ -999,15 +1498,21 @@ impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
     }
 
     fn visit_statements(&mut self, it: &mut Vec<'a, oxc_ast::ast::Statement<'a>>) {
+        inline_spread(it);
         walk_mut::walk_statements(self, it);
-        let mut index = 0;
-        while index < it.len() {
-            if let Some(assignment) = rest_then_ref(self.ast, &mut it[index]) {
-                index += 1;
-                it.insert(index, assignment);
-            }
-            index += 1;
+        self.rest_then_props(it);
+        // A rest copied from the object an alias held now reads it in place.
+        if inline_spread(it) {
+            self.rest_then_props(it);
         }
+    }
+
+    fn visit_arrow_function_expression(
+        &mut self,
+        it: &mut oxc_ast::ast::ArrowFunctionExpression<'a>,
+    ) {
+        walk_mut::walk_arrow_function_expression(self, it);
+        ref_as_attribute(self.ast, &self.settled, it);
     }
 
     fn visit_static_member_expression(
@@ -1057,6 +1562,31 @@ impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
 
     fn visit_jsx_opening_element(&mut self, it: &mut JSXOpeningElement<'a>) {
         walk_mut::walk_jsx_opening_element(self, it);
+        // A DOM element takes `undefined` as no class, as it takes "".
+        if matches!(it.name, oxc_ast::ast::JSXElementName::Identifier(_)) {
+            for item in &mut it.attributes {
+                if let JSXAttributeItem::Attribute(attribute) = item
+                    && matches!(&attribute.name, JSXAttributeName::Identifier(name) if name.name == "className")
+                    && let Some(JSXAttributeValue::ExpressionContainer(container)) =
+                        &mut attribute.value
+                    && let Some(value) = container.expression.as_expression_mut()
+                    && let Expression::ConditionalExpression(conditional) = unwrapped_mut(value)
+                    && matches!(unwrapped(&conditional.test), Expression::Identifier(id) if self.defined.contains(id.name.as_str()))
+                    && matches!(unwrapped(&conditional.consequent), Expression::StringLiteral(text) if !text.value.is_empty())
+                    && matches!(unwrapped(&conditional.alternate), Expression::StringLiteral(text) if text.value.is_empty())
+                {
+                    let test = conditional.test.take_in(self.ast);
+                    let class = conditional.consequent.take_in(self.ast);
+                    *value = Expression::new_logical_expression(
+                        SPAN,
+                        test,
+                        LogicalOperator::And,
+                        class,
+                        self.ast,
+                    );
+                }
+            }
+        }
         let spreads_literal = |item: &JSXAttributeItem<'_>| matches!(item, JSXAttributeItem::SpreadAttribute(spread) if spreads_props(&spread.argument));
         if !it.attributes.iter().any(spreads_literal) {
             return;

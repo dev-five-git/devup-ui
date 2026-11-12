@@ -15804,9 +15804,7 @@ const Button = styled.button({ bg: 'red' })
             .unwrap_or(body.len());
         let body = &body[..end];
         assert!(
-            body.starts_with(&format!(
-                "{declaration}__devupForwardRef((__devupRefProps, __devupRef) => {{"
-            )),
+            body.starts_with(&format!("{declaration}__devupForwardRef(")),
             "{body}"
         );
         body
@@ -15896,7 +15894,7 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />";
         for expected in [
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
-            "...__devupProps,\n\t\trole: \"region\"",
+            "ref={__devupRef} role=\"region\"",
             "<Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
@@ -15981,7 +15979,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
         );
         let compact = code.split_whitespace().collect::<Vec<_>>().join(" ");
         for expected in [
-            "{ ...__devupProps, type: \"text\", title: \"base\", type: \"password\" }",
+            "ref={__devupRef} type=\"password\" title=\"base\"",
             "className: [__devupRecord4.className, __devupRecord3.className].filter(Boolean).join(\" \") || undefined",
             "className: [__devupRecord2.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
             "...__devupRecord4.style, ...__devupRecord3.style",
