@@ -64,10 +64,15 @@ fn literal_own_selection(member: &oxc_ast::ast::ComputedMemberExpression<'_>) ->
     selects && evaluates_nothing(table)
 }
 
-/// `1` or `-1`, which every array reads at the same place
+/// `1`, `-1` or `+1`, which every array reads at the same place
 fn array_index(key: &Expression<'_>) -> bool {
     let key = match key {
-        Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::UnaryNegation => {
+        Expression::UnaryExpression(unary)
+            if matches!(
+                unary.operator,
+                UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus
+            ) =>
+        {
             crate::utils::unwrap_syntax_only(&unary.argument)
         }
         key => key,
