@@ -30,6 +30,9 @@ pub(super) struct AttributeOrder<'a> {
     pub spreads: FxHashMap<u32, usize>,
     /// The name the type `as` gives was captured under
     pub as_name: Option<String>,
+    /// The spreads the build cannot read in full that name styles, by where
+    /// they start, as written before any is captured
+    pub hidden_styles: Vec<(u32, String)>,
 }
 
 /// Where the attribute `name` stands once the element is built, and whether
@@ -128,6 +131,24 @@ impl<'a> DevupVisitor<'a> {
             .collect()
     }
 
+    /// Remembers the spread at `start` when the build cannot read it in full
+    /// but it names styles, which would reach the element as props
+    pub(super) fn note_hidden_styles(
+        &self,
+        order: &mut AttributeOrder<'a>,
+        start: u32,
+        argument: &Expression<'a>,
+    ) {
+        if super::element_props::hides_styles(
+            crate::extractor::style_inputs::StyleInputs::with_values(&self.ast, &self.style_values),
+            argument,
+        ) {
+            order
+                .hidden_styles
+                .push((start, crate::utils::readable_code(argument)));
+        }
+    }
+
     /// Orders attributes into the evaluation order required to preserve JavaScript
     /// semantics: the ones compiling moves behind a later one, drops, or repeats,
     /// and everything written before the last of them. `kept` are the attributes
@@ -168,6 +189,9 @@ impl<'a> DevupVisitor<'a> {
                 continue;
             }
             let known = !is_unknown_spread(&spread.argument);
+            if !known && kind.is_some() {
+                self.note_hidden_styles(&mut order, spread.span.start, &spread.argument);
+            }
             let object = match crate::utils::unwrap_syntax_only_mut(&mut spread.argument) {
                 Expression::ObjectExpression(object) if known => object,
                 _ => continue,

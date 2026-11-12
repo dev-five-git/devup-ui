@@ -60,12 +60,38 @@ fn authored_styles_when_unknown_keys_collide_keep_raw_props(#[case] element: &st
     }
 }
 
+// The build cannot tell which of the styles an object names a key only the
+// running code knows replaces, and the rest would reach the element as props
 #[rstest]
 #[case("<Box color='red' {...{color:'blue',...rest}}/>")]
 #[case("<Box color='red' {...{...rest,color:'blue'}}/>")]
-#[case("<Box color='red' {...{get color(){trace.push('get');return 'blue';}}}/>")]
 #[case("<Box color='red' {...{color:'blue',[key]:'kept'}}/>")]
+#[case("<Box {...rest} {...{_hover:{color:'red'},[key]:'x'}}/>")]
+#[case("<Box {...{...rest,p:1}}/>")]
+#[case("<Box {...rest} {...{p:1,onClick:rest,[key]:1}}/>")]
 #[case("jsx(Box,{color:'red',...{color:'blue',...rest}})")]
+#[serial]
+fn opaque_objects_when_named_style_keys_are_visible_are_build_errors(#[case] element: &str) {
+    let source = format!("{BOX}{JSX_RUNTIME}export const a=(rest,key)=>{element};");
+    let message = error(&source);
+    assert!(message.contains("`<Box>` cannot use `{"), "{message}");
+    assert!(message.contains(crate::utils::SPREAD_KEYS), "{message}");
+}
+
+#[rstest]
+#[case("<Box {...{onClick:rest,[key]:'kept','data-x':1}}/>")]
+#[case("jsx(Box,{...{onClick:rest,[key]:'kept'}})")]
+#[serial]
+fn opaque_objects_when_no_style_key_is_visible_stay_whole(#[case] element: &str) {
+    let source = format!("{BOX}{JSX_RUNTIME}export const a=(rest,key)=>{element};");
+    let actual = whole::evaluate(&source, "a('handler','title')");
+    assert_eq!(actual.element["props"]["onClick"], "handler");
+    assert_eq!(actual.element["props"]["title"], "kept");
+    assert!(output(&source).styles.is_empty());
+}
+
+#[rstest]
+#[case("<Box color='red' {...{get color(){trace.push('get');return 'blue';}}}/>")]
 #[case("jsx(Box,{color:'red',[key]:'blue'})")]
 #[serial]
 fn opaque_objects_when_named_keys_are_visible_stay_whole(#[case] element: &str) {

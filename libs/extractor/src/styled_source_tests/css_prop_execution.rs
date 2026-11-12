@@ -64,8 +64,9 @@ fn layered_authored_styles_when_opaque_metadata_interleaves_ignore_every_raw_sty
     #[values("joined-layer.ts", "joined-layer.tsx")] filename: &str,
     #[values(false, true)] single_css: bool,
 ) {
-    // Given: raw metadata is opaque as a whole, even though some of its keys are visible.
-    let opaque = "...{'@layer':{unused:{color:'unused'}},styleOrder:'abc',typography:'missing',selectors:raw.selectors,css:raw.css,'@layer':raw.layer,...raw}";
+    // Given: raw metadata is opaque as a whole. Naming any of its keys in an
+    // object around it is a build error, so the running code gives all of them.
+    let opaque = "...raw";
     let props = if after {
         format!("className:classes,...{{p:1}},p:2,{opaque}")
     } else {
@@ -89,7 +90,7 @@ fn layered_authored_styles_when_opaque_metadata_interleaves_ignore_every_raw_sty
     let result = execute_in_mode(
         filename,
         &source,
-        "const raw={selectors:{'&:hover':{color:'raw'}},css:{color:'raw'},layer:{evil:{color:'raw'}},p:{toString(){throw new Error('coerced');}}};const e=App(raw);JSON.stringify([[atoms(e).map(r=>[r[0],r[1],r[4]]).sort(),e.props.p===raw.p,e.props.selectors===raw.selectors,e.props.css===raw.css,e.props['@layer']===raw.layer,e.props.styleOrder,e.props.typography,slots(e)],layerOrders]);",
+        "const layer={evil:{color:'raw'}};const raw={styleOrder:'abc',typography:'missing',selectors:{'&:hover':{color:'raw'}},css:{color:'raw'},'@layer':layer,p:{toString(){throw new Error('coerced');}}};const e=App(raw);JSON.stringify([[atoms(e).map(r=>[r[0],r[1],r[4]]).sort(),e.props.p===raw.p,e.props.selectors===raw.selectors,e.props.css===raw.css,e.props['@layer']===layer,e.props.styleOrder,e.props.typography,slots(e)],layerOrders]);",
         single_css,
     );
     // Then: known D1 retains its winners and raw metadata neither registers a layer nor normalizes data.
@@ -120,7 +121,7 @@ fn layered_authored_styles_when_opaque_metadata_interleaves_ignore_every_raw_sty
 #[serial]
 fn unreadable_fixture_f_g_h_when_executed_keep_raw_copy_and_retained_behavior() {
     // Given: the conflicted snapshot's source forms, without depending on its renderer bytes.
-    let source = "import {Box} from '@devup-ui/react';const f=(rest,handler,k)=>jsx(Box,{...rest,...{p:1,onClick:handler,[k]:1}});const g=(theme,key)=>jsx(Box,{bg:theme.colors[key],color:{a:'red',...theme.more}['b']});const h=Base=>styled.div(Base);const Card=h('caller');";
+    let source = "import {Box} from '@devup-ui/react';const f=(rest,handler,k)=>jsx(Box,{...rest,...{onClick:handler,[k]:1}});const g=(theme,key)=>jsx(Box,{bg:theme.colors[key],color:{a:'red',...theme.more}['b']});const h=Base=>styled.div(Base);const Card=h('caller');";
     // When: raw collisions, dynamic getters and repeated retained renders execute through their real surface.
     let result = execute(
         "joined-unreadable.ts",
@@ -131,7 +132,7 @@ fn unreadable_fixture_f_g_h_when_executed_keep_raw_copy_and_retained_behavior() 
     assert_eq!(
         result,
         serde_json::json!([
-            [1, 1, true, "raw", 0.4, []],
+            [9, 1, true, "raw", 0.4, []],
             [["blue"], ["green"], ["colors", "more"]],
             [
                 ["div", 7, "first", true, []],
@@ -146,7 +147,7 @@ export const b = (on) => css(on && { color: 'blue' });
 export const c = css('color: green; margin: 0');
 export const d = (on, base) => css(on ? base : { color: 'red' });
 export const e = css({ ...null, ...false, ...undefined, ...(void 0), p: 1 });
-export const f = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;
+export const f = (rest, handler, k) => <Box {...rest} {...{ onClick: handler, [k]: 1 }} />;
 export const g = (theme, key) => <Box bg={theme.colors[key]} color={{ a: 'red', ...theme.more }['b']} />;
 export const h = (Base) => styled.div(Base);
 export const i = keyframes({ from: { opacity: 0 } } as const);
@@ -163,7 +164,7 @@ export const j = css(...{ bg: 'red' });";
         &output,
         r"
 const trace=[];const raw={p:{raw:true},className:'raw',style:{opacity:0.4},payload:{original:true}};const handler=()=>0;
-const collisions=['title','p','className','style'].map(k=>{const expected={...raw,...{p:1,onClick:handler,[k]:1}};const actual=f(raw,handler,k);const names=typeof actual.props.className==='string'?actual.props.className.split(/\s+/):[];return [Object.keys(expected).every(key=>actual.props[key]===expected[key]),actual.props.onClick===handler,actual.props.payload===raw.payload,names.flatMap(name=>rules[name]?[rules[name]]:[]).filter(rule=>rule[0]==='padding')];});
+const collisions=['title','p','className','style'].map(k=>{const expected={...raw,...{onClick:handler,[k]:1}};const actual=f(raw,handler,k);const names=typeof actual.props.className==='string'?actual.props.className.split(/\s+/):[];return [Object.keys(expected).every(key=>actual.props[key]===expected[key]),actual.props.onClick===handler,actual.props.payload===raw.payload,names.flatMap(name=>rules[name]?[rules[name]]:[]).filter(rule=>rule[0]==='padding')];});
 const dynamic=g({get colors(){trace.push('colors');return {x:'blue'};},get more(){trace.push('more');return {b:'green'};}},'x');const Card=h('caller');const rendered=[7,8].map(ref=>render({target:Card,props:{ref,children:ref===7?'first':'second'}}));
 JSON.stringify([collisions,[values(dynamic,'background'),values(dynamic,'color'),trace],rendered.map(e=>[e.target,e.props.ref,e.props.children,(e.props.className||'').split(/\s+/).includes('caller'),slots(e)])]);
 ",

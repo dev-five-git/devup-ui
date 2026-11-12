@@ -4,6 +4,7 @@ use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{get_str_by_property_key, unwrap_syntax_only};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::{disassemble_property, is_special_property::is_special_property};
+use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKind};
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
@@ -41,6 +42,24 @@ pub(crate) fn is_unknown_spread(argument: &Expression<'_>) -> bool {
         }
     }
     false
+}
+
+/// Whether an object spread the build cannot read in full also names styles,
+/// which would reach the element as props
+pub(super) fn hides_styles<'a>(inputs: StyleInputs<'_, 'a>, argument: &Expression<'a>) -> bool {
+    let Expression::ObjectExpression(object) = unwrap_syntax_only(argument) else {
+        return false;
+    };
+    let mut known = object.clone_in_with_semantic_ids(inputs.ast.allocator());
+    known.properties.retain(|property| {
+        matches!(property, ObjectPropertyKind::ObjectProperty(property)
+            if property.kind == PropertyKind::Init
+                && !property.method
+                && get_str_by_property_key(&property.key).is_some())
+    });
+    !extract_props(inputs, &mut known, &mut FxHashSet::default(), &mut |_| {})
+        .styles
+        .is_empty()
 }
 
 /// Conditional rules keep their original owner before any opaque-props snapshot.

@@ -308,7 +308,6 @@ fn local_objects_when_ordinary_callbacks_capture_them_remain_raw() {
     "a(false,raw)",
     3
 )]
-#[case::nested("export const a=(rest)=><Box {...{...rest,p:1}}/>;", "a(raw)", 1)]
 #[case::shadow_undefined(
     concat!(
     "export const a=(on,undefined)=><Box ",

@@ -5,7 +5,7 @@ const FILE: &str = "/src/factory-dynamic.tsx";
 #[rstest]
 #[case::before("...raw, bg:'red', other:OWN")]
 #[case::after("bg:'red', other:OWN, ...raw")]
-#[case::opaque_literal("bg:'red', other:OWN, ...{bg:'green', ...raw}")]
+#[case::opaque_literal("bg:'red', other:OWN, ...{onClick:'green', ...raw}")]
 #[case::computed("bg:'red', other:OWN, ...raw, [key]:'blue'")]
 #[serial]
 fn compiled_factory_values_when_spreads_are_opaque_keep_explicit_styles_independent(
@@ -34,6 +34,23 @@ fn compiled_factory_values_when_spreads_are_opaque_keep_explicit_styles_independ
         _ => None,
     }).collect();
     assert_eq!(backgrounds, ["red"]);
+}
+
+#[rstest]
+#[serial]
+fn compiled_factory_values_when_an_opaque_literal_names_styles_are_build_errors(
+    #[values(false, true)] namespace: bool,
+) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = format!(
+        "{} import {{jsx as o}} from 'react/jsx-runtime'; function render(raw){{ return o(t, {{bg:'red', ...{{bg:'green', ...raw}}}}); }}",
+        imports(namespace)
+    );
+    let error = extract(FILE, &source, ExtractOption::default())
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(error.contains(crate::utils::SPREAD_KEYS), "{error}");
 }
 
 fn imports(namespace: bool) -> &'static str {

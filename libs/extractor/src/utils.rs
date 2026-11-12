@@ -1111,6 +1111,8 @@ pub(super) fn unreadable_styles(
 pub(super) const STYLE_OBJECT: &str =
     "its styles must be an object literal or a constant object, or be computed from constants";
 
+pub(super) const SPREAD_KEYS: &str = "an object spread that gives styles must name each of its keys, so the build knows which styles it writes";
+
 pub(super) fn build_time_error(api: &str, code: &str, requirement: &str) -> String {
     format!("`{api}()` cannot use `{code}` at build time: {requirement}")
 }

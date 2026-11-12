@@ -21587,6 +21587,14 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
                 "declare const X: number;\nexport const a = css({ w: String(X) });",
                 "`css()` cannot use `String(X)`",
             ),
+            (
+                "export const a = (rest) => <Box {...{ ...rest, p: 1 }} />;",
+                "`<Box>` cannot use `{ ...rest, p: 1 }`",
+            ),
+            (
+                "export const a = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;",
+                "`<Box>` cannot use `{ p: 1, onClick: handler, [k]: 1 }`",
+            ),
         ] {
             reset_class_map();
             reset_file_map();
@@ -21602,7 +21610,7 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
         }
         for source in [
             "export const a = (on, rest) => <Box {...(on ? { p: 1 } : rest)} />;",
-            "export const a = (rest) => <Box {...{ ...rest, p: 1 }} />;",
+            "export const a = (rest) => <Box {...{ ...rest, onClick: rest }} />;",
         ] {
             let compiled = extract(
                 "test.tsx",
@@ -21624,7 +21632,7 @@ export const b = (on) => css(on && { color: 'blue' });
 export const c = css('color: green; margin: 0');
 export const d = (on, base) => css(on ? base : { color: 'red' });
 export const e = css({ ...null, ...false, ...undefined, ...(void 0), p: 1 });
-export const f = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;
+export const f = (rest, handler, k) => <Box {...rest} {...{ onClick: handler, [k]: 1 }} />;
 export const g = (theme, key) => <Box bg={theme.colors[key]} color={{ a: 'red', ...theme.more }['b']} />;
 export const h = (Base) => styled.div(Base);
 export const i = keyframes({ from: { opacity: 0 } } as const);

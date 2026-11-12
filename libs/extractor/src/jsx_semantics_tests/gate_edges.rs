@@ -45,15 +45,11 @@ fn nested_copy_when_a_later_prop_changes_the_source_keeps_the_original_value() {
 
 #[test]
 #[serial]
-fn literal_selector_when_opaque_is_forwarded_without_extraction() {
+fn literal_selector_when_opaque_is_a_build_error() {
     let source = format!(
         "{BOX}export const a=(rest,key)=><Box {{...rest}} {{...{{_hover:{{color:'red'}},[key]:'x'}}}}/>;"
     );
-    assert_eq!(
-        whole::evaluate(&source, "a({},'title').props._hover.color").element,
-        "red"
-    );
-    assert_eq!(output(&source).styles.len(), 0);
+    assert!(error(&source).contains(crate::utils::SPREAD_KEYS));
 }
 
 #[test]
@@ -190,19 +186,11 @@ fn missing_native_choice_when_classes_are_combined_emits_no_undefined_class() {
 #[case("@media")]
 #[case("@supports")]
 #[serial]
-fn hidden_at_rule_when_opaque_is_forwarded_without_extraction(#[case] rule: &str) {
+fn hidden_at_rule_when_opaque_is_a_build_error(#[case] rule: &str) {
     let source = format!(
         "{BOX}export const a=(rest,key)=><Box {{...rest}} {{...{{'{rule}':{{'(min-width:500px)':{{color:'red'}}}},[key]:'x'}}}}/>;"
     );
-    assert_eq!(
-        whole::evaluate(
-            &source,
-            &format!("a({{}},'title').props['{rule}']['(min-width:500px)'].color")
-        )
-        .element,
-        "red"
-    );
-    assert_eq!(output(&source).styles.len(), 0);
+    assert!(error(&source).contains(crate::utils::SPREAD_KEYS));
 }
 
 #[test]

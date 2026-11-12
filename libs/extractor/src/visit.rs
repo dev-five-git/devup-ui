@@ -93,8 +93,8 @@ use oxc_syntax::symbol::SymbolId;
 use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
-    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
-    build_time_error, css_prop_error, css_prop_override_error, element_error,
+    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, SPREAD_KEYS, STYLE_OBJECT,
+    StyleArguments, build_time_error, css_prop_error, css_prop_override_error, element_error,
     get_key_by_literal_expression, get_string_by_literal_expression, get_string_by_property_key,
     key_error, readable_argument, readable_code, reads_directly, reads_unknown, runtime_classes,
     runtime_value, runtime_value_error, spread_error, string_class, style_arguments,
@@ -4640,6 +4640,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } else {
                 None
             };
+            if let (Some(kind), Some(order)) = (&element_kind, &order) {
+                for (start, code) in &order.hidden_styles {
+                    self.errors
+                        .push((*start, element_error(&kind.to_string(), code, SPREAD_KEYS)));
+                }
+            }
             let css = self.take_jsx_css_prop(it, element_kind.is_some());
             if element_kind.is_none() {
                 if let (Some(mut css), Some(order)) = (css, order) {
@@ -5372,6 +5378,30 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         continue;
                     }
                     if is_unknown_spread(&spread.argument) {
+                        // Styles the build cannot read would reach the element as
+                        // props: a changed constant, or an object a key of which
+                        // only the running code knows
+                        if reads_binding(&spread.argument, &self.changed_bindings, &|identifier| {
+                            self.bindings.reads_module(identifier)
+                        }) {
+                            self.errors.push((
+                                spread.span.start,
+                                element_error(
+                                    &element_name,
+                                    &readable_code(&spread.argument),
+                                    STYLE_OBJECT,
+                                ),
+                            ));
+                        } else if let Some((_, code)) = order
+                            .hidden_styles
+                            .iter()
+                            .find(|(start, _)| *start == spread.span.start)
+                        {
+                            self.errors.push((
+                                spread.span.start,
+                                element_error(&element_name, code, SPREAD_KEYS),
+                            ));
+                        }
                         attrs.insert(i, attr);
                         continue;
                     }

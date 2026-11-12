@@ -98,6 +98,13 @@ impl<'a> DevupVisitor<'a> {
             return order;
         };
         if !css_only {
+            for property in &object.properties {
+                if let ObjectPropertyKind::SpreadProperty(spread) = property
+                    && is_unknown_spread(&spread.argument)
+                {
+                    self.note_hidden_styles(&mut order, spread.span.start, &spread.argument);
+                }
+            }
             flatten_known(&self.ast, object);
         }
         let css_entry = css_element.and_then(|_| object.properties.iter().rposition(|property| matches!(property, ObjectPropertyKind::ObjectProperty(property) if !property.computed && property.key.static_name().is_some_and(|key|key=="css"))));
