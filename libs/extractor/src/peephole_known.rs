@@ -19,6 +19,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{generated, unwrapped};
 
+#[path = "peephole_sink.rs"]
+mod sink;
+
 /// The members every object takes from `Object.prototype`
 const INHERITED: [&str; 12] = [
     "constructor",
@@ -221,6 +224,7 @@ pub(super) struct Known<'a> {
     /// The generated bindings read only for members or to be spread
     unchanged: FxHashSet<SymbolId>,
     records: FxHashMap<SymbolId, std::vec::Vec<Entry<'a>>>,
+    order: sink::Order,
 }
 
 impl<'a> Known<'a> {
@@ -245,7 +249,9 @@ impl<'a> Known<'a> {
             })
             .map(|(symbol, _)| *symbol)
             .collect();
+        let order = sink::Order::of(program, &scoping);
         Self {
+            order,
             scoping,
             unchanged,
             records: FxHashMap::default(),

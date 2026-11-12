@@ -728,8 +728,8 @@ fn array_elements(#[case] source: &str, #[case] expected: &str) {
     "function a() {\n\tconst __devupA = g();\n\treturn __devupA;\n}\nfunction b() {\n\tconst __devupA = h();\n\treturn __devupA;\n}\n"
 )]
 #[case::shadowed_kept(
-    "const __devupA = 1; g(); const __devupB = __devupA; f(() => { const __devupA = 2; return __devupB; });",
-    "const __devupA = 1;\ng();\nconst __devupB = __devupA;\nf(() => {\n\tconst __devupA = 2;\n\treturn __devupB;\n});\n"
+    "const __devupA = h(); g(); const __devupB = __devupA; f(() => { const __devupA = 2; return __devupB; });",
+    "const __devupA = h();\ng();\nconst __devupB = __devupA;\nf(() => {\n\tconst __devupA = 2;\n\treturn __devupB;\n});\n"
 )]
 #[case::written_kept(
     "let __devupA = g(); const __devupB = __devupA; __devupA = 1; f(__devupB);",
@@ -970,4 +970,108 @@ fn overridden_keys(#[case] source: &str, #[case] expected: &str) {
 #[case::text_values_escaped_kept("f(`${\"`\"}${\"$\"}`);", "f(`${\"`\"}${\"$\"}`);\n")]
 fn falsy_and_text(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::past_calls(
+    "let c = 1; const f = () => { const __devupA = c; g(); return h(__devupA); };",
+    "let c = 1;\nconst f = () => {\n\tg();\n\treturn h(c);\n};\n"
+)]
+#[case::rest_member(
+    "const f = (p) => { const { ...rest } = p; rest.b = 1; p.a = 2; const __devupA = rest.a || \"x\"; g(Object.entries(rest), { ...rest }); return <i {...rest} a={__devupA} />; };",
+    "const f = (p) => {\n\tconst { ...rest } = p;\n\trest.b = 1;\n\tp.a = 2;\n\tg(Object.entries(rest), { ...rest });\n\treturn <i {...rest} a={rest.a || \"x\"} />;\n};\n"
+)]
+#[case::local(
+    "const f = (p) => { const b = p.x; const __devupA = b ? !b : b === void 0; g(); return h(__devupA); };",
+    "const f = (p) => {\n\tconst b = p.x;\n\tg();\n\treturn h(b ? !b : b === void 0);\n};\n"
+)]
+#[case::negated_kept(
+    "let c = 1; const f = () => { const __devupA = -c; g(); return h(__devupA); };",
+    "let c = 1;\nconst f = () => {\n\tconst __devupA = -c;\n\tg();\n\treturn h(__devupA);\n};\n"
+)]
+#[case::declared_after_kept(
+    "const f = () => { const __devupA = c; g(); return h(__devupA); }; let c = 1;",
+    "const f = () => {\n\tconst __devupA = c;\n\tg();\n\treturn h(__devupA);\n};\nlet c = 1;\n"
+)]
+#[case::same_statement_kept(
+    "let c = 1, f = () => { const __devupA = c; g(); return h(__devupA); };",
+    "let c = 1, f = () => {\n\tconst __devupA = c;\n\tg();\n\treturn h(__devupA);\n};\n"
+)]
+#[case::reassigned_kept(
+    "let c = 1; c = 2; const f = () => { const __devupA = c; g(); return h(__devupA); };",
+    "let c = 1;\nc = 2;\nconst f = () => {\n\tconst __devupA = c;\n\tg();\n\treturn h(__devupA);\n};\n"
+)]
+#[case::global_kept(
+    "const __devupA = c; g(); h(__devupA);",
+    "const __devupA = c;\ng();\nh(__devupA);\n"
+)]
+#[case::call_kept(
+    "const __devupA = k(); g(); h(__devupA);",
+    "const __devupA = k();\ng();\nh(__devupA);\n"
+)]
+#[case::adding_kept(
+    "const c = 1; const __devupA = c + c; g(); h(__devupA);",
+    "const c = 1;\nconst __devupA = c + c;\ng();\nh(__devupA);\n"
+)]
+#[case::var_kept(
+    "const f = () => { var b = 1; const __devupA = b; g(); return h(__devupA); };",
+    "const f = () => {\n\tvar b = 1;\n\tconst __devupA = b;\n\tg();\n\treturn h(__devupA);\n};\n"
+)]
+#[case::in_function_kept(
+    "let c = 1; const f = () => { const __devupA = c; g(() => __devupA); };",
+    "let c = 1;\nconst f = () => {\n\tconst __devupA = c;\n\tg(() => __devupA);\n};\n"
+)]
+#[case::in_block_kept(
+    "let c = 1; const f = () => { const __devupA = c; { g(); h(__devupA); } };",
+    "let c = 1;\nconst f = () => {\n\tconst __devupA = c;\n\t{\n\t\tg();\n\t\th(__devupA);\n\t}\n};\n"
+)]
+#[case::in_loop_kept(
+    "let c = 1; const f = () => { const __devupA = c; while (g()) h(__devupA); };",
+    "let c = 1;\nconst f = () => {\n\tconst __devupA = c;\n\twhile (g()) h(__devupA);\n};\n"
+)]
+#[case::read_before_kept(
+    "let c = 1; const f = () => { function k() { return __devupA; } const __devupA = c; g(); h(__devupA); };",
+    "let c = 1;\nconst f = () => {\n\tfunction k() {\n\t\treturn __devupA;\n\t}\n\tconst __devupA = c;\n\tg();\n\th(__devupA);\n};\n"
+)]
+#[case::let_kept(
+    "const c = 1; let __devupA = c; g(); h(__devupA);",
+    "const c = 1;\nlet __devupA = c;\ng();\nh(__devupA);\n"
+)]
+#[case::authored_kept(
+    "const c = 1; const a = c; g(); h(a);",
+    "const c = 1;\nconst a = c;\ng();\nh(a);\n"
+)]
+#[case::pattern_kept(
+    "const c = [1]; const [__devupA] = c; g(); h(__devupA);",
+    "const c = [1];\nconst [__devupA] = c;\ng();\nh(__devupA);\n"
+)]
+#[case::two_declarators_kept(
+    "let c = 1; const f = () => { const __devupA = c, d = 2; g(); h(__devupA, d); };",
+    "let c = 1;\nconst f = () => {\n\tconst __devupA = c, d = 2;\n\tg();\n\th(__devupA, d);\n};\n"
+)]
+fn sinks(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::written("rest.a = 1;")]
+#[case::updated("rest.a++;")]
+#[case::deleted("delete rest.a;")]
+#[case::method_called("rest.m();")]
+#[case::passed("g(rest);")]
+#[case::computed("g(rest[\"a\"]);")]
+fn sinks_no_changed_rest(#[case] change: &str) {
+    let source = format!(
+        "const f = (p) => {{ const {{ ...rest }} = p; const __devupA = rest.a; {change} return h(__devupA); }};"
+    );
+    assert!(
+        simplified(&source).contains("const __devupA = rest.a;"),
+        "{source}"
+    );
+}
+
+#[test]
+fn sinks_no_inherited_member() {
+    let source = "const f = (p) => { const { ...rest } = p; const __devupA = rest.toString; g(); return h(__devupA); };";
+    assert!(simplified(source).contains("const __devupA = rest.toString;"));
 }

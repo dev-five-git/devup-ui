@@ -1602,7 +1602,8 @@ impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
         self.rest_then_props(it);
         // What moved into the statements reading it is simplified there.
         let objects = self.known.inline_objects(it);
-        if inline_spread(it) | objects {
+        let sunk = self.known.sink(it);
+        if inline_spread(it) | objects | sunk {
             for statement in it.iter_mut() {
                 self.visit_statement(statement);
             }
