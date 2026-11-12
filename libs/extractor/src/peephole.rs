@@ -44,6 +44,7 @@ pub(crate) fn simplify<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     }
     let mut simplify = Simplify {
         ast,
+        known: known::Known::new(program),
         guards: literals.guards(),
         declared: literals.bound.keys().cloned().collect(),
         settled: literals.settled(),
@@ -56,6 +57,9 @@ pub(crate) fn simplify<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
 
 #[path = "peephole_omit.rs"]
 mod omit;
+
+#[path = "peephole_known.rs"]
+mod known;
 
 /// Whether `name` is one the build gives what it declares, which no code of
 /// the module assigns
@@ -402,6 +406,8 @@ impl<'a> VisitMut<'a> for Alias<'a> {
 
 struct Simplify<'s, 'a> {
     ast: &'s AstBuilder<'a>,
+    /// The objects generated constants hold, where the statements read them
+    known: known::Known<'a>,
     /// The generated constants holding `undefined` unless their guard holds
     guards: FxHashMap<String, String>,
     /// Every name the module declares
@@ -639,6 +645,32 @@ fn joined_around<'a>(
     ))
 }
 
+/// Drops from `[...].filter(Boolean).join(separator)` the parts written falsy,
+/// which `filter(Boolean)` drops whatever they are
+fn drop_falsy_parts(call: &mut CallExpression<'_>) -> bool {
+    let dropped = |element: &ArrayExpressionElement<'_>| element.as_expression().is_some_and(falsy);
+    if join_parts(call).is_some_and(|(parts, _)| parts.iter().any(dropped))
+        && let Expression::StaticMemberExpression(join) = unwrapped_mut(&mut call.callee)
+        && let Expression::CallExpression(filter) = unwrapped_mut(&mut join.object)
+        && let Expression::StaticMemberExpression(member) = unwrapped_mut(&mut filter.callee)
+        && let Expression::ArrayExpression(array) = unwrapped_mut(&mut member.object)
+    {
+        array.elements.retain(|element| !dropped(element));
+        return true;
+    }
+    false
+}
+
+/// Whether `value` is falsy written as such, reading nothing
+fn falsy(value: &Expression<'_>) -> bool {
+    match unwrapped(value) {
+        Expression::StringLiteral(text) => text.value.is_empty(),
+        Expression::NumericLiteral(number) => number.value == 0.0,
+        Expression::NullLiteral(_) => true,
+        value => is_undefined(value),
+    }
+}
+
 /// The elements `[...].filter(Boolean).join(separator)` joins, and the separator
 fn join_parts<'s, 'a>(
     call: &'s CallExpression<'a>,
@@ -731,6 +763,13 @@ fn plain_properties(properties: &[ObjectPropertyKind<'_>]) -> bool {
 
 impl<'a> Simplify<'_, 'a> {
     fn once(&self, it: &mut Expression<'a>) -> bool {
+        // A member of an object the build wrote is the value it wrote there.
+        if let Expression::StaticMemberExpression(member) = it
+            && let Some(value) = self.known.read(self.ast, member)
+        {
+            *it = value;
+            return true;
+        }
         match it {
             // A name called alone binds no `this`, as calling it through a
             // sequence does not either; `eval` read so is not the direct one.
@@ -744,6 +783,9 @@ impl<'a> Simplify<'_, 'a> {
                     call.callee = id;
                     return true;
                 }
+                if drop_falsy_parts(call) {
+                    return true;
+                }
                 if let Some(text) = joined(call) {
                     let text: &'a str = self.ast.allocator().alloc_str(&text);
                     *it = Expression::new_string_literal(SPAN, text, None, self.ast);
@@ -754,6 +796,13 @@ impl<'a> Simplify<'_, 'a> {
                     return true;
                 }
                 false
+            }
+            // What is falsy written as such gives way to the other side.
+            Expression::LogicalExpression(logical)
+                if logical.operator == LogicalOperator::Or && falsy(&logical.left) =>
+            {
+                *it = logical.right.take_in(self.ast);
+                true
             }
             Expression::LogicalExpression(logical) => {
                 let left = match logical.operator {
@@ -865,6 +914,24 @@ impl<'a> Simplify<'_, 'a> {
                 true
             }
             Expression::ObjectExpression(object) => {
+                // Spreading `undefined` or `null` copies nothing.
+                if let Some(index) = object.properties.iter().position(|property| {
+                    matches!(property, ObjectPropertyKind::SpreadProperty(spread)
+                        if is_void(&spread.argument)
+                            || matches!(unwrapped(&spread.argument), Expression::NullLiteral(_)))
+                }) {
+                    object.properties.remove(index);
+                    return true;
+                }
+                for property in &mut object.properties {
+                    if let ObjectPropertyKind::SpreadProperty(spread) = property
+                        && let Expression::StaticMemberExpression(member) =
+                            unwrapped(&spread.argument)
+                        && let Some(value) = self.known.spread(self.ast, member)
+                    {
+                        spread.argument = value;
+                    }
+                }
                 let flat = object.properties.iter().any(|property| {
                     matches!(property, ObjectPropertyKind::SpreadProperty(spread)
                         if matches!(unwrapped(&spread.argument), Expression::ObjectExpression(inner)
@@ -971,6 +1038,32 @@ impl<'a> Simplify<'_, 'a> {
 
     /// Write each template a template holds as a value as part of its text
     fn splice(&self, template: &mut TemplateLiteral<'a>) -> bool {
+        // A string a template holds is text written the same in a template.
+        for expression in &mut template.expressions {
+            if let Expression::StringLiteral(text) = unwrapped(expression)
+                && let Some(text) = text.value.as_str()
+                && !text.contains(['`', '\\', '$', '\n', '\r', '\u{2028}', '\u{2029}'])
+            {
+                let text: &'a str = self.ast.allocator().alloc_str(text);
+                *expression = Expression::new_template_literal(
+                    SPAN,
+                    Vec::from_array_in(
+                        [oxc_ast::ast::TemplateElement::new(
+                            SPAN,
+                            TemplateElementValue {
+                                raw: text.into(),
+                                cooked: Some(text.into()),
+                            },
+                            true,
+                            self.ast,
+                        )],
+                        self.ast,
+                    ),
+                    Vec::new_in(self.ast),
+                    self.ast,
+                );
+            }
+        }
         let Some((index, inner)) =
             template
                 .expressions
@@ -1476,6 +1569,9 @@ fn ref_as_attribute<'a>(
 
 impl<'a> Simplify<'_, 'a> {
     fn rest_then_props(&self, statements: &mut Vec<'a, oxc_ast::ast::Statement<'a>>) {
+        for statement in statements.iter_mut() {
+            self.known.drop_overridden(statement);
+        }
         let mut index = 0;
         while index < statements.len() {
             if let Some(assignments) =
@@ -1499,10 +1595,17 @@ impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
 
     fn visit_statements(&mut self, it: &mut Vec<'a, oxc_ast::ast::Statement<'a>>) {
         inline_spread(it);
-        walk_mut::walk_statements(self, it);
+        for statement in it.iter_mut() {
+            self.visit_statement(statement);
+            self.known.register(self.ast, statement);
+        }
         self.rest_then_props(it);
-        // A rest copied from the object an alias held now reads it in place.
-        if inline_spread(it) {
+        // What moved into the statements reading it is simplified there.
+        let objects = self.known.inline_objects(it);
+        if inline_spread(it) | objects {
+            for statement in it.iter_mut() {
+                self.visit_statement(statement);
+            }
             self.rest_then_props(it);
         }
     }

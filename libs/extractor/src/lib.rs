@@ -16008,7 +16008,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
             "className: [__devupRecord4.className, __devupRecord3.className].filter(Boolean).join(\" \") || undefined",
             "className: [__devupRecord2.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
             "...__devupRecord4.style, ...__devupRecord3.style",
-            "= { id: __devupRecord4.id };",
+            "id: __devupProps.id,",
             "{ ...typeof extra === \"function\" ? extra(__devupRecord4) : extra }",
         ] {
             assert!(compact.contains(expected), "{expected}\n{code}");
