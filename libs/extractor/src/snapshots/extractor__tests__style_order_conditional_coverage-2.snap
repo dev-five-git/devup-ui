@@ -5,5 +5,5 @@ expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr\"import {Text} from '@dev
 ---
 ToBTreeSet {
     styles: {},
-    code: "<span className={isActive, typo ? `typo-${typo}` : \"\"} />;\n",
+    code: "<span className={[isActive, typo ? `typo-${typo}` : \"\"][1]} />;\n",
 }

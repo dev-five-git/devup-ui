@@ -7,9 +7,9 @@ use oxc_allocator::{CloneIn, GetAllocator, TakeIn, Vec};
 use oxc_ast::{
     ast::{
         Argument, ArrayExpressionElement, BindingPattern, CallExpression, Expression,
-        JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXOpeningElement, LogicalOperator,
-        ObjectPropertyKind, Program, PropertyKind, TemplateElementValue, TemplateLiteral,
-        UnaryOperator, VariableDeclarationKind,
+        JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXExpressionContainer,
+        JSXOpeningElement, LogicalOperator, ObjectPropertyKind, Program, PropertyKind,
+        TemplateElementValue, TemplateLiteral, UnaryOperator, VariableDeclarationKind,
     },
     builder::AstBuilder,
 };
@@ -1665,6 +1665,36 @@ impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
         self.visit_expression(&mut it.tag);
         for expression in &mut it.quasi.expressions {
             self.visit_expression(expression);
+        }
+    }
+
+    fn visit_jsx_expression_container(&mut self, it: &mut JSXExpressionContainer<'a>) {
+        walk_mut::walk_jsx_expression_container(self, it);
+        // JSX takes no comma operator, which the code writes without its
+        // parentheses: an array evaluates its parts in the same order.
+        if let Some(value) = it.expression.as_expression_mut()
+            && let Expression::SequenceExpression(sequence) = value
+        {
+            let last = sequence.expressions.len() - 1;
+            let parts = sequence
+                .expressions
+                .take_in(self.ast)
+                .into_iter()
+                .map(ArrayExpressionElement::from);
+            let parts = Vec::from_iter_in(parts, self.ast);
+            *value = Expression::new_computed_member_expression(
+                SPAN,
+                Expression::new_array_expression(SPAN, parts, self.ast),
+                Expression::new_numeric_literal(
+                    SPAN,
+                    f64::from(u32::try_from(last).unwrap_or(u32::MAX)),
+                    None,
+                    oxc_syntax::number::NumberBase::Decimal,
+                    self.ast,
+                ),
+                false,
+                self.ast,
+            );
         }
     }
 

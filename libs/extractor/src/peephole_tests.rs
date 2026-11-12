@@ -38,6 +38,11 @@ fn simplified(source: &str) -> String {
 #[case::method_kept("(0, a.b)();", "(0, a.b)();\n")]
 #[case::optional_call_kept("(0, f)?.();", "(0, f)?.();\n")]
 #[case::joined(r#"f(["a", "", "b"].filter(Boolean).join(" "));"#, "f(\"a b\");\n")]
+#[case::same_branches_in_jsx(
+    r#"<a b={c === "d" ? "e" : "e"}>{f ? g : g}</a>;"#,
+    "<a b={[c === \"d\", \"e\"][1]}>{[f, g][1]}</a>;\n"
+)]
+#[case::same_branches("x = c ? 1 : 1;", "x = (c, 1);\n")]
 #[case::joined_value_kept(
     r#"f(["a", x].filter(Boolean).join(" "));"#,
     "f([\"a\", x].filter(Boolean).join(\" \"));\n"
