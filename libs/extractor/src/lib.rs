@@ -15854,7 +15854,7 @@ const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
                 "{body}"
             );
             assert!(
-                body.contains("Object.fromEntries(Object.entries("),
+                body.contains("Object.fromEntries(Object.entries(") || body.contains("__devupOmit"),
                 "{body}"
             );
             assert!(body.contains("as={forwardedAs}"), "{body}");

@@ -218,6 +218,85 @@ fn templates(#[case] source: &str, #[case] expected: &str) {
 }
 
 #[rstest]
+#[case::shared(
+    r#"import a from "a"; const x = Object.fromEntries(Object.entries(p).filter(([k]) => k[0] !== "$")); const y = Object.fromEntries(Object.entries(q).filter(([k]) => k[0] !== "$"));"#,
+    "import a from \"a\";\nfunction __devupOmit0(__devupOmitted) {\n\treturn Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k[0] !== \"$\"));\n}\nconst x = __devupOmit0(p);\nconst y = __devupOmit0(q);\n"
+)]
+#[case::once_kept(
+    r#"const x = Object.fromEntries(Object.entries(p).filter(([k]) => k[0] !== "$")); const y = Object.fromEntries(Object.entries(q).filter(([k]) => k !== "a"));"#,
+    "const x = Object.fromEntries(Object.entries(p).filter(([k]) => k[0] !== \"$\"));\nconst y = Object.fromEntries(Object.entries(q).filter(([k]) => k !== \"a\"));\n"
+)]
+#[case::name_taken(
+    r"const __devupOmit0 = 1; f(Object.fromEntries(Object.entries(p).filter(([k]) => k)), Object.fromEntries(Object.entries(q).filter(([k]) => k)));",
+    "function __devupOmit1(__devupOmitted) {\n\treturn Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k));\n}\nconst __devupOmit0 = 1;\nf(__devupOmit1(p), __devupOmit1(q));\n"
+)]
+#[case::free_name_kept(
+    r"f(Object.fromEntries(Object.entries(p).filter(([k]) => k !== n)), Object.fromEntries(Object.entries(q).filter(([k]) => k !== n)));",
+    "f(Object.fromEntries(Object.entries(p).filter(([k]) => k !== n)), Object.fromEntries(Object.entries(q).filter(([k]) => k !== n)));\n"
+)]
+#[case::object_declared_kept(
+    r"const Object = g(); f(Object.fromEntries(Object.entries(p).filter(([k]) => k)), Object.fromEntries(Object.entries(q).filter(([k]) => k)));",
+    "const Object = g();\nf(Object.fromEntries(Object.entries(p).filter(([k]) => k)), Object.fromEntries(Object.entries(q).filter(([k]) => k)));\n"
+)]
+#[case::other_shapes_kept(
+    r"f(Object.fromEntries(Object.entries(p).filter((k) => k)), Object.fromEntries(Object.entries(q).filter((k) => k)), Object.fromEntries(Object.entries(p).map(([k]) => k)), Object.fromEntries(Object.entries(q).map(([k]) => k)), Object.fromEntries(Object.entries(p, 1).filter(([k]) => k)), Object.fromEntries(Object.entries(q, 1).filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter(async ([k]) => k)), Object.fromEntries(Object.entries(q).filter(async ([k]) => k)), Object.fromEntries(Object.entries(p).filter(([k], ...r) => k)), Object.fromEntries(Object.entries(q).filter(([k], ...r) => k)), Object.fromEntries(Object.entries(p).filter(([k, ...r]) => k)), Object.fromEntries(Object.entries(q).filter(([k, ...r]) => k)), Object.fromEntries(Object.entries(p).filter(([k] = 1) => k)), Object.fromEntries(Object.entries(q).filter(([k] = 1) => k)), Object.fromEntries(Object.entries(p).filter(([k]) => this)), Object.fromEntries(Object.entries(q).filter(([k]) => this)), Object?.fromEntries(Object.entries(p).filter(([k]) => k)), Object?.fromEntries(Object.entries(q).filter(([k]) => k)), Object.fromEntries(Object.entries(p)?.filter(([k]) => k)), Object.fromEntries(Object.entries(q)?.filter(([k]) => k)), Object.fromEntries(...a), Object.fromEntries(...b));",
+    "f(Object.fromEntries(Object.entries(p).filter((k) => k)), Object.fromEntries(Object.entries(q).filter((k) => k)), Object.fromEntries(Object.entries(p).map(([k]) => k)), Object.fromEntries(Object.entries(q).map(([k]) => k)), Object.fromEntries(Object.entries(p, 1).filter(([k]) => k)), Object.fromEntries(Object.entries(q, 1).filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter(async ([k]) => k)), Object.fromEntries(Object.entries(q).filter(async ([k]) => k)), Object.fromEntries(Object.entries(p).filter(([k], ...r) => k)), Object.fromEntries(Object.entries(q).filter(([k], ...r) => k)), Object.fromEntries(Object.entries(p).filter(([k, ...r]) => k)), Object.fromEntries(Object.entries(q).filter(([k, ...r]) => k)), Object.fromEntries(Object.entries(p).filter(([k] = 1) => k)), Object.fromEntries(Object.entries(q).filter(([k] = 1) => k)), Object.fromEntries(Object.entries(p).filter(([k]) => this)), Object.fromEntries(Object.entries(q).filter(([k]) => this)), Object?.fromEntries(Object.entries(p).filter(([k]) => k)), Object?.fromEntries(Object.entries(q).filter(([k]) => k)), Object.fromEntries(Object.entries(p)?.filter(([k]) => k)), Object.fromEntries(Object.entries(q)?.filter(([k]) => k)), Object.fromEntries(...a), Object.fromEntries(...b));\n"
+)]
+#[case::shared_beside_one(
+    "f(Object.fromEntries(Object.entries(p).filter(([k]) => k)), Object.fromEntries(Object.entries(q).filter(([k]) => k)), Object.fromEntries(Object.entries(r).filter(([k]) => !k)));",
+    "function __devupOmit0(__devupOmitted) {\n\treturn Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k));\n}\nf(__devupOmit0(p), __devupOmit0(q), Object.fromEntries(Object.entries(r).filter(([k]) => !k)));\n"
+)]
+#[case::parenthesized(
+    r"f(Object.fromEntries((Object.entries(p)).filter(([k]) => k)), Object.fromEntries(Object.entries(q).filter(([k]) => k)));",
+    "function __devupOmit0(__devupOmitted) {\n\treturn Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k));\n}\nf(__devupOmit0(p), __devupOmit0(q));\n"
+)]
+#[case::more_shapes_kept(
+    r#"f(Object.fromEntries(Object.entries(...p).filter(([k]) => k)), Object.fromEntries(Object.entries(...q).filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter(...g)), Object.fromEntries(Object.entries(q).filter(...g)), Object.fromEntries(Object.entries(p)["filter"](([k]) => k)), Object.fromEntries(Object.entries(q)["filter"](([k]) => k)), Object.fromEntries(Object.entries(p).filter(([k]) => k, 1)), Object.fromEntries(Object.entries(q).filter(([k]) => k, 1)), Object.fromEntries(e.filter(([k]) => k)), Object.fromEntries(e.filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter(g)), Object.fromEntries(Object.entries(q).filter(g)), Object.fromEntries(Object.entries(p).filter(([[k]]) => k)), Object.fromEntries(Object.entries(q).filter(([[k]]) => k)), Object.fromEntries(Object.entries(p).filter(([k, v]) => k)), Object.fromEntries(Object.entries(q).filter(([k, v]) => k)), Object.fromEntries(Object.entries(p).filter(({ k }) => k)), Object.fromEntries(Object.entries(q).filter(({ k }) => k)), Object.fromEntries(Object.entries(p).filter(() => 1)), Object.fromEntries(Object.entries(q).filter(() => 1)), Object.fromEntries(Object.entries?.(p).filter(([k]) => k)), Object.fromEntries(Object.entries?.(q).filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter?.(([k]) => k)), Object.fromEntries(Object.entries(q).filter?.(([k]) => k)), Object.fromEntries?.(Object.entries(p).filter(([k]) => k)), Object.fromEntries?.(Object.entries(q).filter(([k]) => k)), O.fromEntries(Object.entries(p).filter(([k]) => k)), O.fromEntries(Object.entries(q).filter(([k]) => k)));"#,
+    "f(Object.fromEntries(Object.entries(...p).filter(([k]) => k)), Object.fromEntries(Object.entries(...q).filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter(...g)), Object.fromEntries(Object.entries(q).filter(...g)), Object.fromEntries(Object.entries(p)[\"filter\"](([k]) => k)), Object.fromEntries(Object.entries(q)[\"filter\"](([k]) => k)), Object.fromEntries(Object.entries(p).filter(([k]) => k, 1)), Object.fromEntries(Object.entries(q).filter(([k]) => k, 1)), Object.fromEntries(e.filter(([k]) => k)), Object.fromEntries(e.filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter(g)), Object.fromEntries(Object.entries(q).filter(g)), Object.fromEntries(Object.entries(p).filter(([[k]]) => k)), Object.fromEntries(Object.entries(q).filter(([[k]]) => k)), Object.fromEntries(Object.entries(p).filter(([k, v]) => k)), Object.fromEntries(Object.entries(q).filter(([k, v]) => k)), Object.fromEntries(Object.entries(p).filter(({ k }) => k)), Object.fromEntries(Object.entries(q).filter(({ k }) => k)), Object.fromEntries(Object.entries(p).filter(() => 1)), Object.fromEntries(Object.entries(q).filter(() => 1)), Object.fromEntries(Object.entries?.(p).filter(([k]) => k)), Object.fromEntries(Object.entries?.(q).filter(([k]) => k)), Object.fromEntries(Object.entries(p).filter?.(([k]) => k)), Object.fromEntries(Object.entries(q).filter?.(([k]) => k)), Object.fromEntries?.(Object.entries(p).filter(([k]) => k)), Object.fromEntries?.(Object.entries(q).filter(([k]) => k)), O.fromEntries(Object.entries(p).filter(([k]) => k)), O.fromEntries(Object.entries(q).filter(([k]) => k)));\n"
+)]
+fn shares_filters(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
+#[case::rest(
+    "function c(__devupP, __devupR) { const { a, b: d = 1, ...rest } = { ...__devupP, ref: __devupR }; return rest; }",
+    "function c(__devupP, __devupR) {\n\tconst { a, b: d = 1, ...rest } = __devupP;\n\trest.ref = __devupR;\n\treturn rest;\n}\n"
+)]
+#[case::named_ref_kept(
+    "const { ref: r, ...rest } = { ...__devupP, ref: __devupR };",
+    "const { ref: r, ...rest } = {\n\t...__devupP,\n\tref: __devupR\n};\n"
+)]
+#[case::computed_kept(
+    "const { [k]: r, ...rest } = { ...__devupP, ref: __devupR };",
+    "const { [k]: r, ...rest } = {\n\t...__devupP,\n\tref: __devupR\n};\n"
+)]
+#[case::no_rest_kept(
+    "const { a } = { ...__devupP, ref: __devupR };",
+    "const { a } = {\n\t...__devupP,\n\tref: __devupR\n};\n"
+)]
+#[case::authored_props_kept(
+    "const { ...rest } = { ...p, ref: __devupR };",
+    "const { ...rest } = {\n\t...p,\n\tref: __devupR\n};\n"
+)]
+#[case::other_key_kept(
+    "const { ...rest } = { ...__devupP, key: __devupR };",
+    "const { ...rest } = {\n\t...__devupP,\n\tkey: __devupR\n};\n"
+)]
+#[case::getter_kept(
+    "const { ...rest } = { ...__devupP, get ref() { return 1; } };",
+    "const { ...rest } = {\n\t...__devupP,\n\tget ref() {\n\t\treturn 1;\n\t}\n};\n"
+)]
+#[case::not_copied_kept("const { ...rest } = __devupP;", "const { ...rest } = __devupP;\n")]
+#[case::spread_alone_kept(
+    "const { ...rest } = { ...__devupP };",
+    "const { ...rest } = { ...__devupP };\n"
+)]
+fn rest_takes_ref(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
+}
+
+#[rstest]
 #[case::after(
     r#"const { className } = p; f(["a b", className].filter(Boolean).join(" "));"#,
     "const { className } = p;\nf(className ? `a b ${className}` : \"a b\");\n"
@@ -419,9 +498,25 @@ fn array_elements(#[case] source: &str, #[case] expected: &str) {
     "const __devupA = g(); const b = __devupA; f(b);",
     "const __devupA = g();\nconst b = __devupA;\nf(b);\n"
 )]
-#[case::authored_target_kept(
-    "const a = g(); const __devupB = a; f(__devupB);",
-    "const a = g();\nconst __devupB = a;\nf(__devupB);\n"
+#[case::authored_constant(
+    "const a = g(); function c() { const __devupB = a; return () => __devupB; }",
+    "const a = g();\nfunction c() {\n\treturn () => a;\n}\n"
+)]
+#[case::import(
+    "import { a } from \"m\"; const __devupB = a; f(__devupB);",
+    "import { a } from \"m\";\nf(a);\n"
+)]
+#[case::authored_let_kept(
+    "let a = g(); const __devupB = a; f(__devupB);",
+    "let a = g();\nconst __devupB = a;\nf(__devupB);\n"
+)]
+#[case::authored_var_kept(
+    "var a = g(); const __devupB = a; f(__devupB);",
+    "var a = g();\nconst __devupB = a;\nf(__devupB);\n"
+)]
+#[case::parameter_kept(
+    "function c(a) { const __devupB = a; return () => __devupB; }",
+    "function c(a) {\n\tconst __devupB = a;\n\treturn () => __devupB;\n}\n"
 )]
 #[case::global_kept(
     "const __devupB = __devupA; f(__devupB);",

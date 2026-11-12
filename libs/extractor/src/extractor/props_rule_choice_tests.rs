@@ -251,8 +251,15 @@ fn invalid_value_prop_is_withheld_when_whole_rule_function_is_lowered() {
 fn inherited_reads_keep_condition_prop_when_extension_is_used() {
     let rules = "const Base = styled('div')(p => p.on ? { color: 'blue' } : { color: 'red' }); const Choice = styled(Base)({ opacity: 0.5 }); export const Example = <Choice on={enabled} title='valid' />;";
     let output = compile(rules);
+    // Both components withhold it, through the one filter they share.
+    let shared = output
+        .code
+        .split("function ")
+        .find(|function| function.contains("k !== \"on\""))
+        .and_then(|function| function.split('(').next())
+        .unwrap_or_default();
     assert_eq!(
-        output.code.matches("k !== \"on\"").count(),
+        output.code.matches(&format!("{shared}(rest)")).count(),
         2,
         "{}",
         output.code

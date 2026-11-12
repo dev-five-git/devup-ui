@@ -26,14 +26,18 @@ pub(crate) fn simplify<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
         literals = Literals::default();
         literals.visit_program(program);
     }
-    Simplify {
+    let mut simplify = Simplify {
         ast,
         guards: literals.guards(),
         declared: literals.bound.keys().cloned().collect(),
         objects: literals.objects(),
-    }
-    .visit_program(program);
+    };
+    simplify.visit_program(program);
+    omit::share(ast, program, &simplify.declared);
 }
+
+#[path = "peephole_omit.rs"]
+mod omit;
 
 /// Whether `name` is one the build gives what it declares, which no code of
 /// the module assigns
@@ -62,7 +66,7 @@ struct Literals {
     bound: FxHashMap<String, usize>,
     literal: FxHashMap<String, usize>,
     written: FxHashSet<String>,
-    /// The generated constants declared as another generated name
+    /// The generated constants declared as another name
     alias: FxHashMap<String, String>,
     /// The generated constants declared as `guard ? value : undefined`,
     /// with that guard
@@ -122,7 +126,7 @@ impl<'a> Visit<'a> for Literals {
                     && let Some(init) = &declarator.init
                 {
                     match unwrapped(init) {
-                        Expression::Identifier(target) if generated(&target.name) => {
+                        Expression::Identifier(target) => {
                             self.alias
                                 .insert(id.name.to_string(), target.name.to_string());
                         }
@@ -173,7 +177,8 @@ impl<'a> Visit<'a> for Literals {
 }
 
 /// Read each generated constant declared as another as the one it holds,
-/// where that name reads it, and drop its declaration
+/// where that name reads it, and drop its declaration: a generated name, or
+/// a constant or import of the module, which holds one value once read
 fn inline_aliases<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     let scoping = oxc_semantic::SemanticBuilder::new()
         .build(program)
@@ -186,6 +191,10 @@ fn inline_aliases<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
         if let Some(symbol) = scoping.get_reference(target).symbol_id()
             && !scoping.symbol_is_mutated(alias)
             && !scoping.symbol_is_mutated(symbol)
+            && (generated(scoping.symbol_name(symbol)) || {
+                let flags = scoping.symbol_flags(symbol);
+                flags.is_const_variable() || flags.is_import()
+            })
         {
             targets.insert(alias, symbol);
         }
@@ -214,7 +223,7 @@ fn inline_aliases<'a>(ast: &AstBuilder<'a>, program: &mut Program<'a>) {
     }
 }
 
-/// The generated constants declared as another generated name
+/// The generated constants declared as another name
 #[derive(Default)]
 struct Declared {
     aliases: std::vec::Vec<(oxc_semantic::SymbolId, oxc_semantic::ReferenceId)>,
@@ -229,7 +238,6 @@ impl<'a> Visit<'a> for Declared {
                     && let Some(symbol) = id.symbol_id.get()
                     && let Some(Expression::Identifier(target)) =
                         declarator.init.as_ref().map(unwrapped)
-                    && generated(&target.name)
                     && let Some(reference) = target.reference_id.get()
                 {
                     self.aliases.push((symbol, reference));
@@ -911,10 +919,95 @@ impl<'a> Simplify<'_, 'a> {
     }
 }
 
+/// `const { ...rest } = { ...props, ref }` as `const { ...rest } = props;
+/// rest.ref = ref;`: the rest is a new object either way, which takes `ref`
+/// last or where `props` held it, and copying `props` once is enough
+fn rest_then_ref<'a>(
+    ast: &AstBuilder<'a>,
+    statement: &mut oxc_ast::ast::Statement<'a>,
+) -> Option<oxc_ast::ast::Statement<'a>> {
+    let oxc_ast::ast::Statement::VariableDeclaration(declaration) = statement else {
+        return None;
+    };
+    let [declarator] = declaration.declarations.as_mut_slice() else {
+        return None;
+    };
+    let BindingPattern::ObjectPattern(pattern) = &declarator.id else {
+        return None;
+    };
+    let rest = pattern.rest.as_ref()?.argument.get_binding_identifier()?;
+    // A property the pattern names itself reads `ref` from the copy.
+    if pattern.properties.iter().any(|property| {
+        property.computed
+            || property
+                .key
+                .static_name()
+                .is_none_or(|key| key.as_str() == Some("ref"))
+    }) {
+        return None;
+    }
+    let Some(Expression::ObjectExpression(object)) = declarator.init.as_mut().map(unwrapped_mut)
+    else {
+        return None;
+    };
+    let [
+        ObjectPropertyKind::SpreadProperty(props),
+        ObjectPropertyKind::ObjectProperty(reference),
+    ] = object.properties.as_mut_slice()
+    else {
+        return None;
+    };
+    if pure_name(&props.argument).is_none()
+        || pure_name(&reference.value).is_none()
+        || reference.computed
+        || reference.kind != PropertyKind::Init
+        || reference.method
+        || reference
+            .key
+            .static_name()
+            .is_none_or(|key| key.as_str() != Some("ref"))
+    {
+        return None;
+    }
+    let target = oxc_ast::ast::AssignmentTarget::StaticMemberExpression(
+        oxc_ast::ast::StaticMemberExpression::boxed(
+            SPAN,
+            Expression::new_identifier(SPAN, ast.allocator().alloc_str(&rest.name), ast),
+            oxc_ast::ast::IdentifierName::new(SPAN, "ref", ast),
+            false,
+            ast,
+        ),
+    );
+    let assignment = Expression::new_assignment_expression(
+        SPAN,
+        oxc_syntax::operator::AssignmentOperator::Assign,
+        target,
+        reference.value.take_in(ast),
+        ast,
+    );
+    let props = props.argument.take_in(ast);
+    declarator.init = Some(props);
+    Some(oxc_ast::ast::Statement::new_expression_statement(
+        SPAN, assignment, ast,
+    ))
+}
+
 impl<'a> VisitMut<'a> for Simplify<'_, 'a> {
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
         walk_mut::walk_expression(self, it);
         while self.once(it) {}
+    }
+
+    fn visit_statements(&mut self, it: &mut Vec<'a, oxc_ast::ast::Statement<'a>>) {
+        walk_mut::walk_statements(self, it);
+        let mut index = 0;
+        while index < it.len() {
+            if let Some(assignment) = rest_then_ref(self.ast, &mut it[index]) {
+                index += 1;
+                it.insert(index, assignment);
+            }
+            index += 1;
+        }
     }
 
     fn visit_static_member_expression(
