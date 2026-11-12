@@ -19,6 +19,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::{INHERITED, Known, literal};
 use crate::peephole::{generated, unwrapped};
 
+#[path = "peephole_unread.rs"]
+mod unread;
+
 /// Which top-level statement makes each scope, and declares each top-level
 /// lexical binding: a function a later statement makes runs only once the
 /// earlier statements initialized what they declare
@@ -58,12 +61,16 @@ impl<'a> Visit<'a> for Order {
     }
 }
 
-/// The bindings earlier statements of a list declare in its scope, and of
-/// those, the ones an object rest binds: a new object of data properties
+/// The bindings earlier statements of a list declare in its scope, of
+/// those the ones an object rest binds, a new object of data properties, and
+/// the generated constants bound to an array or object literal
 #[derive(Default)]
 struct Before {
     symbols: FxHashSet<SymbolId>,
     rests: FxHashSet<SymbolId>,
+    literals: FxHashSet<SymbolId>,
+    /// Whether members of those literals count as read without effect
+    loose: bool,
 }
 
 impl<'a> Visit<'a> for Before {
@@ -269,6 +276,21 @@ impl<'a> Known<'a> {
                         })
                     }
             }),
+            Expression::ComputedMemberExpression(member) => {
+                before.loose
+                    && literal(&member.expression)
+                    && self
+                        .symbol(&member.object)
+                        .is_some_and(|symbol| before.literals.contains(&symbol))
+            }
+            Expression::StaticMemberExpression(member)
+                if before.loose
+                    && self
+                        .symbol(&member.object)
+                        .is_some_and(|symbol| before.literals.contains(&symbol)) =>
+            {
+                true
+            }
             Expression::StaticMemberExpression(member) => {
                 self.symbol(&member.object).is_some_and(|symbol| {
                     !INHERITED.contains(&member.property.name.as_str())
@@ -346,43 +368,67 @@ impl<'a> Known<'a> {
     }
 
     fn sinkable(&self, statements: &[Statement<'a>], index: usize) -> Option<SymbolId> {
-        let Statement::VariableDeclaration(declaration) = &statements[index] else {
-            return None;
-        };
-        let [declarator] = declaration.declarations.as_slice() else {
-            return None;
-        };
-        let BindingPattern::BindingIdentifier(id) = &declarator.id else {
-            return None;
-        };
-        let symbol = id.symbol_id.get()?;
-        if declaration.kind != VariableDeclarationKind::Const || !generated(&id.name) {
-            return None;
-        }
-        let mut count = Count {
-            name: &id.name,
-            reads: 0,
-        };
+        let (symbol, name, value) = constant(statements, index)?;
         // A function declared before may read it too.
-        for statement in statements {
-            count.visit_statement(statement);
-        }
-        if count.reads != 1 {
+        if reads(name, statements) != 1 {
             return None;
         }
         let scope = self.scoping.symbol_scope_id(symbol);
-        let mut before = Before::default();
-        for statement in &statements[..index] {
-            if let Statement::VariableDeclaration(declaration) = statement
-                && declaration.kind != VariableDeclarationKind::Var
-            {
-                for declarator in &declaration.declarations {
-                    before.visit_binding_pattern(&declarator.id);
-                }
-            }
-        }
-        let value = declarator.init.as_ref()?;
-        self.fixed(value, scope, &before, statements)
+        self.fixed(value, scope, &before(statements, index), statements)
             .then_some(symbol)
     }
+}
+
+/// The generated constant the statement at `index` binds alone, its name and
+/// its value
+fn constant<'s, 'a>(
+    statements: &'s [Statement<'a>],
+    index: usize,
+) -> Option<(SymbolId, &'s str, &'s Expression<'a>)> {
+    let Statement::VariableDeclaration(declaration) = &statements[index] else {
+        return None;
+    };
+    let [declarator] = declaration.declarations.as_slice() else {
+        return None;
+    };
+    let BindingPattern::BindingIdentifier(id) = &declarator.id else {
+        return None;
+    };
+    if declaration.kind != VariableDeclarationKind::Const || !generated(&id.name) {
+        return None;
+    }
+    Some((
+        id.symbol_id.get()?,
+        id.name.as_str(),
+        declarator.init.as_ref()?,
+    ))
+}
+
+/// How often the statements name `name`
+fn reads(name: &str, statements: &[Statement<'_>]) -> usize {
+    let mut count = Count { name, reads: 0 };
+    for statement in statements {
+        count.visit_statement(statement);
+    }
+    count.reads
+}
+
+/// What the statements before `index` declare
+fn before(statements: &[Statement<'_>], index: usize) -> Before {
+    let mut before = Before::default();
+    for (at, statement) in statements[..index].iter().enumerate() {
+        if let Statement::VariableDeclaration(declaration) = statement
+            && declaration.kind != VariableDeclarationKind::Var
+        {
+            for declarator in &declaration.declarations {
+                before.visit_binding_pattern(&declarator.id);
+            }
+        }
+        if let Some((symbol, _, Expression::ArrayExpression(_) | Expression::ObjectExpression(_))) =
+            constant(statements, at)
+        {
+            before.literals.insert(symbol);
+        }
+    }
+    before
 }

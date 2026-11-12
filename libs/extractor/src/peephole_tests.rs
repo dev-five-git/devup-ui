@@ -728,8 +728,8 @@ fn array_elements(#[case] source: &str, #[case] expected: &str) {
     "function a() {\n\tconst __devupA = g();\n\treturn __devupA;\n}\nfunction b() {\n\tconst __devupA = h();\n\treturn __devupA;\n}\n"
 )]
 #[case::shadowed_kept(
-    "const __devupA = h(); g(); const __devupB = __devupA; f(() => { const __devupA = 2; return __devupB; });",
-    "const __devupA = h();\ng();\nconst __devupB = __devupA;\nf(() => {\n\tconst __devupA = 2;\n\treturn __devupB;\n});\n"
+    "const __devupA = h(); g(); const __devupB = __devupA; f(() => { const __devupA = k(); return __devupB; });",
+    "const __devupA = h();\ng();\nconst __devupB = __devupA;\nf(() => {\n\tconst __devupA = k();\n\treturn __devupB;\n});\n"
 )]
 #[case::written_kept(
     "let __devupA = g(); const __devupB = __devupA; __devupA = 1; f(__devupB);",
@@ -809,8 +809,8 @@ fn aliases(#[case] source: &str, #[case] expected: &str) {
     "const __devupA = { a: 1 };\ng(__devupA);\nf(__devupA.a);\n"
 )]
 #[case::shadowed_source(
-    "const __devupA = { ...p }; const __devupB = { ...__devupA }; function g() { const __devupA = 1; return __devupB.x; }",
-    "const __devupB = { ...p };\nfunction g() {\n\tconst __devupA = 1;\n\treturn __devupB.x;\n}\n"
+    "const __devupA = { ...p }; const __devupB = { ...__devupA }; function g() { const __devupA = k(); return __devupB.x; }",
+    "const __devupB = { ...p };\nfunction g() {\n\tconst __devupA = k();\n\treturn __devupB.x;\n}\n"
 )]
 #[case::proto_kept(
     "const __devupA = { __proto__: q, a: 1 }; f(__devupA.a);",
@@ -871,18 +871,8 @@ f({
     "let __devupA = { b: 1 };\nf(__devupA.b);\n"
 )]
 #[case::shadowed_spread_kept(
-    "const __devupA = { ...p }; const __devupB = { ...__devupA, c: 1 }; f(__devupA.y); function g() { const __devupA = 1; return { ...__devupB.x }; }",
-    "const __devupA = { ...p };
-const __devupB = {
-	...__devupA,
-	c: 1
-};
-f(__devupA.y);
-function g() {
-	const __devupA = 1;
-	return { ...__devupB.x };
-}
-"
+    "const __devupA = { ...p }; const __devupB = { ...__devupA, c: 1 }; f(__devupA.y); function g() { const __devupA = k(); return { ...__devupB.x }; }",
+    "const __devupA = { ...p };\nconst __devupB = {\n\t...__devupA,\n\tc: 1\n};\nf(__devupA.y);\nfunction g() {\n\tconst __devupA = k();\n\treturn { ...__devupB.x };\n}\n"
 )]
 fn known_members(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(simplified(source), expected, "{source}");
@@ -1074,4 +1064,66 @@ fn sinks_no_changed_rest(#[case] change: &str) {
 fn sinks_no_inherited_member() {
     let source = "const f = (p) => { const { ...rest } = p; const __devupA = rest.toString; g(); return h(__devupA); };";
     assert!(simplified(source).contains("const __devupA = rest.toString;"));
+}
+
+#[rstest]
+#[case::unread(
+    "function f() { const __devupA = 1; g(); }",
+    "function f() {\n\tg();\n}\n"
+)]
+#[case::unread_running_kept(
+    "function f() { const __devupA = k(); }",
+    "function f() {\n\tconst __devupA = k();\n}\n"
+)]
+#[case::unread_members(
+    "function f() { const __devupA = [1]; const __devupB = __devupA[0] === 1; const __devupC = __devupA.length; g(__devupA); }",
+    "function f() {\n\tconst __devupA = [1];\n\tg(__devupA);\n}\n"
+)]
+#[case::top_level_kept("const __devupA = 1; g();", "const __devupA = 1;\ng();\n")]
+#[case::only_written(
+    "function f(p) { const __devupA = [\"0\"]; __devupA[\"0\"] = g(); p && (__devupA[0] = h(), 1); }",
+    "function f(p) {\n\tg();\n\tp && (h(), 1);\n}\n"
+)]
+#[case::only_written_object(
+    "function f() { const __devupA = { a: 1 }; __devupA.a = g(); }",
+    "function f() {\n\tg();\n}\n"
+)]
+#[case::written_then_read_kept(
+    "function f() { const __devupA = [0]; __devupA[0] = g(); h(__devupA); }",
+    "function f() {\n\tconst __devupA = [0];\n\t__devupA[0] = g();\n\th(__devupA);\n}\n"
+)]
+#[case::written_under_unknown_key_kept(
+    "function f() { const __devupA = [0]; __devupA[k] = g(); }",
+    "function f() {\n\tconst __devupA = [0];\n\t__devupA[k] = g();\n}\n"
+)]
+#[case::added_kept(
+    "function f() { const __devupA = [0]; __devupA[0] += g(); }",
+    "function f() {\n\tconst __devupA = [0];\n\t__devupA[0] += g();\n}\n"
+)]
+#[case::running_kept(
+    "function f() { const __devupA = [g()]; __devupA[0] = 1; }",
+    "function f() {\n\tconst __devupA = [g()];\n\t__devupA[0] = 1;\n}\n"
+)]
+#[case::literal(
+    "function f() { const __devupA = true; g(__devupA, () => __devupA); }",
+    "function f() {\n\tg(true, () => true);\n}\n"
+)]
+#[case::literal_hoisted_kept(
+    "function f() { const __devupA = 0; g(); function k() { return __devupA; } }",
+    "function f() {\n\tconst __devupA = 0;\n\tg();\n\tfunction k() {\n\t\treturn __devupA;\n\t}\n}\n"
+)]
+#[case::literal_long_kept(
+    "function f() { const __devupA = 1234567; g(__devupA, __devupA); }",
+    "function f() {\n\tconst __devupA = 1234567;\n\tg(__devupA, __devupA);\n}\n"
+)]
+#[case::statements(
+    "function f(p) { const { ...r } = p; r.a; r.b && 1; \"x\"; g() && 1; g(); }",
+    "function f(p) {\n\tconst { ...r } = p;\n\tg();\n\tg();\n}\n"
+)]
+#[case::statements_kept(
+    "function f() { x; x || g(); }",
+    "function f() {\n\tx;\n\tx || g();\n}\n"
+)]
+fn tidies(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(simplified(source), expected, "{source}");
 }
