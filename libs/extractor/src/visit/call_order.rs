@@ -117,8 +117,11 @@ impl<'a> DevupVisitor<'a> {
         let items = self.property_items(object, kept, css_only);
         for property in &mut object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property
-                && property.key.static_name().is_none_or(|key| key != "css")
+                && property.key.static_name().is_some_and(|key| key == "css")
             {
+                // `css` reads its values itself, which hold one value as others do
+                crate::const_fold::fold(&self.ast, &mut property.value);
+            } else if let ObjectPropertyKind::ObjectProperty(property) = property {
                 if property
                     .key
                     .static_name()
@@ -126,6 +129,13 @@ impl<'a> DevupVisitor<'a> {
                 {
                     self.style_values
                         .read_in_class(&self.ast, &mut property.value);
+                } else if property
+                    .key
+                    .static_name()
+                    .is_some_and(|key| key == "styleOrder")
+                {
+                    self.style_values
+                        .read_in_order(&self.ast, &mut property.value);
                 } else {
                     self.style_values.read_in(&self.ast, &mut property.value);
                 }

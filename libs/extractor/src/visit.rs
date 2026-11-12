@@ -121,6 +121,7 @@ mod order;
 #[cfg(test)]
 mod order_tests;
 mod selected_capture;
+pub(crate) use selected_capture::{INHERITED, own_key};
 #[cfg(test)]
 mod semantics_helpers_tests;
 mod style_order;
@@ -1576,6 +1577,7 @@ impl<'a> DevupVisitor<'a> {
         self.bindings.remember(&value);
         let reads = self.bindings.lowered_reads(&value);
         self.report_reads(reads);
+        crate::const_fold::fold(&self.ast, &mut value);
         self.css_prop_value(element, &mut value);
         self.visit_expression(&mut value);
         self.jsx.compiled_css_prop = true;

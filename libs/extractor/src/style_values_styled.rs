@@ -24,6 +24,7 @@ impl<'a> StyleValues<'a> {
                 if let Some(mut reads) = self.reads(ast, false) {
                     reads.rule_source(expression);
                 }
+                crate::const_fold::fold(ast, expression);
                 continue;
             };
             let mut rules = returned.take_in(ast);

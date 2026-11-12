@@ -212,6 +212,13 @@ impl<'a> Preparation<'_, '_, 'a> {
             {
                 Some(source.clone_in(builder.allocator()))
             }
+            // `void 0`, written for a value no table holds
+            Expression::UnaryExpression(unary)
+                if unary.operator == UnaryOperator::Void
+                    && pure_lookup_literal(&unary.argument) =>
+            {
+                Some(source.clone_in(builder.allocator()))
+            }
             _ => {
                 let captured = self.reads.capture(source, guard);
                 Some(if matches!(self.origin, Origin::WholeRule) {

@@ -205,16 +205,28 @@ impl<'a> DevupVisitor<'a> {
         let items = self.attribute_items(attributes, kept, css_only);
         for attribute in attributes.iter_mut() {
             if let Attribute(attribute) = attribute
-                && !matches!(&attribute.name, Identifier(name) if name.name == "css")
+                && matches!(&attribute.name, Identifier(name) if name.name == "css")
             {
+                // `css` reads its values itself, which hold one value as others do
+                if let Some(JSXAttributeValue::ExpressionContainer(container)) =
+                    &mut attribute.value
+                    && let Some(value) = container.expression.as_expression_mut()
+                {
+                    crate::const_fold::fold(&self.ast, value);
+                }
+            } else if let Attribute(attribute) = attribute {
                 let class_name =
                     matches!(&attribute.name, Identifier(name) if name.name == "className");
+                let order =
+                    matches!(&attribute.name, Identifier(name) if name.name == "styleOrder");
                 if let Some(JSXAttributeValue::ExpressionContainer(container)) =
                     &mut attribute.value
                     && let Some(value) = container.expression.as_expression_mut()
                 {
                     if class_name {
                         self.style_values.read_in_class(&self.ast, value);
+                    } else if order {
+                        self.style_values.read_in_order(&self.ast, value);
                     } else {
                         self.style_values.read_in(&self.ast, value);
                     }

@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Box} from '@dev
 ---
 ToBTreeSet {
     styles: {},
-    code: "<div style={{\n\t[\"--true\"]: \"red\",\n\t[\"--1\"]: \"blue\",\n\t[`--${variable}`]: \"green\",\n\t[`--${2 + 2}`]: \"yellow\"\n}} />;\n",
+    code: "<div style={{\n\t[\"--true\"]: \"red\",\n\t[\"--1\"]: \"blue\",\n\t[`--${variable}`]: \"green\",\n\t[\"--4\"]: \"yellow\"\n}} />;\n",
 }

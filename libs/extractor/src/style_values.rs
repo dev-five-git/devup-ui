@@ -217,6 +217,13 @@ impl<'a> StyleValues<'a> {
 
     /// `expression` reading what the bindings recorded hold
     pub fn read_in(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
+        self.read_in_order(ast, expression);
+        crate::const_fold::fold(ast, expression);
+    }
+
+    /// `expression` reading what the bindings recorded hold, written as
+    /// written otherwise, as a `styleOrder` is reported
+    pub fn read_in_order(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
         if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_expression(expression);
         }
@@ -234,6 +241,9 @@ impl<'a> StyleValues<'a> {
     pub fn read_in_text(&self, ast: &AstBuilder<'a>, template: &mut TemplateLiteral<'a>) {
         if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_template_literal(template);
+        }
+        for expression in &mut template.expressions {
+            crate::const_fold::fold(ast, expression);
         }
     }
 

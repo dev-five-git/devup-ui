@@ -22,6 +22,7 @@ mod class_selection_support;
 mod class_selection_tests;
 mod component;
 mod composition;
+mod const_fold;
 #[cfg(test)]
 mod css_composition_rest_tests;
 mod css_prop;

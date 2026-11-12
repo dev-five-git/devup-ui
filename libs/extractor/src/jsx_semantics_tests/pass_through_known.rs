@@ -115,6 +115,9 @@ fn conditional_props_without_a_proven_rule_owner_keep_raw_values(
 #[case("rest || (knownImport || null)", "cannot use `rest`")]
 #[case("rest || (cond ? knownImport : null)", "cannot use `rest`")]
 #[case(concat!("rest || (cond, {", "p:1})"), "cannot use `rest`")]
+// A literal left side picks its side, read as written there
+#[case("cond ? (false || knownImport) : rest", "cannot use `rest`")]
+#[case("cond ? (null ?? knownImport) : rest", "cannot use `rest`")]
 #[serial]
 fn conditional_props_with_styles_next_to_runtime_props_are_build_errors(
     #[case] branch: &str,
@@ -986,16 +989,6 @@ fn static_css_capture_fallback_preserves_trailing_spread_refusal(
     "cond ? (knownImport ?? null) : rest",
     "knownImport ?? null",
     r#"({ "bg": "red" }) ?? null"#
-)]
-#[case::or_right(
-    "cond ? (false || knownImport) : rest",
-    "false || knownImport",
-    r#"false || { "bg": "red" }"#
-)]
-#[case::coalesce_right(
-    "cond ? (null ?? knownImport) : rest",
-    "null ?? knownImport",
-    r#"null ?? { "bg": "red" }"#
 )]
 #[serial]
 fn nested_logical_rule_owners_keep_the_authored_runtime_refusal(

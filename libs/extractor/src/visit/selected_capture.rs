@@ -18,7 +18,7 @@ use rustc_hash::FxHashMap;
 mod tests;
 
 /// Names every object inherits, which a key its table does not hold still reads.
-const INHERITED: [&str; 12] = [
+pub(crate) const INHERITED: [&str; 12] = [
     "__defineGetter__",
     "__defineSetter__",
     "__lookupGetter__",
@@ -101,7 +101,7 @@ fn object_key(key: &Expression<'_>) -> Option<String> {
 const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 /// The key a plain property of a table holds as its own
-fn own_key(property: &ObjectPropertyKind<'_>) -> Option<String> {
+pub(crate) fn own_key(property: &ObjectPropertyKind<'_>) -> Option<String> {
     let ObjectPropertyKind::ObjectProperty(property) = property else {
         return None;
     };
