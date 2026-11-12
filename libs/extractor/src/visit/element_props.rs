@@ -1,13 +1,18 @@
 use crate::extractor::ExtractResult;
-use crate::extractor::extract_style_from_expression::{LiteralHandling, extract_with_policy};
+use crate::extractor::extract_style_from_expression::{
+    LiteralHandling, extract_style_from_expression, extract_with_policy,
+};
 use crate::extractor::style_inputs::StyleInputs;
-use crate::utils::{get_str_by_property_key, unwrap_syntax_only};
+use crate::utils::{
+    SPREAD_KEYS, STYLE_OBJECT, get_str_by_property_key, readable_code, unwrap_syntax_only,
+};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::{disassemble_property, is_special_property::is_special_property};
-use oxc_allocator::{CloneIn, GetAllocator};
+use oxc_allocator::{CloneIn, GetAllocator, TakeIn};
 use oxc_ast::ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKind};
 use oxc_ast::builder::AstBuilder;
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN};
+use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 use rustc_hash::FxHashSet;
 use std::borrow::Cow;
 
@@ -44,12 +49,79 @@ pub(crate) fn is_unknown_spread(argument: &Expression<'_>) -> bool {
     false
 }
 
-/// Whether an object spread the build cannot read in full also names styles,
-/// which would reach the element as props
-pub(super) fn hides_styles<'a>(inputs: StyleInputs<'_, 'a>, argument: &Expression<'a>) -> bool {
-    let Expression::ObjectExpression(object) = unwrap_syntax_only(argument) else {
-        return false;
-    };
+/// What of a spread the build cannot tell apart from the styles it names,
+/// which would then reach the element as props: where, the code, and why
+pub(super) fn hidden_styles<'a>(
+    inputs: StyleInputs<'_, 'a>,
+    argument: &Expression<'a>,
+) -> Option<(u32, String, &'static str)> {
+    let mut styled = false;
+    let mut unknown = None;
+    let mut pending = vec![argument];
+    while let Some(value) = pending.pop() {
+        let value = unwrap_syntax_only(value);
+        match value {
+            Expression::ObjectExpression(object) if names_styles(inputs, object) => {
+                if is_unknown_spread(value) {
+                    return Some((value.span().start, readable_code(value), SPREAD_KEYS));
+                }
+                styled = true;
+            }
+            Expression::ObjectExpression(_) => {
+                if is_unknown_spread(value) {
+                    unknown.get_or_insert(value);
+                }
+            }
+            // Either side may be what reaches the element, in the order written
+            Expression::ConditionalExpression(branch) => {
+                pending.extend([&branch.alternate, &branch.consequent]);
+            }
+            // A falsy left side is a primitive, which spreads nothing
+            Expression::LogicalExpression(branch) if branch.operator == LogicalOperator::And => {
+                pending.push(&branch.right);
+            }
+            Expression::LogicalExpression(branch) => {
+                pending.extend([&branch.right, &branch.left]);
+            }
+            Expression::NullLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NumericLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::TemplateLiteral(_) => {}
+            Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::Void => {}
+            Expression::Identifier(name)
+                if matches!(name.name.as_str(), "undefined" | "NaN" | "Infinity") => {}
+            // Any other side gives the styles the build reads from it, or
+            // props only the running code knows
+            value => {
+                let mut copy = value.clone_in_with_semantic_ids(inputs.ast.allocator());
+                let styles = extract_style_from_expression(
+                    inputs,
+                    None,
+                    &mut copy,
+                    0,
+                    &None,
+                    LiteralHandling::ExpandResponsiveThemeToken,
+                )
+                .styles;
+                if styles
+                    .iter()
+                    .any(|style| matches!(style, ExtractStyleProp::Unreadable { .. }))
+                {
+                    unknown.get_or_insert(value);
+                } else if !styles.is_empty() {
+                    styled = true;
+                }
+            }
+        }
+    }
+    unknown
+        .filter(|_| styled)
+        .map(|value| (value.span().start, readable_code(value), STYLE_OBJECT))
+}
+
+/// Whether the plain properties of `object` give styles
+fn names_styles<'a>(inputs: StyleInputs<'_, 'a>, object: &ObjectExpression<'a>) -> bool {
     let mut known = object.clone_in_with_semantic_ids(inputs.ast.allocator());
     known.properties.retain(|property| {
         matches!(property, ObjectPropertyKind::ObjectProperty(property)
@@ -60,6 +132,25 @@ pub(super) fn hides_styles<'a>(inputs: StyleInputs<'_, 'a>, argument: &Expressio
     !extract_props(inputs, &mut known, &mut FxHashSet::default(), &mut |_| {})
         .styles
         .is_empty()
+}
+
+/// `on && { … }` spreads what `on ? { … } : null` does, as a falsy left side is
+/// a primitive: write it so, for the conditional rules to read
+pub(super) fn as_conditional<'a>(ast: &AstBuilder<'a>, value: &mut Expression<'a>) {
+    let value = crate::utils::unwrap_syntax_only_mut(value);
+    let guarded = matches!(value, Expression::LogicalExpression(branch)
+        if branch.operator == LogicalOperator::And
+            && matches!(unwrap_syntax_only(&branch.right), Expression::ObjectExpression(_)));
+    if guarded && let Expression::LogicalExpression(branch) = value.take_in(ast) {
+        let branch = branch.unbox();
+        *value = Expression::new_conditional_expression(
+            branch.span,
+            branch.left,
+            branch.right,
+            Expression::new_null_literal(SPAN, ast),
+            ast,
+        );
+    }
 }
 
 /// Conditional rules keep their original owner before any opaque-props snapshot.

@@ -93,8 +93,8 @@ use oxc_syntax::symbol::SymbolId;
 use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
-    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, SPREAD_KEYS, STYLE_OBJECT,
-    StyleArguments, build_time_error, css_prop_error, css_prop_override_error, element_error,
+    CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
+    build_time_error, css_prop_error, css_prop_override_error, element_error,
     get_key_by_literal_expression, get_string_by_literal_expression, get_string_by_property_key,
     key_error, readable_argument, readable_code, reads_directly, reads_unknown, runtime_classes,
     runtime_value, runtime_value_error, spread_error, string_class, style_arguments,
@@ -4641,9 +4641,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 None
             };
             if let (Some(kind), Some(order)) = (&element_kind, &order) {
-                for (start, code) in &order.hidden_styles {
+                for (start, code, requirement) in &order.hidden_styles {
                     self.errors
-                        .push((*start, element_error(&kind.to_string(), code, SPREAD_KEYS)));
+                        .push((*start, element_error(&kind.to_string(), code, requirement)));
                 }
             }
             let css = self.take_jsx_css_prop(it, element_kind.is_some());
@@ -5392,15 +5392,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     STYLE_OBJECT,
                                 ),
                             ));
-                        } else if let Some((_, code)) = order
-                            .hidden_styles
-                            .iter()
-                            .find(|(start, _)| *start == spread.span.start)
-                        {
-                            self.errors.push((
-                                spread.span.start,
-                                element_error(&element_name, code, SPREAD_KEYS),
-                            ));
                         }
                         attrs.insert(i, attr);
                         continue;
@@ -5557,6 +5548,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .for_each(|style| self.styles.extend(style.into_extract()));
             }
 
+            for (start, code, requirement) in order.hidden_styles.drain(..) {
+                self.errors
+                    .push((start, element_error(&element_name, &code, requirement)));
+            }
             for (offset, code, requirement) in unreadable {
                 self.errors.push((
                     if offset == 0 { elem.span.start } else { offset },

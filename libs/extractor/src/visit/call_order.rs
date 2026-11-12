@@ -98,11 +98,14 @@ impl<'a> DevupVisitor<'a> {
             return order;
         };
         if !css_only {
-            for property in &object.properties {
+            for property in &mut object.properties {
+                if let ObjectPropertyKind::SpreadProperty(spread) = property {
+                    super::element_props::as_conditional(&self.ast, &mut spread.argument);
+                }
                 if let ObjectPropertyKind::SpreadProperty(spread) = property
                     && is_unknown_spread(&spread.argument)
                 {
-                    self.note_hidden_styles(&mut order, spread.span.start, &spread.argument);
+                    self.note_hidden_styles(&mut order, &spread.argument);
                 }
             }
             flatten_known(&self.ast, object);

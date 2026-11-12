@@ -60,8 +60,6 @@ fn imported_rule_and_runtime_conditional_arms_refuse_at_the_authored_read(
 #[case::known_first("cond ? knownImport : rest", "known", "rest")]
 #[case::runtime_first("cond ? rest : knownImport", "rest", "known")]
 #[case::runtime_only("cond ? rest : other", "rest", "other")]
-#[case::authored_literal(concat!("cond ? {", "p:1} : rest"), "literal", "rest")]
-#[case::authored_literal_first_runtime(concat!("cond ? rest : {", "p:1}"), "rest", "literal")]
 #[serial]
 fn conditional_props_without_a_proven_rule_owner_keep_raw_values(
     #[case] branch: &str,
@@ -88,7 +86,6 @@ fn conditional_props_without_a_proven_rule_owner_keep_raw_values(
             "rest" => serde_json::json!([7, null, true, false, true, false]),
             "other" => serde_json::json!([9, null, false, true, false, true]),
             "known" => serde_json::json!([null, "kept", false, false, false, false]),
-            "literal" => serde_json::json!([1, null, false, false, false, false]),
             _ => panic!("unknown selected arm"),
         };
         assert_eq!(observed.element, expected, "{branch}/{cond}");
@@ -103,6 +100,56 @@ fn conditional_props_without_a_proven_rule_owner_keep_raw_values(
         };
         assert_eq!(observed.trace, trace, "{branch}/{cond}");
     }
+}
+
+// A side whose styles the build reads next to one it cannot read would hand
+// those styles to the element as props
+#[rstest]
+#[case(concat!("cond ? {", "p:1} : rest"), "cannot use `rest`")]
+#[case(concat!("cond ? rest : {", "p:1}"), "cannot use `rest`")]
+#[case("cond ? knownImport : rest", "cannot use `rest`")]
+#[case(concat!("rest || {", "p:1}"), "cannot use `rest`")]
+#[case(concat!("cond && {", "p:1,...rest}"), crate::utils::SPREAD_KEYS)]
+#[serial]
+fn conditional_props_with_styles_next_to_runtime_props_are_build_errors(
+    #[case] branch: &str,
+    #[case] message: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    let source = format!(
+        "{BOX}import {{styles as knownImport}} from './known';export const render=(cond,rest)=><Box {{...({branch})}}/>;"
+    );
+    let error = compile_imported_spread(&source, "export const styles = { bg: 'red' }", single_css)
+        .err()
+        .unwrap_or_else(|| panic!("{branch} compiles"));
+    assert!(error.contains(message), "{error}");
+    assert_eq!(error.lines().count(), 1, "{error}");
+}
+
+// `cond && { … }` spreads what `cond ? { … } : null` does
+#[rstest]
+#[case(concat!("cond && {", "p:1}"))]
+#[case(concat!("cond ? {", "p:1} : null"))]
+#[case(concat!("(cond) && ({", "p:1})"))]
+#[serial]
+fn conditional_style_objects_alone_compile_to_classes(#[case] branch: &str) {
+    let source = format!("{BOX}{JSX_RUNTIME}export const render=(cond)=><Box {{...({branch})}}/>;");
+    let compiled = output(&source);
+    assert_eq!(
+        static_styles(&compiled),
+        vec![("padding".into(), "4px".into())]
+    );
+    let on = whole::evaluate(&source, "render(true)");
+    assert!(on.element["props"]["p"].is_null(), "{}", compiled.code);
+    assert!(
+        on.element["props"]["className"]
+            .as_str()
+            .is_some_and(|class| !class.is_empty()),
+        "{}",
+        compiled.code
+    );
+    let off = whole::evaluate(&source, "render(0)");
+    assert_eq!(off.element["props"]["className"].as_str().unwrap_or(""), "");
 }
 
 #[rstest]
@@ -297,17 +344,6 @@ fn local_objects_when_ordinary_callbacks_capture_them_remain_raw() {
 }
 
 #[rstest]
-#[case::conditional(
-    concat!(
-    "export const a=(on,rest)=><Box ",
-    "{",
-    "...(on?",
-    "{",
-    "p:1}:rest)}/>;",
-),
-    "a(false,raw)",
-    3
-)]
 #[case::shadow_undefined(
     concat!(
     "export const a=(on,undefined)=><Box ",
@@ -489,16 +525,22 @@ fn local_known_class_and_shadowed_props_keep_their_own_bindings(
             single_css,
             ..ExtractOption::default()
         },
-    )
-    .unwrap_or_else(|error| panic!("{error:?}"));
+    );
+    // A parameter that shadows the class gives props only the running code
+    // knows, next to the styles of the other side
+    if shadowed {
+        let error = output
+            .err()
+            .unwrap_or_else(|| panic!("the shadowed side compiles"));
+        assert!(error.contains("cannot use `rules`"), "{error}");
+        return;
+    }
+    let output = output.unwrap_or_else(|error| panic!("{error:?}"));
     let observed = whole::execute(
         &output.code,
         "(()=>{const token={};const raw={payload:token,className:'external'};const e=a(false,raw);return [e.props.payload===token,e.props.className];})()",
     );
-    if shadowed {
-        assert_eq!(static_styles(&output), vec![("color".into(), "red".into())]);
-        assert_eq!(observed.element, serde_json::json!([true, "external"]));
-    } else {
+    {
         assert_eq!(
             static_styles(&output),
             vec![

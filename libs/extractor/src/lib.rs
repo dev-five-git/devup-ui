@@ -21595,6 +21595,10 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
                 "export const a = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;",
                 "`<Box>` cannot use `{ p: 1, onClick: handler, [k]: 1 }`",
             ),
+            (
+                "export const a = (on, rest) => <Box {...(on ? { p: 1 } : rest)} />;",
+                "`<Box>` cannot use `rest`",
+            ),
         ] {
             reset_class_map();
             reset_file_map();
@@ -21609,7 +21613,7 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
             assert!(message.contains(error), "{code}\n{message}");
         }
         for source in [
-            "export const a = (on, rest) => <Box {...(on ? { p: 1 } : rest)} />;",
+            "export const a = (on, rest) => <Box {...(on ? { onClick: rest } : rest)} />;",
             "export const a = (rest) => <Box {...{ ...rest, onClick: rest }} />;",
         ] {
             let compiled = extract(
