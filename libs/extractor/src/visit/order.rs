@@ -185,8 +185,7 @@ pub(super) fn written_properties(expression: &Expression<'_>) -> Vec<String> {
                         .filter(|name| {
                             !css::is_special_property::is_special_property(name.as_ref())
                         })
-                        .map(|name| vec![name.to_string()])
-                        .unwrap_or_default(),
+                        .map_or_default(|name| vec![name.to_string()]),
                     ObjectPropertyKind::SpreadProperty(spread) => {
                         written_properties(&spread.argument)
                     }
