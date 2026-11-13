@@ -57,7 +57,7 @@
     "storybook": "^10.6.7",
     "typescript": "^7.0.2",
     "@typescript/typescript6": "^6.0.2",
-    "vite": "^8.3.7",
+    "vite": "^8.3.8",
     "vite-plugin-dts": "^5.1.2",
     "react": "^19.3.1"
   },

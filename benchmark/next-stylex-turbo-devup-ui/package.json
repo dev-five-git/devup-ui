@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@devup-ui/react": "workspace:^",
-    "@stylexjs/stylex": "^0.19.1",
+    "@stylexjs/stylex": "^0.19.2",
     "next": "~16.4.6",
     "react": "~19.3.1",
     "react-dom": "~19.3.1"

@@ -36,7 +36,7 @@
     "eslint-plugin-devup": "^2.1.0",
     "eslint-plugin-eslint-plugin": "^7.6.2",
     "eslint-plugin-jsonc": "^3.4.2",
-    "eslint-plugin-mdx": "^3.9.4",
+    "eslint-plugin-mdx": "^3.9.5",
     "globals": "^17.14.0",
     "husky": "^9.1.7",
     "typescript": "^7.0.2"
