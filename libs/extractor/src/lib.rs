@@ -1519,7 +1519,7 @@ mod tests {
         #[case::whitespace(r"'\t-InF\n'")]
         #[case::bom(r"'\uFEFF+inf\uFEFF'")]
         #[serial]
-        fn lowered_const_bound_invalid_alias_preserves_dynamic_operand(
+        fn lowered_const_bound_invalid_alias_reads_nan(
             #[case] value: &str,
             #[values(false, true)] single_css: bool,
         ) {
@@ -1539,32 +1539,20 @@ mod tests {
                 },
             )
             .unwrap();
-            // Then: Boa miscoerces signed inf; native SSR covers execution of this operand.
+            // Then: no number is spelled `inf`, so `+alias` is `NaN`, as the
+            // element written in JSX reads it
             assert_eq!(output.styles.len(), 1);
-            let Some(ExtractStyleValue::Dynamic(style)) = output.styles.iter().next() else {
+            let Some(ExtractStyleValue::Static(style)) = output.styles.iter().next() else {
                 panic!(
-                    "expected one dynamic content declaration: {:?}",
+                    "expected one static content declaration: {:?}",
                     output.styles
                 );
             };
-            let operand = r#"`"value:${+alias}"`"#;
-            assert_eq!(style.property(), "content");
-            assert_eq!(output.code.matches(operand).count(), 1);
-            let authored = format!("const alias={value};JSON.stringify([[],[{operand}]]);");
-            let observation = Context::default()
-                .eval(Source::from_bytes(&authored))
-                .unwrap()
-                .as_string()
-                .unwrap()
-                .to_std_string_escaped();
             assert_eq!(
-                render_observation(
-                    &output,
-                    "render()",
-                    (!single_css).then_some("const-alias.js")
-                ),
-                observation
+                (style.property(), style.value()),
+                ("content", "\"value:NaN\"")
             );
+            assert!(!output.code.contains("+alias"), "{}", output.code);
         }
 
         #[rstest]

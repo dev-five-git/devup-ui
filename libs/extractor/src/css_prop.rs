@@ -110,6 +110,10 @@ pub(crate) struct CssTakers<'s> {
     scoping: &'s Scoping,
     /// The imported functions building elements from a type and props
     jsx: FxHashSet<SymbolId>,
+    /// React's `createElement`, imported by name
+    create_element: FxHashSet<SymbolId>,
+    /// `react`, imported whole
+    react: FxHashSet<SymbolId>,
     /// The imported `ClassNames` of Emotion
     class_names: FxHashSet<SymbolId>,
 }
@@ -154,6 +158,8 @@ impl<'s> CssTakers<'s> {
         compat: &str,
     ) -> Self {
         let mut jsx = FxHashSet::default();
+        let mut create_element = FxHashSet::default();
+        let mut react = FxHashSet::default();
         let mut class_names = FxHashSet::default();
         for statement in &program.body {
             if let Statement::ImportDeclaration(import) = statement {
@@ -164,8 +170,21 @@ impl<'s> CssTakers<'s> {
                     continue;
                 };
                 for specifier in import.specifiers.iter().flatten() {
-                    let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
-                        continue;
+                    let specifier = match specifier {
+                        ImportDeclarationSpecifier::ImportSpecifier(specifier) => specifier,
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(whole)
+                            if source == "react" =>
+                        {
+                            react.extend(whole.local.symbol_id.get());
+                            continue;
+                        }
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(whole)
+                            if source == "react" =>
+                        {
+                            react.extend(whole.local.symbol_id.get());
+                            continue;
+                        }
+                        _ => continue,
                     };
                     if specifier.import_kind.is_type() {
                         continue;
@@ -173,6 +192,8 @@ impl<'s> CssTakers<'s> {
                     let imported = specifier.imported.name();
                     if is_jsx_function(source, &imported, compat) {
                         jsx.extend(specifier.local.symbol_id.get());
+                    } else if source == "react" && imported == "createElement" {
+                        create_element.extend(specifier.local.symbol_id.get());
                     } else if imported == "ClassNames"
                         && (source == compat || source == EMOTION_REACT)
                     {
@@ -185,8 +206,43 @@ impl<'s> CssTakers<'s> {
             css_prop,
             scoping,
             jsx,
+            create_element,
+            react,
             class_names,
         }
+    }
+
+    /// Whether `call` builds a Devup UI component from props written as an
+    /// object literal, as `jsx(Box, { ... })` does; `devup` tells a
+    /// reference to one
+    pub(crate) fn builds_component(
+        &self,
+        call: &CallExpression<'_>,
+        devup: impl Fn(&IdentifierReference<'_>) -> bool,
+    ) -> bool {
+        let symbol = |identifier| binding_of(self.scoping, identifier);
+        let factory = match &call.callee {
+            Expression::Identifier(callee) => symbol(callee).is_some_and(|symbol| {
+                self.jsx.contains(&symbol) || self.create_element.contains(&symbol)
+            }),
+            Expression::StaticMemberExpression(member) => {
+                member.property.name == "createElement"
+                    && matches!(&member.object, Expression::Identifier(react)
+                        if symbol(react).is_some_and(|symbol| self.react.contains(&symbol)))
+            }
+            _ => false,
+        };
+        let [element, props, ..] = call.arguments.as_slice() else {
+            return false;
+        };
+        factory
+            && props.as_expression().is_some_and(|props| {
+                matches!(unwrap_syntax_only(props), Expression::ObjectExpression(_))
+            })
+            && element
+                .as_expression()
+                .and_then(|element| root_reference(unwrap_syntax_only(element)))
+                .is_some_and(devup)
     }
 
     /// The `css` and `cx` bindings a `<ClassNames>` child function `element`

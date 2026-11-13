@@ -10,6 +10,9 @@ impl<'a> StyleValues<'a> {
     pub(crate) fn read_in_styled(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
         let Expression::CallExpression(call) = expression else {
             self.read_in(ast, expression);
+            if let Expression::TaggedTemplateExpression(tagged) = expression {
+                self.fold_text(ast, &mut tagged.quasi);
+            }
             return;
         };
         self.read_in(ast, &mut call.callee);

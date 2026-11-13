@@ -122,3 +122,29 @@ fn called_conditional_spreads_read_their_props_in_order() {
     assert!(off.element["props"]["title"].is_null());
     assert!(output(&source).code.contains("__devupBranch"));
 }
+
+// An interpolation that gives no text writes none, and a declaration left
+// without a value is dropped, as browsers drop it
+#[rstest]
+#[case("export const A = styled.div`opacity: ${undefined};`;", &[])]
+#[case("export const A = styled.div`opacity: ${void 0};`;", &[])]
+#[case("export const A = styled.div`opacity: ${null};`;", &[])]
+#[case("export const A = styled.div`opacity: ${false};`;", &[])]
+#[case("export const A = styled.div`color: red; opacity: ${!0 && void 0};`;", &[("color", "red")])]
+#[case("export const A = styled.div`margin: ${null} 4px;`;", &[("margin", "4px")])]
+#[case("export const a = css`margin: 2px ${false}; opacity: ${undefined};`;", &[("margin", "2px")])]
+#[case("const undefined = 0.5; export const A = styled.div`opacity: ${undefined};`;", &[("opacity", ".5")])]
+#[case("export const A = styled.div`--empty: ${null};`;", &[("--empty", "")])]
+#[serial]
+fn empty_interpolations_write_no_declaration(
+    #[case] code: &str,
+    #[case] expected: &[(&str, &str)],
+) {
+    let compiled = output(&format!("{APIS}{code}"));
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(property, value)| ((*property).to_string(), (*value).to_string()))
+        .collect();
+    assert_eq!(static_styles(&compiled), expected, "{}", compiled.code);
+    assert!(!compiled.code.contains("\"--"), "{}", compiled.code);
+}

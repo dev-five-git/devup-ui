@@ -885,6 +885,11 @@ fn css_to_style_block(
         let (property, value) = (&s[..colon], &s[colon + 1..]);
         let property = property.trim();
         let value = trim_css(value);
+        // A declaration without a value is invalid CSS, which browsers drop;
+        // only a custom property may hold nothing
+        if value.is_empty() && !property.starts_with("--") {
+            continue;
+        }
         let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,

@@ -242,9 +242,20 @@ impl<'a> StyleValues<'a> {
         if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_template_literal(template);
         }
-        for expression in &mut template.expressions {
-            crate::const_fold::fold(ast, expression);
-        }
+        self.fold_text(ast, template);
+    }
+
+    /// Fold the interpolations of the CSS text `template`, writing those that
+    /// give no text as part of it
+    pub(crate) fn fold_text(&self, ast: &AstBuilder<'a>, template: &mut TemplateLiteral<'a>) {
+        crate::const_fold::fold_text(ast, template, |identifier| {
+            self.scoping.as_ref().is_some_and(|scoping| {
+                identifier
+                    .reference_id
+                    .get()
+                    .is_some_and(|reference| scoping.get_reference(reference).symbol_id().is_none())
+            })
+        });
     }
 
     /// Retain the static source, not the generated class text, for nested reuse.

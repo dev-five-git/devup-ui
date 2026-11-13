@@ -136,3 +136,30 @@ fn style_orders_are_left_as_written() {
         "({ styleOrder: !1, p: false })"
     );
 }
+
+#[rstest]
+#[case("`a${null}b`", true, "`ab`")]
+#[case("`a${false}b${1}c`", true, "`ab${1}c`")]
+#[case("`a${!0 && void 0}b`", true, "`ab`")]
+#[case("`a${undefined}b`", true, "`ab`")]
+#[case("`a${undefined}b`", false, "`a${undefined}b`")]
+#[case("`a${true}b`", true, "`a${true}b`")]
+#[case("`a${x}b`", true, "`a${x}b`")]
+// Text that is no string is left as written
+#[case("`\\ud800${null}`", true, "`\\ud800${null}`")]
+fn interpolations_giving_no_text_are_written_as_none(
+    #[case] code: &str,
+    #[case] global: bool,
+    #[case] expected: &str,
+) {
+    let allocator = Allocator::default();
+    let ast = AstBuilder::new(&allocator);
+    let mut expression = Parser::new(&allocator, code, SourceType::tsx())
+        .parse_expression()
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let Expression::TemplateLiteral(template) = &mut expression else {
+        panic!("{code}");
+    };
+    fold_text(&ast, template, |_| global);
+    assert_eq!(crate::utils::readable_code(&expression), expected);
+}

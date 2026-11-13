@@ -1135,3 +1135,60 @@ fn nested_logical_data_arms_keep_short_circuit_reads_and_identity(
         );
     }
 }
+
+const CALL_IMPORTS: &str = "import React, { createElement as make } from 'react';\nimport * as R from 'react';\nimport { styles as knownImport, bg } from './known';\nconst go = (a, b) => b;\n";
+const CALL_KNOWN: &str = "export const styles = { bg: 'red' }; export const bg = 'blue';";
+
+// A call building a component reads the imports its props name as styles,
+// as the element written in JSX does
+#[rstest]
+#[case("jsx(Box, { ...knownImport })", "red")]
+#[case("jsx(Box, { ...(props && knownImport) })", "red")]
+#[case("jsx(Box, { bg: knownImport.bg })", "red")]
+#[case("jsx(Box, { bg })", "blue")]
+#[case("jsx(Box, { ['bg']: bg })", "blue")]
+#[case("make(Box, { ...knownImport })", "red")]
+#[case("R.createElement(Box, { ...knownImport })", "red")]
+#[case("React.createElement(Box, { ...knownImport })", "red")]
+#[serial]
+fn calls_building_components_read_imported_styles(#[case] call: &str, #[case] color: &str) {
+    let source =
+        format!("{BOX}{JSX_RUNTIME}{CALL_IMPORTS}export const render = (props) => {call};");
+    let compiled = compile_imported_spread(&source, CALL_KNOWN, false)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(
+        static_styles(&compiled),
+        vec![("background".into(), color.into())],
+        "{}",
+        compiled.code
+    );
+    let render = compiled.code.lines().last().unwrap_or("");
+    assert!(!render.contains("knownImport"), "{}", compiled.code);
+    assert!(!render.contains("bg"), "{}", compiled.code);
+}
+
+// ... and a call building no component of the package passes them as written
+#[rstest]
+#[case("jsx('div', { ...knownImport })", Some("...knownImport"))]
+#[case("jsx(Box, props)", Some("props"))]
+#[case("jsx(Box)", None)]
+#[case("React.cloneElement(Box, { ...knownImport })", None)]
+#[case("window.createElement(Box, { ...knownImport })", None)]
+#[case("[jsx][0](Box, { ...knownImport })", None)]
+#[case("go(Box, { ...knownImport })", None)]
+#[serial]
+fn calls_building_no_component_pass_imports_as_written(
+    #[case] call: &str,
+    #[case] kept: Option<&str>,
+) {
+    let source =
+        format!("{BOX}{JSX_RUNTIME}{CALL_IMPORTS}export const render = (props) => {call};");
+    match (compile_imported_spread(&source, CALL_KNOWN, false), kept) {
+        (Ok(compiled), Some(kept)) => {
+            assert!(compiled.code.contains(kept), "{}", compiled.code);
+            assert!(static_styles(&compiled).is_empty(), "{}", compiled.code);
+        }
+        (Err(error), None) => assert!(error.contains("is read at runtime"), "{error}"),
+        (result, _) => panic!("{call}: {:?}", result.map(|compiled| compiled.code)),
+    }
+}

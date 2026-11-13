@@ -5,8 +5,11 @@
 
 use crate::utils::unwrap_syntax_only;
 use crate::visit::{INHERITED, own_key};
-use oxc_allocator::{CloneIn, GetAllocator, TakeIn};
-use oxc_ast::ast::{ArrayExpressionElement, Expression, NumberBase, ObjectPropertyKind};
+use oxc_allocator::{CloneIn, FromIn, GetAllocator, TakeIn};
+use oxc_ast::ast::{
+    ArrayExpressionElement, Expression, IdentifierReference, NumberBase, ObjectPropertyKind, Str,
+    TemplateLiteral,
+};
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{VisitMut, walk_mut};
 use oxc_span::SPAN;
@@ -21,6 +24,56 @@ const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 /// Write the parts of `value` that always hold one value as that value
 pub(crate) fn fold<'a>(ast: &AstBuilder<'a>, value: &mut Expression<'a>) {
     Fold { ast }.visit_expression(value);
+}
+
+/// Fold the interpolations of the CSS text `template`, writing those that
+/// give no text as part of it: `null`, `false` and `undefined` interpolate
+/// nothing in styled-components and Emotion alike. `global` tells whether an
+/// identifier reads a global, which no binding renames
+pub(crate) fn fold_text<'a>(
+    ast: &AstBuilder<'a>,
+    template: &mut TemplateLiteral<'a>,
+    global: impl Fn(&IdentifierReference<'a>) -> bool,
+) {
+    for expression in &mut template.expressions {
+        fold(ast, expression);
+    }
+    let mut index = 0;
+    while let Some(expression) = template.expressions.get(index) {
+        let empty = match unwrap_syntax_only(expression) {
+            Expression::NullLiteral(_) => true,
+            Expression::BooleanLiteral(literal) => !literal.value,
+            Expression::Identifier(identifier) => {
+                identifier.name == "undefined" && global(identifier)
+            }
+            expression => nullish(expression) == Some(true),
+        };
+        let text = |at: usize| {
+            template.quasis[at]
+                .value
+                .cooked
+                .as_ref()
+                .and_then(|text| text.as_str())
+        };
+        let (Some(before), Some(after)) = (text(index), text(index + 1)) else {
+            index += 1;
+            continue;
+        };
+        if !empty {
+            index += 1;
+            continue;
+        }
+        let cooked = Str::from_in(format!("{before}{after}").as_str(), ast.allocator());
+        template.expressions.remove(index);
+        let next = template.quasis.remove(index + 1);
+        let quasi = &mut template.quasis[index];
+        quasi.value.raw = Str::from_in(
+            format!("{}{}", quasi.value.raw, next.value.raw).as_str(),
+            ast.allocator(),
+        );
+        quasi.value.cooked = Some(cooked.into());
+        quasi.tail = next.tail;
+    }
 }
 
 struct Fold<'s, 'a> {

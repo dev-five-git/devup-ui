@@ -1299,14 +1299,39 @@ fn component_style_object_attribute(attribute: &JSXAttributeItem<'_>) -> bool {
     match attribute {
         JSXAttributeItem::Attribute(attribute) => {
             matches!(&attribute.name, oxc_ast::ast::JSXAttributeName::Identifier(name)
-                if !css::is_special_property::is_special_property(&name.name)
-                    && !matches!(name.name.as_str(), "as" | "props" | "styleVars"))
+                if style_prop(&name.name))
         }
         JSXAttributeItem::SpreadAttribute(_) => true,
     }
 }
 
+/// Whether a component of the package reads the prop `name` as styles
+fn style_prop(name: &str) -> bool {
+    !css::is_special_property::is_special_property(name)
+        && !matches!(name, "as" | "props" | "styleVars")
+}
+
+/// Whether a component of the package reads `property` among the props of a
+/// `jsx()` call as styles, as it would the attribute
+fn component_style_object_property(property: &ObjectPropertyKind<'_>) -> bool {
+    match property {
+        ObjectPropertyKind::ObjectProperty(property) => property
+            .key
+            .static_name()
+            .and_then(oxc_ast::StaticPropertyName::into_cow_str)
+            .is_some_and(|key| style_prop(&key)),
+        ObjectPropertyKind::SpreadProperty(_) => true,
+    }
+}
+
 impl StyleReads<'_> {
+    /// Note `expression` a component of the package reads as a style object
+    fn object_reference(&mut self, expression: &Expression<'_>) {
+        if let Expression::Identifier(identifier) = crate::utils::unwrap_syntax_only(expression) {
+            self.object_references.extend(identifier.reference_id.get());
+        }
+    }
+
     fn reading<T>(&mut self, style: bool, walk: impl FnOnce(&mut Self) -> T) -> T {
         self.depth += usize::from(style);
         let result = walk(self);
@@ -1346,17 +1371,27 @@ impl<'a> Visit<'a> for StyleReads<'_> {
         let css = self
             .css_props
             .property(call, |identifier| self.style.has(identifier));
+        let component = self
+            .css_props
+            .builds_component(call, |identifier| self.style.has(identifier));
         self.reading(style, |reads| {
             for (index, argument) in call.arguments.iter().enumerate() {
-                match (
-                    css,
-                    argument
-                        .as_expression()
-                        .map(crate::utils::unwrap_syntax_only),
-                ) {
-                    (Some(css), Some(Expression::ObjectExpression(props))) if index == 1 => {
+                match argument
+                    .as_expression()
+                    .map(crate::utils::unwrap_syntax_only)
+                {
+                    Some(Expression::ObjectExpression(props))
+                        if index == 1 && (css.is_some() || component) =>
+                    {
                         for (at, property) in props.properties.iter().enumerate() {
-                            reads.reading(at == css, |reads| {
+                            let styles = component && component_style_object_property(property);
+                            if styles {
+                                reads.object_reference(match property {
+                                    ObjectPropertyKind::ObjectProperty(property) => &property.value,
+                                    ObjectPropertyKind::SpreadProperty(spread) => &spread.argument,
+                                });
+                            }
+                            reads.reading(Some(at) == css || styles, |reads| {
                                 reads.visit_object_property_kind(property);
                             });
                         }
@@ -1392,10 +1427,8 @@ impl<'a> Visit<'a> for StyleReads<'_> {
                     },
                     JSXAttributeItem::SpreadAttribute(spread) => Some(&spread.argument),
                 };
-                if let Some(Expression::Identifier(identifier)) =
-                    expression.map(crate::utils::unwrap_syntax_only)
-                {
-                    self.object_references.extend(identifier.reference_id.get());
+                if let Some(expression) = expression {
+                    self.object_reference(expression);
                 }
             }
             let style = style
@@ -3167,6 +3200,48 @@ impl<'a> Inline<'_, 'a> {
         constant_literal(self.ast_builder, constant, self.objects)
     }
 
+    /// Read the argument of a spread an element of the package takes, as a
+    /// JSX attribute or among the props of a `jsx()` call
+    fn style_spread(&mut self, argument: &mut Expression<'a>) {
+        while self.styles
+            && self.objects
+            && let Some(chosen) = self.chosen(crate::utils::unwrap_syntax_only_mut(argument))
+        {
+            *argument = chosen;
+        }
+        if self.styles
+            && self.objects
+            && match crate::utils::unwrap_syntax_only(argument) {
+                Expression::ConditionalExpression(_) => true,
+                // Read for the styles it may give, as `rest || styles` would
+                // otherwise hand them to the element as props
+                Expression::LogicalExpression(_) => self.names_rules(argument),
+                _ => false,
+            }
+        {
+            let offset = crate::utils::unwrap_syntax_only(argument).span().start;
+            if self.spread_branch(argument) {
+                self.rule_spreads.insert(offset);
+            }
+            return;
+        }
+        if self.proven_copy(argument)
+            || (self.styles && self.objects && self.known_record_spread(argument))
+            || !crate::visit::is_unknown_spread(argument)
+        {
+            self.visit_expression(argument);
+        } else {
+            self.reading_styles(false, |inline| {
+                inline.reading_objects(false, |inline| {
+                    inline.visit_expression(argument);
+                });
+            });
+            if !crate::visit::is_unknown_spread(argument) {
+                self.visit_expression(argument);
+            }
+        }
+    }
+
     fn reading_objects<T>(&mut self, objects: bool, visit: impl FnOnce(&mut Self) -> T) -> T {
         let outer = std::mem::replace(&mut self.objects, objects);
         let result = visit(self);
@@ -3323,46 +3398,7 @@ fn constant_literal<'a>(
 
 impl<'a> VisitMut<'a> for Inline<'_, 'a> {
     fn visit_jsx_spread_attribute(&mut self, spread: &mut oxc_ast::ast::JSXSpreadAttribute<'a>) {
-        while self.styles
-            && self.objects
-            && let Some(chosen) =
-                self.chosen(crate::utils::unwrap_syntax_only_mut(&mut spread.argument))
-        {
-            spread.argument = chosen;
-        }
-        if self.styles
-            && self.objects
-            && match crate::utils::unwrap_syntax_only(&spread.argument) {
-                Expression::ConditionalExpression(_) => true,
-                // Read for the styles it may give, as `rest || styles` would
-                // otherwise hand them to the element as props
-                Expression::LogicalExpression(_) => self.names_rules(&spread.argument),
-                _ => false,
-            }
-        {
-            let offset = crate::utils::unwrap_syntax_only(&spread.argument)
-                .span()
-                .start;
-            if self.spread_branch(&mut spread.argument) {
-                self.rule_spreads.insert(offset);
-            }
-            return;
-        }
-        if self.proven_copy(&spread.argument)
-            || (self.styles && self.objects && self.known_record_spread(&spread.argument))
-            || !crate::visit::is_unknown_spread(&spread.argument)
-        {
-            walk_mut::walk_jsx_spread_attribute(self, spread);
-        } else {
-            self.reading_styles(false, |inline| {
-                inline.reading_objects(false, |inline| {
-                    walk_mut::walk_jsx_spread_attribute(inline, spread);
-                });
-            });
-            if !crate::visit::is_unknown_spread(&spread.argument) {
-                self.visit_expression(&mut spread.argument);
-            }
-        }
+        self.style_spread(&mut spread.argument);
     }
 
     fn visit_object_property_kind(&mut self, property: &mut ObjectPropertyKind<'a>) {
@@ -3612,6 +3648,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         let css = self
             .css_props
             .property(call, |identifier| self.style.has(identifier));
+        let component = self
+            .css_props
+            .builds_component(call, |identifier| self.style.has(identifier));
         self.position = if objects {
             InlinePosition::Rules
         } else {
@@ -3620,13 +3659,13 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         self.reading_styles(styles, |inline| {
             inline.reading_objects(objects, |inline| {
                 for (index, argument) in call.arguments.iter_mut().enumerate() {
-                    if let Some(css) = css
+                    if (css.is_some() || component)
                         && index == 1
                         && let Some(Expression::ObjectExpression(props)) = argument
                             .as_expression_mut()
                             .map(crate::utils::unwrap_syntax_only_mut)
                     {
-                        inline.compiled_css_props(props, css);
+                        inline.element_props(props, css, component);
                     } else {
                         inline.visit_argument(argument);
                     }
