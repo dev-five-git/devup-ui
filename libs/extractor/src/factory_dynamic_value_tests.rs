@@ -48,8 +48,7 @@ fn compiled_factory_values_when_an_opaque_literal_names_styles_are_build_errors(
     );
     let error = extract(FILE, &source, ExtractOption::default())
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
     assert!(error.contains(crate::utils::SPREAD_KEYS), "{error}");
 }
 

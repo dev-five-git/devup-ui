@@ -81,8 +81,7 @@ fn css_observation_is_fatal_when_top_level_read_is_caught(
     // When
     let error = extract_helper(&helper)
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
     // Then
     let column = match observation {
         "(()=>{for(const key in styles){}return 'blue';})()" => 9,
@@ -130,8 +129,7 @@ fn css_observation_keeps_first_site_once_when_called_read_is_caught_repeatedly(
     // When
     let error = extract_helper(&helper)
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
     // Then
     let column = if read == "typeof card" { 21 } else { 14 };
     assert!(
@@ -178,8 +176,7 @@ fn css_observation_preserves_first_key_when_dynamic_keys_repeat_at_one_site() {
     // When
     let error = extract_helper(helper)
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
     // Then
     assert!(error.starts_with("/src/helper.ts:4:13:"), "{error}");
     assert!(

@@ -7631,8 +7631,7 @@ import {Button} from '@devup/ui'
             },
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             message.contains("`<Box>` cannot use `[dynamic]`"),
             "{message}"
@@ -10052,8 +10051,7 @@ keyframes({
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 message.starts_with("test.tsx:2:") && message.contains(error),
                 "{message}"
@@ -10127,8 +10125,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 message.starts_with("test.tsx:2:") && message.contains(error),
                 "{message}"
@@ -10153,8 +10150,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             },
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert_eq!(
             message.lines().collect::<Vec<_>>(),
             [
@@ -11350,8 +11346,7 @@ keyframes({
                 },
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
 
@@ -11716,8 +11711,7 @@ globalCss({
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(
                 message.contains("`globalCss()` cannot use"),
                 "{key}: {message}"
@@ -14771,8 +14765,7 @@ globalCss({
             ExtractOption::default(),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             error.starts_with("broken.css.ts:3:")
                 && error.contains(": JS execution error: TypeError"),
@@ -19034,8 +19027,7 @@ const result = stylex.props(styles.bar(myH, myW));",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert_eq!(
                 message,
                 format!(
@@ -20282,8 +20274,7 @@ export const A = () => <Box _hover={fn()} />;
             reset_file_map();
             let error = extract("test.tsx", src, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 error.contains("`<Box>` cannot use") && error.contains(utils::STYLE_OBJECT),
                 "{src}: {error}"
@@ -20561,8 +20552,7 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
                 },
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(
                 message.contains("is read at runtime, where it does not exist"),
                 "{code}\n{message}"
@@ -20600,8 +20590,7 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -20655,8 +20644,7 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 message.contains(&format!(
                     "`{name}` is read at runtime, where it does not exist"
@@ -20951,8 +20939,7 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             for error in errors {
                 assert!(message.contains(error), "{error}\nmissing from\n{message}");
             }
@@ -21027,8 +21014,7 @@ export const A = () => <div {...stylex.props(dracula, styles.box)} />;"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{message}");
         }
     }
@@ -21597,8 +21583,7 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
         for source in [
@@ -21759,8 +21744,7 @@ export const n = <Devup.Layout.Box {...local} />;",
                 &memory_resolver(modules),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(
                 message.contains(&format!("cannot use `{part}`")),
                 "{code}\n{message}"
@@ -21852,8 +21836,7 @@ export const n = <Devup.Layout.Box {...local} />;",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
         reset_class_map();
@@ -21898,8 +21881,7 @@ export const k = keyframes({ from: { opacity: DARK ? 0 : 1 } });",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("`<Box>` cannot use"), "{value}\n{message}");
         }
     }
@@ -22164,8 +22146,7 @@ export const after = 42;",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -22234,8 +22215,7 @@ export const g = <Global styles={{ html: { animationName: fadeIn } }} />;",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("cannot use `fadeIn`"), "{code}\n{message}");
         }
     }
@@ -22520,8 +22500,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
                 &resolver,
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
         reset_class_map();
@@ -22795,8 +22774,7 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
             ExtractOption::default(),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(message.contains("cannot use `pick()`"), "{message}");
     }
 
@@ -22885,8 +22863,7 @@ export default class {}",
                 &resolver,
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -22922,8 +22899,7 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("cannot use"), "{code}: {message}");
         }
         // An exact function over what folding cannot read runs at build time
@@ -22960,8 +22936,7 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("Math."), "{code}: {message}");
         }
         reset_class_map();
@@ -23040,8 +23015,7 @@ export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } 
             &memory_resolver(cycle),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             error.contains("Cannot access 'b' of '/src/b.css.ts' before its initialization: it is part of an import cycle"),
             "{error}"
@@ -23384,8 +23358,7 @@ const member = styled.p({ pt: '2px' });"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -23604,8 +23577,7 @@ const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'b
             errors.push(
                 extract("test.tsx", source, ExtractOption::default())
                     .err()
-                    .map(|error| error.to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|error| error.to_string()),
             );
         }
         let name = |location: &str, api: &str, code: &str| {
@@ -23678,8 +23650,7 @@ const e = <Box bg='red' props={extraProps} />;"
             ExtractOption::default(),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             message.contains("`styled` is read at runtime, where it does not exist"),
             "{message}"
@@ -23963,8 +23934,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             option,
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(error.starts_with("test.tsx:2:36: "), "{error}");
     }
 
@@ -23996,8 +23966,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             reset_file_map();
             extract("test.tsx", code, emotion_option())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default()
+                .map_or_default(|error| error.to_string())
         })
         .collect();
         assert_debug_snapshot!(errors);
@@ -24143,8 +24112,7 @@ injectGlobal`body { margin: 0; }`;",
             reset_file_map();
             extract("test.tsx", &format!("{import}{code}"), emotion_option())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default()
+                .map_or_default(|error| error.to_string())
         })
         .collect();
         assert_debug_snapshot!(errors);

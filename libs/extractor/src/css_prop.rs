@@ -575,8 +575,7 @@ pub(crate) fn class_names_child(element: &JSXElement<'_>) -> Option<ClassNamesPa
 /// The child function's `css` and `cx` bindings, which read styles.
 pub(crate) fn class_names_calls(element: &JSXElement<'_>) -> Vec<SymbolId> {
     class_names_child(element)
-        .map(|names| [names.css, names.cx].into_iter().flatten().collect())
-        .unwrap_or_default()
+        .map_or_default(|names| [names.css, names.cx].into_iter().flatten().collect())
 }
 
 /// Write the reads of the active themes in `expression`, a CSS value

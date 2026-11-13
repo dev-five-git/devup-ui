@@ -1898,8 +1898,7 @@ impl<'a> DevupVisitor<'a> {
             class => self
                 .captured_class(class)
                 .or_else(|| self.style_values.styles(class))
-                .map(<[ExtractStyleValue]>::to_vec)
-                .unwrap_or_default(),
+                .map_or_default(<[ExtractStyleValue]>::to_vec),
         }
     }
 
@@ -2435,7 +2434,7 @@ impl<'a> DevupVisitor<'a> {
                         .iter()
                         .map(|(key, variable)| (key.clone(), format!("var({variable})"))),
                 );
-                self.stylex_var_names.insert(symbol, contract.clone());
+                self.stylex_var_names.insert(symbol, contract);
             }
         }
         for (name, class) in themes {
@@ -3517,8 +3516,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let markers = self
                 .pending_marker
                 .take_if(|(at, _)| *at == start)
-                .map(|(_, markers)| self.marker_classes(&markers))
-                .unwrap_or_default();
+                .map_or_default(|(_, markers)| self.marker_classes(&markers));
             let inherited = extended(it).and_then(|base| {
                 self.definition_of(base)
                     .filter(|definition| definition.extendable())
@@ -3585,8 +3583,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .pending_marker
                 .as_ref()
                 .filter(|(at, _)| *at == call.span.start)
-                .map(|(_, markers)| self.marker_classes(markers))
-                .unwrap_or_default()
+                .map_or_default(|(_, markers)| self.marker_classes(markers))
             && let Some((component, definition)) = with_component(
                 &self.ast,
                 &definition,
