@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
@@ -122,7 +122,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
@@ -201,7 +201,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
@@ -263,7 +263,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target
@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
       - name: Cache cargo registry + target
         uses: actions/cache@v6
@@ -387,7 +387,7 @@ jobs:
         uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
       - name: Cache cargo registry + target
         uses: actions/cache@v6
@@ -459,7 +459,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
 
       - *install-wasm-pack
@@ -663,7 +663,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          toolchain: stable
+          toolchain: 1.99.1
           components: clippy, rustfmt
 
       - name: Cache cargo registry + target

@@ -23,14 +23,16 @@ pub fn extract_style_from_jsx<'a>(
         _ => None,
     };
 
-    expression.map_or_default(|mut expression| {
-        extract_style_from_expression(
-            inputs,
-            Some(name),
-            &mut expression,
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-        )
-    })
+    expression
+        .map(|mut expression| {
+            extract_style_from_expression(
+                inputs,
+                Some(name),
+                &mut expression,
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+            )
+        })
+        .unwrap_or_default()
 }

@@ -79,7 +79,8 @@ impl<'a> DevupVisitor<'a> {
             let (offset, code) = container
                 .expression
                 .as_expression()
-                .map_or_default(|value| (value.span().start, readable_code(value)));
+                .map(|value| (value.span().start, readable_code(value)))
+                .unwrap_or_default();
             self.errors
                 .push((offset, element_error(element, &code, STYLE_ORDER_VALUE)));
         }

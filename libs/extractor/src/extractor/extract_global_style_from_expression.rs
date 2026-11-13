@@ -183,19 +183,21 @@ fn collect_global_styles<'a>(
                             let selector = at_rules.iter().try_fold(global, |selector, rule| {
                                 StyleSelector::nest_at_rule(Some(&selector), rule.kind, &rule.query)
                             });
-                            let extracted = selector.map_or_default(|selector| {
-                                extract_style_from_expression(
-                                    super::style_inputs::StyleInputs::with_values(
-                                        ast_builder,
-                                        inputs.values,
-                                    ),
-                                    None,
-                                    &mut o.value,
-                                    0,
-                                    &Some(selector),
-                                    LiteralHandling::ExpandResponsiveThemeToken,
-                                )
-                            });
+                            let extracted = selector
+                                .map(|selector| {
+                                    extract_style_from_expression(
+                                        super::style_inputs::StyleInputs::with_values(
+                                            ast_builder,
+                                            inputs.values,
+                                        ),
+                                        None,
+                                        &mut o.value,
+                                        0,
+                                        &Some(selector),
+                                        LiteralHandling::ExpandResponsiveThemeToken,
+                                    )
+                                })
+                                .unwrap_or_default();
 
                             // `@layer` names the layer of every other declaration,
                             // responsive and nested ones included

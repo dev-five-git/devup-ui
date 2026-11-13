@@ -251,7 +251,10 @@ pub(super) fn execute_extracted(
                         style.property(),
                         style.value(),
                         style.level(),
-                        style.selector().map_or_default(ToString::to_string),
+                        style
+                            .selector()
+                            .map(ToString::to_string)
+                            .unwrap_or_default(),
                         style.layer()
                     ]),
                 ))
@@ -271,7 +274,10 @@ pub(super) fn execute_extracted(
                         style.property(),
                         format!("var({variable_name})"),
                         style.level(),
-                        style.selector().map_or_default(ToString::to_string),
+                        style
+                            .selector()
+                            .map(ToString::to_string)
+                            .unwrap_or_default(),
                         style.layer
                     ]),
                 ))

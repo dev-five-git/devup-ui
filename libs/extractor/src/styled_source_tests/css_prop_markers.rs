@@ -278,7 +278,8 @@ fn opaque_classes_still_block_when_overlapping_css_prop_is_applied(#[case] filen
         },
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
 
     // Then: the existing located overlap error remains, rather than unchecked lowering.
     assert!(error.starts_with(&format!("{filename}:1:")), "{error}");

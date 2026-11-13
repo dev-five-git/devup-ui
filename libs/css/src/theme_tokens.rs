@@ -106,7 +106,8 @@ pub fn is_shadow_token(name: &str) -> bool {
 pub fn get_typography_keys() -> Vec<String> {
     TOKEN_REGISTRY
         .read()
-        .map_or_default(|registry| registry.typography.clone())
+        .map(|registry| registry.typography.clone())
+        .unwrap_or_default()
 }
 
 /// Look up a `$token` in the length and shadow registries.

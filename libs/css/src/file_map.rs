@@ -112,7 +112,8 @@ pub fn seed_file_numbers(files: &[String]) {
 pub fn get_filename_by_file_num(file_num: usize) -> String {
     with_file_map(|map| {
         map.get_by_right(&file_num)
-            .map_or_default(String::as_str)
+            .map(String::as_str)
+            .unwrap_or_default()
             .to_string()
     })
 }

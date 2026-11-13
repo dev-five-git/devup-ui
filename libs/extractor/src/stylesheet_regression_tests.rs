@@ -58,7 +58,8 @@ fn static_dispatch_cannot_ignore_throwing_non_style_initializers(#[case] express
         ExtractOption::default(),
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
 
     assert!(error.starts_with("/src/throwing-data.css.ts:2:"), "{error}");
     assert!(error.contains("TypeError"), "{error}");
@@ -83,7 +84,8 @@ fn environment_reads_cannot_be_replaced_with_synthetic_build_values(
         ExtractOption::default(),
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
 
     assert!(
         error.starts_with("/src/environment-read.css.ts:2:"),
@@ -104,7 +106,8 @@ fn function_source_reflection_cannot_observe_build_instrumentation() {
         ExtractOption::default(),
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
 
     assert!(
         error.starts_with("/src/function-source.css.ts:3:"),

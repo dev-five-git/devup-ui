@@ -161,7 +161,8 @@ fn css_retention_rejects_actual_read_when_helper_is_commonjs() {
         &resolver,
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
     // Then
     assert!(error.starts_with("/src/helper.cjs:2:15:"), "{error}");
     assert!(

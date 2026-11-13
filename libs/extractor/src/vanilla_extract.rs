@@ -807,7 +807,8 @@ fn strip(code: &str, filename: &str) -> Stripped {
         .build(&program);
     let mut marks = generated
         .map
-        .map_or_default(|map| source_map::marks(&map, &generated.code, code));
+        .map(|map| source_map::marks(&map, &generated.code, code))
+        .unwrap_or_default();
     source_map::complete_marks(&program, &generated.code, &mut marks);
     Stripped {
         code: generated.code,

@@ -175,7 +175,8 @@ fn css_retention_locates_missing_file_when_helper_imports_it() {
         &resolver,
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
     // Then
     assert!(error.starts_with("/src/helper.ts:2:8:"), "{error}");
     assert!(
@@ -217,7 +218,8 @@ fn css_retention_locates_drive_error_when_target_is_on_another_drive() {
         &resolver,
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
     // Then
     assert!(error.starts_with("C:/src/helper.ts:1:8:"), "{error}");
     assert!(

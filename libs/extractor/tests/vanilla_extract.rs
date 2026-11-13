@@ -55,7 +55,8 @@ fn an_unreadable_var_declaration_is_reported() {
         },
     )
     .err()
-    .map_or_default(|error| error.to_string());
+    .map(|error| error.to_string())
+    .unwrap_or_default();
     assert!(
         error.starts_with(
             "broken.css.ts:2:27: JS execution error: TypeError: can't convert symbol to string"
@@ -70,7 +71,8 @@ fn cyclic_font_faces_report_the_serialization_error() {
     let source = "import { fontFace } from '@devup-ui/react';\nconst cyclic = {}; cyclic.self = cyclic;\nfontFace(cyclic);";
     let error = extract("cyclic.css.ts", source, ExtractOption::default())
         .err()
-        .map_or_default(|error| error.to_string());
+        .map(|error| error.to_string())
+        .unwrap_or_default();
     assert!(
         error.starts_with("cyclic.css.ts:3:9: JS execution error: TypeError: cyclic object value"),
         "{error}"

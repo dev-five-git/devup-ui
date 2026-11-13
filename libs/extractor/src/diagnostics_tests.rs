@@ -8,7 +8,8 @@ fn fatal_parse_reports_original_file_and_first_parser_error() {
 
     let error = extract_without_source_map("/src/broken.tsx", source, ExtractOption::default())
         .err()
-        .map_or_default(|error| error.to_string());
+        .map(|error| error.to_string())
+        .unwrap_or_default();
 
     assert!(error.starts_with("/src/broken.tsx:2:31:"), "{error}");
     assert!(error.contains("Unterminated regular expression"), "{error}");
@@ -22,7 +23,8 @@ fn unsupported_extension_reports_the_input_file_and_repair() {
 
     let error = extract_without_source_map("/src/broken.unknown", source, ExtractOption::default())
         .err()
-        .map_or_default(|error| error.to_string());
+        .map(|error| error.to_string())
+        .unwrap_or_default();
 
     assert!(error.starts_with("/src/broken.unknown:1:1:"), "{error}");
     assert!(error.contains("Unknown file extension"), "{error}");
@@ -56,7 +58,8 @@ fn recoverable_and_semantic_errors_do_not_publish_css(#[case] invalid: &str) {
 
     let error = extract_without_source_map("/src/syntax.tsx", &source, ExtractOption::default())
         .err()
-        .map_or_default(|error| error.to_string());
+        .map(|error| error.to_string())
+        .unwrap_or_default();
 
     assert!(
         error.starts_with("/src/syntax.tsx:2:"),
@@ -78,7 +81,8 @@ fn empty_jsx_attribute_expressions_are_syntax_errors_not_absent_values(#[case] e
 
     let error = extract_without_source_map("/src/empty.tsx", &source, ExtractOption::default())
         .err()
-        .map_or_default(|error| error.to_string());
+        .map(|error| error.to_string())
+        .unwrap_or_default();
 
     assert!(error.starts_with("/src/empty.tsx:2:"), "{error}");
     assert!(error.contains("Cannot parse source:"), "{error}");
