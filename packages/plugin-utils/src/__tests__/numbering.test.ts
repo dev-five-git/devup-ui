@@ -24,6 +24,7 @@ describe('collectNumberedFiles', () => {
     write('src/a.tsx')
     write('src/nested/c.ts')
     write('src/readme.md')
+    write('src/.cache/skipped.tsx')
     write('node_modules/@acme/ui/Button.tsx')
     write('node_modules/@acme/ui/node_modules/dep/skipped.tsx')
   })

@@ -610,7 +610,8 @@ export function compareCodePoints(a: string, b: string): number {
 
 /**
  * Enumerate every extractable source file under `srcDir`, sorted by POSIX path
- * (deterministic order). Skips `node_modules`, test/spec files, and non-JS/TS
+ * (deterministic order). Skips `node_modules`, dot directories such as
+ * `.next` and `.git`, test/spec files, and non-JS/TS
  * files — the SAME filter `buildCanonicalMap` uses internally, so a plugin can
  * pre-warm the extractor over exactly the file set the canonical map was built
  * from. Returns absolute paths.
@@ -635,7 +636,8 @@ export function listSourceFiles(
     for (const entry of entries) {
       const entryPath = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (entry.name === 'node_modules') continue
+        if (entry.name === 'node_modules' || entry.name.startsWith('.'))
+          continue
         visit(entryPath)
         continue
       }

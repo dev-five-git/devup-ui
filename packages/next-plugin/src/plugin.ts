@@ -126,6 +126,16 @@ export function resetTurboSetupCacheForTesting(): void {
 }
 
 /**
+ * The directory Next reads routes from: the project root when it holds `app`
+ * or `pages`, otherwise `src`, as Next itself decides.
+ */
+function sourceDir(cwd: string): string {
+  return ['app', 'pages'].some((dir) => existsSync(resolve(cwd, dir)))
+    ? cwd
+    : resolve(cwd, 'src')
+}
+
+/**
  * Devup UI Next Plugin
  * @param config
  * @param options
@@ -302,7 +312,7 @@ export function DevupUI(
     let staticGraph: StaticImportGraph | undefined
     const graphStartedAt = profileStart()
     try {
-      const srcDir = resolve(process.cwd(), 'src')
+      const srcDir = sourceDir(process.cwd())
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
@@ -638,7 +648,7 @@ export function DevupUI(
     )
     if (!_options.dev && productionPrewarmFiles === undefined) {
       const cwd = process.cwd()
-      const srcDir = resolve(cwd, 'src')
+      const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
       productionPrewarmFiles = collectProductionPrewarmFiles({

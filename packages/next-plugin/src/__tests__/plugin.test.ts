@@ -439,6 +439,28 @@ describe('DevupUINextPlugin', () => {
       })
     })
 
+    it('reads routes from the project root when it holds app or pages', () => {
+      // Given: a Next app with `app/` at the root and no `src/`.
+      existsSyncSpy.mockImplementation(
+        (path: fs.PathLike) => String(path) === resolve('app'),
+      )
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(resolve('app/page.tsx')))
+      try {
+        // When
+        DevupUI({}).webpack!(createWebpackConfig(), createWebpackContext())
+        // Then
+        expect(graphSpy).toHaveBeenCalledWith(
+          process.cwd(),
+          resolve('tsconfig.json'),
+        )
+      } finally {
+        graphSpy.mockRestore()
+      }
+    })
+
     it('should apply webpack plugin with dev', async () => {
       const ret = DevupUI({})
 
@@ -1026,6 +1048,26 @@ export const box = style({ color: 'red' })`
       expect(startCoordinatorSpy).toHaveBeenCalledWith(
         expect.objectContaining({ sourceMap: true }),
       )
+    })
+    it('keeps configuring Turbopack when the import graph cannot be read', () => {
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockImplementation(() => {
+        throw new Error('unreadable')
+      })
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      try {
+        expect(DevupUI({}).turbopack?.rules).toBeDefined()
+        expect(profileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('"failed":true'),
+        )
+      } finally {
+        profileSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
     })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
