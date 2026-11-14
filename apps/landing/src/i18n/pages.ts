@@ -1,4 +1,3 @@
-
 import type { Metadata } from 'next'
 import type { ComponentType, ReactNode } from 'react'
 
