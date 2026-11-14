@@ -7,7 +7,12 @@ import type { Symbol } from 'typescript'
 
 import { ImportStorage, STYLE_COMPONENTS } from '../../utils/import-storage'
 import { componentName } from '../../utils/style-position'
-import { findBinding, runtimeSource } from './runtime-source'
+import {
+  buildObject,
+  findBinding,
+  runtimeSource,
+  spreadSides,
+} from './runtime-source'
 import { styleCapability, StyleSchemaError } from './style-capability'
 
 const createRule = ESLintUtils.RuleCreator<{ requiresTypeChecking: boolean }>(
@@ -88,6 +93,14 @@ export const noUnknownStyleSpread = createRule({
             )
             capabilities.set(exported, capable)
           }
+          // A side the build reads styles from next to a runtime one is a
+          // build error already
+          const sides = spreadSides(node.argument)
+          const builds = (side: TSESTree.Expression) =>
+            buildObject(context.sourceCode, side) &&
+            capable(services.getTypeAtLocation(side))
+          if (sides.length > 1 && sides.some(unknown) && sides.some(builds))
+            continue
           if (capable(services.getTypeAtLocation(node.argument))) {
             context.report({ node, messageId: 'unknownStyleSpread' })
           }

@@ -30,8 +30,9 @@ fn imported(base: &str, body: &str) -> ExtractOutput {
             code: module.clone(),
         })
     };
-    crate::extract_with_modules("/composition/entry.tsx", &entry, option(), false, &resolver)
-        .unwrap_or_else(|error| panic!("{error}"))
+    let result =
+        crate::extract_with_modules("/composition/entry.tsx", &entry, option(), false, &resolver);
+    result.unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn declarations(output: &ExtractOutput) -> Vec<(String, String)> {

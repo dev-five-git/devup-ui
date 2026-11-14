@@ -217,3 +217,34 @@ fn caller_props_win_when_dynamic_styles_are_rendered(#[case] factory: &str) {
         r#"["section",true,"red","child",7,8,"nav","blue"]"#,
     );
 }
+
+#[test]
+#[serial]
+fn dynamic_component_factories_retain_a_separate_eager_target_for_each_instance() {
+    let source = format!(
+        "{IMPORT}let current='article';const trace=[];function target(){{trace.push(current);return current;}}function create(){{return styled(target())({{color:'red'}});}}const first=create();current='section';const second=create();current='nav';"
+    );
+    let output = compile("test.ts", &source, true);
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "test.ts", &output);
+    let calls = renders(&program);
+    assert_eq!(calls.len(), 1);
+    let helper = &calls[0].helper;
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+    let script = format!(
+        "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}JSON.stringify([first.render({{}},7).target,second.render({{}},8).target,first.render({{}},9).target,trace]);"
+    );
+    let actual = Context::default()
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("{error}: {script}"));
+    assert_eq!(
+        actual
+            .as_string()
+            .unwrap_or_else(|| panic!("observation"))
+            .to_std_string_escaped(),
+        r#"["article","section","article",["article","section"]]"#
+    );
+}

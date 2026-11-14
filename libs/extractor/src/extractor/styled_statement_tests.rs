@@ -74,6 +74,7 @@ fn opaque_statement_callback_when_top_level_is_called_with_props_and_false_becom
             filename: "statement.tsx",
             jsx: &mut None,
             capability: None,
+            shared: true,
         },
     );
     // Then: opaque class callbacks legitimately reach the statement fallback.
@@ -139,6 +140,7 @@ fn uncurried_styled_when_second_argument_is_callback_stays_object_only()
             filename: "statement.tsx",
             jsx: &mut None,
             capability: None,
+            shared: true,
         },
     );
     // Then

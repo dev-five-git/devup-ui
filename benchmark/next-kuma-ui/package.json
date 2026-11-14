@@ -12,13 +12,13 @@
   "dependencies": {
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "next": "^16.4.3",
+    "next": "^16.4.6",
     "@kuma-ui/core": "^1.6.4"
   },
   "devDependencies": {
     "@kuma-ui/next-plugin": "^1.4.2",
     "typescript": "^7.0.2",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0"
   }

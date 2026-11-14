@@ -78,7 +78,7 @@ describe('styled components another module defines', () => {
     expect(app.code).not.toContain('DevupAs = Card')
     expect(app.code).toContain('DevupAs = "div"')
     expect(app.code).toContain('DevupAs = "section"')
-    expect(app.code).toContain('role: "note"')
+    expect(app.code).toContain('role="note"')
     expect([...app.dependencies].sort()).toEqual([
       'node_modules/@acme/ui/src/index.js',
       'src/Base.tsx',

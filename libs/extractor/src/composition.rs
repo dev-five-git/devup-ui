@@ -198,6 +198,7 @@ impl<'a> Composition<'a> {
 
 /// Styles a part of `css(...)` gives
 pub enum KnownStyles<'a> {
+    Cached(usize),
     /// The styles of a `css()` class the file binds
     Known(Vec<ExtractStyleValue>),
     /// A rule object

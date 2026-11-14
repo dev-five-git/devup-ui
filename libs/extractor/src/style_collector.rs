@@ -48,6 +48,27 @@ impl StyleCollector {
         self.styles.insert(style);
     }
 
+    /// Dynamic styles read through a capture the output no longer declares
+    /// read the expression written in its place
+    pub(crate) fn restore_captures(&mut self, written: &[(String, String)]) {
+        if written.is_empty() {
+            return;
+        }
+        self.styles = std::mem::take(&mut self.styles)
+            .into_iter()
+            .map(|mut style| {
+                if let ExtractStyleValue::Dynamic(dynamic) = &mut style
+                    && let Some((_, code)) = written
+                        .iter()
+                        .find(|(name, _)| name == dynamic.identifier())
+                {
+                    code.clone_into(dynamic.identifier_mut());
+                }
+                style
+            })
+            .collect();
+    }
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.styles.is_empty() && self.layers.is_empty()

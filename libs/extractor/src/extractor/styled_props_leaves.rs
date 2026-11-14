@@ -41,8 +41,20 @@ impl<'a> Leaves<'_, '_, 'a> {
 
     fn object_inner(&mut self, object: &mut ObjectExpression<'a>) -> Result<(), PropsRulesError> {
         for property in &mut object.properties {
-            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                return Err(PropsRulesError::Rules);
+            let property = match property {
+                ObjectPropertyKind::ObjectProperty(property) => property,
+                ObjectPropertyKind::SpreadProperty(spread) => {
+                    if !shape::spread_data(&spread.argument, true) {
+                        return Err(PropsRulesError::Rules);
+                    }
+                    let Expression::ObjectExpression(inner) =
+                        unwrap_syntax_only_mut(&mut spread.argument)
+                    else {
+                        return Err(PropsRulesError::Rules);
+                    };
+                    self.object_inner(inner)?;
+                    continue;
+                }
             };
             if property.computed || property.method || property.kind != PropertyKind::Init {
                 return Err(PropsRulesError::Rules);
@@ -111,11 +123,7 @@ impl<'a> Leaves<'_, '_, 'a> {
         self.values.push(source.into());
         *value = if function {
             // A member call would incorrectly give an ordinary function the vector as `this`.
-            let direct = Expression::new_sequence_expression(
-                SPAN,
-                oxc_allocator::Vec::from_array_in([values::zero(builder), slot], builder),
-                builder,
-            );
+            let direct = crate::utils::unbound_value(builder, slot);
             wrap_direct_call(builder, &direct, &[identifier(builder, "rest")])
         } else {
             values::captured(builder, key, slot)
