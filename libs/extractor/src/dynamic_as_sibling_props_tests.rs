@@ -8,7 +8,7 @@ use crate::{ExtractOption, extract, extract_without_source_map};
 use css::{class_map::reset_class_map, file_map::reset_file_map};
 use insta::assert_snapshot;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Expression, JSXAttributeItem, JSXOpeningElement, ObjectPropertyKind};
+use oxc_ast::ast::{JSXAttributeItem, JSXAttributeValue, JSXOpeningElement};
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType};
@@ -32,19 +32,12 @@ impl<'a> Visit<'a> for Elements<'_> {
             if let JSXAttributeItem::Attribute(attribute) = attribute {
                 self.attributes
                     .push(attribute.name.span().source_text(self.code).to_string());
-            }
-            // `props={{ href: '/privacy' }}` is written as `{...{ href: "/privacy" }}`.
-            if let JSXAttributeItem::SpreadAttribute(spread) = attribute
-                && let Expression::ObjectExpression(object) = &spread.argument
-            {
-                for property in &object.properties {
-                    if let ObjectPropertyKind::ObjectProperty(property) = property
-                        && property.key.is_specific_static_name("href")
-                        && let Expression::StringLiteral(href) = &property.value
-                    {
-                        self.hrefs
-                            .push((name.clone(), href.value.display().to_string()));
-                    }
+                // `props={{ href: '/privacy' }}` is written as `href="/privacy"`.
+                if attribute.is_identifier("href")
+                    && let Some(JSXAttributeValue::StringLiteral(href)) = &attribute.value
+                {
+                    self.hrefs
+                        .push((name.clone(), href.value.display().to_string()));
                 }
             }
         }

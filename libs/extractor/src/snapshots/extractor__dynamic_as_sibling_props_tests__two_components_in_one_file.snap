@@ -4,11 +4,11 @@ expression: output.code
 ---
 import "@devup-ui/react/devup-ui-0.css";
 import Link from "next/link";
-export const Privacy = () => <Link className="a b c" {...{ href: "/privacy" }}>Privacy</Link>;
-export const Terms = () => <Link {...{ href: "/terms" }}>Terms</Link>;
+export const Privacy = () => <Link className="a b c" href="/privacy">Privacy</Link>;
+export const Terms = () => <Link href="/terms">Terms</Link>;
 export const Both = () => <div className="a">
     <Privacy />
-    <Link {...{ href: "/both" }} />
+    <Link href="/both" />
     <Terms />
   </div>;
 export const after = 42;

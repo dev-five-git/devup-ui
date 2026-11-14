@@ -6,9 +6,9 @@ import "@devup-ui/react/devup-ui-0.css";
 import Link from "next/link";
 export const Footer = () => <footer>
     <span>before</span>
-    <Link className="a b c" {...{ href: "/privacy" }}>Privacy</Link>
+    <Link className="a b c" href="/privacy">Privacy</Link>
     {" / "}
-    <Link {...{ href: "/terms" }}>Terms</Link>
+    <Link href="/terms">Terms</Link>
     <span>after</span>
   </footer>;
 export const after = 42;

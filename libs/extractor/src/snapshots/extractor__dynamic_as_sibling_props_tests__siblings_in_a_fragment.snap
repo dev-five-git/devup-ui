@@ -5,7 +5,7 @@ expression: output.code
 import "@devup-ui/react/devup-ui-0.css";
 import Link from "next/link";
 export const Footer = () => <>
-    <Link className="a b c" {...{ href: "/privacy" }}>Privacy</Link>
-    <Link {...{ href: "/terms" }}>Terms</Link>
+    <Link className="a b c" href="/privacy">Privacy</Link>
+    <Link href="/terms">Terms</Link>
   </>;
 export const after = 42;

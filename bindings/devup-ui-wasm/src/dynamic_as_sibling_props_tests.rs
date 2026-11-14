@@ -26,8 +26,8 @@ export const after = 42;
 const EXTRACTED: &str = "import \"@devup-ui/react/devup-ui.css\";
 import Link from \"next/link\";
 export const Footer = () => <div className=\"a d\">
-    <Link className=\"a b c\" {...{ href: \"/privacy\" }}>Privacy</Link>
-    <Link {...{ href: \"/terms\" }}>Terms</Link>
+    <Link className=\"a b c\" href=\"/privacy\">Privacy</Link>
+    <Link href=\"/terms\">Terms</Link>
   </div>;
 export const after = 42;
 ";
