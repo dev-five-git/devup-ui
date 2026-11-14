@@ -1,0 +1,11 @@
+/node_modules
+/.next/
+/df/
+*.tsbuildinfo
+next-env.d.ts
+
+# written by ../large-app.mjs
+/src/app/page.tsx
+/src/app/r*/
+/src/components/
+/src/tokens.ts
