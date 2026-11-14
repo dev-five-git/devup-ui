@@ -624,8 +624,10 @@ impl ColorScheme {
     }
 }
 
+/// The theme of `devup.json`. Deserializing it checks the tokens of every
+/// kind together, as the derived field-by-field reading cannot
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", remote = "Self")]
 pub struct Theme {
     #[serde(default, deserialize_with = "deserialize_color_themes")]
     pub colors: BTreeMap<String, ColorTheme>,
@@ -649,6 +651,58 @@ pub struct Theme {
     /// and `@custom-variant` definitions Tailwind classes use
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tailwind_css: String,
+}
+
+impl Serialize for Theme {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Theme::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Theme {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let theme = Theme::deserialize(deserializer)?;
+        check_token_kinds(&theme).map_err(serde::de::Error::custom)?;
+        Ok(theme)
+    }
+}
+
+/// Check that no two tokens of different kinds become one CSS variable, as a
+/// color `card` and a shadow `card` would both set `--card`. Tokens of one
+/// kind are checked as they are read; the same name in two variants of one
+/// kind is the same variable on purpose.
+fn check_token_kinds(theme: &Theme) -> Result<(), String> {
+    let colors = theme.colors.values().flat_map(|variant| {
+        variant
+            .entries
+            .values()
+            .map(|entry| ("color", entry.interface_key.as_str(), entry.css_key.clone()))
+    });
+    let mut seen: BTreeMap<String, (&str, &str)> = BTreeMap::new();
+    for (kind, name, css_key) in colors
+        .chain(token_variables("length", &theme.length))
+        .chain(token_variables("shadow", &theme.shadows))
+    {
+        let (other_kind, other) = *seen.entry(css_key.clone()).or_insert((kind, name));
+        if other_kind != kind {
+            return Err(format!(
+                "theme: {other_kind} token '{other}' and {kind} token '{name}' both become the CSS variable --{css_key}: rename one"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The kind, name and CSS variable of each token of every variant of `themes`
+fn token_variables<'t>(
+    kind: &'static str,
+    themes: &'t BTreeMap<String, BTreeMap<String, TokenValues>>,
+) -> impl Iterator<Item = (&'static str, &'t str, String)> + 't {
+    themes.values().flat_map(move |variant| {
+        variant
+            .keys()
+            .map(move |name| (kind, name.as_str(), css_key_from(name).into_owned()))
+    })
 }
 
 /// Deserialize the color variants, naming the variant a token error is in
@@ -2732,6 +2786,42 @@ mod tests {
                 theme_error(json)
             );
         }
+    }
+
+    // A color `card` and a shadow `card` both set `--card`, so one would
+    // silently replace the other
+    #[rstest::rstest]
+    #[case(
+        r##"{"colors":{"default":{"card":"#111"}},"shadow":{"default":{"card":"0 1px #000"}}}"##,
+        "theme: color token 'card' and shadow token 'card' both become the CSS variable --card: rename one"
+    )]
+    #[case(
+        r##"{"colors":{"default":{"a":"#111"},"dark":{"gray":{"100":"#222"}}},"length":{"default":{"gray-100":"4px"}}}"##,
+        "theme: color token 'gray.100' and length token 'gray-100' both become the CSS variable --gray-100: rename one"
+    )]
+    #[case(
+        r#"{"length":{"default":{"gap":"4px"}},"shadow":{"sm":{"x":"0 1px #000"},"lg":{"gap.y":"0 1px #000","gap":"0 2px #000"}}}"#,
+        "theme: length token 'gap' and shadow token 'gap' both become the CSS variable --gap: rename one"
+    )]
+    fn test_tokens_of_different_kinds_cannot_share_a_variable(
+        #[case] json: &str,
+        #[case] error: &str,
+    ) {
+        assert!(
+            theme_error(json).starts_with(error),
+            "{}",
+            theme_error(json)
+        );
+    }
+
+    #[test]
+    fn test_one_token_in_variants_of_its_kind_shares_a_variable() {
+        let theme: Theme = serde_json::from_str(
+            r##"{"colors":{"default":{"card":"#111"},"dark":{"card":"#eee"}},"length":{"default":{"gap":"4px"},"wide":{"gap":"8px"}}}"##,
+        )
+        .unwrap();
+        let json = serde_json::to_string(&theme).unwrap();
+        assert!(json.contains("\"length\""), "{json}");
     }
 
     #[test]
