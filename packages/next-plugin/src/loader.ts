@@ -5,11 +5,14 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   createStateWriter,
+  type DevupCompiler,
+  type DevupEngine,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import { takeExtractOutput } from './coordinator'
 import {
   isConnectionError,
   missingPortFileError,
@@ -23,6 +26,7 @@ const stateWriter = createStateWriter((path, content, encoding) =>
 )
 
 export interface DevupUILoaderOptions {
+  engine?: DevupEngine
   package: string
   cssDir: string
   sheetFile: string
@@ -39,7 +43,7 @@ export interface DevupUILoaderOptions {
   defaultFileMap: object
   importAliases?: Record<string, string | null>
 }
-let init = false
+let initializedCompilers = new WeakSet<DevupCompiler>()
 
 const cachedPorts = new Map<string, number>()
 const keepAliveAgent = new Agent({ keepAlive: true })
@@ -142,6 +146,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
     const {
       watch,
+      engine,
       package: libPackage,
       cssDir,
       sheetFile,
@@ -218,49 +223,50 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       return
     }
 
-    // Non-coordinator mode: local WASM extraction
-    const {
-      codeExtract,
-      exportClassMap,
-      exportFileMap,
-      exportSheet,
-      getCss,
-      importClassMap,
-      importFileMap,
-      importSheet,
-      registerTheme,
-    } = loadWasm()
-    const promises: Promise<void>[] = []
-    if (!init) {
-      init = true
-      if (watch) {
-        this.addDependency(sheetFile)
-        this.addDependency(classMapFile)
-        this.addDependency(fileMapFile)
-        this.addDependency(themeFile)
-        // restart loader issue
-        // loader should read files when they exist in watch mode
-        if (existsSync(sheetFile))
-          importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
-        if (existsSync(classMapFile))
-          importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
-        if (existsSync(fileMapFile))
-          importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-        if (existsSync(themeFile)) {
-          const config = JSON.parse(readFileSync(themeFile, 'utf-8')) ?? {}
-          registerTheme(withTailwindCss(config.theme ?? {}, config))
-          for (const file of tailwindCssFiles(config)) this.addDependency(file)
-        }
-      } else {
-        importFileMap(defaultFileMap)
-        importClassMap(defaultClassMap)
-        importSheet(defaultSheet)
-        registerTheme(theme)
-      }
-    }
-
+    // Non-coordinator mode retains one selected compiler through callbacks.
     const callback = this.async()
     try {
+      const compiler = loadWasm(engine)
+      const {
+        codeExtract,
+        exportClassMap,
+        exportFileMap,
+        exportSheet,
+        getCss,
+        importClassMap,
+        importFileMap,
+        importSheet,
+        registerTheme,
+      } = compiler
+      const promises: Promise<void>[] = []
+      if (!initializedCompilers.has(compiler)) {
+        if (watch) {
+          this.addDependency(sheetFile)
+          this.addDependency(classMapFile)
+          this.addDependency(fileMapFile)
+          this.addDependency(themeFile)
+          // restart loader issue
+          // loader should read files when they exist in watch mode
+          if (existsSync(sheetFile))
+            importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
+          if (existsSync(classMapFile))
+            importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
+          if (existsSync(fileMapFile))
+            importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
+          if (existsSync(themeFile)) {
+            const config = JSON.parse(readFileSync(themeFile, 'utf-8')) ?? {}
+            registerTheme(withTailwindCss(config.theme ?? {}, config))
+            for (const file of tailwindCssFiles(config))
+              this.addDependency(file)
+          }
+        } else {
+          importFileMap(defaultFileMap)
+          importClassMap(defaultClassMap)
+          importSheet(defaultSheet)
+          registerTheme(theme)
+        }
+        initializedCompilers.add(compiler)
+      }
       const id = this.resourcePath
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
@@ -269,22 +275,25 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+      const snapshot = takeExtractOutput(
+        codeExtract(
+          relativePath,
+          source.toString(),
+          libPackage,
+          relCssDir,
+          singleCss,
+          false,
+          true,
+          importAliases,
+        ),
+      )
       const {
         code,
         map,
         cssFile,
         updatedBaseStyle,
         dependencies = [],
-      } = codeExtract(
-        relativePath,
-        source.toString(),
-        libPackage,
-        relCssDir,
-        singleCss,
-        false,
-        true,
-        importAliases,
-      )
+      } = snapshot
       for (const dependency of dependencies) {
         this.addDependency(resolve(dependency))
       }
@@ -324,7 +333,7 @@ export default devupUILoader
 
 /** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
-  init = false
+  initializedCompilers = new WeakSet<DevupCompiler>()
   cachedPorts.clear()
 }
 

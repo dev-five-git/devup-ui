@@ -3,7 +3,7 @@ const { join } = require('node:path')
 const {
   webpack,
 } = require('../../../next-plugin/node_modules/next/dist/compiled/webpack/webpack')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { state } = require('./reservation-loaders.cjs')
 const snapshot = require('./reservation-output.cjs')
 
@@ -71,7 +71,7 @@ const compiler = webpack({
   },
   experiments: { css: true },
   module: { rules: [{ test: /\.css$/, type: 'css' }] },
-  plugins: [new DevupUIWebpackPlugin({ atomHoist: 0 })],
+  plugins: [new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 })],
 })
 assert(compiler)
 compiler.hooks.thisCompilation.tap('root-custody', () => {

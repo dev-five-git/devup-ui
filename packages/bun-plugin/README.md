@@ -60,6 +60,21 @@ module in the bundle. Imports of the packages Devup UI takes the place of
 Class names are short in `Bun.build` and readable under the runtime; pass
 `debug` to choose.
 
+## Compiler Engine
+
+The native compiler is selected by default, including the zero-config preload.
+To select WASM, use the configurable registration entry and await setup:
+
+```ts
+import { register } from '@devup-ui/bun-plugin/register'
+await register({ engine: 'wasm' })
+```
+
+`DevupUI({ engine: 'wasm' })` selects WASM for `Bun.build` too. Native load
+errors retain their cause and identify the missing platform package; they never
+silently select WASM. Each factory retains its selected compiler for later loads
+and theme reloads. Independent concurrent builds in one process are unsupported.
+
 ## Custom Shorthands
 
 To configure custom shorthands, preload a local module instead of the

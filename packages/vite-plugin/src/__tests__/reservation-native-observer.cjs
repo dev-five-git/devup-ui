@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 
 /** @typedef {readonly [string, string, string]} Row */
 /** @typedef {Readonly<Record<string, string | boolean>>} Aliases */

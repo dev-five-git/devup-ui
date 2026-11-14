@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { state } = require('./reservation-loaders.cjs')
 
 module.exports = function snapshot(stats, fixture, extracts) {

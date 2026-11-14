@@ -3,10 +3,11 @@ import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 
 import * as utils from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
 import { spyOn } from 'bun:test'
 
 import { lifecycle } from './plugin-lifecycle-fixture'
+
+const wasm = utils.loadCompiler('wasm')
 
 export const SOURCE =
   'import {Box} from "@devup-ui/react"; import {tone} from "./tone"; export const A=()=> <Box color={tone}/>'

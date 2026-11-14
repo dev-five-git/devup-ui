@@ -2,9 +2,9 @@ import { dirname, relative, resolve } from 'node:path'
 
 import {
   createSharedSlotReservation,
+  type DevupCompiler,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
-import { reserveClassSlots } from '@devup-ui/wasm'
 import type { Rspack } from '@rsbuild/core'
 
 import type { DevupUIRsbuildPluginOptions } from './plugin'
@@ -37,8 +37,9 @@ export function createReservation(
     readonly atomMode: boolean
     readonly importAliases: WasmImportAliases
   },
+  compiler: Pick<DevupCompiler, 'reserveClassSlots'>,
 ) {
-  const slots = createSharedSlotReservation({ reserveClassSlots })
+  const slots = createSharedSlotReservation(compiler)
   const roots = new Set(
     [process.cwd(), options.root].flatMap((root) =>
       ['src', 'app'].map((name) => resolve(root, name)),

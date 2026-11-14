@@ -1,18 +1,18 @@
 import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { createModuleResolver, createStateWriter } from '@devup-ui/plugin-utils'
 import {
-  codeExtract,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-  setModuleResolver,
-} from '@devup-ui/wasm'
+  createModuleResolver,
+  createStateWriter,
+  type DevupCompiler,
+  type DevupCompilerOutput,
+  type DevupEngine,
+  loadCompiler,
+} from '@devup-ui/plugin-utils'
 import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
 
 export interface DevupUILoaderOptions {
+  readonly engine?: DevupEngine
   package: string
   cssDir: string
   sheetFile: string
@@ -44,11 +44,13 @@ const stateWriter = createStateWriter((path, content, encoding) =>
 let moduleResolver: ReturnType<typeof createModuleResolver> | undefined
 
 /** Resolve imports to the cwd-relative ids this loader extracts files under */
-function setCwdModuleResolver(): void {
+function setCwdModuleResolver(
+  compiler: Pick<DevupCompiler, 'setModuleResolver'>,
+): void {
   moduleResolver ??= createModuleResolver({
     toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
   })
-  setModuleResolver(moduleResolver)
+  compiler.setModuleResolver(moduleResolver)
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -61,6 +63,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       classMapFile,
       fileMapFile,
       singleCss,
+      engine,
       importAliases = {},
     } = this.getOptions()
     const callback = this.async()
@@ -73,6 +76,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     }
 
     try {
+      const compiler = loadCompiler(engine)
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
       // POSIX-normalize so the engine's bucket key matches the canonical map /
@@ -82,15 +86,8 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver()
-      const {
-        code,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-      } = codeExtract(
+      setCwdModuleResolver(compiler)
+      const output: DevupCompilerOutput = compiler.codeExtract(
         relativePath,
         source.toString(),
         libPackage,
@@ -100,6 +97,30 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
         importAliases,
       )
+      let snapshot: Pick<
+        DevupCompilerOutput,
+        'code' | 'css' | 'map' | 'cssFile' | 'updatedBaseStyle' | 'dependencies'
+      >
+      try {
+        snapshot = {
+          code: output.code,
+          css: output.css,
+          map: output.map,
+          cssFile: output.cssFile,
+          updatedBaseStyle: output.updatedBaseStyle,
+          dependencies: output.dependencies,
+        }
+      } finally {
+        output.free()
+      }
+      const {
+        code,
+        css = '',
+        map,
+        cssFile,
+        updatedBaseStyle,
+        dependencies,
+      } = snapshot
       for (const dependency of dependencies) {
         this.addDependency(resolve(dependency))
       }
@@ -110,13 +131,13 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         promises.push(
           stateWriter.write(
             join(cssDir, 'devup-ui.css'),
-            getCss(null, false),
+            compiler.getCss(null, false),
             'utf-8',
           ),
         )
       }
       if (cssFile) {
-        const content = `${this.resourcePath} ${Date.now()}`
+        const content = `${basename(cssFile)} ${Date.now()}`
         // should be reset css
         promises.push(
           stateWriter.write(
@@ -126,9 +147,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         )
         if (watch) {
           promises.push(
-            stateWriter.write(sheetFile, exportSheet()),
-            stateWriter.write(classMapFile, exportClassMap()),
-            stateWriter.write(fileMapFile, exportFileMap()),
+            stateWriter.write(sheetFile, compiler.exportSheet()),
+            stateWriter.write(classMapFile, compiler.exportClassMap()),
+            stateWriter.write(fileMapFile, compiler.exportFileMap()),
           )
         }
       }

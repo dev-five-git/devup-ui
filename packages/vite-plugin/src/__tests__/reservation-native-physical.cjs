@@ -72,6 +72,7 @@ async function main() {
         },
       },
       DevupUI({
+        engine: 'wasm',
         distDir: resolve(root, 'df'),
         cssDir: scenario === 'classic' ? resolve(root, 'df/css') : root,
         devupFile: resolve(root, 'devup.json'),

@@ -35,7 +35,7 @@ function apply(options = {}, entry = 'next-app-loader?query!') {
     context: root,
     entry,
     optimization: { minimizer: [] },
-    plugins: [new DevupUIWebpackPlugin(options)],
+    plugins: [new DevupUIWebpackPlugin({ ...options, engine: 'wasm' })],
   })
   compilers.add(compiler)
   return compiler
@@ -59,7 +59,7 @@ async function close(compiler) {
   }
 }
 function extract(file, singleCss) {
-  return codeExtract(
+  const output = codeExtract(
     file,
     readFileSync(join(root, file), 'utf8'),
     '@devup-ui/react',
@@ -68,7 +68,12 @@ function extract(file, singleCss) {
     false,
     true,
     {},
-  ).code
+  )
+  try {
+    return output.code
+  } finally {
+    output.free()
+  }
 }
 function sheet() {
   return [
@@ -213,7 +218,7 @@ try {
     await prepare(compiler)
     assert.match(sheet(), /maroon/)
     assert.doesNotMatch(sheet(), /chartreuse|failed|left:19px/)
-    const cleanCode = codeExtract(
+    const cleanOutput = codeExtract(
       'clean.tsx',
       'import { Box } from "@devup-ui/react"; export const c = <Box insetX="23px"/>',
       '@devup-ui/react',
@@ -222,8 +227,12 @@ try {
       false,
       true,
       {},
-    ).code
-    assert.doesNotMatch(cleanCode, /failed/)
+    )
+    try {
+      assert.doesNotMatch(cleanOutput.code, /failed/)
+    } finally {
+      cleanOutput.free()
+    }
     assert.match(sheet(), /inset-x:23px/)
     assert.doesNotMatch(sheet(), /left:23px/)
     await close(compiler)

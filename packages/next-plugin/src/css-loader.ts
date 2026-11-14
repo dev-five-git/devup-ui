@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { Agent, request } from 'node:http'
 
-import { getFileNumByFilename } from '@devup-ui/plugin-utils'
+import {
+  type DevupCompiler,
+  type DevupEngine,
+  getFileNumByFilename,
+} from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 import {
@@ -13,6 +17,7 @@ import {
 import { loadWasm } from './wasm'
 
 export interface DevupUICssLoaderOptions {
+  engine?: DevupEngine
   // turbo
   watch: boolean
   coordinatorPortFile?: string
@@ -26,7 +31,7 @@ export interface DevupUICssLoaderOptions {
   defaultFileMap: object
 }
 
-let init = false
+let initializedCompilers = new WeakSet<DevupCompiler>()
 let cachedPort: number | null = null
 const keepAliveAgent = new Agent({ keepAlive: true })
 
@@ -75,6 +80,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
   function (source, map, meta) {
     const {
       watch,
+      engine,
       coordinatorPortFile,
       sheetFile,
       classMapFile,
@@ -135,48 +141,53 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       return
     }
 
-    const {
-      getCss,
-      importClassMap,
-      importFileMap,
-      importSheet,
-      registerTheme,
-    } = loadWasm()
-    if (!init) {
-      init = true
-      if (watch) {
-        // restart loader issue
-        // loader should read files when they exist in watch mode
-        if (existsSync(sheetFile))
-          importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
-        if (existsSync(classMapFile))
-          importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
-        if (existsSync(fileMapFile))
-          importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-        if (existsSync(themeFile))
-          registerTheme(
-            JSON.parse(readFileSync(themeFile, 'utf-8'))?.['theme'] ?? {},
-          )
-      } else {
-        importFileMap(defaultFileMap)
-        importClassMap(defaultClassMap)
-        importSheet(defaultSheet)
-        registerTheme(theme)
+    let content: string | typeof source
+    try {
+      const compiler = loadWasm(engine)
+      const {
+        getCss,
+        importClassMap,
+        importFileMap,
+        importSheet,
+        registerTheme,
+      } = compiler
+      if (!initializedCompilers.has(compiler)) {
+        if (watch) {
+          // restart loader issue
+          // loader should read files when they exist in watch mode
+          if (existsSync(sheetFile))
+            importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
+          if (existsSync(classMapFile))
+            importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
+          if (existsSync(fileMapFile))
+            importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
+          if (existsSync(themeFile))
+            registerTheme(
+              JSON.parse(readFileSync(themeFile, 'utf-8'))?.['theme'] ?? {},
+            )
+        } else {
+          importFileMap(defaultFileMap)
+          importClassMap(defaultClassMap)
+          importSheet(defaultSheet)
+          registerTheme(theme)
+        }
+        initializedCompilers.add(compiler)
       }
-    }
 
-    this.callback(
-      null,
-      !watch ? source : getCss(getFileNumByFilename(this.resourcePath), true),
-      map,
-      meta,
-    )
+      content = !watch
+        ? source
+        : getCss(getFileNumByFilename(this.resourcePath), true)
+    } catch (error) {
+      this.callback(error instanceof Error ? error : new Error(String(error)))
+      return
+    }
+    this.callback(null, content, map, meta)
   }
 export default devupUICssLoader
 
 /** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
-  init = false
+  initializedCompilers = new WeakSet<DevupCompiler>()
   cachedPort = null
 }
 

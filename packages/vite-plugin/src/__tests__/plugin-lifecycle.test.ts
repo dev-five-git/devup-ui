@@ -1,7 +1,11 @@
 import { join } from 'node:path'
 
-import type { ReservationRow } from '@devup-ui/plugin-utils'
-import * as wasm from '@devup-ui/wasm'
+import {
+  type DevupCompiler,
+  loadCompiler,
+  type ReservationEngine,
+  type ReservationRow,
+} from '@devup-ui/plugin-utils'
 import { expect, it, mock, spyOn } from 'bun:test'
 
 import { STYLE } from '../../../plugin-utils/src/__tests__/reservation-fixture'
@@ -11,6 +15,8 @@ import {
   lifecycle,
   watcher,
 } from './plugin-lifecycle-fixture'
+
+const wasm: DevupCompiler & ReservationEngine = loadCompiler('wasm')
 
 it('reserves actual server environment union and detaches each watcher lifetime on replacement and close', async () => {
   // Given

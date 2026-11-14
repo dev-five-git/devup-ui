@@ -1,6 +1,6 @@
 import * as nodePath from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { type DevupCompilerOutput, loadCompiler } from '@devup-ui/plugin-utils'
 import {
   afterEach,
   beforeEach,
@@ -14,7 +14,9 @@ import {
 import devupUICssLoader from '../css-loader'
 import { servedCss } from '../served-css'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+const wasm = loadCompiler('wasm')
+
+type CodeExtractResult = DevupCompilerOutput
 type CssLoaderThis = ThisParameterType<typeof devupUICssLoader>
 
 function createCodeExtractResult(
@@ -26,10 +28,11 @@ function createCodeExtractResult(
     cssFile: '',
     map: undefined,
     updatedBaseStyle: false,
+    dependencies: [],
     free: mock(),
     [Symbol.dispose]: mock(),
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
 }
 
 function createCssLoaderContext(
@@ -42,7 +45,10 @@ function createCssLoaderContext(
     cacheable: mock(),
     addContextDependency: mock(),
     resourcePath,
-    getOptions: () => ({ watch: resourcePath.includes('devup-ui') }),
+    getOptions: () => ({
+      engine: 'wasm',
+      watch: resourcePath.includes('devup-ui'),
+    }),
     _compilation: compilation,
   } as unknown as CssLoaderThis
 }

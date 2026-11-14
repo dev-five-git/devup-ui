@@ -2,7 +2,7 @@ import * as fsPromises from 'node:fs/promises'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
-import * as wasm from '@devup-ui/wasm'
+import { type DevupCompilerOutput, loadCompiler } from '@devup-ui/plugin-utils'
 import {
   afterEach,
   beforeEach,
@@ -16,7 +16,9 @@ import {
 import type { DevupUILoaderOptions } from '../loader'
 import devupUILoader from '../loader'
 
-type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+const wasm = loadCompiler('wasm')
+
+type CodeExtractResult = DevupCompilerOutput
 type LoaderThis = ThisParameterType<typeof devupUILoader>
 type LoaderCallback = ReturnType<LoaderThis['async']>
 interface TestLoaderContext extends Pick<
@@ -36,10 +38,11 @@ function createCodeExtractResult(
     cssFile: undefined,
     updatedBaseStyle: false,
     map: undefined,
+    dependencies: [],
     free: () => {},
     [Symbol.dispose]: () => {},
     ...overrides,
-  } as unknown as CodeExtractResult
+  }
 }
 
 function createLoaderContext(
@@ -49,7 +52,7 @@ function createLoaderContext(
   overrides: Partial<TestLoaderContext> = {},
 ): LoaderThis {
   return {
-    getOptions: () => options,
+    getOptions: () => ({ engine: 'wasm', ...options }),
     async: mock().mockReturnValue(callback),
     resourcePath,
     addDependency: mock(),
@@ -125,6 +128,50 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
+  it.each(['snapshot', 'map', 'success'] as const)(
+    'releases output exactly once when %s completes',
+    async (stage) => {
+      // Given
+      let released = false
+      const free = mock(() => {
+        released = true
+      })
+      const failure = new Error('getter failed')
+      codeExtractSpy.mockReturnValue({
+        ...createCodeExtractResult(),
+        get code() {
+          expect(released).toBe(false)
+          if (stage === 'snapshot') throw failure
+          return 'detached code'
+        },
+        map: stage === 'map' ? '{' : undefined,
+        free,
+      })
+      const callback = mock()
+      const context = createLoaderContext(
+        { package: 'package', cssDir: 'df', singleCss: true },
+        callback,
+      )
+      // When
+      devupUILoader.call(context, Buffer.from('source'), undefined)
+      await Promise.resolve()
+      // Then
+      expect(free).toHaveBeenCalledTimes(1)
+      expect(released).toBe(true)
+      switch (stage) {
+        case 'snapshot':
+          expect(callback).toHaveBeenCalledWith(failure)
+          break
+        case 'map':
+          expect(callback).toHaveBeenCalledWith(expect.any(SyntaxError))
+          break
+        case 'success':
+          expect(callback).toHaveBeenCalledWith(null, 'detached code', null)
+          break
+      }
+    },
+  )
+
   it('resolves imports to cwd-relative ids and depends on the modules read', async () => {
     const setModuleResolverSpy = spyOn(
       wasm,
@@ -236,7 +283,7 @@ describe('devupUILoader', () => {
       })
       expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
-        '/* index.tsx 0 */',
+        '/* cssFile 0 */',
       )
       expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
       expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
@@ -406,6 +453,47 @@ export const a = <div css={{ color: 'red' }} />`
     })
     expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
   })
+
+  it.each([
+    ['src/A.css.ts', 'src/B.css.ts'],
+    ['src/B.css.ts', 'src/A.css.ts'],
+  ])(
+    'keeps the collapsed bucket sentinel identical for %s then %s',
+    async (first, second) => {
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({
+          code: 'code',
+          css: '.shared{color:red}',
+          cssFile: '../devup-ui-23.css',
+        }),
+      )
+      const cssDir = 'sentinel-css'
+      for (const resourcePath of [first, second]) {
+        const callback = mock()
+        const context = createLoaderContext(
+          {
+            package: 'package',
+            cssDir,
+            watch: true,
+            singleCss: false,
+            sheetFile: 'sheet.json',
+            classMapFile: 'class-map.json',
+            fileMapFile: 'file-map.json',
+          },
+          callback,
+          resourcePath,
+        )
+        devupUILoader.call(context, Buffer.from('same final source'), undefined)
+        await waitFor(() =>
+          expect(callback).toHaveBeenCalledWith(null, 'code', null),
+        )
+      }
+      const writes = writeFileSpy.mock.calls.filter(
+        ([path]) => path === join(cssDir, 'devup-ui-23.css'),
+      )
+      expect(writes.at(-1)?.[1]).toBe('/* devup-ui-23.css 0 */')
+    },
+  )
 
   it('should load with date now on watch', async () => {
     const asyncCallback = mock()

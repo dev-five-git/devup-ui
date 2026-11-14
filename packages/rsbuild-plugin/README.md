@@ -177,6 +177,26 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Compiler engine
+
+Rsbuild uses the native compiler by default. Explicit selections are supported:
+
+```ts
+DevupUI() // native
+DevupUI({ engine: 'native' })
+DevupUI({ engine: 'wasm' })
+```
+
+Both engines are installed through plugin-utils. Keep optional dependencies
+enabled for the native platform package. A native load failure names that
+package and preserves the original error as its cause. There is no automatic
+fallback; select `engine: 'wasm'` on hosts without a working native image or
+required native libraries. Malformed shorthands fail before backend selection.
+
+The selected compiler serves configuration, reservation, transforms and delayed
+watch/build callbacks together. Neither engine supports concurrent independent
+builds in the same process.
+
 ## Custom Shorthands
 
 ```ts

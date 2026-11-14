@@ -4,7 +4,7 @@ const { join, resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { put } = require('./reservation-native-fixture.cjs')
 const { observe } = require('./reservation-native-observer.cjs')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const key = (/** @type {string} */ path) => resolve(path).replaceAll('\\', '/')
 const mode = process.argv[2]
 assert(['theme', 'alias'].includes(mode))
@@ -85,6 +85,7 @@ async function main() {
         },
       },
       DevupUI({
+        engine: 'wasm',
         singleCss: true,
         devupFile: join(root, 'devup.json'),
         distDir: join(root, 'df'),

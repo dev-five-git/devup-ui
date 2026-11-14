@@ -75,7 +75,7 @@ function decorate(build: PluginBuilder): PluginBuilder {
   })
 }
 
-const genuine = DevupUI()
+const genuine = DevupUI({ engine: 'wasm' })
 const observed: BunPlugin = {
   ...genuine,
   async setup(build) {

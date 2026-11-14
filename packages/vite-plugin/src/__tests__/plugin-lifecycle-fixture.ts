@@ -89,6 +89,12 @@ export function graph(ids: readonly string[] = []) {
   return {
     idToModuleMap,
     getModuleById: (id: string) => idToModuleMap.get(id),
+    getModulesByFile: (file: string) => {
+      const nodes = [...idToModuleMap.values()].filter(
+        ({ id }) => id.split('?')[0] === file,
+      )
+      return nodes.length ? new Set(nodes) : undefined
+    },
     invalidateModule: mock(),
   }
 }
@@ -109,6 +115,7 @@ export async function lifecycle(options: Parameters<typeof DevupUI>[0] = {}) {
   const project = fixture()
   project.write('devup.json', '{}')
   const plugins = DevupUI({
+    engine: 'wasm',
     singleCss: true,
     debug: true,
     distDir: join(project.root, 'df'),

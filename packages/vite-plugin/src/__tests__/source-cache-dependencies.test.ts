@@ -1,6 +1,6 @@
 import { unlinkSync } from 'node:fs'
 
-import * as wasm from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, mock } from 'bun:test'
 
 import { environment, watcher } from './plugin-lifecycle-fixture'
@@ -11,6 +11,7 @@ import {
   SOURCE,
   writeGate,
 } from './source-cache-fixture'
+const wasm = loadCompiler('wasm')
 it('registers cross-environment hit edges before readiness and removes physically unlinked query consumers', async () => {
   // Given: actual extraction and write are pending in the client environment.
   using state = await cacheFixture()

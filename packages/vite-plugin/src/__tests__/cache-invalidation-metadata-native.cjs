@@ -69,6 +69,7 @@ async function main() {
     const graph = {
       idToModuleMap: modules,
       getModuleById: (/** @type {string} */ id) => modules.get(id),
+      getModulesByFile: () => undefined,
       invalidateModule(/** @type {unknown[]} */ ...args) {
         invalidated.push(args)
       },

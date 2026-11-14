@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const Module = require('node:module')
 const { basename, join } = require('node:path')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 const { getFileNumByFilename } = require('@devup-ui/plugin-utils')
 
 let generation = 0

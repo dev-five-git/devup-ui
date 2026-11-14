@@ -50,7 +50,7 @@ writeFileSync('src/Unused.tsx','import {Box} from "@devup-ui/react"; <Box color=
 writeFileSync('src/Invalid.tsx','import {css} from "@devup-ui/react"; css({color:props.unknown});');
 let setups=0;
 const events=[];
-const genuine=DevupUI();
+const genuine=DevupUI({ engine: 'wasm' });
 const observed={...genuine,async setup(build){
  await genuine.setup(new Proxy(build,{get(target,key){
   if(key==='onStart') return callback=>target.onStart(()=>{events.push('devup-onStart-enter');const result=callback();events.push('devup-onStart-exit');return result;});
@@ -85,7 +85,7 @@ writeFileSync('node_modules/@devup-ui/reservation-fixture/dist/index.js','import
 writeFileSync('src/Entry.tsx','export {built} from "@devup-ui/reservation-fixture";');
 const outputs=[];
 for(let i=0;i<2;i++){
- const result=await Bun.build({entrypoints:['./src/Entry.tsx'],plugins:[DevupUI()]});
+ const result=await Bun.build({entrypoints:['./src/Entry.tsx'],plugins:[DevupUI({ engine: 'wasm' })]});
  assert(result.success,result.logs.map(String).join('\n'));
  assert.equal(engine.getUnreservedClassSlotCount(),0);
  const css=(await Promise.all(result.outputs.filter(o=>o.path.endsWith('.css')).map(o=>o.text()))).join('\n');
@@ -108,7 +108,7 @@ const engine=await import(${JSON.stringify(wasmUrl)});
 writeFileSync('src/A.ts','import {css} from "@devup-ui/react"; export const cls=css({color:"red"});');
 writeFileSync('src/B.ts','import {css} from "@devup-ui/react"; export const cls=css({background:"blue"});');
 writeFileSync('src/Unused.ts','import {css} from "@devup-ui/react"; export const cls=css({color:"magenta"});');
-await register(${mode === 'short' ? '{debug:false}' : '{}'});
+await register(${mode === 'short' ? '{engine:"wasm",debug:false}' : '{engine:"wasm"}'});
 assert.equal(engine.isDebug(),${mode !== 'short'});
 const b=await import(process.cwd()+'/src/B.ts');
 const a=await import(process.cwd()+'/src/A.ts');

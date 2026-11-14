@@ -49,7 +49,6 @@
     "vite": "^8.3.8"
   },
   "peerDependencies": {
-    "@devup-ui/wasm": "*",
     "vite": "*"
   }
 }

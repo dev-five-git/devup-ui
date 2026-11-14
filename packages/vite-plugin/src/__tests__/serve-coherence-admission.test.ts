@@ -1,10 +1,12 @@
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { getCss } from '@devup-ui/wasm'
+import { loadCompiler } from '@devup-ui/plugin-utils'
 import { expect, it, spyOn } from 'bun:test'
 
 import { environment, lifecycle, watcher } from './plugin-lifecycle-fixture'
+
+const { getCss } = loadCompiler('wasm')
 
 for (const mode of ['config', 'tailwind', 'tailwind-import'] as const) {
   it(`admits discovered ${mode} events while declaration output is pending`, async () => {

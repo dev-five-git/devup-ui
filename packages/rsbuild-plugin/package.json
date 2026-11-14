@@ -44,7 +44,6 @@
     "@devup-ui/wasm": "workspace:^"
   },
   "peerDependencies": {
-    "@devup-ui/wasm": "*",
     "@rsbuild/core": "*"
   },
   "devDependencies": {

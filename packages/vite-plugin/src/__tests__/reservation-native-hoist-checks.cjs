@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const { readFileSync, readdirSync } = require('node:fs')
 const { resolve } = require('node:path')
-const wasm = require('@devup-ui/wasm')
+const wasm = require('@devup-ui/plugin-utils').loadCompiler('wasm')
 
 /** @param {string} css */
 function declarations(css) {

@@ -24,7 +24,7 @@ it('releases a rejected setup and restores spies before subsequent registration'
   // Given: real plugin setup rejects after registering its real session end.
   const failure = new Error('initialization write rejected')
   hooks.write.mockRejectedValueOnce(failure)
-  await expect(register()).rejects.toBe(failure)
+  await expect(register({ engine: 'wasm' })).rejects.toBe(failure)
   hooks.expectedErrors.add(failure)
   let ended = 0
   const terminals = hooks.ends.splice(0)
@@ -42,7 +42,7 @@ it('releases a rejected setup and restores spies before subsequent registration'
   expect(Bun.plugin).toBe(realPlugin)
   expect(bunRegistration.clearAll).toBe(realPlugin.clearAll)
   hooks = captureBunHooks()
-  await register({ debug: false })
+  await register({ engine: 'wasm', debug: false })
   expect(hooks.loads.length).toBe(2)
   expect(wasm.isDebug()).toBe(false)
 })
@@ -50,7 +50,7 @@ it('releases a rejected setup and restores spies before subsequent registration'
 it('keeps unacknowledged setup failures as teardown errors after releasing sessions', async () => {
   const failure = new Error('unexpected setup failure')
   hooks.write.mockRejectedValueOnce(failure)
-  await expect(register()).rejects.toBe(failure)
+  await expect(register({ engine: 'wasm' })).rejects.toBe(failure)
   let ended = false
   hooks.ends.push(() => {
     ended = true
