@@ -23,7 +23,7 @@ export const metadata = {
 
 **Devup UI is not just another CSS-in-JS library — it's the future of CSS-in-JS itself.**
 
-Devup UI is a zero-runtime CSS-in-JS preprocessor powered by Rust and WebAssembly. It transforms all your styles at build time, completely eliminating runtime overhead while providing full CSS-in-JS syntax coverage.
+Devup UI is a zero-runtime CSS-in-JS preprocessor powered by Rust and WebAssembly. It transforms all your styles at build time, completely eliminating runtime overhead. It compiles the CSS-in-JS syntax you already write, and anything the build cannot know is a [located build error](/docs/build-errors) instead of a silent miss: see [supported syntax and limitations](/docs/limitations).
 
 ### The Problem with Traditional CSS-in-JS
 
@@ -72,8 +72,8 @@ Devup UI eliminates this trade-off entirely. Our Rust-powered preprocessor analy
       <TableCell>Limited</TableCell>
     </TableRow>
     <TableRow>
-      <TableCell>Full Syntax Coverage</TableCell>
-      <TableCell>Yes</TableCell>
+      <TableCell>Syntax Coverage</TableCell>
+      <TableCell>Broad; the rest is a build error</TableCell>
       <TableCell>Yes</TableCell>
       <TableCell>Yes</TableCell>
       <TableCell>No</TableCell>

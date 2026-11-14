@@ -3,7 +3,7 @@
 </div>
 
 <h3 align="center">
-    CSS-in-JS의 미래 — 제로 런타임, 완전한 문법 지원
+    CSS-in-JS의 미래 — 제로 런타임, 강력한 기능
 </h3>
 
 <p align="center">
