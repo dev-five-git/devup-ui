@@ -40,7 +40,7 @@ const routes = [
   ['/ko/docs/overview', '/ko/docs/overview'],
   ['/team', '/team'],
   ['/components/button', '/components/button'],
-  ['/ko/docs/installation', '/docs/installation'],
+  ['/ko/docs/features', '/docs/features'],
 ] as const
 
 for (const [route, target] of routes) {
@@ -121,10 +121,10 @@ for (const locale of ['en', 'ko'] as const) {
     await page.goto(`${prefix}/docs/overview`, { waitUntil: 'networkidle' })
 
     await page
-      .getByRole('link', { name: 'Installation', exact: true })
+      .getByRole('link', { name: 'Features', exact: true })
       .first()
       .click()
-    await expect(page).toHaveURL(/(?<!ko)\/docs\/installation$/u)
+    await expect(page).toHaveURL(/(?<!ko)\/docs\/features$/u)
     await expect(page.locator('main')).toBeVisible()
     await page.goBack()
     await expect(page).toHaveURL(`http://localhost:3098${prefix}/docs/overview`)
