@@ -92,9 +92,10 @@ fn rendered_variables(code: &str) -> Result<serde_json::Value, Box<dyn std::erro
     let script = format!(
         "const __devupForwardRef = fn => props => fn(props, undefined); {compiled}\nJSON.stringify(Object.values(f({{color:'purple'}})({{}})));"
     );
-    let json = boa_engine::Context::default()
-        .eval(boa_engine::Source::from_bytes(&script))
-        .map_err(|error| format!("generated styled callback failed: {error}\n{script}"))?
+    let value = boa_engine::Context::default().eval(boa_engine::Source::from_bytes(&script));
+    let value =
+        value.map_err(|error| format!("generated styled callback failed: {error}\n{script}"))?;
+    let json = value
         .as_string()
         .ok_or("expected JSON")?
         .to_std_string_escaped();

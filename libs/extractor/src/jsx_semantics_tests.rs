@@ -77,9 +77,8 @@ fn code(source: &str) -> String {
 
 /// The message of a file that does not compile
 fn error(source: &str) -> String {
-    compile(source)
-        .err()
-        .unwrap_or_else(|| panic!("the negative fixture compiles: {source}"))
+    let error = compile(source).err();
+    error.unwrap_or_else(|| panic!("the negative fixture compiles: {source}"))
 }
 
 fn static_styles(output: &ExtractOutput) -> Vec<(String, String)> {
@@ -101,11 +100,9 @@ fn static_styles(output: &ExtractOutput) -> Vec<(String, String)> {
 fn run(body: &str) -> String {
     let script = format!("(function() {{ {body} }})()");
     let mut context = boa_engine::Context::default();
-    let value = context
-        .eval(boa_engine::Source::from_bytes(script.as_bytes()))
-        .unwrap_or_else(|error| panic!("{error}: {script}"));
-    value.to_string(&mut context).map_or_else(
-        |error| panic!("{error}: {script}"),
-        |text| text.to_std_string_escaped(),
-    )
+    let value = context.eval(boa_engine::Source::from_bytes(script.as_bytes()));
+    let value = value.unwrap_or_else(|error| panic!("{error}: {script}"));
+    let text = value.to_string(&mut context);
+    let text = text.unwrap_or_else(|error| panic!("{error}: {script}"));
+    text.to_std_string_escaped()
 }

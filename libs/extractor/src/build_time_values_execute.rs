@@ -41,6 +41,11 @@ fn initialize_helpers(sandbox: &Sandbox, context: &mut Context) -> Result<(), Fa
         .map(|_| ())
 }
 
+/// An error of the sandbox itself, which no source offset locates
+fn unlocated(error: impl std::fmt::Display) -> Vec<Located> {
+    vec![(0, error.to_string())]
+}
+
 fn setup_failure(failure: Failure) -> Vec<Located> {
     let reasons = match failure {
         Failure::Js(error) => vec![error.to_string()],
@@ -124,13 +129,13 @@ pub(super) fn compute(
         return Ok(None);
     }
     let mut context = Context::default();
-    let sandbox = Sandbox::new(&mut context).map_err(|error| vec![(0, error.to_string())])?;
+    let sandbox = Sandbox::new(&mut context).map_err(unlocated)?;
     initialize_helpers(&sandbox, &mut context).map_err(setup_failure)?;
     let module = definitions(&program, code, &found);
     let mut scripts = vec![Mapped::new(module, filename, DEFINITIONS_SOURCE)];
     sandbox
         .prepare(&mut context, &scripts[0].instrumented)
-        .map_err(|error| vec![(0, error.to_string())])?;
+        .map_err(unlocated)?;
     if let Err(failure) = sandbox.run_source(
         &mut context,
         Source::from_bytes(&scripts[0].instrumented.code).with_path(Path::new(DEFINITIONS_SOURCE)),
@@ -143,7 +148,7 @@ pub(super) fn compute(
         let script = Mapped::new(value_script(code, &found), filename, &value_source);
         sandbox
             .prepare(&mut context, &script.instrumented)
-            .map_err(|error| vec![(0, error.to_string())])?;
+            .map_err(unlocated)?;
         let result = sandbox.run_source(
             &mut context,
             Source::from_bytes(&script.instrumented.code).with_path(Path::new(&value_source)),

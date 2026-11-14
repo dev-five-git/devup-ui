@@ -220,12 +220,9 @@ fn gen_style<'a>(
                 // Emit an alternate-only property when it has no consequent counterpart:
                 // either its key is absent from `c_keys`, or it has no resolvable key at
                 // all (the old probe's `matches!` never matched such an entry either).
-                let unmatched = if let ObjectPropertyKind::ObjectProperty(qq) = q {
-                    qq.key.name().is_none_or(|name| !c_keys.contains(&name))
-                } else {
-                    false
-                };
-                if unmatched && let ObjectPropertyKind::ObjectProperty(q) = q {
+                if let ObjectPropertyKind::ObjectProperty(q) = q
+                    && q.key.name().is_none_or(|name| !c_keys.contains(&name))
+                {
                     properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,

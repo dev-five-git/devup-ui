@@ -45,16 +45,13 @@ pub(super) fn rejects_at(source: &str, needle: &str, single_css: bool) {
     // When the real extraction pipeline processes the structural input.
     let error = crate::dead_properties_test_utils::failure(extract_fixture(source, single_css));
     // Then both the location and rejected expression survive preprocessing.
-    let (location, message) = error
-        .split_once(": ")
-        .unwrap_or_else(|| panic!("unlocated error: {error}"));
+    let located = error.split_once(": ");
+    let (location, message) = located.unwrap_or_else(|| panic!("unlocated error: {error}"));
     assert_eq!(location, format!("structural.tsx:{line}:{column}"));
-    let (_, rejected) = message
-        .split_once(" cannot use `")
-        .unwrap_or_else(|| panic!("unexpected diagnostic: {message}"));
-    let (code, requirement) = rejected
-        .split_once("` at build time: ")
-        .unwrap_or_else(|| panic!("missing requirement: {rejected}"));
+    let rejected = message.split_once(" cannot use `");
+    let (_, rejected) = rejected.unwrap_or_else(|| panic!("unexpected diagnostic: {message}"));
+    let required = rejected.split_once("` at build time: ");
+    let (code, requirement) = required.unwrap_or_else(|| panic!("missing requirement: {rejected}"));
     assert_eq!(code, needle);
     assert_ne!(requirement, "");
 }

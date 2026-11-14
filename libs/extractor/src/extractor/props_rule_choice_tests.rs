@@ -15,10 +15,9 @@ fn selected_classes(output: &ExtractOutput, on: bool) -> Vec<String> {
     )
     .iter()
     .map(|style| {
-        style
-            .extract(Some("props-rule-choices.tsx"))
-            .unwrap_or_else(|| panic!("selected declaration class identity"))
-            .to_string()
+        let class = style.extract(Some("props-rule-choices.tsx"));
+        let class = class.unwrap_or_else(|| panic!("selected declaration class identity"));
+        class.to_string()
     })
     .collect();
     classes.sort();
@@ -26,33 +25,30 @@ fn selected_classes(output: &ExtractOutput, on: bool) -> Vec<String> {
 }
 
 fn class_for(output: &ExtractOutput, property: &str, value: &str) -> String {
-    let style = output
-        .styles
-        .iter()
-        .find_map(|style| match style {
-            ExtractStyleValue::Static(style)
-                if style.property() == property && style.value() == value =>
-            {
-                Some(style)
-            }
-            ExtractStyleValue::Static(_)
-            | ExtractStyleValue::Typography(_)
-            | ExtractStyleValue::Dynamic(_)
-            | ExtractStyleValue::Css(_)
-            | ExtractStyleValue::Import(_)
-            | ExtractStyleValue::FontFace(_)
-            | ExtractStyleValue::LayerOrder(_)
-            | ExtractStyleValue::Keyframes(_) => None,
-        })
-        .unwrap_or_else(|| panic!("missing {property}: {value}"));
+    let style = output.styles.iter().find_map(|style| match style {
+        ExtractStyleValue::Static(style)
+            if style.property() == property && style.value() == value =>
+        {
+            Some(style)
+        }
+        ExtractStyleValue::Static(_)
+        | ExtractStyleValue::Typography(_)
+        | ExtractStyleValue::Dynamic(_)
+        | ExtractStyleValue::Css(_)
+        | ExtractStyleValue::Import(_)
+        | ExtractStyleValue::FontFace(_)
+        | ExtractStyleValue::LayerOrder(_)
+        | ExtractStyleValue::Keyframes(_) => None,
+    });
+    let style = style.unwrap_or_else(|| panic!("missing {property}: {value}"));
     style.extract(Some("props-rule-choices.tsx")).to_string()
 }
 
 fn compile(rules: &str) -> ExtractOutput {
     let source =
         format!("import {{ styled }} from '@devup-ui/react'; {rules} export {{ Choice }};");
-    extract("props-rule-choices.tsx", &source, ExtractOption::default())
-        .unwrap_or_else(|error| panic!("{error}"))
+    let result = extract("props-rule-choices.tsx", &source, ExtractOption::default());
+    result.unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn values(output: &ExtractOutput, property: &str) -> Vec<String> {

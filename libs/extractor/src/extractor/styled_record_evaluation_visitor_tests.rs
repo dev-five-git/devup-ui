@@ -311,3 +311,17 @@ fn metadata_is_unchanged_when_style_expressions_are_visited(
         ))
     );
 }
+
+#[test]
+#[should_panic(expected = "invalid generated dynamic expression")]
+fn dynamic_value_visitor_rejects_when_generated_identifier_is_not_an_expression() {
+    // Given: a dynamic declaration whose generated code is no expression.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let mut style = ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+        "width", 0, "(", None,
+    )));
+    // When/Then: visiting it reports the broken generated code instead of
+    // silently keeping it.
+    visit_style_expressions(&builder, &mut style, &mut |_| {});
+}

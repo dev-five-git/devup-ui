@@ -4,24 +4,21 @@ use oxc_allocator::Allocator;
 use rstest::rstest;
 
 fn parse<'a>(ast: &AstBuilder<'a>, code: &str) -> Expression<'a> {
-    oxc_parser::Parser::new(
+    let result = oxc_parser::Parser::new(
         ast.allocator(),
         ast.allocator().alloc_str(code),
         SourceType::tsx(),
     )
-    .parse_expression()
-    .unwrap_or_else(|errors| panic!("{code}: {errors:?}"))
+    .parse_expression();
+    result.unwrap_or_else(|errors| panic!("{code}: {errors:?}"))
 }
 
 fn compiled<'a>(ast: &AstBuilder<'a>, component: Expression<'a>, input: Expression<'a>) -> String {
     let mut arrow = parse(ast, "()=>0");
-    let Expression::ArrowFunctionExpression(arrow) = &mut arrow else {
-        panic!("arrow fixture")
-    };
-    arrow.body = body(ast, component, input);
-    readable_code(&Expression::ArrowFunctionExpression(
-        arrow.clone_in(ast.allocator()),
-    ))
+    if let Expression::ArrowFunctionExpression(function) = &mut arrow {
+        function.body = body(ast, component, input);
+    }
+    readable_code(&arrow)
 }
 
 fn execute(render: &str) -> String {
@@ -29,12 +26,11 @@ fn execute(render: &str) -> String {
         "const trace=[];const Component=()=>null;const h=(type,props,...children)=>({{type:typeof type==='function'?type.name:type,props,children}});const x=17;const __devupRecord0=29;const o={{tag:'bound',method(){{return this===o?'bound':'unbound';}}}};let flag=true;function input(){{trace.push('input');return {{get a(){{trace.push('a');return 3;}},get b(){{trace.push('b');return 5;}},theme:7,keep:11,method:o.method}};}}const render={render};let value;try{{value=render();if(typeof value==='function')value=[value.name,value()];}}catch(error){{value=String(error);}}JSON.stringify([value,trace]);"
     );
     let script = crate::jsx_semantics_tests::whole::plain_script(&script);
-    Context::default()
-        .eval(Source::from_bytes(script.as_bytes()))
-        .unwrap_or_else(|error| panic!("{error}: {script}"))
-        .as_string()
-        .unwrap_or_else(|| panic!("JSON observation"))
-        .to_std_string_escaped()
+    let value = Context::default().eval(Source::from_bytes(script.as_bytes()));
+    let value = value.unwrap_or_else(|error| panic!("{error}: {script}"));
+    let json = value.as_string();
+    let json = json.unwrap_or_else(|| panic!("JSON observation"));
+    json.to_std_string_escaped()
 }
 
 #[rstest]

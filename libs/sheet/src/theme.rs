@@ -101,17 +101,9 @@ fn flatten_color_value(
                 if !is_token_name(key) {
                     return Err(token_name_error("color", key));
                 }
-                let new_interface_prefix = if interface_prefix.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{interface_prefix}.{key}")
-                };
-                let key_css = css_key_from(key);
-                let new_css_prefix = if css_prefix.is_empty() {
-                    key_css.into_owned()
-                } else {
-                    format!("{css_prefix}-{key_css}")
-                };
+                // The top level names every color, so the prefixes are never empty
+                let new_interface_prefix = format!("{interface_prefix}.{key}");
+                let new_css_prefix = format!("{css_prefix}-{}", css_key_from(key));
                 flatten_color_value(&new_interface_prefix, &new_css_prefix, val, result)?;
             }
             Ok(())
@@ -980,8 +972,7 @@ impl Theme {
             if level == 0 {
                 css.push_str(&css_vec);
             } else if let Some(bp) = self.breakpoints.get(level as usize) {
-                write!(css, "@media(min-width:{bp}px)")
-                    .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+                let _ = write!(css, "@media(min-width:{bp}px)");
                 css.push('{');
                 css.push_str(&css_vec);
                 css.push('}');
@@ -1079,8 +1070,7 @@ impl Theme {
                         css.push_str(vars);
                         css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
-                        write!(css, "@media(min-width:{bp}px){{")
-                            .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+                        let _ = write!(css, "@media(min-width:{bp}px){{");
                         write_selector(css);
                         css.push('{');
                         css.push_str(vars);

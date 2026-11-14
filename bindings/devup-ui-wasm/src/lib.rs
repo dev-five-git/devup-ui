@@ -62,6 +62,11 @@ where
     f(&mut guard)
 }
 
+/// The text of an error the internal exports return
+fn error_text(error: impl Display) -> String {
+    error.to_string()
+}
+
 #[cfg(not(tarpaulin_include))]
 fn js_error(message: impl Display) -> JsValue {
     js_sys::Error::new(&message.to_string()).into()
@@ -248,8 +253,7 @@ pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
 
 /// Internal function to export `StyleSheet` as JSON string (testable without `JsValue`)
 pub fn export_sheet_internal() -> Result<String, String> {
-    with_style_sheet(|sheet| serde_json::to_string(&sheet.export_snapshot()))
-        .map_err(|e| e.to_string())
+    with_style_sheet(|sheet| serde_json::to_string(&sheet.export_snapshot())).map_err(error_text)
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
@@ -267,7 +271,7 @@ pub fn export_class_map_internal() -> Result<String, String> {
             .collect();
         serde_json::to_string(&sorted)
     })
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
@@ -289,7 +293,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
         let sorted: BTreeMap<&String, &usize> = map.iter().collect();
         serde_json::to_string(&sorted)
     })
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
@@ -316,7 +320,7 @@ pub fn export_canonical_map_internal() -> Result<String, String> {
         let sorted: BTreeMap<&String, &String> = map.iter().collect();
         serde_json::to_string(&sorted)
     })
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 #[wasm_bindgen(js_name = "importCanonicalMap")]
@@ -812,6 +816,12 @@ mod atom_hoist_measurement;
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_text_is_the_error_message() {
+        let error = serde_json::from_str::<u8>("x").unwrap_err();
+        assert_eq!(error_text(&error), error.to_string());
+    }
     use insta::assert_debug_snapshot;
     use rstest::rstest;
     use serial_test::serial;

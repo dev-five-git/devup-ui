@@ -438,6 +438,22 @@ fn extract_with_source_map(
     extract_source(filename, code, None, None, option, source_map, resolver)
 }
 
+/// `offset` in the code before `edits`, applied in order, were made to it
+fn authored_offset(edits: &[&[import_alias_visit::Edit]], offset: usize) -> usize {
+    edits.iter().fold(offset, |offset, edits| {
+        import_alias_visit::source_offset(edits, offset)
+    })
+}
+
+/// How `filename` parses, or the error naming its unsupported extension
+fn supported_source_type(filename: &str) -> Result<oxc_span::SourceType, String> {
+    parsing::source_type(filename).map_err(|error| {
+        format!(
+            "{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension"
+        )
+    })
+}
+
 /// `evaluated` is the source `code` was computed from, with the layers of
 /// edits, last made first, that map `code` back to it; `values_run` holds the
 /// authored styling-call ranges only after build-time value evaluation
@@ -461,9 +477,7 @@ fn extract_source(
             .keys()
             .any(|package| code.contains(package))
     {
-        let source_type = parsing::source_type(filename).map_err(|error| {
-            format!("{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension")
-        })?;
+        let source_type = supported_source_type(filename)?;
         Some(
             parsing::checked(&allocator, code, source_type).map_err(|errors| {
                 let (source, edits) = evaluated.unwrap_or((code, &[]));
@@ -627,12 +641,10 @@ fn extract_source(
         let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
             .into_iter()
             .map(|(start, end)| {
-                let authored = |offset| {
-                    earlier_edits.iter().fold(offset, |offset, edits| {
-                        import_alias_visit::source_offset(edits, offset)
-                    })
-                };
-                (authored(start), authored(end))
+                (
+                    authored_offset(earlier_edits, start),
+                    authored_offset(earlier_edits, end),
+                )
             })
             .collect();
         let layers: Vec<&[import_alias_visit::Edit]> = [
@@ -754,11 +766,7 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = parsing::source_type(filename).map_err(|error| {
-        format!(
-            "{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension"
-        )
-    })?;
+    let source_type = supported_source_type(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -915,12 +923,10 @@ fn extract_source(
         let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
             .into_iter()
             .map(|(start, end)| {
-                let authored = |offset| {
-                    earlier_edits.iter().fold(offset, |offset, edits| {
-                        import_alias_visit::source_offset(edits, offset)
-                    })
-                };
-                (authored(start), authored(end))
+                (
+                    authored_offset(earlier_edits, start),
+                    authored_offset(earlier_edits, end),
+                )
             })
             .collect();
         let layers: Vec<&[import_alias_visit::Edit]> = [
@@ -15557,6 +15563,32 @@ export const card = style({
         assert!(result.is_empty());
     }
 
+    #[test]
+    #[serial]
+    fn test_extract_class_map_from_code_reads_exported_and_local_names() {
+        reset_class_map();
+        reset_file_map();
+        let style_names: FxHashSet<String> = ["exported", "local"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let result = extract_class_map_from_code(
+            "test.tsx",
+            "import { css } from '@devup-ui/react';\nexport const exported = css({ color: 'red' });\nconst local = css({ color: 'blue' });\nconst other = css({ color: 'green' });",
+            &ExtractOption::default(),
+            &style_names,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            BTreeSet::from(["exported", "local"])
+        );
+        assert!(result.values().all(|class| !class.is_empty()), "{result:?}");
+        assert_ne!(result["exported"], result["local"]);
+    }
+
     // === Import Alias Tests ===
 
     #[test]
@@ -16683,6 +16715,22 @@ export const base = css(local, { bg: 'white' });",
             ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
         ],
         (&["/src/a.ts:4:1: "][..], "child", &["export", "absent"][..])
+    )]
+    #[case::nested_unreadable_reexport(
+        &[
+            ("/src/present.ts", "export { base } from '\\uD800';"),
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport { base as child } from './present';\nexport const base = css(\nchild, { color: 'red' });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
+        ],
+        (&["/src/a.ts:4:1: "][..], "child", &["module"][..])
+    )]
+    #[case::nested_namespace_of_failed_reexports(
+        &[
+            ("/src/present.ts", "export { b } from '\\uD800';\nexport { a } from './missing';"),
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport * as child from './present';\nexport const base = css(\nchild, { color: 'red' });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
+        ],
+        (&["/src/a.ts:4:1: "][..], "child", &["module", "./missing"][..])
     )]
     #[case::opaque_inside_native_chain(
         &[

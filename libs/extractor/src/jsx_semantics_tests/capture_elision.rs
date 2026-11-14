@@ -214,6 +214,7 @@ fn captured_component_tags_remain_bound_in_the_emitted_element(#[case] body: &st
 #[case("slot++", 1)]
 #[case("({value:slot}={value:'changed'})", 1)]
 #[case("[slot]=['changed']", 1)]
+#[case("[...slot]=['changed']", 1)]
 #[case("globalThis.changed='yes'", 0)]
 #[case("eval('slot')", 1)]
 #[case("[slot, (eval)('slot')]", 1)]

@@ -12,20 +12,14 @@ fn native_call(
     context: &mut Context,
     source: &str,
 ) -> Result<StyleEntry, String> {
-    let id = context
-        .eval(Source::from_bytes(source))
-        .map_err(|error| error.to_string())?;
+    let id = context.eval(Source::from_bytes(source));
+    let id = id.map_err(|error| error.to_string())?;
     let id = id
         .as_string()
         .ok_or("css must return a class")?
         .to_std_string_escaped();
-    collector
-        .borrow()
-        .styles
-        .styles
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| "missing captured call".into())
+    let entry = collector.borrow().styles.styles.get(&id).cloned();
+    entry.ok_or_else(|| "missing captured call".into())
 }
 
 fn generated_cardinality(entry: &StyleEntry) -> Result<(usize, usize), String> {
@@ -166,8 +160,8 @@ fn key_slots_use_each_calls_known_expression_snapshot() -> Result<(), String> {
 fn compile(source: &str) -> Result<ExtractOutput, String> {
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
-    extract_without_source_map("/key-slots.css.ts", source, ExtractOption::default())
-        .map_err(|error| error.to_string())
+    let result = extract_without_source_map("/key-slots.css.ts", source, ExtractOption::default());
+    result.map_err(|error| error.to_string())
 }
 
 #[test]
