@@ -54,7 +54,7 @@ function elsewhere(source: string) {
   return [
     { code: `import { jsx } from "@emotion/react";\n${source}`, filename },
     { code: `import styled from "other-package";\n${source}`, filename },
-    { code: `import { css } from "@emotion/css";\n${source}`, filename },
+    { code: `import { cx } from "@emotion/css";\n${source}`, filename },
     { code: `${HEADERS.vanilla}${source}`, filename: 'src/styles.css.ts' },
     { code: `${HEADERS.devup}${source}`, filename: 'src/styles.css.js' },
   ]
