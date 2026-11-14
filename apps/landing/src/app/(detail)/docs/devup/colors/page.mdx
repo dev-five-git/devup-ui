@@ -116,7 +116,7 @@ Each variant also sets the page's native color scheme — form controls, scrollb
 }
 ```
 
-Token names start with a letter, a digit or `_` and continue with letters, digits, `-`, `_` and `.` (`primary`, `text-primary`, `gray.100`); a dot becomes a dash in the CSS variable, so `gray.100` is `var(--gray-100)`. The build reports a name outside these characters, and two tokens of a variant that become the same variable (`a-b` and `a.b`), instead of emitting CSS the browser would drop.
+Token names start with a letter, a digit or `_` and continue with letters, digits, `-`, `_` and `.` (`primary`, `text-primary`, `gray.100`); a dot becomes a dash in the CSS variable, so `gray.100` is `var(--gray-100)`. The build reports a name outside these characters, and two tokens of a variant that become the same variable (`a-b` and `a.b`), instead of emitting CSS the browser would drop. Colors, `length` and `shadow` tokens share one namespace of CSS variables, so a color `card` and a shadow `card` (both `--card`) are a build error too: rename one.
 
 ## Semantic Color Naming
 

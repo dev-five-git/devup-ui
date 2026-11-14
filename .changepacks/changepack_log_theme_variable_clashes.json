@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "Theme tokens of different kinds can no longer silently share a CSS variable: a color `card` and a shadow `card` both declared `--card`, so one replaced the other in `:root`. New build error: `theme: color token 'card' and shadow token 'card' both become the CSS variable --card: rename one`, raised when the theme is registered for any two of colors, `length` and `shadow` (names compared after dots become dashes, so `gray.100` and `gray-100` clash too)",
+  "date": "2026-11-15T00:00:00.000Z"
+}
