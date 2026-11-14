@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "The limitations page documents why every exported styled component carries a component-selector marker class even when no selector in its file names it: a module importing it may select or extend it, and each file is built without knowing its importers. No runtime changes or new build errors.",
+  "date": "2026-11-15T00:00:00.000Z"
+}

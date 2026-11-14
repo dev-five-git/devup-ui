@@ -1302,7 +1302,14 @@ impl<'a> DevupVisitor<'a> {
 
     /// The classes other styles select the component bound to `name` by: one
     /// for each name the file exports it as, and a class of its own when it
-    /// is only selected here
+    /// is only selected here.
+    ///
+    /// An exported component carries its markers even when nothing here
+    /// selects it: a module importing it may select it (`${Child} { ... }`,
+    /// `[Child]`) or extend it, naming the same marker from the export, and
+    /// each module is built without knowing which modules import it. Only
+    /// the element the component renders can carry the class, so the marker
+    /// cannot wait for an importer to ask for it.
     fn markers_of(&mut self, name: &str, exported: bool, selected: bool) -> Vec<(String, usize)> {
         let mut markers: Vec<(String, usize)> = if exported {
             self.exports

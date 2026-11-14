@@ -87,6 +87,7 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 
 ## Known limitations
 
+- An exported styled component always carries one short marker class (`a--b`), even when no selector in its own file names it. A module importing it may select it (`${Child} { ... }`) or extend it, and each file is built without knowing which files import it, so the class has to be on the element from the start. A styled component the file keeps to itself carries a marker only when a selector names it.
 - A class, `keyframes` name or styled component defined in another module is not read as a build-time value: its name is only known once that file is built. Declare it in the file that uses it, or read it from a style prop.
 - `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so a runtime value there is a build error. Move it to a style prop.
 - A styled-components or Emotion style function may read the theme only as `theme.a.b` (or `theme.a[2]`). Calls, whole-theme reads and runtime keys are build errors.
