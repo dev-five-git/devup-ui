@@ -112,3 +112,26 @@ fn css_tag_terminal_preserves_ordinary_tags_when_import_identity_is_absent(
     );
     Ok(())
 }
+
+#[test]
+fn css_tag_rejects_raw_parts_that_are_not_text() -> Result<(), String> {
+    // Given: the registered APIs, called as a tag whose raw parts hold a number.
+    let mut context = Context::default();
+    let collector = Rc::new(RefCell::new(Collector::default()));
+    register_vanilla_extract_apis(&mut context, &collector)?;
+    // When
+    let error = context
+        .eval(Source::from_bytes(
+            "__vanilla_extract__.css(Object.assign([''], { raw: [1] }))",
+        ))
+        .err()
+        .ok_or("a raw part that is no text was accepted")?;
+    // Then
+    assert!(
+        error
+            .to_string()
+            .contains("css() needs static plain rules, CSS text or registered classes"),
+        "{error}"
+    );
+    Ok(())
+}

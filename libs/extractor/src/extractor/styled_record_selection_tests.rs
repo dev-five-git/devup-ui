@@ -13,6 +13,9 @@ use crate::{extractor::styled_record_evaluation::Evaluations, utils::unwrap_synt
 #[case::decimal("({'0.50':'red','0.5':'blue'})['0.50'];", true)]
 #[case::canonical_decimal("({'0.50':'red','0.5':'blue'})['0.5'];", true)]
 #[case::ts_as_index("({color:'red'})['color' as const];", false)]
+#[case::array_index("(['red','blue'])[1];", true)]
+#[case::array_padded_index("(['red','blue'])['01'];", false)]
+#[case::array_named_key("(['red','blue'])['x'];", false)]
 fn direct_lookup_preserves_ast_when_checking_exact_index_agreement(
     #[case] source: &str,
     #[case] expected: bool,

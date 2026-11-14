@@ -29,18 +29,8 @@ pub(super) fn aliases(
     shapes: &FxHashMap<SymbolId, Expression<'_>>,
     captures: &FxHashSet<SymbolId>,
 ) -> FxHashMap<SymbolId, String> {
-    #[derive(Default)]
-    struct Names(FxHashSet<String>);
-    impl<'a> Visit<'a> for Names {
-        fn visit_binding_identifier(&mut self, identifier: &BindingIdentifier<'a>) {
-            self.0.insert(identifier.name.to_string());
-        }
-        fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
-            self.0.insert(identifier.name.to_string());
-        }
-    }
-    let mut names = Names::default();
-    names.visit_program(program);
+    let mut names = FxHashSet::default();
+    crate::utils::reserve_binding_names(program, &mut names);
     let mut symbols: Vec<_> = shapes
         .keys()
         .copied()
@@ -57,11 +47,11 @@ pub(super) fn aliases(
         let base = format!("__devup_{name}");
         let mut alias = base.clone();
         let mut suffix = 0usize;
-        while names.0.contains(&alias) || generated_reserved(&alias) {
+        while names.contains(&alias) || generated_reserved(&alias) {
             suffix += 1;
             alias = format!("{base}{suffix}");
         }
-        names.0.insert(alias.clone());
+        names.insert(alias.clone());
         aliases.insert(symbol, alias);
     }
     aliases

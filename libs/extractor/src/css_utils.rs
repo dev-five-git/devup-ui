@@ -304,6 +304,7 @@ pub struct TemplateStyles {
     pub unplaced: Vec<usize>,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum Place {
     Value,
     Statement,
@@ -312,41 +313,96 @@ pub(crate) enum Place {
 
 /// Where an interpolation stands, from the CSS written before and after it
 pub(crate) fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
-    let mut quotes = QuoteState::default();
-    let mut head_start = 0;
-    let mut has_colon = false;
-    for (index, byte) in before.bytes().enumerate() {
-        if !quotes.is_syntax(byte) {
-            continue;
-        }
-        match byte {
-            b';' | b'{' | b'}' => {
-                head_start = index + 1;
-                has_colon = false;
-            }
-            b':' => has_colon = true,
-            _ => {}
-        }
-    }
+    let mut scan = Placement::default();
+    scan.feed(before);
+    let head = (scan.colon, !scan.text_in_head);
     let end = after
         .iter()
-        .flat_map(|quasi| quasi.value.raw.bytes())
-        .find(|&byte| quotes.is_syntax(byte) && matches!(byte, b';' | b'{' | b'}'));
-    if end == Some(b'{') {
-        return Place::Other;
-    }
-    if has_colon {
-        Place::Value
-    } else if before[head_start..].trim().is_empty()
-        && after
+        .find_map(|quasi| scan.feed(quasi.value.raw.as_str()));
+    placement(
+        head,
+        end,
+        after
             .iter()
-            .find_map(|quasi| quasi.value.raw.chars().next())
-            .is_none_or(|c| c.is_whitespace() || c == ';')
-    {
+            .find_map(|quasi| quasi.value.raw.chars().next()),
+    )
+}
+
+#[derive(Default)]
+struct Placement {
+    quotes: QuoteState,
+    colon: bool,
+    text_in_head: bool,
+    depth: usize,
+}
+impl Placement {
+    fn feed(&mut self, text: &str) -> Option<u8> {
+        let mut first = None;
+        let mut head = None;
+        for (index, byte) in text.bytes().enumerate() {
+            if !self.quotes.is_syntax(byte) {
+                continue;
+            }
+            match byte {
+                b';' | b'{' | b'}' => {
+                    if first.is_none() {
+                        first = Some(byte);
+                    }
+                    head = Some(index + 1);
+                    self.colon = false;
+                    if byte == b'{' {
+                        self.depth += 1;
+                    }
+                    if byte == b'}' {
+                        self.depth = self.depth.saturating_sub(1);
+                    }
+                }
+                b':' => self.colon = true,
+                _ => {}
+            }
+        }
+        self.text_in_head = head.map_or_else(
+            || self.text_in_head || !text.trim().is_empty(),
+            |head| !text[head..].trim().is_empty(),
+        );
+        first
+    }
+}
+
+fn placement((colon, blank): (bool, bool), end: Option<u8>, next: Option<char>) -> Place {
+    if end == Some(b'{') {
+        Place::Other
+    } else if colon {
+        Place::Value
+    } else if blank && next.is_none_or(|character| character.is_whitespace() || character == ';') {
         Place::Statement
     } else {
         Place::Other
     }
+}
+
+/// One linear scan shared by template admission and source-order capture.
+pub(crate) fn template_interpolation_places(template: &TemplateLiteral<'_>) -> Vec<(Place, usize)> {
+    let mut scan = Placement::default();
+    let states: Vec<_> = template
+        .quasis
+        .iter()
+        .map(|quasi| {
+            let first = scan.feed(quasi.value.raw.as_str());
+            ((scan.colon, !scan.text_in_head), scan.depth, first)
+        })
+        .collect();
+    let mut result = vec![(Place::Other, 0); template.expressions.len()];
+    let (mut end, mut next) = (None, None);
+    for index in (0..states.len()).rev() {
+        let (head, depth, first) = states[index];
+        if let Some(result) = result.get_mut(index) {
+            *result = (placement(head, end, next), depth);
+        }
+        end = first.or(end);
+        next = template.quasis[index].value.raw.chars().next().or(next);
+    }
+    result
 }
 
 /// The CSS text of a template whose interpolations must all be known at build
@@ -829,6 +885,11 @@ fn css_to_style_block(
         let (property, value) = (&s[..colon], &s[colon + 1..]);
         let property = property.trim();
         let value = trim_css(value);
+        // A declaration without a value is invalid CSS, which browsers drop;
+        // only a custom property may hold nothing
+        if value.is_empty() && !property.starts_with("--") {
+            continue;
+        }
         let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,

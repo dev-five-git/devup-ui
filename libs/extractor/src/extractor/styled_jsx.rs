@@ -2,13 +2,12 @@ use oxc_allocator::{FromIn, GetAllocator, Vec};
 use oxc_ast::{
     ast::{
         Argument, BindingIdentifier, BindingPattern, Expression, Ident, IdentifierName,
-        IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportOrExportKind,
-        ModuleExportName, ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement,
-        StringLiteral, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
+        ImportDeclaration, ImportDeclarationSpecifier, ImportOrExportKind, ModuleExportName,
+        ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement, StringLiteral,
+        VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
     },
     builder::AstBuilder,
 };
-use oxc_ast_visit::Visit;
 use oxc_span::{FileExtension, SPAN};
 use rustc_hash::FxHashSet;
 
@@ -22,19 +21,6 @@ pub(crate) struct StyledJsx {
     used: bool,
 }
 
-#[derive(Default)]
-struct Names<'a>(FxHashSet<&'a str>);
-
-impl<'a> Visit<'a> for Names<'a> {
-    fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
-        self.0.insert(it.name.as_str());
-    }
-
-    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-        self.0.insert(it.name.as_str());
-    }
-}
-
 impl StyledJsx {
     /// Reserve a name across all scopes before extraction removes or rewrites nodes.
     pub(crate) fn reserve(program: &Program<'_>) -> Option<Self> {
@@ -46,12 +32,12 @@ impl StyledJsx {
         {
             return None;
         }
-        let mut names = Names::default();
-        names.visit_program(program);
+        let mut names = FxHashSet::default();
+        crate::utils::ReservedNames::Borrowed(&mut names).reserve(program);
         let mut suffix = 0;
         let name = loop {
             let name = format!("__devupJsx{suffix}");
-            if !names.0.contains(name.as_str()) {
+            if !names.contains(name.as_str()) {
                 break name;
             }
             suffix += 1;

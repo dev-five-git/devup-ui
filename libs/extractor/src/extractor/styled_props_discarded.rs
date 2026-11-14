@@ -45,16 +45,37 @@ pub(super) fn mapped<'a>(
     source: &Expression<'a>,
 ) -> Result<Expression<'a>, PropsRulesError> {
     let mut transformed = source.clone_in_with_semantic_ids(builder.allocator());
-    let policy = Theme { builder, params };
+    let policy = Theme {
+        builder,
+        params,
+        structured: false,
+    };
     if let Expression::ObjectExpression(object) = unwrap_syntax_only_mut(&mut transformed) {
         policy.object(object)?;
     }
     Ok(transformed)
 }
 
+/// The admitted finite-record path maps CSS leaves, never branch conditions.
+pub(super) fn mapped_rules<'a>(
+    builder: &AstBuilder<'a>,
+    params: &FormalParameters<'a>,
+    source: &Expression<'a>,
+) -> Result<Expression<'a>, PropsRulesError> {
+    let mut transformed = source.clone_in_with_semantic_ids(builder.allocator());
+    Theme {
+        builder,
+        params,
+        structured: true,
+    }
+    .record(&mut transformed)?;
+    Ok(transformed)
+}
+
 struct Theme<'b, 'p, 'a> {
     builder: &'b AstBuilder<'a>,
     params: &'p FormalParameters<'a>,
+    structured: bool,
 }
 
 impl<'a> Theme<'_, '_, 'a> {
@@ -71,15 +92,57 @@ impl<'a> Theme<'_, '_, 'a> {
                         self.value(&mut property.value)?;
                     }
                 }
-                ObjectPropertyKind::SpreadProperty(spread) => self.check(&spread.argument)?,
+                ObjectPropertyKind::SpreadProperty(spread) => {
+                    if self.structured {
+                        self.record(&mut spread.argument)?;
+                    } else {
+                        self.check(&spread.argument)?;
+                    }
+                }
             }
         }
         Ok(())
     }
 
+    fn record(&self, source: &mut Expression<'a>) -> Result<(), PropsRulesError> {
+        match unwrap_syntax_only_mut(source) {
+            Expression::ObjectExpression(object) => self.object(object),
+            Expression::ConditionalExpression(branch) => {
+                self.check(&branch.test)?;
+                self.record(&mut branch.consequent)?;
+                self.record(&mut branch.alternate)
+            }
+            Expression::LogicalExpression(logical)
+                if logical.operator == oxc_syntax::operator::LogicalOperator::And =>
+            {
+                self.check(&logical.left)?;
+                self.record(&mut logical.right)
+            }
+            _ => self.check(source),
+        }
+    }
+
     fn value(&self, value: &mut Expression<'a>) -> Result<(), PropsRulesError> {
         if let Expression::ObjectExpression(inner) = unwrap_syntax_only_mut(value) {
             return self.object(inner);
+        }
+        if self.structured {
+            match unwrap_syntax_only_mut(value) {
+                Expression::ArrayExpression(array) => {
+                    for element in &mut array.elements {
+                        if let Some(value) = element.as_expression_mut() {
+                            self.value(value)?;
+                        }
+                    }
+                    return Ok(());
+                }
+                Expression::ConditionalExpression(branch) => {
+                    self.check(&branch.test)?;
+                    self.value(&mut branch.consequent)?;
+                    return self.value(&mut branch.alternate);
+                }
+                _ => {}
+            }
         }
         let source = unwrap_syntax_only(value);
         if let Some(reference) =

@@ -133,12 +133,17 @@ impl<'a> Visit<'a> for CompiledReads<'_> {
     }
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        let props = it.arguments.get(1);
+        let builds_element = self
+            .bindings
+            .jsx_function(&it.callee)
+            .is_some_and(|function| match function.as_str() {
+                "createElement" => props.is_none_or(Argument::is_expression),
+                "jsx" | "jsxs" | "jsxDEV" => props.is_some_and(Argument::is_expression),
+                _ => false,
+            });
         if self.before_lowering
-            && self
-                .bindings
-                .jsx_function(&it.callee)
-                .is_some_and(|function| matches!(function.as_str(), "jsx" | "jsxs" | "jsxDEV"))
-            && it.arguments.get(1).is_some_and(Argument::is_expression)
+            && builds_element
             && it
                 .arguments
                 .first()

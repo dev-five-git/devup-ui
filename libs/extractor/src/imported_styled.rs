@@ -23,6 +23,8 @@ use crate::utils::{is_vanilla_extract_file, unwrap_syntax_only};
 use crate::visit::DevupVisitor;
 use crate::{ExtractOption, ModuleResolver};
 
+pub(crate) mod relevance;
+
 /// What a module exports, which marks the components other files select
 #[derive(Default)]
 pub(crate) struct Exports {
@@ -743,6 +745,7 @@ impl<'a> Visit<'a> for Used<'_, '_> {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod relevance_tests;
     use std::collections::{BTreeSet, HashMap};
 
     use insta::assert_debug_snapshot;
@@ -1006,7 +1009,7 @@ mod tests {
         .unwrap();
         // Then
         assert!(output.code.contains("DevupAs = \"div\""), "{}", output.code);
-        assert!(output.code.contains("id: \"known\""), "{}", output.code);
+        assert!(output.code.contains("id=\"known\""), "{}", output.code);
         assert_eq!(output.styles.len(), 2);
         assert_eq!(output.dependencies, ["/src/base.ts"]);
     }

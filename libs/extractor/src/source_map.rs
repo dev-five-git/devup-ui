@@ -109,6 +109,49 @@ pub(crate) fn remap<'a>(
     SourceMap::from_parts(parts)
 }
 
+/// Shift generated positions after inserting ASCII parentheses. Source
+/// positions and every other map field retain their original values.
+pub(crate) fn shift_generated<'a>(
+    map: SourceMap<'a>,
+    code: &str,
+    insertions: &[usize],
+) -> Result<SourceMap<'a>, Box<dyn std::error::Error>> {
+    let lines = Lines::new(code);
+    let positions: Vec<_> = insertions
+        .iter()
+        .map(|offset| lines.position(*offset))
+        .collect();
+    let shift = |line: u32, column: u32| -> Result<u32, Box<dyn std::error::Error>> {
+        let before = positions.partition_point(|position| position.0 < line);
+        let after = positions.partition_point(|position| *position <= (line, column));
+        let count = u32::try_from(after - before)?;
+        column
+            .checked_add(count)
+            .ok_or_else(|| "Generated source map column overflow".into())
+    };
+    let mut parts = map.into_parts();
+    parts.tokens = parts
+        .tokens
+        .iter()
+        .map(|token| {
+            Ok(Token::new(
+                token.get_dst_line(),
+                shift(token.get_dst_line(), token.get_dst_col())?,
+                token.get_src_line(),
+                token.get_src_col(),
+                token.get_source_id(),
+                token.get_name_id(),
+            ))
+        })
+        .collect::<Result<_, Box<dyn std::error::Error>>>()?;
+    if let Some(chunks) = &mut parts.token_chunks {
+        for chunk in chunks {
+            chunk.prev_dst_col = shift(chunk.prev_dst_line, chunk.prev_dst_col)?;
+        }
+    }
+    Ok(SourceMap::from_parts(parts))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -53,7 +53,7 @@ impl<'a> DevupVisitor<'a> {
             .map(|e| e.clone_in_with_semantic_ids(self.ast.allocator()))
             .collect();
         for expression in &mut slots {
-            self.style_values.read_in(&self.ast, expression);
+            self.style_values.read_in_class_names(&self.ast, expression);
         }
         for node in &mut plan.nodes {
             match node {

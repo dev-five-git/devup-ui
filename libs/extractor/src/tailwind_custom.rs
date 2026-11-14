@@ -273,7 +273,7 @@ mod tests {
     #[serial]
     fn functional_utilities_read_their_value_and_modifier() {
         set_tailwind_css(
-            "@theme { --tab-size-github: 8; --color-brand: #0af; --spacing-gutter: 3rem; } @utility tab-* { tab-size: --value(--tab-size-*, integer, [integer]); } @utility pct-* { width: --value(percentage); } @utility lit-* { display: --value('inline-flex', 'grid'); } @utility num-* { line-height: --value(number); } @utility bg-glow-* { background: --value(--color-*, [color]); box-shadow: 0 0 8px --modifier([percentage], number); } @utility gap-* { gap: --value(--spacing-*); } @utility len-* { width: --value([length]); } @utility pc-* { height: --value([percentage]); } @utility many-* { a: --value([url], [number], [unknown]); } @utility nest-* { a: --value(fn(x), integer); } @utility nest-* { a: --value(fn(x), integer); } @utility q-* { content: \"--value(x\"; } @utility space-* { gap: --spacing(4); } @utility bad-* { width: --value(unknown-type); } @utility mod-* { width: --value(integer); color: --modifier('red'); }",
+            "@theme { --tab-size-github: 8; --color-brand: #0af; --spacing-gutter: 3rem; } @utility tab-* { tab-size: --value(--tab-size-*, integer, [integer]); } @utility pct-* { width: --value(percentage); } @utility lit-* { display: --value('inline-flex', 'grid'); } @utility dq-* { display: --value(\"contents\"); } @utility num-* { line-height: --value(number); } @utility bg-glow-* { background: --value(--color-*, [color]); box-shadow: 0 0 8px --modifier([percentage], number); } @utility gap-* { gap: --value(--spacing-*); } @utility len-* { width: --value([length]); } @utility pc-* { height: --value([percentage]); } @utility many-* { a: --value([url], [number], [unknown]); } @utility nest-* { a: --value(fn(x), integer); } @utility nest-* { a: --value(fn(x), integer); } @utility q-* { content: \"--value(x\"; } @utility space-* { gap: --spacing(4); } @utility bad-* { width: --value(unknown-type); } @utility mod-* { width: --value(integer); color: --modifier('red'); }",
         );
         assert_eq!(written("tab-4"), pairs(&[("tab-size", "4")]));
         assert_eq!(written("tab-github"), pairs(&[("tab-size", "8")]));
@@ -290,6 +290,8 @@ mod tests {
             pairs(&[("display", "inline-flex")])
         );
         assert_eq!(declarations_of("lit-block"), None);
+        assert_eq!(written("dq-contents"), pairs(&[("display", "contents")]));
+        assert_eq!(declarations_of("dq-grid"), None);
         assert_eq!(written("num-1.5"), pairs(&[("line-height", "1.5")]));
         assert_eq!(written("bg-glow-brand"), pairs(&[("background", "#0af")]));
         assert_eq!(

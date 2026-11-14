@@ -46,7 +46,7 @@ impl Binding {
 }
 
 fn extract_fixture(source: &str, single_css: bool, active: bool) -> ExtractOutput {
-    extract(
+    let result = extract(
         "/src/alias-native.js",
         source,
         ExtractOption {
@@ -58,8 +58,8 @@ fn extract_fixture(source: &str, single_css: bool, active: bool) -> ExtractOutpu
             },
             ..ExtractOption::default()
         },
-    )
-    .unwrap_or_else(|error| panic!("{source}\n{error}"))
+    );
+    result.unwrap_or_else(|error| panic!("{source}\n{error}"))
 }
 
 fn observe(output: &ExtractOutput, invocation: &str, single_css: bool) -> (Vec<String>, Vec<String>) {

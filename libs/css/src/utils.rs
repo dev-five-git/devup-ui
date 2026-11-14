@@ -141,6 +141,12 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[test]
+    #[should_panic(expected = "invalid built-in regex pattern `(`")]
+    fn test_compile_regex_rejects_an_invalid_pattern() {
+        let _ = compile_regex("(");
+    }
+
     #[rstest]
     #[case("background-color", "backgroundColor")]
     #[case("min-width", "minWidth")]

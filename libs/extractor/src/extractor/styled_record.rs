@@ -28,6 +28,7 @@ pub(super) struct PreparedRecord<'a> {
 enum Origin {
     Values,
     OrdinaryCallbacks,
+    WholeRule,
 }
 
 struct Preparation<'r, 'b, 'a> {
@@ -41,11 +42,28 @@ pub(super) fn prepare<'a>(
     rules: &Expression<'a>,
     scope: &Expression<'a>,
 ) -> Option<PreparedRecord<'a>> {
+    prepare_with_origin(builder, rules, scope, Origin::Values)
+}
+
+pub(super) fn prepare_whole<'a>(
+    builder: &AstBuilder<'a>,
+    rules: &Expression<'a>,
+    scope: &Expression<'a>,
+) -> Option<PreparedRecord<'a>> {
+    prepare_with_origin(builder, rules, scope, Origin::WholeRule)
+}
+
+fn prepare_with_origin<'a>(
+    builder: &AstBuilder<'a>,
+    rules: &Expression<'a>,
+    scope: &Expression<'a>,
+    origin: Origin,
+) -> Option<PreparedRecord<'a>> {
     let mut reads = Evaluations::new(builder, readable_code(scope));
     let mut preparation = Preparation {
         reads: &mut reads,
         affected: false,
-        origin: Origin::Values,
+        origin,
     };
     let entries = preparation.record(rules, &preparation.reads.boolean(true))?;
     if !preparation.affected && preparation.reads.bindings.is_empty() {

@@ -20,9 +20,8 @@ fn text(script: &str) -> Result<String, String> {
     let mut context = Context::default();
     let sandbox = Sandbox::new(&mut context).map_err(|error| error.to_string())?;
     let source = super::instrument(script, "fixture.js");
-    sandbox
-        .prepare(&mut context, &source)
-        .map_err(|error| error.to_string())?;
+    let prepared = sandbox.prepare(&mut context, &source);
+    prepared.map_err(|error| error.to_string())?;
     let value = match sandbox.run_source(
         &mut context,
         Source::from_bytes(&source.code).with_path(std::path::Path::new("fixture.js")),
@@ -31,10 +30,10 @@ fn text(script: &str) -> Result<String, String> {
         Err(Failure::Js(error)) => return Err(error.to_string()),
         Err(Failure::Forbidden(_)) => return Err("unexpected forbidden read".to_string()),
     };
-    value
+    let text = value
         .to_string(&mut context)
-        .map(|value| value.to_std_string_escaped())
-        .map_err(|error| error.to_string())
+        .map(|value| value.to_std_string_escaped());
+    text.map_err(|error| error.to_string())
 }
 
 fn reads(script: &str) -> Result<Vec<String>, String> {

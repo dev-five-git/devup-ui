@@ -1,7 +1,7 @@
 use super::{
     AstBuilder, Base, CloneIn, Evaluations, Execution, Expression, FromIn, GetAllocator, Naming,
     SPAN, StyledDefinition, StyledJsx, gen_class_names, gen_styles,
-    merge_expression_for_class_name, residual, sets_plain_props, withheld, without_props,
+    merge_expression_for_class_name, residual, sets_plain_props, withheld,
 };
 use crate::utils::readable_code as code;
 use oxc_ast::ast::{Ident, Program};
@@ -79,7 +79,6 @@ pub(super) fn create<'a>(
     let own_default = fresh();
     let resolver = fresh();
     let resolved = fresh();
-    let input_as = fresh();
     let plain = definition.attrs.iter().all(sets_plain_props);
     let hybrid_value = if plain {
         format!("{control}?{control}[2]:false")
@@ -98,9 +97,14 @@ pub(super) fn create<'a>(
         | Execution::RetainedDynamic { .. }
         | Execution::Delegated(_) => "(void 0)".to_string(),
     };
-    let resolve_target = format!(
-        "const {own_default}={own_target};const {resolver}=({control}&&{control}[3])??{own_default};"
-    );
+    // Without a target of its own, the one a composing component gives is it.
+    let resolve_target = if own_target == "(void 0)" {
+        format!("const {resolver}={control}&&{control}[3];")
+    } else {
+        format!(
+            "const {own_default}={own_target};const {resolver}=({control}&&{control}[3])??{own_default};"
+        )
+    };
     let class_values = own
         .values
         .iter()
@@ -147,9 +151,37 @@ pub(super) fn create<'a>(
         definition.native(),
         definition.forward.as_ref(),
     );
-    let forwarded = super::super::styled_transient::filter(ast, without_props(ast, &withheld));
+    let forwarded = super::super::styled_transient::filter(
+        ast,
+        Expression::new_identifier(SPAN, "rest", ast),
+        &withheld,
+    );
+    // What the build wrote into the record tells which way its checks go.
+    let (markers_known, variables_known) = match &definition.execution {
+        Execution::Staged { .. } => (
+            has_markers.then_some(true),
+            style_vars.is_some().then_some(true),
+        ),
+        _ => (Some(has_markers), Some(style_vars.is_some())),
+    };
+    let class_name = match markers_known {
+        Some(true) => {
+            format!("[...{result}[0],{result}[2],{props}.className].filter(Boolean).join(' ')")
+        }
+        Some(false) => format!(
+            "{result}[0].length?[...{result}[0],{props}.className].filter(Boolean).join(' '):{props}.className"
+        ),
+        None => format!(
+            "({result}[0].length||{result}[2]!==void 0)?[...{result}[0],{result}[2],{props}.className].filter(Boolean).join(' '):{props}.className"
+        ),
+    };
+    let style = match variables_known {
+        Some(true) => format!("{{...{result}[1],...{props}.style}}"),
+        Some(false) => format!("{props}.style"),
+        None => format!("{result}[1]===void 0?{props}.style:{{...{result}[1],...{props}.style}}"),
+    };
     let finish = format!(
-        "{result}[4]({{...{},as:{result}[3],forwardedAs:{props}.forwardedAs,className:({result}[0].length||{result}[2]!==void 0)?[...{result}[0],{result}[2],{props}.className].filter(Boolean).join(' '):{props}.className,style:{result}[1]===void 0?{props}.style:{{...{result}[1],...{props}.style}}}})",
+        "{result}[4]({{...{},as:{result}[3],forwardedAs:{props}.forwardedAs,className:{class_name},style:{style}}})",
         code(&forwarded),
     );
     let dispatch = format!("{control}?(0,{control}[1])({props},{result}):{finish}");
@@ -219,8 +251,15 @@ pub(super) fn create<'a>(
                 .target
                 .as_ref()
                 .map_or_else(|| format!("{:?}", context.base.name), code);
+            // A composing component reads the same classes as its own.
+            let own_classes = format!("[{class_values}]");
+            let classes = if own_classes == ordinary {
+                ordinary
+            } else {
+                format!("{control}?{own_classes}:{ordinary}")
+            };
             let style_body = format!(
-                "({props})=>{{const {{style,className,as:{input_as},forwardedAs,...rest}}={props};let DevupAs={input_as};if(DevupAs===void 0){{if({resolver}){{DevupAs = (0,{resolver})();}}else{{DevupAs = {target};}}}}const {resolved}=DevupAs;{bindings}const {result}=[{control}?[{class_values}]:{ordinary},{variables},{markers},{resolved},{},rest];return {dispatch};}}",
+                "({props})=>{{const {{style,className,as:{resolved}={resolver}?{resolver}():{target},forwardedAs,...rest}}={props};{bindings}const {result}=[{classes},{variables},{markers},{resolved},{},rest];return {dispatch};}}",
                 code(&terminal)
             );
             format!(
