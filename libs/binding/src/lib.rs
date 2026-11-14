@@ -167,3 +167,15 @@ pub fn get_theme_interface(package_name: &str, names: [&str; 5]) -> String {
         sheet.create_interface(package_name, color, typography, length, shadows, theme)
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_text_is_the_error_message() {
+        let error = serde_json::from_str::<u8>("x").unwrap_err();
+        assert_eq!(error_text(&error), error.to_string());
+    }
+}
