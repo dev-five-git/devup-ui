@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "vanilla-extract code Devup UI does not compile is a located build error however it is loaded, instead of slipping past the check on import declarations. New build errors while `@vanilla-extract/css` is aliased: `@vanilla-extract/recipes` and `@vanilla-extract/sprinkles` loaded by `export … from`, `export *`, `require()`, `import x = require()` or `import()` (an import already was); `@vanilla-extract/dynamic` loaded in any of these ways; and `globalKeyframes` imported from `@vanilla-extract/css`, which failed with a bare `TypeError: not a callable function`",
+  "date": "2026-11-15T00:00:00.000Z"
+}

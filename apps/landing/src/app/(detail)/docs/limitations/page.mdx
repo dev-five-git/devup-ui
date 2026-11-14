@@ -83,7 +83,8 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 | `@emotion/css` `cache`, `flush`, `hydrate`, `merge`, `sheet`    | Stay on `@emotion/css`; they work on styles inserted at runtime                                      |
 | `ThemeProvider`                                                 | Renders a `display: contents` wrapper that sets the theme's CSS variables                            |
 | `jest-styled-components`, `@emotion/jest`, React Native targets | Not supported                                                                                        |
-| vanilla-extract `recipes`, `sprinkles`                          | A build error while `@vanilla-extract/css` is aliased; use `css()` or the vanilla-extract plugin     |
+| vanilla-extract `recipes`, `sprinkles`                          | A build error however they load (import, re-export, `require()`, `import()`) while aliased           |
+| vanilla-extract `dynamic`, `globalKeyframes`                    | A build error while `@vanilla-extract/css` is aliased; use a style prop, or `keyframes()`            |
 
 ## Known limitations
 
