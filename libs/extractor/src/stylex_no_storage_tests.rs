@@ -60,7 +60,7 @@ fn stylex_no_storage_uses_the_last_test_directly_when_an_earlier_result_is_captu
     // Then: both tests execute once in order and either branch selects the authored winner.
     let winner = if on { "red" } else { "green" };
     assert_eq!(observed, format!("[[\"first\",\"last\"],[\"{winner}\"]]"), "{}", output.code);
-    assert_eq!(output.code.matches("let _s0;").count(), 1, "{}", output.code);
+    assert!(output.code.contains("((_s0) =>") && !output.code.contains("let "), "{}", output.code);
     assert!(!output.code.contains("_s1"), "{}", output.code);
     assert_eq!(callable_count(&output.code), callable_count(&source));
     eprintln!("LAST DIRECT {api} {on} bytes={}\n{}", output.code.len(), output.code);
@@ -106,7 +106,7 @@ fn stylex_no_storage_requires_capture_when_a_later_dead_test_follows_a_live_test
             for (on, values) in [(true, "[\"red\"]"), (false, "[]")] {
                 assert_eq!(render_observation(&output, &format!("render({on})"), Some("no-storage-order.js")), format!("[[\"live\",\"dead\"],{values}]"), "{}", output.code);
             }
-            assert!(output.code.contains("let _s"), "{}", output.code);
+            assert!(output.code.contains("((_s0) =>") && !output.code.contains("let "), "{}", output.code);
             assert_eq!(callable_count(&output.code), callable_count(&source));
         }
         "default" | "field" | "eval" => {

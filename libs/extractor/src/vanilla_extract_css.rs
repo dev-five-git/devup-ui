@@ -106,12 +106,40 @@ fn source(values: &mut Values<'_>, args: &[JsValue], context: &mut Context) -> J
                 .map(|text| js_str(text).ok_or_else(unsupported))
                 .collect::<JsResult<_>>()?,
         );
+        let arena = oxc_allocator::Allocator::default();
+        let ast = oxc_ast::builder::AstBuilder::new(&arena);
+        let quasis = raw
+            .iter()
+            .enumerate()
+            .map(|(index, text)| {
+                use oxc_allocator::FromIn;
+                let text = js_str(text).ok_or_else(unsupported)?;
+                Ok(oxc_ast::ast::TemplateElement::new(
+                    oxc_span::SPAN,
+                    oxc_ast::ast::TemplateElementValue {
+                        raw: oxc_ast::ast::Str::from_in(text.as_str(), &arena),
+                        cooked: None,
+                    },
+                    index + 1 == raw.len(),
+                    &ast,
+                ))
+            })
+            .collect::<JsResult<Vec<_>>>()?;
+        let mut before = String::new();
         let mut code = "css`".to_string();
         for (index, text) in raw.iter().enumerate() {
-            code.push_str(&js_str(text).ok_or_else(unsupported)?);
+            let text = js_str(text).ok_or_else(unsupported)?;
+            code.push_str(&text);
+            before.push_str(&text);
             if let Some(value) = args.get(index + 1) {
+                let value_position = matches!(
+                    crate::css_utils::interpolation_place(&before, &quasis[index + 1..]),
+                    crate::css_utils::Place::Value
+                );
                 code.push_str("${");
-                let root = if value.as_object().is_some_and(|object| object.is_array()) {
+                let root = if value_position {
+                    values.capture_data(value, context)?
+                } else if value.as_object().is_some_and(|object| object.is_array()) {
                     let start = values.plan.roots.len();
                     rule(values, value, context)?;
                     let items = values.plan.roots.drain(start..).collect();
@@ -124,9 +152,18 @@ fn source(values: &mut Values<'_>, args: &[JsValue], context: &mut Context) -> J
                 } else {
                     values.capture(value, context)?
                 };
-                match &values.plan.nodes[root] {
-                    crate::own_css_plan::Node::Object(_) => values.declarations(root),
-                    crate::own_css_plan::Node::Scalar(_) | crate::own_css_plan::Node::Array(_) => {}
+                if value_position {
+                    before.push_str("__EXPR__");
+                } else {
+                    if matches!(
+                        &values.plan.nodes[root],
+                        crate::own_css_plan::Node::Object(_)
+                    ) {
+                        values.declarations(root);
+                    }
+                    if let Some(text) = js_str(value) {
+                        before.push_str(&text);
+                    }
                 }
                 values.plan.roots.push(root);
                 if !values.plan.deep {

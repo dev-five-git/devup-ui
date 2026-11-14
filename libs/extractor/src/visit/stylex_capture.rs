@@ -1,8 +1,4 @@
-use super::{
-    AstBuilder, BindingPattern, Expression, FxHashSet, GetAllocator, GetSpan, Program, SPAN,
-    Statement, UnaryOperator, VariableDeclarator,
-};
-use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, VariableDeclarationKind};
+use super::{AstBuilder, Expression, FxHashSet, GetSpan, Program, SPAN, UnaryOperator};
 use oxc_ast_visit::{Visit, walk};
 use oxc_syntax::scope::{ScopeFlags, ScopeId};
 use std::cell::Cell;
@@ -13,11 +9,17 @@ pub(super) struct Captures {
     next: usize,
     scopes: Vec<Option<ScopeId>>,
     eval_scopes: FxHashSet<ScopeId>,
-    pub frames: Vec<(bool, Vec<String>)>,
+    /// Whether each statement list open is visible to direct eval
+    pub frames: Vec<bool>,
     pub context: Option<&'static str>,
 }
 
 impl Captures {
+    /// Generated props share the existing scope and direct-eval admission gates.
+    pub(super) fn binds(&self) -> bool {
+        self.context.is_none() && self.frames.last().is_some_and(|visible| !*visible)
+    }
+
     pub fn reserve(&mut self, program: &Program<'_>) {
         self.visit_program(program);
     }
@@ -27,14 +29,15 @@ impl Captures {
             .scopes
             .last()
             .is_some_and(|scope| scope.is_some_and(|id| self.eval_scopes.contains(&id)));
-        self.frames.push((visible, Vec::new()));
+        self.frames.push(visible);
     }
 
+    /// A fresh name for the result of `test`, and the boolean it holds
     pub fn capture<'a>(
         &mut self,
         ast: &AstBuilder<'a>,
         test: Expression<'a>,
-    ) -> Result<(Expression<'a>, Expression<'a>), (u32, String)> {
+    ) -> Result<(String, Expression<'a>), (u32, String)> {
         if self.frames.is_empty() || self.context.is_some() {
             return Err((
                 test.span().start,
@@ -44,7 +47,7 @@ impl Captures {
                 ),
             ));
         }
-        if self.frames.last().is_some_and(|(visible, _)| *visible) {
+        if self.frames.last().is_some_and(|visible| *visible) {
             return Err((
                 test.span().start,
                 "StyleX condition capture is not supported in a statement body whose bindings are visible to direct eval; move the value into a variable in a scope not visible to direct eval".to_string(),
@@ -57,24 +60,13 @@ impl Captures {
                 break name;
             }
         };
-        if let Some((_, frame)) = self.frames.last_mut() {
-            frame.push(name.clone());
-        }
-        let name = ast.allocator().alloc_str(&name);
         let boolean = Expression::new_unary_expression(
             SPAN,
             UnaryOperator::LogicalNot,
             Expression::new_unary_expression(SPAN, UnaryOperator::LogicalNot, test, ast),
             ast,
         );
-        let assignment = Expression::new_assignment_expression(
-            SPAN,
-            AssignmentOperator::Assign,
-            AssignmentTarget::new_assignment_target_identifier(SPAN, name, ast),
-            boolean,
-            ast,
-        );
-        Ok((Expression::new_identifier(SPAN, name, ast), assignment))
+        Ok((name, boolean))
     }
 }
 
@@ -108,22 +100,21 @@ impl<'a> Visit<'a> for Captures {
     }
 }
 
-pub(super) fn declaration<'a>(ast: &AstBuilder<'a>, names: Vec<String>) -> Statement<'a> {
-    let declarations = names.into_iter().map(|name| {
-        VariableDeclarator::new(
-            SPAN,
-            BindingPattern::new_binding_identifier(SPAN, ast.allocator().alloc_str(&name), ast),
-            None,
-            None,
-            false,
-            ast,
-        )
-    });
-    Statement::new_variable_declaration(
+/// The `parts` evaluated in order, giving the last
+pub(super) fn sequence<'a>(
+    ast: &AstBuilder<'a>,
+    parts: &mut Vec<Expression<'a>>,
+) -> Expression<'a> {
+    if parts.len() == 1 {
+        return parts.remove(0);
+    }
+    Expression::new_sequence_expression(
         SPAN,
-        VariableDeclarationKind::Let,
-        oxc_allocator::Vec::from_iter_in(declarations, ast),
-        false,
+        oxc_allocator::Vec::from_iter_in(std::mem::take(parts), ast),
         ast,
     )
 }
+
+/// The tests a `stylex.props()` call runs, in order, each with the name its
+/// result is read by when it is read
+pub(super) type Evaluations<'a> = Vec<(Option<String>, Expression<'a>)>;

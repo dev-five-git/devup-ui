@@ -223,12 +223,13 @@ impl Rewriter<'_, '_, '_, '_> {
                 Some((bound.binding.symbol_id.get()?, (bound, bound.devup.clone())))
             })
             .collect();
-        let mut spaces: FxHashMap<SymbolId, usize> = namespaces
+        let first_new = namespaces.len();
+        self.namespace_aliases(namespaces);
+        let spaces: FxHashMap<SymbolId, usize> = namespaces
             .iter()
             .enumerate()
             .filter_map(|(index, namespace)| Some((namespace.symbol?, index)))
             .collect();
-        let first_new = namespaces.len();
         for node in nodes.iter() {
             let AstKind::VariableDeclarator(declarator) = node.kind() else {
                 continue;
@@ -249,18 +250,10 @@ impl Rewriter<'_, '_, '_, '_> {
             if declaration.kind != VariableDeclarationKind::Const {
                 continue;
             }
-            if let Some(&index) = spaces.get(&origin) {
-                let origin = &namespaces[index];
-                let namespace = Namespace {
-                    local: id.name.to_string(),
-                    symbol: Some(alias),
-                    after: origin.after,
-                    module: origin.module.clone(),
-                    source: origin.source.clone(),
-                };
-                spaces.insert(alias, namespaces.len());
-                namespaces.push(namespace);
-            } else if let Some((origin, reach)) = named.get(&origin).cloned() {
+            if spaces.contains_key(&origin) {
+                continue;
+            }
+            if let Some((origin, reach)) = named.get(&origin).cloned() {
                 named.insert(alias, (origin, reach.clone()));
                 let exported = matches!(
                     nodes.parent_kind(declaration_id),

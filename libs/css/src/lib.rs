@@ -15,6 +15,7 @@ pub mod optimize_value;
 mod property_names;
 pub mod quoted;
 pub mod rm_css_comment;
+pub mod selector_params;
 mod selector_separator;
 pub mod shorthand;
 pub mod slot_reservation;
@@ -286,10 +287,8 @@ pub fn set_custom_shorthands(
 
 #[must_use]
 pub fn get_custom_shorthand_names() -> Vec<String> {
-    CUSTOM_SHORTHANDS.read().map_or_else(
-        |_| Vec::new(),
-        |registry| registry.keys().cloned().collect(),
-    )
+    let registry = CUSTOM_SHORTHANDS.read().ok();
+    registry.map_or_else(Vec::new, |registry| registry.keys().cloned().collect())
 }
 
 /// `selector` with `params` on the last pseudo-class or pseudo-element that

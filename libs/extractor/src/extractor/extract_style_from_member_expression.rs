@@ -1,9 +1,10 @@
+use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
     extractor::{
         ExtractResult,
         extract_style_from_expression::{
-            LiteralHandling, dynamic_style, extract_with_policy, locate_dynamic,
+            LiteralHandling, dynamic_style, extract_with_location, locate_dynamic,
         },
     },
     utils::{
@@ -20,14 +21,14 @@ use oxc_ast::{
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 
-pub(super) fn extract_member<'a, const LOCATE: bool>(
-    ast_builder: &AstBuilder<'a>,
+pub(super) fn extract_member<'a>(
+    inputs: StyleInputs<'_, 'a>,
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
-    level: u8,
-    selector: &Option<StyleSelector>,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    (level, selector, locate): (u8, &Option<StyleSelector>, bool),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> ExtractResult<'a> {
+    let ast_builder = inputs.ast;
     let mem_expression = &mem
         .expression
         .clone_in_with_semantic_ids(ast_builder.allocator());
@@ -66,24 +67,24 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
         mem.object
             .clone_in_with_semantic_ids(ast_builder.allocator())
     });
-    let runtime = |whole: &Expression<'a>, offset: u32, prepare: &mut _| {
-        let mut member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
-            SPAN,
-            whole.clone_in_with_semantic_ids(ast_builder.allocator()),
-            mem_expression.clone_in_with_semantic_ids(ast_builder.allocator()),
-            false,
-            ast_builder,
-        ));
-        runtime_member::<LOCATE>(
-            ast_builder,
-            name,
-            &mut member,
-            offset,
-            level,
-            selector,
-            prepare,
-        )
-    };
+    let runtime =
+        |whole: &Expression<'a>, offset: u32, prepare: &mut dyn FnMut(&mut Expression<'a>)| {
+            let mut member = Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+                SPAN,
+                whole.clone_in_with_semantic_ids(ast_builder.allocator()),
+                mem_expression.clone_in_with_semantic_ids(ast_builder.allocator()),
+                false,
+                ast_builder,
+            ));
+            runtime_member(
+                ast_builder,
+                name,
+                &mut member,
+                offset,
+                (level, selector, locate),
+                prepare,
+            )
+        };
 
     if let Expression::ArrayExpression(array) = &mut mem.object
         && !array.elements.is_empty()
@@ -101,12 +102,11 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                 if Some(idx) == selected_index
                     && let Some(p) = p.as_expression_mut()
                 {
-                    return extract_with_policy::<LOCATE>(
-                        ast_builder,
+                    return extract_with_location(
+                        inputs,
                         name,
                         p,
-                        level,
-                        selector,
+                        (level, selector, locate),
                         LiteralHandling::ExpandResponsiveThemeToken,
                         prepare,
                     );
@@ -134,12 +134,11 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                 map.insert(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_with_policy::<LOCATE>(
-                            ast_builder,
+                        extract_with_location(
+                            inputs,
                             name,
                             p,
-                            level,
-                            selector,
+                            (level, selector, locate),
                             LiteralHandling::ExpandResponsiveThemeToken,
                             prepare,
                         )
@@ -178,12 +177,11 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                     && get_str_by_property_key(&o.key).as_deref() == Some(k.as_ref())
                 {
                     return ExtractResult {
-                        styles: extract_with_policy::<LOCATE>(
-                            ast_builder,
+                        styles: extract_with_location(
+                            inputs,
                             name,
                             &mut o.value,
-                            level,
-                            selector,
+                            (level, selector, locate),
                             LiteralHandling::ExpandResponsiveThemeToken,
                             prepare,
                         )
@@ -202,12 +200,11 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
                 map.insert(
                     property_name,
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_with_policy::<LOCATE>(
-                            ast_builder,
+                        extract_with_location(
+                            inputs,
                             name,
                             &mut o.value,
-                            level,
-                            selector,
+                            (level, selector, locate),
                             LiteralHandling::ExpandResponsiveThemeToken,
                             prepare,
                         )
@@ -235,14 +232,13 @@ pub(super) fn extract_member<'a, const LOCATE: bool>(
 
 /// `object[key]` known only at runtime: a CSS variable for a property, and
 /// under a selector, which takes styles, what the build cannot read
-fn runtime_member<'a, const LOCATE: bool>(
+fn runtime_member<'a>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
     member: &mut Expression<'a>,
     offset: u32,
-    level: u8,
-    selector: &Option<StyleSelector>,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    (level, selector, locate): (u8, &Option<StyleSelector>, bool),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> ExtractStyleProp<'a> {
     let mut style = match name {
         Some(name) => dynamic_style(ast_builder, name, member, level, selector, prepare),
@@ -253,7 +249,7 @@ fn runtime_member<'a, const LOCATE: bool>(
             requirement: None,
         },
     };
-    if LOCATE {
+    if locate {
         locate_dynamic(&mut style, offset);
     }
     style

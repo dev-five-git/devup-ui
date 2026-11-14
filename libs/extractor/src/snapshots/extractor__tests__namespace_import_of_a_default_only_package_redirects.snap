@@ -1,5 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
+assertion_line: 23476
 expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import * as Emotion from '@emotion/styled';\nconst Member = Emotion.div({ bg: 'red' });\nconst Tagged = Emotion.span`color: ${p => p.theme.brand};`;\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"@emotion/styled\".to_string(),\n    ImportAlias::DefaultToNamed(\"styled\".to_string()))])\n},).unwrap())"
 ---
 ToBTreeSet {
@@ -25,5 +26,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nconst Member = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\nconst Tagged = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"span\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupRefProps,\n\tref: __devupRef\n}));\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nfunction __devupOmit0(__devupOmitted) {\n\treturn Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k[0] !== \"$\" && k !== \"theme\"));\n}\nconst Member = __devupForwardRef(({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a ${className}` : \"a\"} style={style} />);\nconst Tagged = __devupForwardRef(({ style, className, as: DevupAs = \"span\", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `b ${className}` : \"b\"} style={style} />);\n",
 }

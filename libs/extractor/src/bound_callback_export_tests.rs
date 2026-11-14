@@ -153,9 +153,9 @@ fn consumer_values(code: &str) -> Result<serde_json::Value, Box<dyn std::error::
         "const __devupForwardRef = fn => props => fn(props, undefined); {compiled}\nconst consumer = {{{}}}; const before = Object.values(consumer.Choice({{}})); consumer.update(); JSON.stringify([consumer.color, before, Object.values(consumer.Choice({{}}))]);",
         getters.join(",")
     );
-    let json = boa_engine::Context::default()
-        .eval(boa_engine::Source::from_bytes(&script))
-        .map_err(|error| format!("consumer evaluation failed: {error}\n{script}"))?
+    let value = boa_engine::Context::default().eval(boa_engine::Source::from_bytes(&script));
+    let value = value.map_err(|error| format!("consumer evaluation failed: {error}\n{script}"))?;
+    let json = value
         .as_string()
         .ok_or("expected JSON")?
         .to_std_string_escaped();

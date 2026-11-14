@@ -109,7 +109,7 @@ impl<'a> MixinReader<'_, 'a, '_> {
             }
             Expression::ObjectExpression(_) => {
                 let (_, authored) = extract_with_order(
-                    ast,
+                    crate::extractor::style_inputs::StyleInputs::with_values(ast, bindings.values),
                     None,
                     rules,
                     0,

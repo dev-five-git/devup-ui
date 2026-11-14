@@ -10,9 +10,11 @@ The rule reports only when **both** are true:
    (including destructured/rest parameters), catch parameter, `arguments`, `this`,
    or a never-reassigned local alias of one. Members preserve that origin.
    An object with a runtime-rooted spread also qualifies. Runtime-first `||` and
-   `??` remain runtime-rooted even with a known fallback: the build passes the
-   spread through instead of extracting that fallback's styles. `&&` and
-   conditional expressions require **every value branch** to qualify.
+   `??` remain runtime-rooted. `&&` and conditional expressions require
+   **every value branch** to qualify. A spread whose runtime side sits next to
+   a side the build reads styles from (an object literal naming keys, an import
+   or a const holding one, of a style-capable type) is already a build error,
+   which this rule does not repeat.
 2. Its TypeScript type can carry Devup styles. The schema comes from the real
    primitive's public props, including selector/theme/custom shorthand types.
    Named, union, intersection, constrained generic and index types are inspected;
@@ -59,9 +61,10 @@ The real build/lint agreement tests cover both shared and per-file CSS modes:
 - Local destructuring defaults, parameter destructuring defaults, and plain
   parameter defaults still pass runtime styles through, even when the default
   is an imported constant. Style-capable spreads of these bindings report.
-- `rest ?? knownImport` and `rest || knownImport` pass through without extracting
-  the fallback's styles, so style-capable runtime-first spreads report. Literal
-  and computed fallbacks have the same verified runtime-first behavior.
+- `rest ?? knownImport` and `rest || { bg: "red" }` are located build errors:
+  the build would otherwise hand the fallback's styles to the element as props.
+  This rule adds no extra diagnostic for them. Empty literal and computed
+  fallbacks (`rest || {}`, `rest || make()`) pass through, and report.
 - `knownImport ?? rest` and `knownImport || rest` compose the known object and do
   not report. A known imported object by itself also composes normally.
 - The two mixed conditional directions (`condition ? knownImport : rest` and

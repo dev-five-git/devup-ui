@@ -127,12 +127,41 @@ fn shorthand_dynamic_values_stay_on_the_element() -> Result<(), Box<dyn std::err
             let ExtractStyleValue::Dynamic(style) = value else {
                 panic!("expected dynamic shorthand styles")
             };
-            assert_eq!(style.identifier(), "position");
+
             style.property().to_string()
         })
         .collect();
     properties.sort();
     assert_eq!(properties, ["left", "right"]);
+    let Some(alias) = output.styles.iter().find_map(|style| match style {
+        ExtractStyleValue::Dynamic(style) => Some(style.identifier()),
+        _ => None,
+    }) else {
+        panic!("shared dynamic identifier");
+    };
+    let variables = crate::style_slot_test_support::assert_variables(
+        &output,
+        "shorthand.tsx",
+        &ExtractOption {
+            single_css: true,
+            import_main_css: false,
+            ..ExtractOption::default()
+        },
+        &[("left", alias.to_owned()), ("right", alias.to_owned())],
+    );
+    let left = &variables[0].1;
+    let right = &variables[1].1;
+    assert!(
+        output.code.contains(&format!("style={{(({alias}) => ({{")),
+        "{}",
+        output.code
+    );
+    assert!(output.code.contains(&format!("\"{right}\": {alias}")));
+    assert!(output.code.contains(&format!("\"{left}\": {alias}")));
+    assert_eq!(
+        crate::style_slot_test_support::identifier_reads(&output.code, "position"),
+        1
+    );
     assert!(output.code.contains("style="));
     assert!(!output.code.contains("insetX="));
     set_custom_shorthands(BTreeMap::new())?;

@@ -44,7 +44,12 @@ pub(super) fn extract<'a>(
         };
     }
     let (mut result, authored) = extract_with_order(
-        ast,
+        bindings.map_or_else(
+            || ast.into(),
+            |bindings| {
+                crate::extractor::style_inputs::StyleInputs::with_values(ast, bindings.values)
+            },
+        ),
         None,
         rules,
         0,

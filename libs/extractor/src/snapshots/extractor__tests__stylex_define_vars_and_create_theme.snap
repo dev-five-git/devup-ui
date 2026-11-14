@@ -39,5 +39,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst colors = {\n\t\"primary\": \"var(--a)\",\n\t\"secondary\": \"var(--b)\"\n};\nconst dark = \"c\";\nconst styles = { \"box\": \"d e\" };\nconst el = <div {...{ className: \"c d e\" }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst colors = {\n\t\"primary\": \"var(--a)\",\n\t\"secondary\": \"var(--b)\"\n};\nconst dark = \"c\";\nconst styles = { \"box\": \"d e\" };\nconst el = <div className=\"c d e\" />;\n",
 }
