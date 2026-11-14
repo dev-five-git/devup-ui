@@ -1,0 +1,26 @@
+---
+source: libs/extractor/src/lib.rs
+expression: errors
+---
+[
+    (
+        "import { css, ThemeContext, withEmotionCache as w, type SerializedStyles } from '@emotion/react';\nimport type { Theme } from '@emotion/react';",
+        "App.tsx:1:15: `@emotion/react` has no Devup UI equivalent of `ThemeContext`, so importing it would keep `@emotion/react` and its runtime. Fix: import only `css`, `keyframes`, `Global`, `ClassNames`, `jsx`, `ThemeProvider`, `useTheme`, `withTheme` and `CacheProvider` from `@emotion/react`, each by name, or set `importAliases: { '@emotion/react': false }` and build with Emotion\nApp.tsx:1:29: `@emotion/react` has no Devup UI equivalent of `withEmotionCache`, so importing it would keep `@emotion/react` and its runtime. Fix: import only `css`, `keyframes`, `Global`, `ClassNames`, `jsx`, `ThemeProvider`, `useTheme`, `withTheme` and `CacheProvider` from `@emotion/react`, each by name, or set `importAliases: { '@emotion/react': false }` and build with Emotion",
+    ),
+    (
+        "import React, { Global } from 'react';\nimport Emotion from '@emotion/react';\nimport * as E from '@emotion/react';",
+        "App.tsx:2:8: `@emotion/react` has no Devup UI equivalent of `default`, so importing it would keep `@emotion/react` and its runtime. Fix: import only `css`, `keyframes`, `Global`, `ClassNames`, `jsx`, `ThemeProvider`, `useTheme`, `withTheme` and `CacheProvider` from `@emotion/react`, each by name, or set `importAliases: { '@emotion/react': false }` and build with Emotion\nApp.tsx:3:8: `@emotion/react` has no Devup UI equivalent of `* as E`, so importing it would keep `@emotion/react` and its runtime. Fix: import only `css`, `keyframes`, `Global`, `ClassNames`, `jsx`, `ThemeProvider`, `useTheme`, `withTheme` and `CacheProvider` from `@emotion/react`, each by name, or set `importAliases: { '@emotion/react': false }` and build with Emotion",
+    ),
+    (
+        "import createEmotion from '@emotion/css/create-instance';\nexport const { css } = createEmotion({ key: 'x' });",
+        "App.tsx:1:1: `@emotion/css/create-instance` creates an Emotion instance at runtime, whose `css`, `cx` and `keyframes` Devup UI does not compile, so its styles would stay at runtime. Fix: import `css`, `cx`, `keyframes` and `injectGlobal` from `@emotion/css`, or set `importAliases: { '@emotion/css': false }` and build with Emotion",
+    ),
+    (
+        "export { default } from '@emotion/css/create-instance';\nexport * from '@emotion/css/create-instance';\nconst a = require('@emotion/css/create-instance');\nconst b = () => import('@emotion/css/create-instance');",
+        "App.tsx:1:1: `@emotion/css/create-instance` creates an Emotion instance at runtime, whose `css`, `cx` and `keyframes` Devup UI does not compile, so its styles would stay at runtime. Fix: import `css`, `cx`, `keyframes` and `injectGlobal` from `@emotion/css`, or set `importAliases: { '@emotion/css': false }` and build with Emotion\nApp.tsx:2:1: `@emotion/css/create-instance` creates an Emotion instance at runtime, whose `css`, `cx` and `keyframes` Devup UI does not compile, so its styles would stay at runtime. Fix: import `css`, `cx`, `keyframes` and `injectGlobal` from `@emotion/css`, or set `importAliases: { '@emotion/css': false }` and build with Emotion\nApp.tsx:3:11: `@emotion/css/create-instance` creates an Emotion instance at runtime, whose `css`, `cx` and `keyframes` Devup UI does not compile, so its styles would stay at runtime. Fix: import `css`, `cx`, `keyframes` and `injectGlobal` from `@emotion/css`, or set `importAliases: { '@emotion/css': false }` and build with Emotion\nApp.tsx:4:17: `@emotion/css/create-instance` creates an Emotion instance at runtime, whose `css`, `cx` and `keyframes` Devup UI does not compile, so its styles would stay at runtime. Fix: import `css`, `cx`, `keyframes` and `injectGlobal` from `@emotion/css`, or set `importAliases: { '@emotion/css': false }` and build with Emotion",
+    ),
+    (
+        "import { css, cx } from '@emotion/css';\nimport type Create from '@emotion/css/create-instance';",
+        "",
+    ),
+]

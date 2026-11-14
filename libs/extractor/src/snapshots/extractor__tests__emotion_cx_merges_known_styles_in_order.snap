@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "emotion_class_call(r\"const red = css({ color: 'red' });\nconst blue = css({ color: 'blue', margin: 1 });\nexport const a = cx(blue, red);\nexport const b = cx(red, blue);\nexport const c = (on) => cx(blue, on && red, 'external');\nexport const d = (on) => cx(on ? red : blue, blue);\nexport const e = cx([blue, , red]);\nexport const g = (on) => cx(blue, red, { picked: true, off: false }, ({ 'a b': on }));\nexport const m = (on, k) => cx(blue, red, { [k]: on });\nexport const h = cx(blue, `${red} x`);\nexport const i = (on) => cx([blue, { picked: on }], red);\nexport const j = (on) => cx(on && { picked: on }, red);\nexport const k = (on) => cx(on ? { picked: on } : red, blue);\nexport const l = (on) => cx(on ? red : `x`, blue);\")"
+---
+Ok(
+    "import \"@devup-ui/react/devup-ui-0.css\";\nconst red = \"a-a\";\nconst blue = \"a-b a-c\";\nexport const a = \"a-c a-a\";\nexport const b = \"a-b a-c\";\nexport const c = (on) => `external a-c ${on ? \"a-a\" : \"a-b\"}`;\nexport const d = (on) => \"a-b a-c\";\nexport const e = \"a-c a-a\";\nexport const g = (on) => `picked a-c a-a ${on ? \"a b\" : \"\"}`;\nexport const m = (on, k) => `a-b a-c a-a ${on ? `${k}` : \"\"}`;\nexport const h = \"a-b a-c a-a x\";\nexport const i = (on) => `a-b a-c a-a ${on ? \"picked\" : \"\"}`;\nexport const j = (on) => `a-a ${on ? `${on ? \"picked\" : \"\"}` : \"\"}`;\nexport const k = (on) => `a-b a-c ${on ? `${on ? \"picked\" : \"\"}` : \"a-a\"}`;\nexport const l = (on) => `a-b a-c ${on ? \"a-a\" : \"x\"}`;\n",
+)

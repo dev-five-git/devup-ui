@@ -137,13 +137,11 @@ pub fn forwarding(source: &str) -> RenderRecords {
 }
 
 pub fn retarget(source: &str) -> RenderRecords {
-    // Unknown make()/other operations remain extraction-only with their original assertions.
+    // The unknown `other` operation remains extraction-only with its original assertions.
     let definitions = source
         .lines()
         .filter(|line| {
-            !line.contains("make()")
-                && !line.contains("other.withComponent")
-                && !line.starts_with("export const a =")
+            !line.contains("other.withComponent") && !line.starts_with("export const a =")
         })
         .collect::<Vec<_>>()
         .join("\n");

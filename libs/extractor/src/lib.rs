@@ -51,6 +51,7 @@ mod jsx_semantics_tests;
 #[cfg(test)]
 mod legacy_semantics_contract_tests;
 mod module_loader;
+mod module_loads;
 pub mod module_reference;
 mod mutations;
 #[cfg(test)]
@@ -494,6 +495,10 @@ fn extract_source(
         if !errors.is_empty() {
             return Err(located_errors(filename, code, &[], errors).into());
         }
+    }
+    let errors = import_alias_visit::emotion_errors(code, filename, &option.import_aliases);
+    if evaluated.is_none() && !errors.is_empty() {
+        return Err(located_errors(filename, code, &[], errors).into());
     }
     if evaluated.is_none() {
         match barrel::rewrite(code, filename, &option.package, resolver) {
@@ -15895,7 +15900,6 @@ export const Aside = Section.withComponent('aside')
 export const Linked = Section.withComponent(Link)
 export const Nested = Section.withComponent(motion.div)
 export const Again = Aside.withComponent('nav')
-export const Kept = Section.withComponent(make())
 export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />";
         let code = readable_code(source);
@@ -15908,7 +15912,6 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />";
             assert!(body.contains(&format!("c-0-{name}")), "{body}");
         }
         for expected in [
-            "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
             "ref={__devupRef} role=\"region\"",
             "<Section as=\"a\" forwardedAs=\"b\" />",
@@ -15916,6 +15919,33 @@ export const a = <Section as=\"a\" forwardedAs=\"b\" />";
             assert!(code.contains(expected), "{expected}\n{code}");
         }
         let _proof = crate::retained_render_assertions::retarget(source);
+    }
+
+    // A styled component compiles to a plain function, so `withComponent`
+    // given a target the build cannot render is a located error rather than
+    // a call that would throw at runtime
+    #[rstest]
+    #[case("Section.withComponent(make())", "make()", 3, 21)]
+    #[case("Section.withComponent(Link, 'x')", "Link, \"x\"", 3, 21)]
+    #[case("Section.withComponent()", "", 3, 21)]
+    #[case("(Section).withComponent(a[b])", "a[b]", 3, 21)]
+    #[serial]
+    fn test_styled_with_component_unknown_target_is_located_error(
+        #[case] call: &str,
+        #[case] shown: &str,
+        #[case] line: usize,
+        #[case] column: usize,
+    ) {
+        let source = format!(
+            "import {{styled}} from '@devup-ui/core'\nconst Section = styled.section({{ color: 'red' }})\nexport const Kept = {call}"
+        );
+        let error = readable_code(&source);
+        assert_eq!(
+            error,
+            format!(
+                "test.tsx:{line}:{column}: `withComponent()` cannot use `{shown}` at build time: it takes one tag name, as `'aside'`, or a component written as a name or `a.b`, as the styled component compiles to a plain function with no `withComponent` at runtime. Fix: pass the tag or component directly, or render the styled component with `as`"
+            )
+        );
     }
 
     // A styled component keeps the props its styles read, `$` props and `theme`
@@ -24343,6 +24373,70 @@ export const h = (on) => cx({ [on.key]: on.value });
 export const i = () => cx(red, `${red} x`);
 export const j = cx({ a: null, b: 'x', c: '', d: 0, e: undefined, f: 2, g: false, h: true });"
         ));
+    }
+
+    // Emotion's `cx` merges the styles of the classes `css` gives, the last
+    // winning, rather than leave the stylesheet order to decide
+    #[test]
+    #[serial]
+    fn test_emotion_cx_merges_known_styles_in_order() {
+        let spread = emotion_class_call(
+            "const red = css({ color: 'red' });\nexport const a = (x) => cx(red, { ...x });",
+        );
+        assert!(spread.unwrap_err().contains("`...x`"));
+        assert_debug_snapshot!(emotion_class_call(
+            r"const red = css({ color: 'red' });
+const blue = css({ color: 'blue', margin: 1 });
+export const a = cx(blue, red);
+export const b = cx(red, blue);
+export const c = (on) => cx(blue, on && red, 'external');
+export const d = (on) => cx(on ? red : blue, blue);
+export const e = cx([blue, , red]);
+export const g = (on) => cx(blue, red, { picked: true, off: false }, ({ 'a b': on }));
+export const m = (on, k) => cx(blue, red, { [k]: on });
+export const h = cx(blue, `${red} x`);
+export const i = (on) => cx([blue, { picked: on }], red);
+export const j = (on) => cx(on && { picked: on }, red);
+export const k = (on) => cx(on ? { picked: on } : red, blue);
+export const l = (on) => cx(on ? red : `x`, blue);"
+        ));
+    }
+
+    // What the Emotion aliases cannot compile, and would keep at runtime, is a
+    // located error naming it
+    #[test]
+    #[serial]
+    fn test_emotion_runtime_imports_are_located_errors() {
+        let mut option = library_option();
+        option
+            .import_aliases
+            .insert("@emotion/css".to_string(), ImportAlias::NamedToNamed);
+        let errors: Vec<(&str, String)> = [
+            "import { css, ThemeContext, withEmotionCache as w, type SerializedStyles } from '@emotion/react';\nimport type { Theme } from '@emotion/react';",
+            "import React, { Global } from 'react';\nimport Emotion from '@emotion/react';\nimport * as E from '@emotion/react';",
+            "import createEmotion from '@emotion/css/create-instance';\nexport const { css } = createEmotion({ key: 'x' });",
+            "export { default } from '@emotion/css/create-instance';\nexport * from '@emotion/css/create-instance';\nconst a = require('@emotion/css/create-instance');\nconst b = () => import('@emotion/css/create-instance');",
+            "import { css, cx } from '@emotion/css';\nimport type Create from '@emotion/css/create-instance';",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let error = extract("App.tsx", code, option.clone()).err();
+            (code, error.map_or_else(String::new, |error| error.to_string()))
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
+        let mut without = library_option();
+        without.import_aliases.remove("@emotion/react");
+        assert!(
+            extract(
+                "App.tsx",
+                "import { ThemeContext } from '@emotion/react';\nimport createEmotion from '@emotion/css/create-instance';",
+                without,
+            )
+            .is_ok()
+        );
     }
 
     #[test]

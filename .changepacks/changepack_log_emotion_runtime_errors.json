@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "Emotion code the build cannot compile is a located build error instead of staying at runtime, and Emotion's `cx` merges the styles of classes `css()` gives in argument order, so `cx(blue, red)` is red as in Emotion instead of following stylesheet order. New build errors: `withComponent()` given a target the build cannot render (`Section.withComponent(make())`), as the styled component compiles to a plain function with no `withComponent`; an `@emotion/react` import with no Devup UI equivalent (`ThemeContext`, `withEmotionCache`, a default or namespace import) while `@emotion/react` is aliased, naming the export; and `@emotion/css/create-instance` loaded by an import, re-export, `require()` or `import()` while `@emotion/css` is aliased",
+  "date": "2026-11-15T00:00:00.000Z"
+}
