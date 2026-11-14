@@ -17932,6 +17932,30 @@ const styles = create({ base: { color: 'green' } });",
         ));
     }
 
+    // A StyleX API Devup UI does not compile would stay a StyleX call, which
+    // throws at runtime, so it is a located error naming it
+    #[test]
+    #[serial]
+    fn test_stylex_unsupported_api_is_located_error() {
+        let errors: Vec<(&str, Option<String>)> = [
+            "import { create, when, type StyleXStyles } from '@stylexjs/stylex';\nexport const a = when.ancestor(':hover');",
+            "import { env as e } from '@stylexjs/stylex';\nexport const a = e.tokens;",
+            "import stylex from '@stylexjs/stylex';\nexport const a = stylex.when.ancestor(':hover');\nexport const b = stylex.env;\nexport const c = stylex.defaultMarker();",
+            "import * as sx from '@stylexjs/stylex';\nconst styles = sx.create({ a: { color: { default: 'red', [sx.when.ancestor(':hover')]: 'blue' } } });\nexport const p = sx.props(styles.a);",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let error = extract("test.tsx", code, ExtractOption::default())
+                .err()
+                .map(|error| error.to_string());
+            (code, error)
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
+    }
+
     #[test]
     #[serial]
     fn test_stylex_create_single_namespace_static() {
@@ -19656,21 +19680,20 @@ const composed = stylex.create({ fancy: { ...stylex.include(base.dynamic), backg
     fn test_stylex_import_unknown_named() {
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import { create, unknownFunction } from '@stylexjs/stylex';
+        // It stayed imported from `@stylexjs/stylex`, which then ran at runtime
+        let error = extract(
+            "test.tsx",
+            r"import { create, unknownFunction } from '@stylexjs/stylex';
 const styles = create({ base: { color: 'red' } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
+            ExtractOption::default(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error
+                .starts_with("test.tsx:1:18: `@stylexjs/stylex` `unknownFunction` is not compiled"),
+            "{error}"
+        );
     }
 
     // ==========================================

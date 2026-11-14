@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "A StyleX API Devup UI does not compile is a located build error naming it, instead of being dropped from the compiled set while its calls stay StyleX calls that throw at runtime. New build error: an export of `@stylexjs/stylex` outside `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include` and `types` (such as `when`, `env` or `defaultMarker`), imported by name or read as a member of the package imported whole",
+  "date": "2026-11-15T00:00:00.000Z"
+}

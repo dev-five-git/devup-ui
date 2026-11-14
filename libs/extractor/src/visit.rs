@@ -59,7 +59,8 @@ use crate::scope::{Bindings, NAMESPACE_STYLED};
 use crate::style_collector::StyleCollector;
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
-    css_variable_block, css_variable_rules, define_vars_variable, variable_values,
+    css_variable_block, css_variable_rules, define_vars_variable, unsupported_stylex_error,
+    variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
@@ -3433,6 +3434,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if self.compile_own_rules(it) {
             return;
         }
+        if let Some(name) = self.bindings.stylex_member(it)
+            && StylexFunction::from_export_name(name).is_none()
+        {
+            self.errors
+                .push((it.span().start, unsupported_stylex_error(name)));
+        }
         if let Expression::CallExpression(call) = &*it
             && self.is_css(&call.callee)
         {
@@ -5229,6 +5236,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             if let Some(func) = StylexFunction::from_export_name(&imported) {
                                 self.bindings
                                     .stylex_import(named_spec.local.symbol_id.get(), func);
+                            } else {
+                                self.errors.push((
+                                    named_spec.span.start,
+                                    unsupported_stylex_error(&imported),
+                                ));
                             }
                         }
                         ImportSpecifier(_) => {}
@@ -5871,6 +5883,15 @@ mod tests {
         );
         assert!(code.contains("export const animation = \""), "{code}");
         assert!(code.contains("import value from \"other\";"), "{code}");
+        // `unknown` would stay a StyleX call at runtime
+        assert_eq!(visitor.errors.len(), 1, "{:?}", visitor.errors);
+        assert!(
+            visitor.errors[0]
+                .1
+                .starts_with("`@stylexjs/stylex` `unknown` is not compiled"),
+            "{:?}",
+            visitor.errors
+        );
     }
 
     #[test]

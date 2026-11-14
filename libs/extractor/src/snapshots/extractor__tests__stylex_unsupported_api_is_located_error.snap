@@ -1,0 +1,30 @@
+---
+source: libs/extractor/src/lib.rs
+expression: errors
+---
+[
+    (
+        "import { create, when, type StyleXStyles } from '@stylexjs/stylex';\nexport const a = when.ancestor(':hover');",
+        Some(
+            "test.tsx:1:18: `@stylexjs/stylex` `when` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include`, `types` from `@stylexjs/stylex`",
+        ),
+    ),
+    (
+        "import { env as e } from '@stylexjs/stylex';\nexport const a = e.tokens;",
+        Some(
+            "test.tsx:1:10: `@stylexjs/stylex` `env` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include`, `types` from `@stylexjs/stylex`",
+        ),
+    ),
+    (
+        "import stylex from '@stylexjs/stylex';\nexport const a = stylex.when.ancestor(':hover');\nexport const b = stylex.env;\nexport const c = stylex.defaultMarker();",
+        Some(
+            "test.tsx:2:18: `@stylexjs/stylex` `when` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include`, `types` from `@stylexjs/stylex`\ntest.tsx:3:18: `@stylexjs/stylex` `env` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include`, `types` from `@stylexjs/stylex`\ntest.tsx:4:18: `@stylexjs/stylex` `defaultMarker` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include`, `types` from `@stylexjs/stylex`",
+        ),
+    ),
+    (
+        "import * as sx from '@stylexjs/stylex';\nconst styles = sx.create({ a: { color: { default: 'red', [sx.when.ancestor(':hover')]: 'blue' } } });\nexport const p = sx.props(styles.a);",
+        Some(
+            "test.tsx:2:59: `@stylexjs/stylex` `when` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include`, `types` from `@stylexjs/stylex`\ntest.tsx:2:59: `stylex.create()` cannot use `[sx.when.ancestor(\":hover\")]` at build time: its keys must be known",
+        ),
+    ),
+]

@@ -85,6 +85,21 @@ impl StylexFunction {
     }
 }
 
+/// `name`, an export of `@stylexjs/stylex` Devup UI does not compile, as
+/// `when` or `env`: it would stay a `StyleX` call at runtime, which throws
+/// with no `StyleX` compiler run
+#[must_use]
+pub fn unsupported_stylex_error(name: &str) -> String {
+    let supported: Vec<String> = STYLEX_EXPORTS
+        .iter()
+        .map(|(name, _)| format!("`{name}`"))
+        .collect();
+    format!(
+        "`@stylexjs/stylex` `{name}` is not compiled by Devup UI, so it would stay a StyleX call at runtime, which throws with no StyleX compiler run. Fix: use only {} from `@stylexjs/stylex`",
+        supported.join(", ")
+    )
+}
+
 /// The custom property `stylex.defineVars()` in `filename` declares for `key`;
 /// a module importing it computes the same name
 #[must_use]

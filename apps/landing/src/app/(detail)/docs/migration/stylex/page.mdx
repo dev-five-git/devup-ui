@@ -155,3 +155,7 @@ const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
 ## Value helpers
 
 `firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value, and `include()` merges another namespace's classes. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
+
+## Unsupported APIs
+
+Devup UI compiles `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include` and `types`. Any other export of `@stylexjs/stylex` (`when`, `env`, `defaultMarker`, ...) would stay a StyleX call that throws at runtime, so importing it or reading it from the package is a build error naming it.
