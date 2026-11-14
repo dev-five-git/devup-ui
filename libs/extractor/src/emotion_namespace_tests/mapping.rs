@@ -133,3 +133,33 @@ fn disabled_emotion_alias_preserves_calls_when_other_styles_are_evaluated() {
     assert!(output.code.contains("padding: 8"), "{}", output.code);
     assert!(output.code.contains("emotion({"), "{}", output.code);
 }
+
+#[test]
+#[serial]
+fn stylesheet_namespace_values_computed_at_build_time_keep_emotion_pixels() {
+    // Given: a vanilla-extract stylesheet whose Emotion namespace call computes a value
+    reset_class_map();
+    reset_file_map();
+    let output = extract(
+        "namespace.css.ts",
+        "import * as E from '@emotion/css';\nfunction double(n){return n*2}\nexport const a=E.css({padding:double(4)});",
+        ExtractOption {
+            import_aliases: HashMap::from([("@emotion/css".into(), ImportAlias::NamedToNamed)]),
+            ..ExtractOption::default()
+        },
+    )
+    .unwrap();
+    // Then: the class is written, and the number Emotion reads as pixels stays pixels
+    assert!(output.code.contains("export const a = \"a-a\""), "{}", output.code);
+    let paddings: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            ExtractStyleValue::Static(style) if style.property() == "padding" => {
+                Some(style.value().to_string())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(paddings, vec!["8px".to_string()], "{}", output.code);
+}

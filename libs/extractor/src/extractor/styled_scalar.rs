@@ -18,51 +18,6 @@ pub(in crate::extractor) fn zero<'a>(builder: &AstBuilder<'a>) -> Expression<'a>
     )
 }
 
-pub(in crate::extractor) fn length<'a>(
-    builder: &AstBuilder<'a>,
-    leaf: Expression<'a>,
-) -> Expression<'a> {
-    let value = || Expression::new_identifier(SPAN, "__devupValue", builder);
-    let is_number = Expression::new_binary_expression(
-        SPAN,
-        Expression::new_unary_expression(SPAN, UnaryOperator::Typeof, value(), builder),
-        BinaryOperator::StrictEquality,
-        Expression::new_string_literal(SPAN, "number", None, builder),
-        builder,
-    );
-    let length = Expression::new_binary_expression(
-        SPAN,
-        value(),
-        BinaryOperator::Addition,
-        Expression::new_string_literal(SPAN, "px", None, builder),
-        builder,
-    );
-    let length = Expression::new_conditional_expression(
-        SPAN,
-        Expression::new_logical_expression(
-            SPAN,
-            is_number,
-            LogicalOperator::And,
-            Expression::new_binary_expression(
-                SPAN,
-                value(),
-                BinaryOperator::StrictInequality,
-                zero(builder),
-                builder,
-            ),
-            builder,
-        ),
-        length,
-        value(),
-        builder,
-    );
-    crate::utils::wrap_direct_call(
-        builder,
-        &super::named_arrow(builder, "__devupValue", length),
-        &[leaf],
-    )
-}
-
 /// The producer supplies a stable capture and its styled numeric origin, never an authored read.
 pub(in crate::extractor) fn captured<'a>(
     builder: &AstBuilder<'a>,
@@ -94,7 +49,7 @@ pub(in crate::extractor) fn captured<'a>(
         builder,
     );
     let value = if pixels {
-        length(builder, read())
+        crate::imported_constants::local_rule_shapes::number_length_value(builder, read())
     } else if !crate::utils::keeps_bare_number(key)
         || css::disassemble_property(key).all(|property| crate::utils::is_unitless_key(&property))
     {

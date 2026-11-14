@@ -8,13 +8,13 @@ use rstest::rstest;
 use super::*;
 
 fn expression<'a>(builder: &AstBuilder<'a>, source: &str) -> Expression<'a> {
-    let expression = Parser::new(
+    let parser = Parser::new(
         builder.allocator(),
         source.trim_end_matches(';'),
         SourceType::mjs(),
-    )
-    .parse_expression()
-    .unwrap_or_else(|error| panic!("invalid render fixture: {error:?}"));
+    );
+    let expression = parser.parse_expression();
+    let expression = expression.unwrap_or_else(|error| panic!("invalid render fixture: {error:?}"));
     unwrap_syntax_only(&expression).clone_in(builder.allocator())
 }
 
@@ -95,13 +95,11 @@ fn direct_body_when_generated_component_has_captures(#[values(false, true)] jsx:
             .get_binding_identifier()
             .unwrap_or_else(|| panic!("capture needs an identifier"));
         assert_eq!(identifier.name, name);
-        let Some(Expression::SequenceExpression(sequence)) = &binding.init else {
-            panic!("capture must retain its sequence name barrier");
-        };
-        let [Expression::NumericLiteral(zero), value] = sequence.expressions.as_slice() else {
-            panic!("capture name barrier must be exactly (0, initializer)");
-        };
-        assert_eq!(zero.value.to_bits(), 0.0_f64.to_bits());
+        // Only an anonymous definition needs a barrier against taking the name.
+        let value = binding
+            .init
+            .as_ref()
+            .unwrap_or_else(|| panic!("capture needs its value"));
         assert_eq!(readable_code(value), initializer);
     }
     match returned

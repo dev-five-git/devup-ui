@@ -1,6 +1,6 @@
 use boa_engine::{Context, Source};
 
-use super::{compute, initialize_helpers, setup_failure, stop};
+use super::{compute, initialize_helpers, setup_failure, stop, unlocated};
 use crate::evaluation_sandbox::{Failure, Sandbox};
 
 #[test]
@@ -70,9 +70,11 @@ fn definitions_skip_ambient_declarators_when_generating_initialized_values() -> 
         closure: Closure {
             statements: [0, 1].into_iter().collect(),
             imports: Default::default(),
+            handed: Default::default(),
         },
         shorthand: None,
         rules_only: false,
+        exact: false,
     };
     // When
     let generated = definitions(&program, code, &[found]);
@@ -92,7 +94,7 @@ fn helpers_initialize_when_realm_is_fresh() -> Result<(), String> {
     assert!(result.is_ok());
     assert_eq!(
         context
-            .eval(Source::from_bytes("__literal__({ width: 3 })"))
+            .eval(Source::from_bytes("__literal__(false, { width: 3 })"))
             .map_err(|error| error.to_string())?
             .as_string()
             .ok_or("literal helper did not serialize value")?
@@ -171,4 +173,14 @@ fn ordinary_js_failure_leaves_computation_at_runtime() -> Result<(), String> {
     // Then
     assert!(matches!(result, Ok(None)));
     Ok(())
+}
+
+#[test]
+fn sandbox_errors_are_located_at_the_start() {
+    // Given an error of the sandbox itself
+    let error = boa_engine::JsNativeError::typ().with_message("helper is not configurable");
+    // When it is reported
+    let errors = unlocated(&error);
+    // Then no source offset locates it
+    assert_eq!(errors, vec![(0, error.to_string())]);
 }

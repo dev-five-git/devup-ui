@@ -39,5 +39,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst DARK = \"@media (prefers-color-scheme: dark)\";\nconst colors = {\n\t\"layered\": \"var(--a)\",\n\t\"text\": \"var(--b)\",\n\t\"accent\": \"var(--c)\",\n\t\"onlyDark\": \"var(--d)\",\n\t\"size\": \"var(--e)\"\n};\nconst dracula = \"f\";\nconst styles = { \"box\": \"g h\" };\nexport const A = () => <div {...{ className: \"f g h\" }} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nconst DARK = \"@media (prefers-color-scheme: dark)\";\nconst colors = {\n\t\"layered\": \"var(--a)\",\n\t\"text\": \"var(--b)\",\n\t\"accent\": \"var(--c)\",\n\t\"onlyDark\": \"var(--d)\",\n\t\"size\": \"var(--e)\"\n};\nconst dracula = \"f\";\nconst styles = { \"box\": \"g h\" };\nexport const A = () => <div className=\"f g h\" />;\n",
 }

@@ -5,9 +5,13 @@ use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind};
 use oxc_span::GetSpan;
 use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 
-use crate::style_order::{invalid_order, static_order, string_order};
+use crate::style_order::{
+    STYLE_ORDER_VALUE, invalid_order, static_order, string_order, supported_order,
+};
 use crate::style_values::StyleValues;
-use crate::utils::{get_str_by_property_key, is_pure, readable_code, unwrap_syntax_only};
+use crate::utils::{
+    build_time_error, get_str_by_property_key, is_pure, readable_code, unwrap_syntax_only,
+};
 
 struct Validation<'s, 'a> {
     bindings: &'s StyleValues<'a>,
@@ -78,7 +82,7 @@ impl Validation<'_, '_> {
         }
     }
 
-    fn rules(&mut self, value: &Expression<'_>) {
+    fn rules(&mut self, value: &Expression<'_>, api: Option<&str>) {
         match unwrap_syntax_only(value) {
             Expression::ObjectExpression(object) => {
                 for property in &object.properties {
@@ -87,9 +91,25 @@ impl Validation<'_, '_> {
                             if get_str_by_property_key(&property.key).as_deref()
                                 == Some("styleOrder") =>
                         {
+                            let before = self.errors.len();
                             self.value(&property.value);
+                            if let Some(api) = api
+                                && self.errors.len() == before
+                                && !supported_order(&property.value)
+                            {
+                                self.errors.push((
+                                    property.value.span().start,
+                                    build_time_error(
+                                        api,
+                                        &readable_code(&property.value),
+                                        STYLE_ORDER_VALUE,
+                                    ),
+                                ));
+                            }
                         }
-                        ObjectPropertyKind::SpreadProperty(spread) => self.rules(&spread.argument),
+                        ObjectPropertyKind::SpreadProperty(spread) => {
+                            self.rules(&spread.argument, api);
+                        }
                         ObjectPropertyKind::ObjectProperty(_) => {}
                     }
                 }
@@ -97,20 +117,29 @@ impl Validation<'_, '_> {
             Expression::ArrayExpression(array) => {
                 for element in &array.elements {
                     if let Some(value) = element.as_expression() {
-                        self.rules(value);
+                        self.rules(value, api);
                     }
                 }
             }
             Expression::ConditionalExpression(conditional) => {
-                self.rules(&conditional.consequent);
-                self.rules(&conditional.alternate);
+                self.rules(&conditional.consequent, api);
+                self.rules(&conditional.alternate, api);
             }
             Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-                self.rules(&logical.right);
+                self.rules(&logical.right, api);
             }
             _ => {}
         }
     }
+}
+
+/// Preserve static diagnostic ownership when an element also refuses runtime orders.
+pub(crate) fn validate_value(
+    value: &Expression<'_>,
+    bindings: &StyleValues,
+    errors: &mut Vec<(u32, String)>,
+) {
+    Validation { bindings, errors }.value(value);
 }
 
 /// Check declaration roots and composition parts, never arbitrary child data.
@@ -119,7 +148,31 @@ pub(crate) fn validate_rules(
     bindings: &StyleValues,
     errors: &mut Vec<(u32, String)>,
 ) {
-    Validation { bindings, errors }.rules(value);
+    Validation { bindings, errors }.rules(value, None);
+}
+
+pub(crate) fn validate_consumed_rules(
+    value: &Expression<'_>,
+    bindings: &StyleValues,
+    errors: &mut Vec<(u32, String)>,
+    api: &str,
+) {
+    Validation { bindings, errors }.rules(value, Some(api));
+}
+
+pub(crate) fn validate_consumed_frames(
+    value: &Expression<'_>,
+    bindings: &StyleValues,
+    errors: &mut Vec<(u32, String)>,
+) {
+    if let Expression::ObjectExpression(object) = unwrap_syntax_only(value) {
+        let mut validation = Validation { bindings, errors };
+        for property in &object.properties {
+            if let ObjectPropertyKind::ObjectProperty(property) = property {
+                validation.rules(&property.value, Some("keyframes"));
+            }
+        }
+    }
 }
 
 /// Frame declaration roots use the shared object-style extractor.
@@ -132,7 +185,7 @@ pub(crate) fn validate_frames(
         let mut validation = Validation { bindings, errors };
         for property in &object.properties {
             if let ObjectPropertyKind::ObjectProperty(property) = property {
-                validation.rules(&property.value);
+                validation.rules(&property.value, None);
             }
         }
     }
@@ -177,6 +230,60 @@ mod tests {
     use super::*;
     use oxc_parser::Parser;
     use oxc_span::SourceType;
+
+    #[rstest::rstest]
+    #[case::identifier(("({styleOrder:order})", false), (0, 1))]
+    #[case::or(("({styleOrder:cond || 2})", false), (0, 1))]
+    #[case::mixed(("({styleOrder:cond ? 1 : other})", false), (0, 1))]
+    #[case::and(("({styleOrder:cond && other})", false), (0, 1))]
+    #[case::nested(("({color:{styleOrder:order}})", false), (0, 0))]
+    #[case::unknown(("runtime", false), (0, 0))]
+    #[case::parts((concat!("[cond && ", "{...{styleOrder:order}}]"), false), (0, 1))]
+    #[case::global(("({styleOrder:undefined})", false), (1, 1))]
+    #[case::a1_first(("({styleOrder:cond ? other : '01'})", false), (1, 1))]
+    #[case::per_order(("[{styleOrder:'01'},{styleOrder:order}]", false), (1, 2))]
+    #[case::known_choice(("({styleOrder:cond ? 1 : 2})", false), (0, 0))]
+    #[case::known_and(("({styleOrder:cond && 2})", false), (0, 0))]
+    #[case::frame(("({from:{styleOrder:order}})", true), (0, 1))]
+    #[case::frame_data((concat!("({from:", "{color:{styleOrder:order}}})"), true), (0, 0))]
+    #[case::unknown_frames(("runtime", true), (0, 0))]
+    fn order_refusal_when_consumed_is_explicit(
+        #[case] root: (&str, bool),
+        #[case] counts: (usize, usize),
+        #[values(false, true)] consumed: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Given an isolated root and the static-only versus consumed contract.
+        let allocator = Allocator::default();
+        let bindings = StyleValues::default();
+        let value = Parser::new(&allocator, root.0, SourceType::ts())
+            .parse_expression()
+            .map_err(|error| format!("{error:?}"))?;
+        let mut errors = Vec::new();
+        // When
+        match (root.1, consumed) {
+            (false, false) => validate_rules(&value, &bindings, &mut errors),
+            (false, true) => validate_consumed_rules(&value, &bindings, &mut errors, "css"),
+            (true, false) => validate_frames(&value, &bindings, &mut errors),
+            (true, true) => validate_consumed_frames(&value, &bindings, &mut errors),
+        }
+        // Then A1 remains exclusive per order, while only consumed roots gain B1.
+        assert_eq!(errors.len(), if consumed { counts.1 } else { counts.0 });
+        assert_eq!(
+            errors
+                .iter()
+                .filter(|(_, error)| error.contains("`styleOrder()`"))
+                .count(),
+            counts.0
+        );
+        assert_eq!(
+            errors
+                .iter()
+                .filter(|(_, error)| error.contains(STYLE_ORDER_VALUE))
+                .count(),
+            if consumed { counts.1 - counts.0 } else { 0 }
+        );
+        Ok(())
+    }
 
     #[test]
     fn style_order_runtime_reads_are_not_mistaken_for_static_values()

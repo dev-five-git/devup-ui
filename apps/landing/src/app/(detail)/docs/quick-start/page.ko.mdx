@@ -1,0 +1,234 @@
+export const metadata = {
+  title: '빠른 시작',
+  alternates: {
+    canonical: '/ko/docs/quick-start',
+    languages: {
+      en: '/docs/quick-start',
+      ko: '/ko/docs/quick-start',
+      'x-default': '/docs/quick-start',
+    },
+  },
+}
+
+# 빠른 시작
+
+5분 만에 Devup UI를 설치하고 실행해 보세요.
+
+## 1. 패키지 설치
+
+```bash
+# 코어 라이브러리 설치
+npm install @devup-ui/react
+
+# 사용하는 프레임워크에 맞는 플러그인 설치
+npm install @devup-ui/vite-plugin    # Vite용
+npm install @devup-ui/next-plugin    # Next.js용
+npm install @devup-ui/rsbuild-plugin # Rsbuild용
+npm install @devup-ui/webpack-plugin # Webpack용
+
+# Bun 프로젝트에서는 Bun 플러그인 사용
+bun add @devup-ui/react @devup-ui/bun-plugin
+```
+
+## 2. 빌드 도구 설정
+
+### Vite
+
+```ts
+// vite.config.ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [react(), DevupUI()],
+})
+```
+
+### Next.js
+
+```js
+// next.config.js
+const { DevupUI } = require('@devup-ui/next-plugin')
+
+module.exports = DevupUI({
+  // Next.js 설정
+})
+```
+
+### Rsbuild
+
+```js
+// rsbuild.config.mjs
+import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
+import { pluginReact } from '@rsbuild/plugin-react'
+
+export default defineConfig({
+  plugins: [pluginReact(), DevupUIRsbuildPlugin()],
+})
+```
+
+### Webpack
+
+```js
+// webpack.config.js
+import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
+
+export default {
+  plugins: [new DevupUIWebpackPlugin()],
+}
+```
+
+### Bun
+
+```ts
+// build.ts
+import '@devup-ui/bun-plugin'
+
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  outdir: './dist',
+})
+```
+
+## 3. 첫 번째 컴포넌트 만들기
+
+```tsx
+import { Box, Text } from '@devup-ui/react'
+
+function Card() {
+  return (
+    <Box
+      bg="white"
+      borderRadius="8px"
+      boxShadow="0 2px 8px rgba(0,0,0,0.1)"
+      p={4}
+    >
+      <Text fontSize="20px" fontWeight={700}>
+        Hello Devup UI!
+      </Text>
+      <Text color="#666" mt={2}>
+        Zero runtime CSS-in-JS
+      </Text>
+    </Box>
+  )
+}
+```
+
+이제 끝났습니다! 개발 서버를 실행해 결과를 확인해 보세요.
+
+## 4. 테마 추가(선택 사항)
+
+프로젝트 루트에 `devup.json` 파일을 만듭니다.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "text": "#000",
+        "textMuted": "#666",
+        "background": "#fff"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "text": "#fff",
+        "textMuted": "#888",
+        "background": "#000"
+      }
+    }
+  }
+}
+```
+
+이제 컴포넌트에서 테마 토큰을 사용할 수 있습니다.
+
+```tsx
+<Box bg="$background" p={4}>
+  <Text color="$text">Themed text</Text>
+  <Text color="$textMuted">Muted text</Text>
+  <Box bg="$primary" mt={2} p={2}>
+    <Text color="white">Primary background</Text>
+  </Box>
+</Box>
+```
+
+## 기본 개념 이해하기
+
+### 스타일 속성
+
+모든 컴포넌트에는 스타일 속성을 직접 전달할 수 있습니다.
+
+```tsx
+<Box
+  bg="red" // background-color
+  borderRadius="8px" // border-radius
+  color="white" // color
+  h="200px" // height
+  m={2} // margin (2 * 4 = 8px)
+  p={4} // padding (4 * 4 = 16px)
+  w="100%" // width
+/>
+```
+
+> **참고**: 간격 속성(`p`, `m`, `gap` 등)의 숫자 값에는 4를 곱합니다. 따라서 `p={4}`는 `padding: 16px`과 같습니다.
+
+### 의사 선택자
+
+의사 선택자에는 밑줄(`_`) 접두사를 사용합니다.
+
+```tsx
+<Box
+  _active={{ bg: 'darkblue' }}
+  _hover={{ bg: 'blue', color: 'white' }}
+  bg="white"
+>
+  Hover me
+</Box>
+```
+
+### 반응형 디자인
+
+반응형 값은 배열로 지정합니다.
+
+```tsx
+<Box
+  fontSize={['14px', null, '16px']}
+  p={[2, null, 4]} // 모바일에서 8px, 태블릿 이상에서 16px
+  w={['100%', null, '50%']} // 모바일에서 100%, 태블릿 이상에서 50%
+>
+  Responsive box
+</Box>
+```
+
+### styled() API
+
+재사용할 수 있는 스타일 컴포넌트를 만듭니다.
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+const Button = styled('button', {
+  bg: '$primary',
+  color: 'white',
+  px: 4,
+  py: 2,
+  borderRadius: '4px',
+  border: 'none',
+  cursor: 'pointer',
+  _hover: { opacity: 0.9 },
+})
+
+// 사용 예시
+const buttonExample = <Button>Click me</Button>
+```
+
+## 다음 단계
+
+- [기능](/docs/features) - 사용할 수 있는 모든 기능을 알아봅니다.
+- [컴포넌트 API](/docs/api/box) - 컴포넌트 속성을 살펴봅니다.
+- [색상](/docs/devup/colors) - 색상 시스템을 설정합니다.
+- [타이포그래피](/docs/devup/typography) - 타이포그래피를 구성합니다.
+- [브레이크포인트](/docs/devup/breakpoints) - 반응형 디자인 가이드를 확인합니다.

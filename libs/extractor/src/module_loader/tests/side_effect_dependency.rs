@@ -53,8 +53,7 @@ fn side_effect_dependency_failures_keep_original_locations(
         &resolver,
     )
     .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
+    .map_or_default(|error| error.to_string());
     // Then
     assert!(
         error.starts_with(&format!("{location}: JS execution error: {cause}")),
@@ -86,8 +85,7 @@ fn side_effect_dependency_missing_import_is_located_in_helper() {
         &resolver,
     )
     .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
+    .map_or_default(|error| error.to_string());
     // Then
     assert!(
         error.starts_with(

@@ -145,10 +145,10 @@ fn literal_namespace_retargets_match_dot_with_and_without_trigger(#[case] trigge
     let actual = extract_with_modules("/src/app.tsx", &computed, option, false, &resolve).unwrap();
     // Staged rendering keeps the authored receiver. Normalize only that one
     // expression, not imports, forwarding, target selection or render stages.
-    let receiver = "((UI[\"Dyn\"] as typeof UI.Dyn)!)";
+    let receiver = "(UI[\"Dyn\"] as typeof UI.Dyn)!";
     assert_eq!(actual.code.matches(receiver).count(), 1);
-    assert_eq!(expected.code.matches("(UI.Dyn)").count(), 1);
-    assert_eq!(actual.code.replace(receiver, "(UI.Dyn)"), expected.code);
+    assert_eq!(expected.code.matches("UI.Dyn").count(), 1);
+    assert_eq!(actual.code.replace(receiver, "UI.Dyn"), expected.code);
     assert!(!actual.code.contains(".withComponent("));
     assert!(actual.code.contains("import * as UI from \"./base\";"));
     assert_eq!(actual.styles, expected.styles);
@@ -213,4 +213,19 @@ fn unsupported_retarget_source_types_remain_irrelevant() {
 
     assert_eq!(reading.components.len(), 0);
     assert_eq!(reading.dependencies.len(), 0);
+}
+
+#[test]
+#[serial]
+fn imported_retarget_with_variables_merges_them_into_the_composed_style() {
+    // Given a component extending an imported one with a CSS variable of its own
+    reset();
+    let code = "import styled from '@emotion/styled'; import { Pick } from './base'; export const B = styled(Pick)`width: ${(p) => p.w};`;";
+    // When it is compiled
+    let output = extract_with_modules("/src/app.tsx", code, option(), false, &resolve).unwrap();
+    // Then its stage spreads the variables a composing component gives before its own
+    assert_debug_snapshot!(
+        "own_variables",
+        format!("{}\n{:?}", output.code, output.dependencies)
+    );
 }

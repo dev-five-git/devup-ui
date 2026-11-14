@@ -6,6 +6,7 @@ import {
   getExportedHtmlFiles,
   getExportedRoutes,
   getLocalAssetPaths,
+  getTranslatedRoutes,
 } from './exported-routes'
 
 const THEME_BACKGROUND = {
@@ -120,10 +121,11 @@ test.describe('Landing static export routes', () => {
           }),
         )
 
+        const translatedRoutes = getTranslatedRoutes()
         for (const route of getExportedRoutes()) {
           activeRoute = route
           const target =
-            route.startsWith('/ko') && route !== '/ko/docs/overview'
+            route.startsWith('/ko') && !translatedRoutes.includes(route)
               ? route.slice(3) || '/'
               : route
           const response = await page.goto(route, { waitUntil: 'load' })

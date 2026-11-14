@@ -247,11 +247,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
               left="4px"
               pos="absolute"
               role="presentation"
-              selectors={{
-                '&>svg': {
-                  color: 'inherit',
-                },
-              }}
+              selectors={{ '&>svg': { color: 'inherit' } }}
               top="50%"
               transform="translate(-100%, -50%)"
             >

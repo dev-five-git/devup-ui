@@ -14,7 +14,9 @@ function declarations(css) {
 /** @param {string} code */
 function classes(code) {
   return [
-    ...code.matchAll(/className\s*=\s*(?:\{\s*\[\s*)?["']([^"']+)["']/g),
+    ...code.matchAll(
+      /className\s*=\s*(?:\{\s*\[\s*|\{className \? `[^`]*` : )?["']([^"']+)["']/g,
+    ),
   ].flatMap((match) => (match[1] ?? '').split(/\s+/))
 }
 

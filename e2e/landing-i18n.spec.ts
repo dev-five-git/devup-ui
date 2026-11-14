@@ -31,20 +31,20 @@ test('English remains the default and Korean overview is translated', async ({
   )
 
   await page
-    .getByRole('link', { name: 'Installation', exact: true })
+    .getByRole('link', { name: 'Build Errors', exact: true })
     .first()
     .click()
-  await expect(page).toHaveURL(/(?<!ko)\/docs\/installation$/u)
+  await expect(page).toHaveURL(/(?<!ko)\/docs\/build-errors$/u)
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
-    'https://devup-ui.com/docs/installation',
+    'https://devup-ui.com/docs/build-errors',
   )
   await expect(
     page.getByRole('link', { name: 'Edit this page' }),
   ).toHaveAttribute(
     'href',
-    /src\/app\/\(detail\)\/docs\/installation\/page.mdx$/u,
+    /src\/app\/\(detail\)\/docs\/build-errors\/page.mdx$/u,
   )
 })
 
@@ -64,11 +64,11 @@ test('Korean search finds translated content and English fallback pages', async 
       .locator('a[href="/ko/docs/overview"]')
       .filter({ hasText: 'Devup UI란?' }),
   ).toBeVisible()
-  await page.goto('/ko/docs/overview?search=1&query=Installation')
+  await page.goto('/ko/docs/overview?search=1&query=Build%20Errors')
   await expect(
     page
-      .locator('a[href="/ko/docs/installation"]')
-      .filter({ hasText: 'Installation' })
+      .locator('a[href="/ko/docs/build-errors"]')
+      .filter({ hasText: 'Build Errors' })
       .last(),
   ).toBeVisible()
 })
@@ -82,8 +82,8 @@ test('Korean routes render translated or English content without JavaScript', as
   await expect(
     page.getByRole('heading', { name: 'Devup UI란?', exact: true }),
   ).toBeVisible()
-  await page.goto('/ko/docs/installation')
-  await expect(page).toHaveURL(/(?<!ko)\/docs\/installation$/u)
+  await page.goto('/ko/docs/build-errors')
+  await expect(page).toHaveURL(/(?<!ko)\/docs\/build-errors$/u)
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await page.goto('/ko')
   await expect(page).toHaveURL('http://localhost:3099/')

@@ -34,6 +34,8 @@ use state::TestStateGuard;
 pub use state::{reset_state_for_testing, reset_state_internal};
 #[cfg(test)]
 mod css_output_edge_tests;
+#[cfg(test)]
+mod dynamic_as_sibling_props_tests;
 
 thread_local! {
     static MODULE_RESOLVER: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
