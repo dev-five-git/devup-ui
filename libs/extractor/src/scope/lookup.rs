@@ -213,6 +213,12 @@ impl Bindings {
         }
     }
 
+    /// The member of the `StyleX` package imported whole that `expression`
+    /// reads, as `when` in `stylex.when`
+    pub fn stylex_member<'e>(&self, expression: &'e Expression<'_>) -> Option<&'e str> {
+        self.member_of(&self.stylex_namespaces, expression)
+    }
+
     /// The bindings the names `object` reads all stand for, by name
     pub fn visible(&self, object: &ObjectExpression<'_>) -> FxHashMap<String, SymbolId> {
         let mut reads = visits::Names::new(self);
