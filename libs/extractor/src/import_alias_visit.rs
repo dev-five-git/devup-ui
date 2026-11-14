@@ -18,9 +18,9 @@ use crate::utils::{
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, ArrowFunctionBody, BindingIdentifier, CallExpression, Expression,
-    IdentifierReference, ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeValue,
-    JSXElement, JSXElementName, JSXOpeningElement, LogicalOperator, ModuleExportName,
-    ObjectPropertyKind, Statement,
+    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, JSXAttributeItem,
+    JSXAttributeValue, JSXElement, JSXElementName, JSXOpeningElement, LogicalOperator,
+    ModuleExportName, ObjectPropertyKind, Statement,
 };
 use oxc_ast_visit::{
     Visit,
@@ -535,6 +535,82 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
                 ))
             }
             _ => None,
+        })
+        .collect()
+}
+
+/// Emotion's factory of instances of its own, whose classes Devup UI does not
+/// compile
+const EMOTION_INSTANCE: &str = "@emotion/css/create-instance";
+
+/// Where code compiled through the Emotion aliases would keep Emotion at
+/// runtime, as errors at their offsets: an `@emotion/react` export Devup UI
+/// has no equivalent of, and `@emotion/css/create-instance` loaded at all
+pub fn emotion_errors(
+    code: &str,
+    filename: &str,
+    import_aliases: &HashMap<String, ImportAlias>,
+) -> Vec<(u32, String)> {
+    let react = import_aliases.contains_key("@emotion/react") && code.contains("@emotion/react");
+    let instance = import_aliases.contains_key("@emotion/css") && code.contains(EMOTION_INSTANCE);
+    if !react && !instance {
+        return Vec::new();
+    }
+    let allocator = Allocator::default();
+    let source_type = crate::parsing::source_type(filename).unwrap_or_default();
+    let program = Parser::new(&allocator, code, source_type).parse().program;
+    let packages: &[&str] = if instance { &[EMOTION_INSTANCE] } else { &[] };
+    let mut errors: Vec<(u32, String)> = crate::module_loads::module_loads(&program, packages)
+        .into_iter()
+        .map(|(offset, _)| (offset, emotion_instance_error()))
+        .collect();
+    for statement in program.body.iter().filter(|_| react) {
+        if let Statement::ImportDeclaration(import) = statement
+            && !import.import_kind.is_type()
+            && import.source.value == "@emotion/react"
+        {
+            errors.extend(unmapped_emotion_react(import));
+        }
+    }
+    errors
+}
+
+fn emotion_instance_error() -> String {
+    format!(
+        "`{EMOTION_INSTANCE}` creates an Emotion instance at runtime, whose `css`, `cx` and `keyframes` Devup UI does not compile, so its styles would stay at runtime. Fix: import `css`, `cx`, `keyframes` and `injectGlobal` from `@emotion/css`, or set `importAliases: {{ '@emotion/css': false }}` and build with Emotion"
+    )
+}
+
+/// The value imports of `import_decl` from `@emotion/react` with no Devup UI
+/// equivalent, as errors at their specifiers
+fn unmapped_emotion_react(import_decl: &ImportDeclaration<'_>) -> Vec<(u32, String)> {
+    import_decl
+        .specifiers
+        .iter()
+        .flatten()
+        .filter_map(|specifier| match specifier {
+            ImportDeclarationSpecifier::ImportSpecifier(spec)
+                if !spec.import_kind.is_type()
+                    && devup_equivalent("@emotion/react", imported_name(&spec.imported))
+                        .is_none() =>
+            {
+                Some((spec.span.start, imported_name(&spec.imported).to_string()))
+            }
+            ImportDeclarationSpecifier::ImportSpecifier(_) => None,
+            ImportDeclarationSpecifier::ImportDefaultSpecifier(spec) => {
+                Some((spec.span.start, "default".to_string()))
+            }
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(spec) => {
+                Some((spec.span.start, format!("* as {}", spec.local.name)))
+            }
+        })
+        .map(|(offset, export)| {
+            (
+                offset,
+                format!(
+                    "`@emotion/react` has no Devup UI equivalent of `{export}`, so importing it would keep `@emotion/react` and its runtime. Fix: import only `css`, `keyframes`, `Global`, `ClassNames`, `jsx`, `ThemeProvider`, `useTheme`, `withTheme` and `CacheProvider` from `@emotion/react`, each by name, or set `importAliases: {{ '@emotion/react': false }}` and build with Emotion"
+                ),
+            )
         })
         .collect()
 }

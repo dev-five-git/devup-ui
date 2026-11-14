@@ -174,6 +174,37 @@ fn coalesce_keeps_left(logical: &oxc_ast::ast::LogicalExpression<'_>) -> bool {
         )
 }
 
+/// `Component.withComponent(...)` on a styled component, given a target the
+/// build cannot render: the component compiles to a plain function, so the
+/// call cannot stay for the runtime
+fn with_component_error(call: &CallExpression<'_>) -> String {
+    let target: Vec<String> = call.arguments.iter().map(readable_argument).collect();
+    build_time_error(
+        "withComponent",
+        &target.join(", "),
+        "it takes one tag name, as `'aside'`, or a component written as a name or `a.b`, as the styled component compiles to a plain function with no `withComponent` at runtime. Fix: pass the tag or component directly, or render the styled component with `as`",
+    )
+}
+
+/// Whether `expression`, as Emotion's `cx` takes it, holds no class map or
+/// CSS text that composing would read as styles
+fn names_classes(expression: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(expression) {
+        Expression::ObjectExpression(_) | Expression::TemplateLiteral(_) => false,
+        Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .all(|element| element.as_expression().is_none_or(names_classes)),
+        Expression::LogicalExpression(logical) => {
+            names_classes(&logical.left) && names_classes(&logical.right)
+        }
+        Expression::ConditionalExpression(conditional) => {
+            names_classes(&conditional.consequent) && names_classes(&conditional.alternate)
+        }
+        _ => true,
+    }
+}
+
 fn style_property_into_string(style_property: StyleProperty) -> String {
     match style_property {
         StyleProperty::ClassName(name) => name,
@@ -517,6 +548,45 @@ impl<'a> DevupVisitor<'a> {
             self.record_css_styles(&mut result, call.span.start, known);
         }
         Some(result)
+    }
+
+    /// Emotion's `cx(...)` given a class whose styles the build knows: like
+    /// Emotion, it merges the styles in order, a later class winning, rather
+    /// than join classes whose order in the stylesheet decides. `None` when no
+    /// class is such a class, or a part is one composing does not read.
+    fn compose_known_classes(&mut self, call: &CallExpression<'a>) -> Option<Expression<'a>> {
+        let mut errors = Vec::new();
+        let arguments: Vec<Expression<'a>> = call
+            .arguments
+            .iter()
+            .map(|argument| {
+                Some(match unwrap_syntax_only(argument.as_expression()?) {
+                    // A class map, as the classes it names on their conditions
+                    Expression::ObjectExpression(_) => class_arguments(
+                        &self.ast,
+                        crate::class_arguments::ClassCall::Cx,
+                        call.span.start,
+                        std::slice::from_ref(argument),
+                        &mut errors,
+                    ),
+                    expression => expression.clone_in_with_semantic_ids(self.ast.allocator()),
+                })
+            })
+            .collect::<Option<_>>()?;
+        if !errors.is_empty()
+            || !arguments.iter().all(names_classes)
+            || !arguments
+                .iter()
+                .any(|argument| self.reads_known_styles(argument))
+        {
+            return None;
+        }
+        let mut parts = Vec::new();
+        for argument in &arguments {
+            self.known_parts(argument, &mut parts, Text::Classes)?;
+        }
+        self.local_arguments("cx", &call.arguments);
+        Some(self.composed_class::<false>(call.span.start, parts).0)
     }
 
     /// Whether `expression` builds a styled component: `styled.div(...)`,
@@ -3610,6 +3680,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             *it = component;
             let takes_styles = definition.takes_styles;
             self.pending_styled = Some((start, definition, takes_styles));
+        } else if let Expression::CallExpression(call) = it
+            && let Expression::StaticMemberExpression(member) = &call.callee
+            && member.property.name == "withComponent"
+            && self
+                .definition_of(unwrap_syntax_only(&member.object))
+                .is_some()
+        {
+            self.errors
+                .push((call.span.start, with_component_error(call)));
         }
 
         // Handle StyleX: stylex.create({...}) calls
@@ -4121,6 +4200,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if let Expression::StringLiteral(text) = &mut composed {
                 text.span = call.span;
             }
+            *it = composed;
+        } else if let Expression::CallExpression(call) = it
+            && self
+                .util_type(&call.callee)
+                .is_some_and(|util| matches!(util.as_ref(), UtilType::Cx))
+            && let Some(composed) = self.compose_known_classes(call)
+        {
             *it = composed;
         } else if let Expression::CallExpression(call) = it {
             if let Some(util_type) = self.util_type(&call.callee) {

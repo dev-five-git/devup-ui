@@ -46,7 +46,6 @@ Some composition only happens at runtime, so the build cannot merge it. There th
 
 - a `className` passed in through props, an external class (CSS Modules, a design system) or a class string built at runtime, joined with Devup UI classes
 - a `styled()` base the build cannot read (a `let`, a function result, a component from another package), which keeps wrapping it
-- `withComponent(make())` and other targets only the runtime knows
 - unknown spread props, which pass through as written
 - StyleX arguments the build cannot read key by key (namespaces from other modules, `include()`)
 
@@ -80,7 +79,9 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `ServerStyleSheet`, `StyleSheetManager`, `CacheProvider`        | Accepted and inert; Devup UI writes a real stylesheet at build time. `CacheProvider` ignores `value` |
 | stylis plugins (`stylisPlugins`)                                | Not applied; there is no stylis pass at build time                                                   |
-| `@emotion/css` `cache`, `flush`, `hydrate`, `merge`, `sheet`    | Stay on `@emotion/css`; they work on styles inserted at runtime                                      |
+| `@emotion/css` `cache`, `flush`, `hydrate`, `sheet`             | Stay on `@emotion/css`; they work on styles inserted at runtime                                      |
+| `@emotion/css/create-instance`                                  | A build error while `@emotion/css` is aliased; import `css`, `cx` and the rest from `@emotion/css`   |
+| `@emotion/react` `ThemeContext`, `withEmotionCache`, `* as`     | A build error while `@emotion/react` is aliased; import what Devup UI compiles by name               |
 | `ThemeProvider`                                                 | Renders a `display: contents` wrapper that sets the theme's CSS variables                            |
 | `jest-styled-components`, `@emotion/jest`, React Native targets | Not supported                                                                                        |
 | vanilla-extract `recipes`, `sprinkles`                          | A build error while `@vanilla-extract/css` is aliased; use `css()` or the vanilla-extract plugin     |
@@ -91,6 +92,7 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 - `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so a runtime value there is a build error. Move it to a style prop.
 - A styled-components or Emotion style function may read the theme only as `theme.a.b` (or `theme.a[2]`). Calls, whole-theme reads and runtime keys are build errors.
 - Inside `<ClassNames>`, `cx(getClass())` is a build error; put the result in a variable first, which then joins as a class.
+- `withComponent` takes a tag name or a component written as a name or `a.b`. A target only the runtime knows, as `withComponent(make())`, is a build error: the styled component compiles to a plain function with no `withComponent`. Pass the target directly, or render with `as`.
 - The plugins read `jsxImportSource` from the `tsconfig.json` (or `jsconfig.json`) in the working directory. Opt out with `importAliases: { '@emotion/react/jsx-runtime': false }`.
 - Code that only the runtime can compute — other globals, `Date`, `Math.random`, `new`, classes, async code — is never run by the build; on an element it stays a CSS variable, elsewhere it is a build error.
 

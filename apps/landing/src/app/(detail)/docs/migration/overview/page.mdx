@@ -71,7 +71,7 @@ DevupUI({
 
 ## Uninstalling the original package
 
-Once the imports are rewritten you can drop the dependency. TypeScript still has to resolve the specifier you wrote, so the plugins generate `<distDir>/compat.d.ts` with ambient declarations for the aliases you have enabled:
+Once the imports are rewritten you can drop the dependency, as long as the build reports no error: an export with no Devup UI equivalent — `ThemeContext` or `withEmotionCache` from `@emotion/react`, `@emotion/css/create-instance`, vanilla-extract `recipes` and `sprinkles` — is a build error naming it rather than a package left behind. `@emotion/css`'s `cache`, `flush`, `hydrate` and `sheet` work on styles inserted at runtime and stay on `@emotion/css`, so a file using them keeps that package. TypeScript still has to resolve the specifier you wrote, so the plugins generate `<distDir>/compat.d.ts` with ambient declarations for the aliases you have enabled:
 
 ```ts
 /// <reference types="@devup-ui/react/compat/styled-components" />
