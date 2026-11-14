@@ -1449,13 +1449,8 @@ fn ref_as_attribute<'a>(
     let BindingPattern::ObjectPattern(pattern) = &declarator.id else {
         return None;
     };
-    let rest = pattern
-        .rest
-        .as_ref()?
-        .argument
-        .get_binding_identifier()?
-        .name
-        .as_str();
+    let rest = pattern.rest.as_ref()?.argument.get_binding_identifier();
+    let rest = rest?.name.as_str();
     let Some(Expression::JSXElement(element)) = returned.argument.as_ref().map(unwrapped) else {
         return None;
     };

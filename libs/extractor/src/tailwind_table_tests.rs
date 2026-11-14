@@ -11,16 +11,12 @@ fn compiled(classes: &[&str]) -> String {
     classes
         .iter()
         .map(|class| {
-            declarations_of(class).map_or_else(
-                || format!("{class}: -"),
-                |declarations| {
-                    let declarations: Vec<String> = declarations
-                        .iter()
-                        .map(|(property, value)| format!("{property}: {value}"))
-                        .collect();
-                    format!("{class} => {}", declarations.join("; "))
-                },
-            )
+            let declarations: Vec<String> = declarations_of(class)
+                .unwrap_or_default()
+                .iter()
+                .map(|(property, value)| format!("{property}: {value}"))
+                .collect();
+            format!("{class} => {}", declarations.join("; "))
         })
         .collect::<Vec<_>>()
         .join("\n")

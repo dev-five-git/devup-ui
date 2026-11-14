@@ -101,17 +101,9 @@ fn flatten_color_value(
                 if !is_token_name(key) {
                     return Err(token_name_error("color", key));
                 }
-                let new_interface_prefix = if interface_prefix.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{interface_prefix}.{key}")
-                };
-                let key_css = css_key_from(key);
-                let new_css_prefix = if css_prefix.is_empty() {
-                    key_css.into_owned()
-                } else {
-                    format!("{css_prefix}-{key_css}")
-                };
+                // The top level names every color, so the prefixes are never empty
+                let new_interface_prefix = format!("{interface_prefix}.{key}");
+                let new_css_prefix = format!("{css_prefix}-{}", css_key_from(key));
                 flatten_color_value(&new_interface_prefix, &new_css_prefix, val, result)?;
             }
             Ok(())

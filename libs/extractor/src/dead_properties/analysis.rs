@@ -36,8 +36,8 @@ impl Analysis {
                             && usize::try_from(*end).is_ok_and(|end| offset <= end)
                     })
                     .min_by_key(|(start, end)| end - start)
-                    .map(|(start, _)| wide(*start).map(authored))
-                    .transpose()?;
+                    .map(|(start, _)| *start);
+                let call = call.map(wide).transpose()?.map(authored);
                 let owner = evaluated.and_then(|ranges| {
                     ranges
                         .iter()
