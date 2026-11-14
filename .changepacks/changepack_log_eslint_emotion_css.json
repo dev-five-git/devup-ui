@@ -1,0 +1,1 @@
+{"changes":{"packages/eslint-plugin/package.json":"Patch"},"note":"Lint `@emotion/css` like the build does: its `css`, `keyframes` and `injectGlobal` get the same rules as Devup UI's `css`, `keyframes` and `globalCss`, so a dynamic value the build rejects is reported in the editor too","date":"2026-11-15T00:00:00.000Z"}

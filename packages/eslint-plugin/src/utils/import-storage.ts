@@ -12,6 +12,7 @@ const DEFAULT_IS_STYLED = new Set(['@emotion/styled', 'styled-components'])
 /** The packages whose named exports the build maps onto Devup UI's, as `DEFAULT_IMPORT_ALIASES` in `plugin-utils` lists them */
 const NAMED_ALIASES = new Set([
   '@emotion/react',
+  '@emotion/css',
   '@emotion/styled',
   'styled-components',
   '@vanilla-extract/css',
@@ -23,6 +24,8 @@ function devupEquivalent(source: string, imported: string): string | undefined {
     if (imported === 'style') return 'css'
     if (imported === 'globalStyle') return 'globalCss'
   }
+  if (source === '@emotion/css' && imported === 'injectGlobal')
+    return 'globalCss'
   switch (imported) {
     case 'css':
     case 'keyframes':

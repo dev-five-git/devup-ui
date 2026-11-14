@@ -15,6 +15,7 @@ describe('css-utils-literal-only rule: libraries the build reads as Devup UI', (
   const styledComponents = `import styled, { css, keyframes, createGlobalStyle } from "styled-components";\n`
   const vanilla = `import { style, globalStyle, keyframes } from "@vanilla-extract/css";\n`
   const devup = `import { css, globalCss } from "@devup-ui/react";\n`
+  const emotionCss = `import { css, cx, injectGlobal } from "@emotion/css";\n`
   const error = { messageId: 'cssUtilsLiteralOnly' as const }
   const missing = (name: string) => ({
     messageId: 'missingGlobal' as const,
@@ -54,10 +55,9 @@ describe('css-utils-literal-only rule: libraries the build reads as Devup UI', (
         [vanilla, 'style({ color: "red" })'],
         [vanilla, 'globalStyle("body", { color: "red" })'],
         [devup, 'globalCss({ body: { color: "red" } })'],
-        [
-          `import { css } from "@emotion/css";\n`,
-          'css({ color: window.name })',
-        ],
+        [emotionCss, 'css({ color: "red" })'],
+        [emotionCss, 'injectGlobal({ body: { color: "red" } })'],
+        [emotionCss, 'cx(window.name)'],
         [`import { css } from "other";\n`, 'css({ color: window.name })'],
         [
           `import { jsx } from "@emotion/react";\n`,
@@ -115,6 +115,8 @@ describe('css-utils-literal-only rule: libraries the build reads as Devup UI', (
         [vanilla, 'let v = 1;\nglobalStyle("body", { color: v })'],
         [vanilla, 'let v = 1;\nkeyframes({ from: { opacity: v } })'],
         [devup, 'let v = 1;\nglobalCss({ body: { color: v } })'],
+        [emotionCss, 'css({ color: window.name })'],
+        [emotionCss, 'let v = 1;\ninjectGlobal({ body: { color: v } })'],
       ].map(([header, source]) => ({
         code: header + source,
         filename,

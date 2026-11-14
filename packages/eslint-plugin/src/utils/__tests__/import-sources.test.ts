@@ -72,7 +72,7 @@ describe('import sources', () => {
       'import styled, { css as e, createGlobalStyle } from "styled-components";',
       'import * as E from "@emotion/styled";',
       'import { style, globalStyle, other } from "@vanilla-extract/css";',
-      'import { css as skipped } from "@emotion/css";',
+      'import { css as f, cx, injectGlobal } from "@emotion/css";',
     ].join('\n'),
     'page.tsx',
     (storage) => {
@@ -90,6 +90,8 @@ describe('import sources', () => {
         E: 'styled',
         style: 'css',
         globalStyle: 'globalCss',
+        f: 'css',
+        injectGlobal: 'globalCss',
       })
     },
   )
