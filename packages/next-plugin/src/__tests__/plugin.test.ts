@@ -1049,6 +1049,26 @@ export const box = style({ color: 'red' })`
         expect.objectContaining({ sourceMap: true }),
       )
     })
+    it('keeps configuring Turbopack when the import graph cannot be read', () => {
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockImplementation(() => {
+        throw new Error('unreadable')
+      })
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      try {
+        expect(DevupUI({}).turbopack?.rules).toBeDefined()
+        expect(profileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('"failed":true'),
+        )
+      } finally {
+        profileSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
+    })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy.mockReturnValue(true)
