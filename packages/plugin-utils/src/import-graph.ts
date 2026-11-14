@@ -1080,6 +1080,43 @@ export function createModuleResolver({
   importer: string,
 ) => ResolvedModule | undefined {
   const { aliases, baseDir } = readPathAliases(tsconfigPath)
+  const packages = new Map<string, CachedPackage>()
+  const sources = new Map<string, CachedSource>()
+  /**
+   * `resolvePackage`, remembered per importing directory while the manifest
+   * and the entry stay unchanged. A miss is not remembered: the package may
+   * be installed later.
+   */
+  const resolveCachedPackage = (specifier: string, from: string) => {
+    const key = `${dirname(from)}\0${specifier}`
+    const cached = packages.get(key)
+    if (
+      cached &&
+      fileStamp(cached.manifest) === cached.stamp &&
+      isFile(cached.path)
+    ) {
+      onPackageManifest?.(cached.manifest)
+      return cached.path
+    }
+    let manifest = ''
+    const path = resolvePackage(specifier, from, (found) => {
+      manifest = found
+      onPackageManifest?.(found)
+    })
+    if (path) {
+      packages.set(key, { manifest, stamp: fileStamp(manifest), path })
+    }
+    return path
+  }
+  /** The file's code, read again only once its stamp changes. */
+  const readSource = (path: string) => {
+    const stamp = fileStamp(path)
+    const cached = sources.get(path)
+    if (cached && cached.stamp === stamp) return cached.code
+    const code = readFileSync(path, 'utf-8')
+    sources.set(path, { stamp, code })
+    return code
+  }
   return (specifier, importer) => {
     const from = resolve(cwd, importer)
     const path = specifier.startsWith('.')
@@ -1093,11 +1130,30 @@ export function createModuleResolver({
             .map(resolveSourceFile)
             .find(Boolean) ??
           ((allowPackage?.(specifier) ?? true)
-            ? resolvePackage(specifier, from, onPackageManifest)
+            ? resolveCachedPackage(specifier, from)
             : undefined))
-    return path
-      ? { path: toId(path), code: readFileSync(path, 'utf-8') }
-      : undefined
+    return path ? { path: toId(path), code: readSource(path) } : undefined
+  }
+}
+
+interface CachedPackage {
+  manifest: string
+  stamp: string | undefined
+  path: string
+}
+
+interface CachedSource {
+  stamp: string | undefined
+  code: string
+}
+
+/** Changes whenever the file is written; `undefined` once it is gone. */
+function fileStamp(path: string): string | undefined {
+  try {
+    const { mtimeNs, ctimeNs, size } = statSync(path, { bigint: true })
+    return `${mtimeNs}:${ctimeNs}:${size}`
+  } catch {
+    return undefined
   }
 }
 
