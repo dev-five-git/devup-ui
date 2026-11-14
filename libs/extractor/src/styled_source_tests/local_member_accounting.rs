@@ -127,6 +127,12 @@ fn accounting_uses_binding_identity_when_names_are_shared(
 #[case::class_names(
     "return <><Box {...holder.rules}/><ClassNames>{({css})=><div className={css(holder.rules)}/>}</ClassNames></>;"
 )]
+#[case::literal_member_elements(
+    "return <><Box {...holder['rules']}/><div css={holder['rules']}/></>;"
+)]
+#[case::literal_member_class_names(
+    "return <><Box {...holder['rules']}/><ClassNames>{({css})=><div className={css(holder['rules'])}/>}</ClassNames></>;"
+)]
 #[serial]
 fn adjacent_consumers_keep_units_when_they_share_a_local_member(
     #[case] body: &str,
@@ -190,4 +196,139 @@ fn runtime_references_stay_uncounted_when_folding_cannot_erase_them(#[case] expr
     );
     // Then: probes and still-runtime selected subtrees do not activate the extra-use policy.
     assert_eq!(inlined.errors, vec![]);
+}
+
+#[rstest]
+#[case::extra_read(
+    "const holder={rules:{color:'red',margin:2}};observe(holder);",
+    "holder.rules"
+)]
+#[case::mutation(
+    "const holder={rules:{color:'red',margin:2}};holder.rules.margin=3;",
+    "holder.rules"
+)]
+#[case::alias(
+    "const holder={rules:{color:'red',margin:2}};const alias=holder;observe(alias);",
+    "holder.rules"
+)]
+#[case::getter(
+    "const holder={get rules(){observe('getter');return {color:'red',margin:2}}};",
+    "holder.rules"
+)]
+#[case::runtime_key("const holder={rules:{color:'red',margin:2}};", "holder[key]")]
+#[case::optional("const holder={rules:{color:'red',margin:2}};", "holder?.rules")]
+#[case::function("const holder={rules:()=>({color:'red',margin:2})};", "holder.rules")]
+#[case::callback(
+    "const holder={rules:{color:'red',margin:2},callback:()=>observe('callback')};",
+    "holder.rules"
+)]
+#[case::prototype(
+    "const holder={__proto__:unknown(),rules:{color:'red',margin:2}};",
+    "holder.rules"
+)]
+#[case::tdz(
+    "const first=<Box {...holder.rules}/>;const holder={rules:{color:'red',margin:2}};observe(first);",
+    "holder.rules"
+)]
+#[serial]
+fn adjacent_member_spreads_do_not_erase_unproved_or_observable_reads(
+    #[case] declaration: &str,
+    #[case] spread: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    reset_class_map();
+    reset_file_map();
+    let source = format!(
+        "import {{Box}} from '@devup-ui/react';import {{css}} from '@emotion/react';\nexport function f(key){{{declaration}return <><Box {{...{spread}}}/><div css={{holder.rules}}/></>;}}"
+    );
+    let result = extract(
+        "local-member-boundary.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            import_aliases: std::collections::HashMap::from([(
+                "@emotion/react".to_string(),
+                crate::ImportAlias::NamedToNamed,
+            )]),
+            ..ExtractOption::default()
+        },
+    );
+    let error = match result {
+        Err(error) => error.to_string(),
+        Ok(output) => panic!("member admission must preserve the original refusal: {output:?}"),
+    };
+    assert!(error.starts_with("local-member-boundary.tsx:2:"), "{error}");
+}
+
+#[rstest]
+#[serial]
+fn unknown_adjacent_member_stays_runtime(#[values(false, true)] single_css: bool) {
+    reset_class_map();
+    reset_file_map();
+    let source = "import {Box} from '@devup-ui/react';import {css} from '@emotion/react';\nexport function f(key){const holder=unknown();return <><Box {...holder.rules}/><div css={holder.rules}/></>;}";
+    let options = ExtractOption {
+        single_css,
+        import_aliases: std::collections::HashMap::from([(
+            "@emotion/react".to_string(),
+            crate::ImportAlias::NamedToNamed,
+        )]),
+        ..ExtractOption::default()
+    };
+    let output = extract("local-member-boundary.tsx", source, options.clone())
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(output.styles.is_empty(), "{output:?}");
+    // The existing runtime harness supports array children; keep both original reads in order.
+    let runtime_source = source
+        .replace("return <>", "return [")
+        .replace("/><div", "/>,<div")
+        .replace("/></>", "/>]");
+    let runtime_output = extract("local-member-boundary.tsx", &runtime_source, options)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(runtime_output.styles.is_empty(), "{runtime_output:?}");
+    let observed = super::super::execute_extracted(
+        ("local-member-boundary.tsx", None),
+        &runtime_output,
+        concat!(
+            "const trace=[];const callback=()=>0;const payload=",
+            "{",
+            "};const style=",
+            "{",
+            "opacity:0.4};const className='external';\nconst data=",
+            "{",
+            "get payload()",
+            "{",
+            "trace.push('payload');return payload;},get onClick()",
+            "{",
+            "trace.push('onClick');return callback;},get className()",
+            "{",
+            "trace.push('className');return className;},get style()",
+            "{",
+            "trace.push('style');return style;}};\nfunction unknown()",
+            "{",
+            "trace.push('factory');return ",
+            "{",
+            "get rules()",
+            "{",
+            "trace.push('rules');return data;}};}\nconst elements=f();JSON.stringify([trace,elements[0].props.payload===payload,elements[0].props.onClick===callback,elements[0].props.style===style,elements[0].props.className===className,elements[1].props.className===data]);",
+        ),
+    );
+    assert_eq!(
+        observed,
+        serde_json::json!([
+            [
+                "factory",
+                "rules",
+                "payload",
+                "onClick",
+                "className",
+                "style",
+                "rules"
+            ],
+            true,
+            true,
+            true,
+            true,
+            true
+        ])
+    );
 }

@@ -639,7 +639,7 @@ fn nonparams_matrix_keeps_exact_legacy_materialization() -> Result<(), String> {
         (
             "/matrix.tsx",
             "export const view=<Box p={values()}/>;",
-            false,
+            true,
         ),
         (
             "/matrix.tsx",
@@ -678,7 +678,23 @@ fn nonparams_matrix_keeps_exact_legacy_materialization() -> Result<(), String> {
                 let source = format!(
                     "import{{Box,css,styled,keyframes}}from'@devup-ui/react';import{{jsx}}from'react/jsx-runtime';function values(){{return [1,{middle},3]}}{body}"
                 );
-                let expected = reaches.then(|| source.replace("p:values()", "p:[1,null,3]"));
+                // An element prop reads a hole and `undefined` as they are, which
+                // the literal written could not keep.
+                let element = body.contains("<Box");
+                let expected = (reaches && !(element && middle != "null")).then(|| {
+                    source.replace(
+                        if element {
+                            "p={values()}"
+                        } else {
+                            "p:values()"
+                        },
+                        if element {
+                            "p={[1,null,3]}"
+                        } else {
+                            "p:[1,null,3]"
+                        },
+                    )
+                });
                 // When
                 let actual = crate::build_time_values::evaluate_located(
                     &source,

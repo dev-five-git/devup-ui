@@ -90,6 +90,7 @@ fn raw_styled_spread_when_received_by_extractor_keeps_reads_or_composition_error
             filename: "linux.tsx",
             jsx: &mut None,
             capability: None,
+            shared: true,
         },
     );
     // Then
@@ -163,6 +164,7 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
             filename: "linux.tsx",
             jsx: &mut None,
             capability: None,
+            shared: true,
         },
     );
     // Then
@@ -176,6 +178,60 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
     assert_eq!(
         super::props_rule_choice_tests::support::declarations(&styles),
         [("opacity".into(), ".6".into())]
+    );
+    Ok(())
+}
+
+#[test]
+fn argument_values_read_through_spreads() -> Result<(), Box<dyn std::error::Error>> {
+    // Given: a call passing one value spread and one as written
+    let allocator = oxc_allocator::Allocator::default();
+    let mut expression = Parser::new(&allocator, "f(...spread, plain)", SourceType::tsx())
+        .parse_expression()
+        .map_err(|error| format!("{error:?}"))?;
+    let Expression::CallExpression(call) = &mut expression else {
+        return Err("expected a call".into());
+    };
+    // When / Then: each reads as the value it passes, shared or to change
+    for (index, name) in [(0, "spread"), (1, "plain")] {
+        assert_eq!(
+            crate::utils::readable_code(argument_value(&call.arguments[index])),
+            name
+        );
+        assert_eq!(
+            crate::utils::readable_code(argument_value_mut(&mut call.arguments[index])),
+            name
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn props_function_returning_only_written_arrays_schedules_no_captures()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: a props function whose responsive array reads no prop
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = "import {styled} from '@devup-ui/react'; export const A = styled.div(p => ({ color: ['red', 'blue'] }));";
+    // When
+    let output = crate::extract("array.tsx", source, crate::ExtractOption::default())?;
+    // Then: both breakpoints are static styles
+    let mut colors: Vec<_> = output
+        .styles
+        .iter()
+        .filter_map(|style| match style {
+            ExtractStyleValue::Static(style) if style.property() == "color" => {
+                Some((style.level(), style.value().to_string()))
+            }
+            _ => None,
+        })
+        .collect();
+    colors.sort();
+    assert_eq!(
+        colors,
+        vec![(0, "red".to_string()), (1, "blue".to_string())],
+        "{}",
+        output.code
     );
     Ok(())
 }

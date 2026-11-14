@@ -129,15 +129,15 @@ fn bound_undefined_when_unreachable_rule_branch_is_skipped() {
 
 fn compile(rules: &str) -> crate::ExtractOutput {
     let source = format!("import {{ styled }} from '@devup-ui/react'; {rules}");
-    crate::extract(
+    let result = crate::extract(
         "rule-choices-active.tsx",
         &source,
         crate::ExtractOption {
             single_css: true,
             ..crate::ExtractOption::default()
         },
-    )
-    .unwrap_or_else(|error| panic!("{error}"))
+    );
+    result.unwrap_or_else(|error| panic!("{error}"))
 }
 
 #[test]

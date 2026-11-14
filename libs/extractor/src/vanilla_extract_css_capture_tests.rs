@@ -98,6 +98,8 @@ fn capture_validation_rejects_responsive_arrays_across_entry_objects(
 #[case(("_hover", "true"))]
 #[case(("_hover", "{}"))]
 #[case(("_hover", "()=>0"))]
+#[case(("_hover", "Infinity"))]
+#[case(("_hover", "1n"))]
 #[case(("_is", "['a',()=>0]"))]
 #[case(("_is", "null"))]
 #[case(("_is", "undefined"))]

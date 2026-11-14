@@ -38,7 +38,7 @@ impl Bindings {
 
     /// The component `expression` reads
     pub fn kind(&self, expression: &Expression<'_>) -> Option<ExportVariableKind> {
-        match expression {
+        match crate::utils::unwrap_syntax_only(expression) {
             Expression::Identifier(identifier) => self
                 .symbol(identifier)
                 .and_then(|symbol| self.imports.get(&symbol))
@@ -71,6 +71,35 @@ impl Bindings {
     pub fn is_namespace(&self, identifier: &IdentifierReference<'_>) -> bool {
         self.symbol(identifier)
             .is_some_and(|symbol| self.namespaces.contains(&symbol))
+    }
+
+    /// Whether `identifier` reads the global `undefined`, not a binding of
+    /// that name
+    pub fn is_global_undefined(&self, identifier: &IdentifierReference<'_>) -> bool {
+        identifier.name == "undefined" && self.symbol(identifier).is_none()
+    }
+
+    /// Whether `identifier` reads a `const` binding it can only read once that
+    /// is set: written after it, where no function another place can call
+    /// first stands between them
+    pub fn is_set_const(&self, identifier: &IdentifierReference<'_>) -> bool {
+        let Some(reference) = identifier.reference_id.get() else {
+            return false;
+        };
+        let reference = self.scoping.get_reference(reference);
+        reference.symbol_id().is_some_and(|symbol| {
+            let declared = self.scoping.symbol_scope_id(symbol);
+            self.scoping.symbol_flags(symbol).is_const_variable()
+                && self.scoping.symbol_span(symbol).end <= identifier.span.start
+                && self
+                    .scoping
+                    .scope_ancestors(reference.scope_id())
+                    .take_while(|scope| *scope != declared)
+                    .all(|scope| {
+                        let flags = self.scoping.scope_flags(scope);
+                        !flags.is_function() || flags.is_arrow()
+                    })
+        })
     }
 
     /// Whether the element `name` is the `Global` component

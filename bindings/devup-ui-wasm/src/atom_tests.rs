@@ -23,7 +23,7 @@ fn setup() {
 }
 
 fn compile(file: &str, source: &str) -> Output {
-    code_extract_internal(
+    let result = code_extract_internal(
         file,
         source,
         "@devup-ui/react",
@@ -35,8 +35,8 @@ fn compile(file: &str, source: &str) -> Output {
             "@vanilla-extract/css".to_string(),
             ImportAlias::NamedToNamed,
         )]),
-    )
-    .unwrap_or_else(|error| panic!("{error}"))
+    );
+    result.unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn emitted(file: &str) -> String {

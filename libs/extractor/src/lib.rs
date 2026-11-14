@@ -22,6 +22,7 @@ mod class_selection_support;
 mod class_selection_tests;
 mod component;
 mod composition;
+mod const_fold;
 #[cfg(test)]
 mod css_composition_rest_tests;
 mod css_prop;
@@ -30,6 +31,8 @@ mod css_prop_contract_tests;
 mod css_utils;
 #[cfg(test)]
 mod diagnostics_tests;
+#[cfg(test)]
+mod dynamic_as_sibling_props_tests;
 mod emotion_namespace;
 mod evaluation_sandbox;
 pub mod extract_style;
@@ -40,8 +43,13 @@ mod gen_style;
 mod import_alias_visit;
 mod imported_constants;
 mod imported_styled;
+mod jsx_emission;
 mod jsx_import_source;
 mod jsx_pragmas;
+#[cfg(test)]
+mod jsx_semantics_tests;
+#[cfg(test)]
+mod legacy_semantics_contract_tests;
 mod module_loader;
 pub mod module_reference;
 mod mutations;
@@ -77,6 +85,8 @@ mod scope;
 mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
+
+mod peephole;
 mod source_map;
 #[cfg(test)]
 mod source_reconciliation_tests;
@@ -89,6 +99,8 @@ mod style_order_styled_tests;
 #[cfg(test)]
 mod style_order_tests;
 mod style_order_validation;
+#[cfg(test)]
+mod style_slot_test_support;
 mod style_values;
 mod styled_reads;
 #[cfg(test)]
@@ -129,6 +141,7 @@ mod tailwind_theme;
 pub mod test_state;
 #[cfg(test)]
 mod unresolved_global_inputs_tests;
+mod unwrap_iife;
 #[cfg(test)]
 mod utf16_boundary_tests;
 mod util_type;
@@ -427,6 +440,22 @@ fn extract_with_source_map(
     extract_source(filename, code, None, None, option, source_map, resolver)
 }
 
+/// `offset` in the code before `edits`, applied in order, were made to it
+fn authored_offset(edits: &[&[import_alias_visit::Edit]], offset: usize) -> usize {
+    edits.iter().fold(offset, |offset, edits| {
+        import_alias_visit::source_offset(edits, offset)
+    })
+}
+
+/// How `filename` parses, or the error naming its unsupported extension
+fn supported_source_type(filename: &str) -> Result<oxc_span::SourceType, String> {
+    parsing::source_type(filename).map_err(|error| {
+        format!(
+            "{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension"
+        )
+    })
+}
+
 /// `evaluated` is the source `code` was computed from, with the layers of
 /// edits, last made first, that map `code` back to it; `values_run` holds the
 /// authored styling-call ranges only after build-time value evaluation
@@ -450,9 +479,7 @@ fn extract_source(
             .keys()
             .any(|package| code.contains(package))
     {
-        let source_type = parsing::source_type(filename).map_err(|error| {
-            format!("{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension")
-        })?;
+        let source_type = supported_source_type(filename)?;
         Some(
             parsing::checked(&allocator, code, source_type).map_err(|errors| {
                 let (source, edits) = evaluated.unwrap_or((code, &[]));
@@ -616,12 +643,10 @@ fn extract_source(
         let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
             .into_iter()
             .map(|(start, end)| {
-                let authored = |offset| {
-                    earlier_edits.iter().fold(offset, |offset, edits| {
-                        import_alias_visit::source_offset(edits, offset)
-                    })
-                };
-                (authored(start), authored(end))
+                (
+                    authored_offset(earlier_edits, start),
+                    authored_offset(earlier_edits, end),
+                )
             })
             .collect();
         let layers: Vec<&[import_alias_visit::Edit]> = [
@@ -743,11 +768,7 @@ fn extract_source(
 
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
-    let source_type = parsing::source_type(filename).map_err(|error| {
-        format!(
-            "{filename}:1:1: {error}. Fix: use a supported JavaScript or TypeScript file extension"
-        )
-    })?;
+    let source_type = supported_source_type(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let import_main = option.import_main_css && !global;
     // Presize to the exact final length (1 target + optional main-css entry) and
@@ -786,6 +807,18 @@ fn extract_source(
     } else {
         imported_constants::Inlined::default()
     };
+    if matches!(
+        inlined.disposition,
+        imported_constants::ErrorDisposition::TerminalInitialization
+    ) {
+        let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
+        let edits: Vec<&[import_alias_visit::Edit]> =
+            [alias_edits.as_slice(), namespace_edits.as_slice()]
+                .into_iter()
+                .chain(earlier_edits.iter().copied())
+                .collect();
+        return Err(located_errors(filename, source, &edits, inlined.errors).into());
+    }
     dependencies.extend(inlined.dependencies);
     if !inlined.css_failures.is_empty() {
         let mut failures = inlined.css_failures;
@@ -823,6 +856,7 @@ fn extract_source(
     visitor.import_css(inlined.css_styles);
     visitor.errors.extend(inlined.errors);
     visitor.unknown_bindings(&inlined.unknown);
+    visitor.rule_spreads(inlined.rule_spreads);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
     visitor.reuse_scoping(inlined.scoping);
@@ -837,7 +871,7 @@ fn extract_source(
         && !has_imported_retarget
         && alias_edits.is_empty()
         && namespace_edits.is_empty()
-        && !visitor.compiled_css_prop
+        && !visitor.jsx.compiled_css_prop
     {
         // No element took the `css` prop the text seemed to give
         return Ok(unchanged());
@@ -891,12 +925,10 @@ fn extract_source(
         let calls: Vec<_> = dead_properties::evaluated_calls(code, filename, &option)
             .into_iter()
             .map(|(start, end)| {
-                let authored = |offset| {
-                    earlier_edits.iter().fold(offset, |offset, edits| {
-                        import_alias_visit::source_offset(edits, offset)
-                    })
-                };
-                (authored(start), authored(end))
+                (
+                    authored_offset(earlier_edits, start),
+                    authored_offset(earlier_edits, end),
+                )
             })
             .collect();
         let layers: Vec<&[import_alias_visit::Edit]> = [
@@ -950,8 +982,13 @@ fn extract_source(
     } else {
         CodegenOptions::default()
     };
+    unwrap_iife::unwrap(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
+    peephole::simplify(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
     header_pragmas.reanchor(&mut program);
-    let result = Codegen::new().with_options(codegen_options).build(&program);
+    let mut result = Codegen::new().with_options(codegen_options).build(&program);
+    if visitor.jsx.sequences {
+        jsx_emission::parenthesize(&mut result, source_type.with_jsx(true))?;
+    }
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
         if processed_code.is_some() || edits.iter().all(|edits| edits.is_empty()) {
@@ -1490,7 +1527,7 @@ mod tests {
         #[case::whitespace(r"'\t-InF\n'")]
         #[case::bom(r"'\uFEFF+inf\uFEFF'")]
         #[serial]
-        fn lowered_const_bound_invalid_alias_preserves_dynamic_operand(
+        fn lowered_const_bound_invalid_alias_reads_nan(
             #[case] value: &str,
             #[values(false, true)] single_css: bool,
         ) {
@@ -1510,17 +1547,20 @@ mod tests {
                 },
             )
             .unwrap();
-            // Then: Boa miscoerces signed inf; native SSR covers execution of this operand.
+            // Then: no number is spelled `inf`, so `+alias` is `NaN`, as the
+            // element written in JSX reads it
             assert_eq!(output.styles.len(), 1);
-            let Some(ExtractStyleValue::Dynamic(style)) = output.styles.iter().next() else {
+            let Some(ExtractStyleValue::Static(style)) = output.styles.iter().next() else {
                 panic!(
-                    "expected one dynamic content declaration: {:?}",
+                    "expected one static content declaration: {:?}",
                     output.styles
                 );
             };
-            let operand = r#"`"value:${+alias}"`"#;
-            assert_eq!((style.property(), style.identifier()), ("content", operand));
-            assert_eq!(output.code.matches(operand).count(), 1);
+            assert_eq!(
+                (style.property(), style.value()),
+                ("content", "\"value:NaN\"")
+            );
+            assert!(!output.code.contains("+alias"), "{}", output.code);
         }
 
         #[rstest]
@@ -2637,6 +2677,7 @@ mod tests {
 import clsx from 'clsx'
 
 <DevupButton
+      {...props}
       boxSizing="border-box"
       className={clsx(
         variants[variant],
@@ -2651,7 +2692,6 @@ import clsx from 'clsx'
             }[size]
           : undefined
       }
-      {...props}
     />
 "#,
                 ExtractOption {
@@ -2664,6 +2704,7 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::extract_style_props_with_class_name();
     }
 
     #[test]
@@ -3877,6 +3918,7 @@ import clsx from 'clsx'
                 "test.tsx",
                 r"import {Center} from '@devup-ui/core'
     <Center
+      {...props}
       _active={
         variant !== 'disabled' && {
           boxShadow: 'none',
@@ -3892,7 +3934,6 @@ import clsx from 'clsx'
           ],
         }
       }
-      {...props}
     >
       {children}
     </Center>
@@ -4250,6 +4291,7 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::extract_selector();
     }
 
     #[test]
@@ -5908,7 +5950,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
+        assert_debug_snapshot!(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).map(ToBTreeSet::from).map_err(|error|error.to_string()));
     }
 
     #[test]
@@ -6109,12 +6151,12 @@ export default function Card({
 }) {
   return (
     <VStack
+      {...props}
       _active={{
         boxShadow: 'none',
         transform: 'scale(0.95)',
       }}
       className={className}
-      {...props}
     >
       {children}
     </VStack>
@@ -6132,6 +6174,7 @@ export default function Card({
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::test_rest_props();
     }
 
     #[test]
@@ -7596,8 +7639,7 @@ import {Button} from '@devup/ui'
             },
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             message.contains("`<Box>` cannot use `[dynamic]`"),
             "{message}"
@@ -7825,10 +7867,11 @@ export {
             .unwrap()
         ));
 
-        // Test 2: styleOrder={condition ? 5 : variable} — ternary with mixed static/dynamic
+        // Test 2: styleOrder={condition ? 5 : variable} — ternary with mixed static/dynamic,
+        // which the stylesheet cannot order by: a located build error
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -7842,13 +7885,14 @@ export {
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .map(ToBTreeSet::from)
+            .map_err(|error| error.to_string())
+        );
 
-        // Test 3: styleOrder={variable} — fully dynamic styleOrder
+        // Test 3: styleOrder={variable} — fully dynamic styleOrder, a located build error
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -7862,8 +7906,9 @@ export {
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .map(ToBTreeSet::from)
+            .map_err(|error| error.to_string())
+        );
 
         // Test 4: styleOrder={condition ? 5 : 10} with conditional style props
         // Verifies interaction between conditional styleOrder and conditional style values
@@ -8083,10 +8128,10 @@ export { c as Lib };"#,
         ));
 
         // Coverage: utils.rs:100 — expression_to_style_order with plain variable (not conditional, not static)
-        // Also covers visit.rs:259,262 — fallback from pre-scan None to extract_style_from_expression's result
+        // The order is neither static nor conditional, so the call is a located build error
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
+        assert_debug_snapshot!(
             extract(
                 "test.mjs",
                 r#"import { jsx as e } from "react/jsx-runtime";
@@ -8103,8 +8148,9 @@ export { c as Lib };"#,
                     import_aliases: HashMap::new()
                 }
             )
-            .unwrap()
-        ));
+            .map(ToBTreeSet::from)
+            .map_err(|error| error.to_string())
+        );
 
         // Coverage: visit.rs:297/492 — non-conditional static styleOrder via call expression (fallback _ branch)
         reset_class_map();
@@ -10013,8 +10059,7 @@ keyframes({
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 message.starts_with("test.tsx:2:") && message.contains(error),
                 "{message}"
@@ -10088,8 +10133,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 message.starts_with("test.tsx:2:") && message.contains(error),
                 "{message}"
@@ -10114,8 +10158,7 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
             },
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert_eq!(
             message.lines().collect::<Vec<_>>(),
             [
@@ -10171,7 +10214,7 @@ const TINY = 0.0000001;
 const HUGE = 1e21;
 const ZERO = -0;
 const PX = 'px';
-const SELF = SELF;
+var SELF = SELF;
 let mutable = 1;
 export const a = <Box p={DOUBLE} m={UNIT} w={SIZE + 1} h={HALF} content={LABEL} top={`${TINY}px`} left={`${HUGE}px`} right={ZERO + PX} bottom={mutable} zIndex={SELF} />;
 export const b = css({ padding: `${SIZE * 2}px`, margin: SIZE - 1, width: SIZE * SIZE, height: (SIZE) });
@@ -10182,6 +10225,7 @@ export const c = <Box p={SIZE / 0} m={PX - 1} w={`${PX}${other}`} h={SIZE % 3} /
             )
             .unwrap()
         ));
+        crate::legacy_semantics_contract_tests::test_inline_local_constants();
     }
 
     #[test]
@@ -11310,8 +11354,7 @@ keyframes({
                 },
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
 
@@ -11676,8 +11719,7 @@ globalCss({
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(
                 message.contains("`globalCss()` cannot use"),
                 "{key}: {message}"
@@ -14731,8 +14773,7 @@ globalCss({
             ExtractOption::default(),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             error.starts_with("broken.css.ts:3:")
                 && error.contains(": JS execution error: TypeError"),
@@ -15524,6 +15565,32 @@ export const card = style({
         assert!(result.is_empty());
     }
 
+    #[test]
+    #[serial]
+    fn test_extract_class_map_from_code_reads_exported_and_local_names() {
+        reset_class_map();
+        reset_file_map();
+        let style_names: FxHashSet<String> = ["exported", "local"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let result = extract_class_map_from_code(
+            "test.tsx",
+            "import { css } from '@devup-ui/react';\nexport const exported = css({ color: 'red' });\nconst local = css({ color: 'blue' });\nconst other = css({ color: 'green' });",
+            &ExtractOption::default(),
+            &style_names,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            BTreeSet::from(["exported", "local"])
+        );
+        assert!(result.values().all(|class| !class.is_empty()), "{result:?}");
+        assert_ne!(result["exported"], result["local"]);
+    }
+
     // === Import Alias Tests ===
 
     #[test]
@@ -15739,6 +15806,26 @@ const Button = styled.button({ bg: 'red' })
         }
     }
 
+    fn styled_renderer<'a>(code: &'a str, name: &str) -> &'a str {
+        let declaration = format!("const {name} = ");
+        let start = code
+            .find(&declaration)
+            .unwrap_or_else(|| panic!("{name}: {code}"));
+        let body = &code[start..];
+        let end = body
+            .find("\nconst ")
+            .into_iter()
+            .chain(body.find("\nexport const "))
+            .min()
+            .unwrap_or(body.len());
+        let body = &body[..end];
+        assert!(
+            body.starts_with(&format!("{declaration}__devupForwardRef(")),
+            "{body}"
+        );
+        body
+    }
+
     #[test]
     #[serial]
     fn test_styled_extension_composes_base() {
@@ -15755,15 +15842,44 @@ let Changing = styled.div({ color: 'red' })
 const FromChanging = styled(Changing)({ color: 'blue' })
 const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
         );
-        for expected in [
-            "const Ext = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"button\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255\", className]",
-            "const ObjExt = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-blue--255 padding-0-8px--255\", className]",
-            "const Twice = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"margin-0-4px--255 color-0-blue--255 padding-0-8px--255\", className]",
-            "const FromRuntime = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Runtime, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))}",
-            "const FromChanging = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = Changing, forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\"))}",
-            "const Ordered = __devupForwardRef((__devupRefProps, __devupRef) => (({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"color-0-red--3\", className]",
+        for (name, target, classes) in [
+            (
+                "Ext",
+                "\"button\"",
+                Some("color-0-blue-_a__c_hover-255 color-0-blue--255 background-0-white--255"),
+            ),
+            (
+                "ObjExt",
+                "\"div\"",
+                Some("color-0-blue--255 padding-0-8px--255"),
+            ),
+            (
+                "Twice",
+                "\"div\"",
+                Some("margin-0-4px--255 color-0-blue--255 padding-0-8px--255"),
+            ),
+            ("FromRuntime", "Runtime", None),
+            ("FromChanging", "Changing", None),
+            ("Ordered", "\"div\"", Some("color-0-red--3")),
         ] {
-            assert!(code.contains(expected), "{expected}\n{code}");
+            let body = styled_renderer(&code, name);
+            assert!(
+                body.contains(&format!("as: DevupAs = {target}, forwardedAs, ...rest")),
+                "{body}"
+            );
+            assert!(
+                body.contains("Object.fromEntries(Object.entries(") || body.contains("__devupOmit"),
+                "{body}"
+            );
+            assert!(body.contains("as={forwardedAs}"), "{body}");
+            if let Some(classes) = classes {
+                assert!(
+                    body.contains(&format!(
+                        "className={{className ? `{classes} ${{className}}` : \"{classes}\"}}"
+                    )),
+                    "{body}"
+                );
+            }
         }
     }
 
@@ -15783,12 +15899,18 @@ export const Kept = Section.withComponent(make())
 export const Other = other.withComponent('aside')
 export const a = <Section as=\"a\" forwardedAs=\"b\" />";
         let code = readable_code(source);
+        for (name, target) in [("Aside", "aside"), ("Again", "nav")] {
+            let body = styled_renderer(&code, name);
+            assert!(
+                body.contains(&format!("as: DevupAs = \"{target}\",")),
+                "{body}"
+            );
+            assert!(body.contains(&format!("c-0-{name}")), "{body}");
+        }
         for expected in [
-            "export const Aside = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"aside\", forwardedAs, ...rest }) => <DevupAs {...Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))} as={forwardedAs} className={[\"c-0-Aside color-0-red--255\", className]",
-            "export const Again = __devupForwardRef((__devupRefProps, __devupRef) => ((__devupProps) => (({ style, className, as: DevupAs = \"nav\",",
             "export const Kept = Section.withComponent(make());",
             "export const Other = other.withComponent(\"aside\");",
-            "...{ role: \"region\" }",
+            "ref={__devupRef} role=\"region\"",
             "<Section as=\"a\" forwardedAs=\"b\" />",
         ] {
             assert!(code.contains(expected), "{expected}\n{code}");
@@ -15825,8 +15947,8 @@ export const f = <F junk=\"j\" xlink:href=\"#a\" />
 export const k = <K title=\"t\" tone=\"x\" />";
         let code = readable_code(source);
         for expected in [
-            "{...Object.fromEntries(Object.entries((({ \"tone\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
-            "{...Object.fromEntries(Object.entries((({ \"x\": __devupOmit0, \"y\": __devupOmit1, \"theme\": __devupOmit2, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))}",
+            "k[0] !== \"$\" && k !== \"tone\"))",
+            "k[0] !== \"$\" && k !== \"x\" && k !== \"y\" && k !== \"theme\"))",
             "export const a = <A invalidThing=\"x\" data-ok=\"yes\" />",
             "export const b = <B tone=\"x\" $c=\"red\" aria-label=\"ok\" {...rest} />",
             "export const j = <J junk=\"j\" />",
@@ -15860,6 +15982,31 @@ const N = styled('h1', { shouldForwardProp: (prop) => { prop === 'a' } })({ colo
         let _proof = crate::retained_render_assertions::forwarding(source);
     }
 
+    // Only a component another module or `css` may extend takes what
+    // extending it sends
+    #[rstest]
+    #[case::rendered("export const x = <A />;", false)]
+    #[case::rendered_with_children("export const x = <A><b /></A>;", false)]
+    #[case::in_function(
+        "export function f() { let d = 'blue'; const B = styled.div`color: ${d};`; return <B />; }",
+        false
+    )]
+    #[case::exported_later("export { A };", true)]
+    #[case::exported_as("export { A as B };", true)]
+    #[case::default("export default A;", true)]
+    #[case::read_as_value("export const x = [A];", true)]
+    #[case::given_css("export const x = <A css={{ color: 'blue' }} />;", true)]
+    #[serial]
+    fn test_styled_takes_composition_only_where_reachable(
+        #[case] usage: &str,
+        #[case] composable: bool,
+    ) {
+        let code = readable_code(&format!(
+            "import {{styled}} from '@devup-ui/core'\nlet c = 'red'\nconst A = styled.div`color: ${{c}};`\n{usage}"
+        ));
+        assert_eq!(code.contains("__devupCss"), composable, "{code}");
+    }
+
     #[test]
     #[serial]
     fn test_styled_attrs_merge_in_order() {
@@ -15871,15 +16018,16 @@ const X = styled.div.attrs({ className: 'from-attrs', style: { color: 'green' } 
 const F = styled.div.attrs((p) => ({ id: p.id }))({ color: 'red' })
 const V = styled.div.attrs(extra)({ color: 'red' })",
         );
+        let compact = code.split_whitespace().collect::<Vec<_>>().join(" ");
         for expected in [
-            "...{\n\t\t...__devupProps,\n\t\t...{\n\t\t\ttype: \"text\",\n\t\t\ttitle: \"base\"\n\t\t}\n\t},\n\t...{ type: \"password\" }",
-            "className: [__devupContext.className, __devupAttrs.className].filter(Boolean).join(\" \") || undefined",
-            "className: [__devupContext.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
-            "...__devupContext.style,\n\t\t...__devupAttrs.style",
-            "((p) => ({ id: p.id }))(__devupContext)",
-            "typeof extra === \"function\" ? extra(__devupContext) : extra",
+            "ref={__devupRef} type=\"password\" title=\"base\"",
+            "className: [__devupRecord4.className, __devupRecord3.className].filter(Boolean).join(\" \") || undefined",
+            "className: [__devupRecord2.className, __devupProps.className].filter(Boolean).join(\" \") || undefined",
+            "...__devupRecord4.style, ...__devupRecord3.style",
+            "id: __devupProps.id,",
+            "{ ...typeof extra === \"function\" ? extra(__devupRecord4) : extra }",
         ] {
-            assert!(code.contains(expected), "{expected}\n{code}");
+            assert!(compact.contains(expected), "{expected}\n{code}");
         }
     }
 
@@ -15894,15 +16042,15 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
     )]
     #[case(
         "<Box className=\"direct\" style={{ opacity: 1 }} {...rest} />",
-        "className={(\"className\" in Object(rest) ? rest.className : \"direct\") || \"\"} style={\"style\" in Object(rest) ? rest.style : { opacity: 1 }}"
+        "className={(\"className\" in __devupSpread0 ? __devupSpread0.className : \"direct\") || \"\"} style={\"style\" in __devupSpread0 ? __devupSpread0.style : { opacity: 1 }}"
     )]
     #[case(
         "<Box className=\"direct\" {...{ title: 'x' }} {...{ ...rest, className: 'last' }} />",
-        "className=\"last\""
+        "className: \"last\""
     )]
     #[case(
         "<Box className=\"direct\" {...{ className: 'first', ...rest }} />",
-        "className={{\n\tclassName: \"first\",\n\t...rest\n}.className || \"\"}"
+        "className: \"first\",\n\t...rest"
     )]
     #[case(
         "<Box className=<i /> color=\"red\" />",
@@ -15910,7 +16058,7 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
     )]
     #[case(
         "<Box {...rest} {...more} />",
-        "className={(\"className\" in Object(more) ? more.className : rest?.className) || \"\"}"
+        "className={(\"className\" in __devupSpread1 ? __devupSpread1.className : __devupSpread0.className) || \"\"}"
     )]
     #[serial]
     fn test_jsx_props_written_later_win(#[case] element: &str, #[case] expected: &str) {
@@ -15919,6 +16067,34 @@ const V = styled.div.attrs(extra)({ color: 'red' })",
 export const a = {element}"
         ));
         assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    // Branches of the same code give one value whichever runs; a condition
+    // the build knows needs no running
+    #[rstest]
+    #[case(
+        "const on = true",
+        "margin={on ? `${m}` : `${m}`}",
+        "\"--margin-0-\": `${m}`"
+    )]
+    #[case("", "margin={on ? `${m}` : `${m}`}", "\"--margin-0-\": (on, `${m}`)")]
+    #[case("", "margin={1 > 2 ? `${m}` : `${m}`}", "\"--margin-0-\": `${m}`")]
+    #[serial]
+    fn test_same_branches_read_as_one_value(
+        #[case] declaration: &str,
+        #[case] prop: &str,
+        #[case] expected: &str,
+    ) {
+        let code = readable_code(&format!(
+            "import {{Box}} from '@devup-ui/core'
+{declaration}
+export const a = (m) => <Box {prop} />"
+        ));
+        assert!(
+            code.contains(expected),
+            "{expected}
+{code}"
+        );
     }
 
     // StyleX merges namespaces key by key: a later key wins and `null` removes it
@@ -15948,7 +16124,7 @@ export const a = {element}"
     )]
     #[case(
         "stylex.props(on && s.red, on && s.red)",
-        "(_s0 = !!on, { className: on ? \"color-0-red--255\" : _s0 ? \"color-0-red--255\" : \"\" })"
+        "((_s0) => ({ className: on ? \"color-0-red--255\" : _s0 ? \"color-0-red--255\" : \"\" }))(!!on)"
     )]
     #[case(
         "stylex.props(s['blue'], s.hover)",
@@ -16110,6 +16286,30 @@ export const d = css(ordered, danger, called);",
         let mut expected = expected.to_vec();
         expected.sort_unstable();
         assert_eq!(actual, expected, "{code}");
+    }
+
+    fn assert_external_composition(code: &str, single_css: bool) {
+        let function = &code[code
+            .find("function compose()")
+            .expect("fixture exports compose")..];
+        let script = format!("{function}\ncompose();");
+        let result = boa_engine::Context::default()
+            .eval(boa_engine::Source::from_bytes(&script))
+            .unwrap_or_else(|error| panic!("{error}\n{script}"))
+            .as_string()
+            .unwrap()
+            .to_std_string_escaped();
+        let actual = result
+            .split_whitespace()
+            .collect::<std::collections::BTreeSet<_>>();
+        let suffix = if single_css { "" } else { "-a" };
+        let padding = format!("padding-0-8px--255{suffix}");
+        let green = format!("color-0-green--255{suffix}");
+        assert_eq!(
+            actual,
+            std::collections::BTreeSet::from(["external-card", padding.as_str(), green.as_str()]),
+            "{code}"
+        );
     }
 
     #[rstest]
@@ -16432,7 +16632,7 @@ export const base = css(local, { bg: 'white' });",
         css::debug::set_debug(false);
         let output = output.unwrap();
         // Then the nested external class stays opaque, not root style metadata.
-        assert!(output.code.contains("${alias}"), "{}", output.code);
+        assert_external_composition(&output.code, single_css);
         assert_composed_export_atoms(
             &output.code,
             "base",
@@ -16517,6 +16717,22 @@ export const base = css(local, { bg: 'white' });",
             ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
         ],
         (&["/src/a.ts:4:1: "][..], "child", &["export", "absent"][..])
+    )]
+    #[case::nested_unreadable_reexport(
+        &[
+            ("/src/present.ts", "export { base } from '\\uD800';"),
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport { base as child } from './present';\nexport const base = css(\nchild, { color: 'red' });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
+        ],
+        (&["/src/a.ts:4:1: "][..], "child", &["module"][..])
+    )]
+    #[case::nested_namespace_of_failed_reexports(
+        &[
+            ("/src/present.ts", "export { b } from '\\uD800';\nexport { a } from './missing';"),
+            ("/src/a.ts", "import { css } from '@devup-ui/react';\nimport * as child from './present';\nexport const base = css(\nchild, { color: 'red' });"),
+            ("/src/b.ts", "import { css } from '@devup-ui/react'; import { base as child } from './a'; export const base = css(child, { color: 'orange' });"),
+        ],
+        (&["/src/a.ts:4:1: "][..], "child", &["module", "./missing"][..])
     )]
     #[case::opaque_inside_native_chain(
         &[
@@ -16672,15 +16888,7 @@ export const base = css(local, { bg: 'white' });",
         css::debug::set_debug(false);
         // Then the shadow stays opaque and the failed root import is nonfatal.
         let output = output.unwrap();
-        assert!(output.code.contains("${alias}"), "{}", output.code);
-        let suffix = if single_css { "" } else { "-a" };
-        assert!(
-            output.code.contains(&format!(
-                "return `padding-0-8px--255{suffix} color-0-green--255{suffix} ${{alias}}`;"
-            )),
-            "{}",
-            output.code
-        );
+        assert_external_composition(&output.code, single_css);
     }
 
     #[rstest]
@@ -16785,7 +16993,7 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         "<Box className={`p-${size} mt-4 ${tone}-text`} />",
-        "<div className={`p-${size} a ${tone}-text`} />"
+        r"<div className={`p-${size} a ${tone}-text`} />"
     )]
     #[case(
         r"<Box className={`p-4 \`q\` \${y} a\\b\rc ${x}`} />",
@@ -16797,28 +17005,25 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         r#"<Box className={on ? "p-4" : "custom"} />"#,
-        r#"<div className={(on ? "a" : "custom") || ""} />"#
+        r#"<div className={on ? "a" : "custom"} />"#
     )]
     #[case(
         r#"<Box className={on ? "custom" : "p-4"} />"#,
-        r#"<div className={(on ? "custom" : "a") || ""} />"#
+        r#"<div className={on ? "custom" : "a"} />"#
     )]
     #[case(
         r#"<Box className={on && "p-4"} />"#,
         r#"<div className={on && "a" || ""} />"#
     )]
-    #[case(
-        r#"<Box className={"p-4" || x} />"#,
-        r#"<div className={"a" || x || ""} />"#
-    )]
-    #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a" || ""} />"#)]
+    #[case(r#"<Box className={"p-4" || x} />"#, r#"<div className={"a"} />"#)]
+    #[case(r#"<Box className={("p-4")} />"#, r#"<div className={"a"} />"#)]
     #[case(
         "<Box className={`icon-${name} ${a}${b}`} />",
         "-<div className={`icon-${name} ${a}${b}`} />"
     )]
     #[case(
         r#"<Box className={("custom")} />"#,
-        r#"-<div className={"custom" || ""} />"#
+        r#"-<div className={"custom"} />"#
     )]
     #[case(
         r#"<Box className={on && "custom"} />"#,
@@ -16826,7 +17031,7 @@ export const base = css(local, { bg: 'white' });",
     )]
     #[case(
         r#"<Box className={on ? "a1" : "b1"} />"#,
-        r#"-<div className={(on ? "a1" : "b1") || ""} />"#
+        r#"-<div className={on ? "a1" : "b1"} />"#
     )]
     #[case(
         "<Box className={`custom ${x}`} />",
@@ -17876,7 +18081,7 @@ const result = stylex.props(styles.dynamic(o, d));",
         assert!(
             output
                 .code
-                .contains(r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#),
+                .contains(r#"((__devupUnit0) => typeof __devupUnit0 === "number" ? __devupUnit0 + "ms" : __devupUnit0)(d)"#),
             "{}",
             output.code
         );
@@ -18872,8 +19077,7 @@ const result = stylex.props(styles.bar(myH, myW));",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert_eq!(
                 message,
                 format!(
@@ -20120,8 +20324,7 @@ export const A = () => <Box _hover={fn()} />;
             reset_file_map();
             let error = extract("test.tsx", src, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 error.contains("`<Box>` cannot use") && error.contains(utils::STYLE_OBJECT),
                 "{src}: {error}"
@@ -20399,8 +20602,7 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
                 },
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(
                 message.contains("is read at runtime, where it does not exist"),
                 "{code}\n{message}"
@@ -20438,8 +20640,7 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -20493,8 +20694,7 @@ export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
             reset_file_map();
             let message = extract("test.tsx", code, ExtractOption::default())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default();
+                .map_or_default(|error| error.to_string());
             assert!(
                 message.contains(&format!(
                     "`{name}` is read at runtime, where it does not exist"
@@ -20789,8 +20989,7 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             for error in errors {
                 assert!(message.contains(error), "{error}\nmissing from\n{message}");
             }
@@ -20865,8 +21064,7 @@ export const A = () => <div {...stylex.props(dracula, styles.box)} />;"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{message}");
         }
     }
@@ -21055,7 +21253,10 @@ register(grid.length);",
             "const partial = { ...unknown, p: 1 };\nwatch(partial.q);\nexport const a = <Box p={partial.p} />;",
             "const record = { p: 1 };\nwatch(record.q);\nexport const a = <Box p={record.p} />;",
             "const spread = { ...unknown, p: 1 };\nwatch({ ...spread });\nexport const a = <Box p={spread.p} />;",
-            "export enum E { A = 1 }\nenum F { B = 2 }\nexport function g() {}\nvar v = 1;\nconst make = () => ({ p: 1 });\nconst made = make();\nwatch(made);\nconst f = () => made.p;\nexport const a = css({ p: f() });",
+            "export enum E { A = 1 }\nenum F { B = 2 }\nexport function g() {}\nvar v = 1;\nconst make = () => ({ p: 1 });\nconst made = make();\nconst f = () => made.p;\nexport const a = css({ p: f() });",
+            "const make = () => ({ p: 1 });\nconst made = make();\nwatch(made);\nconst f = () => made.p;\nexport const a = css({ p: f() });",
+            "const make = () => ({ p: 1, list: [] });\nconst made = make();\nmade.list.push(2);\nconst f = () => made.p;\nexport const a = css({ p: f() });",
+            "const name = (n) => n + \"px\";\nconst size = name(2);\nwatch(size);\nconst f = () => size;\nexport const a = css({ p: f() });",
             "const make = () => ({ p: 1 });\nconst made = make();\nmade.p = 2;\nconst f = () => made.p;\nexport const a = css({ p: f() });",
             "const pick = () => (typeof window === 'undefined' ? 'white' : 'black');\nexport const a = css({ color: pick() });",
             "const brand = () => globalThis.BRAND ?? 'red';\nexport const a = css({ color: brand() });",
@@ -21388,10 +21589,6 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
                 "`<Box>` cannot use `[k]`",
             ),
             (
-                "export const a = (on, rest) => <Box {...(on ? { p: 1 } : rest)} />;",
-                "`<Box>` cannot use `rest`",
-            ),
-            (
                 "export const a = (list) => <Box _hover={[...list][0]} />;",
                 "`<Box>` cannot use `[...list][0]`",
             ),
@@ -21412,12 +21609,20 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
                 "`<Box>` cannot use `x`",
             ),
             (
-                "export const a = (rest) => <Box {...{ ...rest, p: 1 }} />;",
-                "`<Box>` cannot use `rest`",
-            ),
-            (
                 "declare const X: number;\nexport const a = css({ w: String(X) });",
                 "`css()` cannot use `String(X)`",
+            ),
+            (
+                "export const a = (rest) => <Box {...{ ...rest, p: 1 }} />;",
+                "`<Box>` cannot use `{ ...rest, p: 1 }`",
+            ),
+            (
+                "export const a = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;",
+                "`<Box>` cannot use `{ p: 1, onClick: handler, [k]: 1 }`",
+            ),
+            (
+                "export const a = (on, rest) => <Box {...(on ? { p: 1 } : rest)} />;",
+                "`<Box>` cannot use `rest`",
             ),
         ] {
             reset_class_map();
@@ -21428,9 +21633,21 @@ export const m = css({ right: proto.a, zIndex: partial.m, order: Level.Computed,
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
+        }
+        for source in [
+            "export const a = (on, rest) => <Box {...(on ? { onClick: rest } : rest)} />;",
+            "export const a = (rest) => <Box {...{ ...rest, onClick: rest }} />;",
+        ] {
+            let compiled = extract(
+                "test.tsx",
+                &format!("import {{Box}} from '@devup-ui/react';{source}"),
+                ExtractOption::default(),
+            )
+            .unwrap();
+            assert_eq!(compiled.styles.len(), 0);
+            assert!(compiled.code.contains("..."));
         }
         reset_class_map();
         reset_file_map();
@@ -21443,7 +21660,7 @@ export const b = (on) => css(on && { color: 'blue' });
 export const c = css('color: green; margin: 0');
 export const d = (on, base) => css(on ? base : { color: 'red' });
 export const e = css({ ...null, ...false, ...undefined, ...(void 0), p: 1 });
-export const f = (rest, handler, k) => <Box {...rest} {...{ p: 1, onClick: handler, [k]: 1 }} />;
+export const f = (rest, handler, k) => <Box {...rest} {...{ onClick: handler, [k]: 1 }} />;
 export const g = (theme, key) => <Box bg={theme.colors[key]} color={{ a: 'red', ...theme.more }['b']} />;
 export const h = (Base) => styled.div(Base);
 export const i = keyframes({ from: { opacity: 0 } } as const);
@@ -21577,8 +21794,7 @@ export const n = <Devup.Layout.Box {...local} />;",
                 &memory_resolver(modules),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(
                 message.contains(&format!("cannot use `{part}`")),
                 "{code}\n{message}"
@@ -21670,8 +21886,7 @@ export const n = <Devup.Layout.Box {...local} />;",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
         reset_class_map();
@@ -21716,8 +21931,7 @@ export const k = keyframes({ from: { opacity: DARK ? 0 : 1 } });",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("`<Box>` cannot use"), "{value}\n{message}");
         }
     }
@@ -21772,7 +21986,17 @@ export const a = <Box {...make(5)} />;",
             &memory_resolver(modules),
         )
         .unwrap();
-        assert!(imported.code.contains(")(make(5))"), "{}", imported.code);
+        assert_eq!(
+            imported.code.matches("make(5)").count(),
+            1,
+            "{}",
+            imported.code
+        );
+        assert!(
+            imported.code.contains("__proto__: null"),
+            "{}",
+            imported.code
+        );
     }
 
     #[test]
@@ -21972,8 +22196,7 @@ export const after = 42;",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -22042,10 +22265,35 @@ export const g = <Global styles={{ html: { animationName: fadeIn } }} />;",
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("cannot use `fadeIn`"), "{code}\n{message}");
         }
+    }
+
+    #[rstest]
+    #[case::template("animation={`${slide} 3s`}", "{...{ animation: `${slide} 3s` }}")]
+    #[case::binding("animation={slide}", "{...{ animation: slide }}")]
+    #[serial]
+    fn test_spread_entries_read_style_results_as_attributes_do(
+        #[case] attribute: &str,
+        #[case] spread: &str,
+    ) {
+        let code = |props: &str| {
+            reset_class_map();
+            reset_file_map();
+            extract(
+                "test.tsx",
+                &format!(
+                    "import {{ Box, css, keyframes }} from '@devup-ui/react';\nconst slide = keyframes({{ from: {{ left: 0 }} }});\nconst card = css({{ p: 1 }});\nexport const d = <Box {props} />;"
+                ),
+                ExtractOption::default(),
+            )
+            .unwrap()
+            .code
+        };
+        let expected = code(attribute);
+        assert!(!expected.contains("style="), "{expected}");
+        assert_eq!(code(spread), expected);
     }
 
     #[test]
@@ -22302,8 +22550,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
                 &resolver,
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
         reset_class_map();
@@ -22341,7 +22588,7 @@ export const f = css(card, { p: String(SIZE) + 'px' });",
             ),
             (
                 "import { Box } from '@devup-ui/react';\nconst f = () => 1;\n<Box w={f()} />;",
-                false,
+                true,
             ),
             (
                 "import { css } from 'other';\nconst f = () => 1;\ncss({ w: f() });",
@@ -22560,10 +22807,12 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
             false,
             &memory_resolver(&[("/src/tokens.ts", "export const list = [1, 2];")]),
         );
+        // The length of a constant array is the number it is, which composes
+        // no style, as written.
         assert!(
             partial
                 .as_ref()
-                .is_ok_and(|output| output.styles.is_empty()),
+                .is_err_and(|error| error.to_string().contains("Cannot compose `2`")),
             "{partial:?}"
         );
 
@@ -22575,8 +22824,7 @@ export const d = <Box transitionDuration={300} animationDelay={0.5} counterReset
             ExtractOption::default(),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(message.contains("cannot use `pick()`"), "{message}");
     }
 
@@ -22665,8 +22913,7 @@ export default class {}",
                 &resolver,
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -22702,8 +22949,7 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("cannot use"), "{code}: {message}");
         }
         // An exact function over what folding cannot read runs at build time
@@ -22740,8 +22986,7 @@ export const b = <Box p={Math.max(1, W)} m={Math.E > 2 ? 1 : 2} />;"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains("Math."), "{code}: {message}");
         }
         reset_class_map();
@@ -22820,8 +23065,7 @@ export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } 
             &memory_resolver(cycle),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             error.contains("Cannot access 'b' of '/src/b.css.ts' before its initialization: it is part of an import cycle"),
             "{error}"
@@ -23164,8 +23408,7 @@ const member = styled.p({ pt: '2px' });"
                 ExtractOption::default(),
             )
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
+            .map_or_default(|error| error.to_string());
             assert!(message.contains(error), "{code}\n{message}");
         }
     }
@@ -23384,8 +23627,7 @@ const e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, > i': { color: 'b
             errors.push(
                 extract("test.tsx", source, ExtractOption::default())
                     .err()
-                    .map(|error| error.to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|error| error.to_string()),
             );
         }
         let name = |location: &str, api: &str, code: &str| {
@@ -23458,8 +23700,7 @@ const e = <Box bg='red' props={extraProps} />;"
             ExtractOption::default(),
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(
             message.contains("`styled` is read at runtime, where it does not exist"),
             "{message}"
@@ -23509,7 +23750,7 @@ export const p = stylex.props(s.box(w, h));",
         )
         .code;
         assert!(
-            code.contains("style: \"--a:\" + ((v) => typeof v === \"number\" ? v + \"px\" : v)(w) + \";--b:\" + ((v) => typeof v === \"number\" ? v + \"px\" : v)(h)"),
+            code.contains("style: \"--a:\" + ((__devupUnit0) => typeof __devupUnit0 === \"number\" ? __devupUnit0 + \"px\" : __devupUnit0)(w) + \";--b:\" + ((__devupUnit1) => typeof __devupUnit1 === \"number\" ? __devupUnit1 + \"px\" : __devupUnit1)(h)"),
             "{code}"
         );
         assert!(code.contains("style: {\n\t\t\"--a\":"), "{code}");
@@ -23743,8 +23984,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             option,
         )
         .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+        .map_or_default(|error| error.to_string());
         assert!(error.starts_with("test.tsx:2:36: "), "{error}");
     }
 
@@ -23776,8 +24016,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             reset_file_map();
             extract("test.tsx", code, emotion_option())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default()
+                .map_or_default(|error| error.to_string())
         })
         .collect();
         assert_debug_snapshot!(errors);
@@ -23923,8 +24162,7 @@ injectGlobal`body { margin: 0; }`;",
             reset_file_map();
             extract("test.tsx", &format!("{import}{code}"), emotion_option())
                 .err()
-                .map(|error| error.to_string())
-                .unwrap_or_default()
+                .map_or_default(|error| error.to_string())
         })
         .collect();
         assert_debug_snapshot!(errors);

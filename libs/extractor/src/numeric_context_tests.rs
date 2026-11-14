@@ -27,16 +27,9 @@ fn call_inputs_when_css_reads_result_keep_application_numbers(
     };
     // When
     let output = extract("numeric.tsx", &code, option)?;
-    let variables = output
-        .code
-        .split_once("style={")
-        .ok_or("missing variables")?
-        .1
-        .split_once("} />")
-        .ok_or("missing element end")?
-        .0;
+    let compiled = crate::jsx_semantics_tests::whole::plain_script(&output.code);
     let script = format!(
-        "const seen=[];function f(input){{seen.push([typeof input.size,input]);return {result};}}function F(input){{this.width=f(input);}}const vars={variables};JSON.stringify([seen,Object.values(vars)]);"
+        "const seen=[];function f(input){{seen.push([typeof input.size,input]);return {result};}}function F(input){{this.width=f(input);}}const h=(_tag,props)=>({{props}});{compiled}const vars=App().props.style;JSON.stringify([seen,Object.values(vars)]);"
     );
     let json = boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(&script))
@@ -114,15 +107,15 @@ fn spread_numbers_when_composed_keep_source_library_units(
 )]
 #[case(
     "const inner={padding:props.padding,lineHeight:props.lineHeight}; return <div css={inner}/>;",
-    "inner[`padding`]"
+    "inner[\"padding\"]"
 )]
 #[case(
     "const inner={padding:props.getPadding(),lineHeight:props.lineHeight}; return <div css={inner}/>;",
-    "inner[`padding`]"
+    "inner[\"padding\"]"
 )]
 #[case(
     "const inner={_hover:{padding:props.padding,lineHeight:props.lineHeight}}; return <div css={inner}/>;",
-    "inner[`_hover`][`padding`]"
+    "inner[\"_hover\"][\"padding\"]"
 )]
 #[serial]
 fn runtime_lengths_when_css_prop_reads_values_convert_only_lengths(
@@ -142,20 +135,12 @@ fn runtime_lengths_when_css_prop_reads_values_convert_only_lengths(
     let output = extract("numeric.tsx", &code, option)?;
     // Then
     assert!(output.code.contains("typeof"), "{}", output.code);
-    assert!(output.code.contains("+`px`"), "{}", output.code);
+    assert!(output.code.contains("+ \"px\""), "{}", output.code);
     assert!(output.code.contains(read), "{}", output.code);
     assert_eq!(output.code.matches("typeof").count(), 1, "{}", output.code);
-    let initializer = body.split_once("return").ok_or("fixture needs a return")?.0;
-    let variables = output
-        .code
-        .split_once("style={")
-        .ok_or("compiled element needs CSS variables")?
-        .1
-        .split_once("} />")
-        .ok_or("compiled style expression needs a closing element")?
-        .0;
+    let compiled = crate::jsx_semantics_tests::whole::plain_script(&output.code);
     let script = format!(
-        "let calls=0; const props={{padding:{input},lineHeight:2,getPadding(){{calls++;return this.padding;}}}}; {initializer} const vars={variables}; JSON.stringify([Object.values(vars),calls]);"
+        "let calls=0; const props={{padding:{input},lineHeight:2,getPadding(){{calls++;return this.padding;}}}}; const h=(_tag,props)=>({{props}});{compiled}const vars=f(props).props.style; JSON.stringify([Object.values(vars),calls]);"
     );
     let result = boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(&script))

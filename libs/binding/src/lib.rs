@@ -46,6 +46,11 @@ where
     f(&mut guard)
 }
 
+/// The text of an error the internal exports return
+fn error_text(error: impl std::fmt::Display) -> String {
+    error.to_string()
+}
+
 /// Restore the sheet and its frozen atom plan together.
 pub fn import_sheet_internal(sheet: StyleSheet) {
     css::atom_hoist::restore_atom_plan(sheet.atom_plan.clone());
@@ -54,8 +59,7 @@ pub fn import_sheet_internal(sheet: StyleSheet) {
 
 /// Export the deterministic sheet snapshot without changing live storage.
 pub fn export_sheet_internal() -> Result<String, String> {
-    with_style_sheet(|sheet| serde_json::to_string(&sheet.export_snapshot()))
-        .map_err(|e| e.to_string())
+    with_style_sheet(|sheet| serde_json::to_string(&sheet.export_snapshot())).map_err(error_text)
 }
 
 /// Restore class allocations decoded by a host adapter.
@@ -72,7 +76,7 @@ pub fn export_class_map_internal() -> Result<String, String> {
             .collect();
         serde_json::to_string(&sorted)
     })
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 /// Restore file numbers decoded by a host adapter.
@@ -86,7 +90,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
         let sorted: BTreeMap<&String, &usize> = map.iter().collect();
         serde_json::to_string(&sorted)
     })
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 /// Restore canonical bucket identities decoded by a host adapter.
@@ -100,7 +104,7 @@ pub fn export_canonical_map_internal() -> Result<String, String> {
         let sorted: BTreeMap<&String, &String> = map.iter().collect();
         serde_json::to_string(&sorted)
     })
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 /// Seed deterministic file numbers without replacing existing assignments.

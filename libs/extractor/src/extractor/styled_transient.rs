@@ -1,16 +1,24 @@
-use oxc_allocator::Vec;
+use oxc_allocator::{FromIn, GetAllocator, Vec};
 use oxc_ast::{
     ast::{
         BindingPattern, Expression, FormalParameter, FormalParameterKind, FormalParameters,
-        IdentifierName, StaticMemberExpression,
+        IdentifierName, StaticMemberExpression, Str,
     },
     builder::AstBuilder,
 };
 use oxc_span::SPAN;
-use oxc_syntax::{number::NumberBase, operator::BinaryOperator};
+use oxc_syntax::{
+    number::NumberBase,
+    operator::{BinaryOperator, LogicalOperator},
+};
 
-/// Filter only the forwarded copy, leaving styled reads on the original rest object.
-pub(super) fn filter<'a>(builder: &AstBuilder<'a>, props: Expression<'a>) -> Expression<'a> {
+/// Filter only the forwarded copy, leaving styled reads on the original rest
+/// object, and leave out the props the styles withhold from it
+pub(super) fn filter<'a>(
+    builder: &AstBuilder<'a>,
+    props: Expression<'a>,
+    withheld: &[String],
+) -> Expression<'a> {
     let key = Expression::new_computed_member_expression(
         SPAN,
         Expression::new_identifier(SPAN, "k", builder),
@@ -18,12 +26,33 @@ pub(super) fn filter<'a>(builder: &AstBuilder<'a>, props: Expression<'a>) -> Exp
         false,
         builder,
     );
-    let body = Expression::new_binary_expression(
-        SPAN,
-        key,
-        BinaryOperator::StrictInequality,
-        Expression::new_string_literal(SPAN, "$", None, builder),
-        builder,
+    let differs = |left, right| {
+        Expression::new_binary_expression(
+            SPAN,
+            left,
+            BinaryOperator::StrictInequality,
+            right,
+            builder,
+        )
+    };
+    let body = withheld.iter().fold(
+        differs(
+            key,
+            Expression::new_string_literal(SPAN, "$", None, builder),
+        ),
+        |body, name| {
+            let name = Str::from_in(name.as_str(), builder.allocator());
+            Expression::new_logical_expression(
+                SPAN,
+                body,
+                LogicalOperator::And,
+                differs(
+                    Expression::new_identifier(SPAN, "k", builder),
+                    Expression::new_string_literal(SPAN, name, None, builder),
+                ),
+                builder,
+            )
+        },
     );
     let pattern = BindingPattern::new_array_pattern(
         SPAN,

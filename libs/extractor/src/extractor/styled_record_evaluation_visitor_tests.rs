@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use oxc_allocator::{Allocator, FromIn, GetAllocator};
 use oxc_ast::{ast::Expression, builder::AstBuilder};
+use oxc_ast_visit::VisitMut;
 use oxc_span::SPAN;
 use rstest::rstest;
 
@@ -22,6 +23,14 @@ enum Container {
     Enum,
     Expression,
     MemberExpression,
+}
+
+struct RenamePayload<'a>(&'a Allocator);
+impl<'a> VisitMut<'a> for RenamePayload<'a> {
+    fn visit_identifier_reference(&mut self, value: &mut oxc_ast::ast::IdentifierReference<'a>) {
+        let renamed = value.name.replace("__devupRecord", "__devupInherited");
+        value.name = oxc_ast::ast::Ident::from_in(renamed.as_str(), self.0);
+    }
 }
 
 fn identifier<'a>(builder: &AstBuilder<'a>, name: &str) -> Expression<'a> {
@@ -186,11 +195,7 @@ fn payloads_are_rewritten_when_style_expressions_are_visited(#[case] container: 
 
     // When: the callback rewrites actual AST identifier references/code payloads.
     visit_style_expressions(&builder, &mut style, &mut |expression| {
-        let Expression::Identifier(value) = expression else {
-            panic!("fixture visitor receives identifier expressions");
-        };
-        let renamed = value.name.replace("__devupRecord", "__devupInherited");
-        value.name = oxc_ast::ast::Ident::from_in(renamed.as_str(), builder.allocator());
+        RenamePayload(&allocator).visit_expression(expression);
     });
 
     // Then: every branch/map/array entry and AST control was rewritten.
@@ -305,4 +310,18 @@ fn metadata_is_unchanged_when_style_expressions_are_visited(
             None,
         ))
     );
+}
+
+#[test]
+#[should_panic(expected = "invalid generated dynamic expression")]
+fn dynamic_value_visitor_rejects_when_generated_identifier_is_not_an_expression() {
+    // Given: a dynamic declaration whose generated code is no expression.
+    let allocator = Allocator::default();
+    let builder = AstBuilder::new(&allocator);
+    let mut style = ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+        "width", 0, "(", None,
+    )));
+    // When/Then: visiting it reports the broken generated code instead of
+    // silently keeping it.
+    visit_style_expressions(&builder, &mut style, &mut |_| {});
 }

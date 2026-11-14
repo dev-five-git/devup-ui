@@ -64,7 +64,7 @@ fn normalize_source<'a>(
         .ok_or("expected expression statement")?;
     let values = crate::style_values::StyleValues::new(std::rc::Rc::new(scoping));
     let inline_css = rustc_hash::FxHashMap::default();
-    normalize(
+    let result = normalize(
         ast,
         &statement.expression,
         &StyledBindings {
@@ -72,8 +72,8 @@ fn normalize_source<'a>(
             values: &values,
             inline_css: &inline_css,
         },
-    )
-    .map_err(|_| "readable choices did not normalize".into())
+    );
+    result.map_err(|_| "readable choices did not normalize".into())
 }
 
 fn assert_props_lowering_contract(expression: &Expression<'_>) {

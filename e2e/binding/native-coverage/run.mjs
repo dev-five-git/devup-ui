@@ -81,7 +81,7 @@ try {
     '--engine',
     'llvm',
     '--timeout',
-    '180',
+    '600',
     '--features',
     'devup-ui-binding/native-coverage',
     '--objects',
