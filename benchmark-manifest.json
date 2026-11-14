@@ -18,7 +18,9 @@
     { "name": "vanilla-extract-devup-ui", "group": "turbopack", "gate": true },
     { "name": "tailwind-turbo-devup-ui", "group": "turbopack", "gate": true },
     { "name": "vinext-devup-ui", "group": "vite", "gate": true },
-    { "name": "devup-ui-collapse", "group": "turbopack", "gate": true }
+    { "name": "devup-ui-collapse", "group": "turbopack", "gate": true },
+    { "name": "devup-ui-large", "group": "webpack" },
+    { "name": "devup-ui-large-turbo", "group": "turbopack" }
   ],
   "controls": {
     "webpack": "tailwind",
