@@ -2,6 +2,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -1466,6 +1467,48 @@ describe('createModuleResolver', () => {
     expect(code('number-pkg')).toBeUndefined()
     expect(code('not-installed')).toBeUndefined()
   })
+  it('reads a module again only after it changes', () => {
+    const resolveModule = createModuleResolver({ cwd: root })
+    expect(resolveModule('./tokens', 'src/App.tsx')?.code).toBe(
+      'export const PRIMARY = "red"',
+    )
+    expect(resolveModule('@/tokens', 'src/App.tsx')?.code).toBe(
+      'export const PRIMARY = "red"',
+    )
+    writeFileSync(join(root, 'src/tokens.ts'), 'export const PRIMARY = "blue!"')
+    expect(resolveModule('./tokens', 'src/App.tsx')?.code).toBe(
+      'export const PRIMARY = "blue!"',
+    )
+  })
+
+  it('remembers packages until the manifest or the entry changes', () => {
+    const manifestPath = join(root, 'node_modules/pkg/package.json')
+    mkdirSync(dirname(manifestPath), { recursive: true })
+    writeFileSync(manifestPath, JSON.stringify({ main: 'a.js' }))
+    writeFileSync(join(root, 'node_modules/pkg/a.js'), 'a')
+    writeFileSync(join(root, 'node_modules/pkg/other.js'), 'b')
+    const manifests: string[] = []
+    const resolveModule = createModuleResolver({
+      cwd: root,
+      onPackageManifest: (path) => manifests.push(path),
+    })
+    const code = () => resolveModule('pkg', 'src/App.tsx')?.code
+    expect(code()).toBe('a')
+    expect(code()).toBe('a')
+    expect(manifests).toEqual([
+      realpathSync(manifestPath),
+      realpathSync(manifestPath),
+    ])
+    writeFileSync(manifestPath, JSON.stringify({ main: 'other.js' }))
+    expect(code()).toBe('b')
+    rmSync(join(root, 'node_modules/pkg/other.js'))
+    expect(code()).toBeUndefined()
+    writeFileSync(join(root, 'node_modules/pkg/other.js'), 'b again')
+    expect(code()).toBe('b again')
+    rmSync(dirname(manifestPath), { recursive: true })
+    expect(code()).toBeUndefined()
+  })
+
   it('defaults to the working directory and the path itself', () => {
     const resolveModule = createModuleResolver()
     expect(resolveModule('./tokens', join(root, 'src/App.tsx'))?.path).toBe(
