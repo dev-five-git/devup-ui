@@ -3,7 +3,7 @@ use super::*;
 fn token_theme(first: &str) -> Theme {
     serde_json::from_value(serde_json::json!({
         "length": {"default": {"space": [first, "2px"], "zero": ["0px", "4px"], "nullable": [null, "3px", "4px"]}},
-        "shadows": {"default": {"card": ["0 1px 2px black", "0 2px 4px black"], "space": ["0 3px 4px black", "0 4px 8px black"]}}
+        "shadows": {"default": {"card": ["0 1px 2px black", "0 2px 4px black"], "lift": ["0 3px 4px black", "0 4px 8px black"]}}
     }))
     .unwrap_or_else(|error| panic!("{error}"))
 }
@@ -28,7 +28,7 @@ fn first_value_refs_resolve_without_aliasing_responsive_variables() {
     // Given
     let source = r#"import {Box} from '@devup-ui/react'; export const A=<>
       <Box w="$space"/><Box w={["$space"]}/><Box boxShadow={["$card"]}/>
-      <Box boxShadow={["$space"]}/><Box w="0px"/><Box w={["$zero"]}/>
+      <Box boxShadow={["$lift"]}/><Box w="0px"/><Box w={["$zero"]}/>
       <Box w={["$missing"]}/><Box w={["$nullable"]}/></>;"#;
     for atom in [false, true] {
         let mut sheet = token_sheet(atom);
