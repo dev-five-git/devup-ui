@@ -121,6 +121,24 @@ function walkFiles(directory: string): string[] {
   })
 }
 
+/**
+ * The `/ko` routes with a Korean page: a `page.ko.mdx` beside the English
+ * one. Every other `/ko` route falls back to its English page.
+ */
+export function getTranslatedRoutes(): string[] {
+  const appRoot = resolve(process.cwd(), 'apps', 'landing', 'src', 'app')
+  return walkFiles(appRoot)
+    .filter((path) => path.endsWith(`${sep}page.ko.mdx`))
+    .map((path) => {
+      const segments = relative(appRoot, path)
+        .split(sep)
+        .slice(0, -1)
+        .filter((segment) => !/^\(.*\)$/u.test(segment))
+      return ['/ko', ...segments].join('/')
+    })
+    .sort()
+}
+
 function toOutputPath(path: string): string {
   return relative(LANDING_OUTPUT_ROOT, path).split(sep).join('/')
 }
