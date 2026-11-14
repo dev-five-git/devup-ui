@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/binding-linux-x64-musl",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": "https://github.com/dev-five-git/devup-ui",
   "license": "Apache-2.0",
   "publishConfig": {

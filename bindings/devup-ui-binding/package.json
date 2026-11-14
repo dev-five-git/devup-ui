@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/binding",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Synchronous native Devup UI build-time compiler for Node.js and Bun",
   "repository": "https://github.com/dev-five-git/devup-ui",
   "license": "Apache-2.0",

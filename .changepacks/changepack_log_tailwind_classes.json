@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Tailwind classes in a className: each class compiles on its own and every class Tailwind does not define (custom, plugin and analytics classes) stays as written, where any recognized class used to rebuild the whole className without them and could rewrite part of another class; a class touching a template interpolation (icon-${name}) is left as written, and template classNames no longer get spaces inserted around interpolations. A class whose variant is not understood stays as written instead of applying unconditionally; variants follow Tailwind v4: stacked variants compose (hover:focus: matches the element itself), hover is guarded by @media (hover: hover), group-*/peer-* use the group/peer marker classes (and group-hover/name), and data-*, aria-*, has-*, nth-*, *, **, supports-[…] and [&…]/[@media …] variants compile. Utilities emit all their declarations (size-*, rounded-t-*, truncate, sr-only, not-sr-only, text-sm with its line height, text-sm/6, leading-*), translate/rotate/scale/skew compose through Tailwind's individual properties and registered variables (@property) with negative values kept negative, and arbitrary values follow Tailwind's grammar: spaces for underscores except in url() and var() names, \\_ for an underscore, spaces around math operators, type hints, [property:value] and (--variable) shorthands. Words that only share a utility's prefix (select-wrapper, order-summary, cursor-foo) are no longer compiled",
-  "date": "2026-10-01T00:00:00.000Z"
-}
