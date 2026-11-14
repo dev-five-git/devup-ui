@@ -221,6 +221,74 @@
         "typescript": "^7.0.2",
       },
     },
+    "benchmark/next-devup-ui-large": {
+      "name": "next-devup-ui-large-benchmark",
+      "version": "0.1.0",
+      "dependencies": {
+        "@devup-ui/react": "workspace:^",
+        "next": "^16.4.6",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+      },
+      "devDependencies": {
+        "@devup-ui/next-plugin": "workspace:^",
+        "@types/node": "^26.6.6",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "typescript": "^7.0.2",
+      },
+    },
+    "benchmark/next-devup-ui-large-turbo": {
+      "name": "next-devup-ui-large-turbo-benchmark",
+      "version": "0.1.0",
+      "dependencies": {
+        "@devup-ui/react": "workspace:^",
+        "next": "^16.4.6",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+      },
+      "devDependencies": {
+        "@devup-ui/next-plugin": "workspace:^",
+        "@types/node": "^26.6.6",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "typescript": "^7.0.2",
+      },
+    },
+    "benchmark/next-devup-ui-large-turbo-wasm": {
+      "name": "next-devup-ui-large-turbo-wasm-benchmark",
+      "version": "0.1.0",
+      "dependencies": {
+        "@devup-ui/react": "workspace:^",
+        "next": "^16.4.6",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+      },
+      "devDependencies": {
+        "@devup-ui/next-plugin": "workspace:^",
+        "@types/node": "^26.6.6",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "typescript": "^7.0.2",
+      },
+    },
+    "benchmark/next-devup-ui-large-wasm": {
+      "name": "next-devup-ui-large-wasm-benchmark",
+      "version": "0.1.0",
+      "dependencies": {
+        "@devup-ui/react": "workspace:^",
+        "next": "^16.4.6",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+      },
+      "devDependencies": {
+        "@devup-ui/next-plugin": "workspace:^",
+        "@types/node": "^26.6.6",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "typescript": "^7.0.2",
+      },
+    },
     "benchmark/next-devup-ui-single": {
       "name": "next-devup-ui-single-benchmark",
       "version": "0.1.0",
@@ -2739,6 +2807,14 @@
     "next-devup-ui-benchmark": ["next-devup-ui-benchmark@workspace:benchmark/next-devup-ui"],
 
     "next-devup-ui-collapse-benchmark": ["next-devup-ui-collapse-benchmark@workspace:benchmark/next-devup-ui-collapse"],
+
+    "next-devup-ui-large-benchmark": ["next-devup-ui-large-benchmark@workspace:benchmark/next-devup-ui-large"],
+
+    "next-devup-ui-large-turbo-benchmark": ["next-devup-ui-large-turbo-benchmark@workspace:benchmark/next-devup-ui-large-turbo"],
+
+    "next-devup-ui-large-turbo-wasm-benchmark": ["next-devup-ui-large-turbo-wasm-benchmark@workspace:benchmark/next-devup-ui-large-turbo-wasm"],
+
+    "next-devup-ui-large-wasm-benchmark": ["next-devup-ui-large-wasm-benchmark@workspace:benchmark/next-devup-ui-large-wasm"],
 
     "next-devup-ui-single-benchmark": ["next-devup-ui-single-benchmark@workspace:benchmark/next-devup-ui-single"],
 

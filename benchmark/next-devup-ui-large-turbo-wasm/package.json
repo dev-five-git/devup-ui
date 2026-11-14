@@ -1,0 +1,22 @@
+{
+  "name": "next-devup-ui-large-turbo-wasm-benchmark",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node ../large-app.mjs && next build"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "next": "^16.4.6",
+    "@devup-ui/react": "workspace:^"
+  },
+  "devDependencies": {
+    "@devup-ui/next-plugin": "workspace:^",
+    "typescript": "^7.0.2",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}
