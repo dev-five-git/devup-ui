@@ -439,6 +439,28 @@ describe('DevupUINextPlugin', () => {
       })
     })
 
+    it('reads routes from the project root when it holds app or pages', () => {
+      // Given: a Next app with `app/` at the root and no `src/`.
+      existsSyncSpy.mockImplementation(
+        (path: fs.PathLike) => String(path) === resolve('app'),
+      )
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(resolve('app/page.tsx')))
+      try {
+        // When
+        DevupUI({}).webpack!(createWebpackConfig(), createWebpackContext())
+        // Then
+        expect(graphSpy).toHaveBeenCalledWith(
+          process.cwd(),
+          resolve('tsconfig.json'),
+        )
+      } finally {
+        graphSpy.mockRestore()
+      }
+    })
+
     it('should apply webpack plugin with dev', async () => {
       const ret = DevupUI({})
 

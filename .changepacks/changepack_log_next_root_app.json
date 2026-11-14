@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "Next apps with `app/` or `pages/` at the project root (no `src/`) are prewarmed and waited on like `src/` apps, so Turbopack production builds no longer fall back to a 2.5 s idle wait before serving the base CSS. Source scans skip dot directories such as `.next` and `.git`",
+  "date": "2026-11-15T00:00:00.000Z"
+}
