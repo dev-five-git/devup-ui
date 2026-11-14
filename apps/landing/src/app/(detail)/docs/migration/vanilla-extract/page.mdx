@@ -169,3 +169,7 @@ Moving those calls into a `.css.ts` file — where vanilla-extract wants them an
 A namespace stands for many named exports whose Devup UI counterparts are renamed (`style` → `css`), which a namespace access cannot express, so it is left alone:
 
 Use named imports to get the rewrite.
+
+## Unsupported packages and APIs
+
+While `@vanilla-extract/css` is aliased, `@vanilla-extract/recipes`, `@vanilla-extract/sprinkles` and `@vanilla-extract/dynamic` are build errors however a file loads them — an import, `export … from`, `export *`, `require()` or `import()` — since what they generate or assign would never reach the stylesheet. `globalKeyframes()` is a build error too: Devup UI names every keyframes itself, so declare them with `keyframes()` and use the name it returns. To keep any of these, set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin.

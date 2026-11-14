@@ -500,38 +500,76 @@ pub struct Aliased<'a> {
 /// read numbers in as `px` lengths
 pub type PxMarks = rustc_hash::FxHashSet<(u32, u32)>;
 
-/// Packages generating CSS on top of vanilla-extract's, which Devup UI does not
+/// Packages working on top of vanilla-extract's, which Devup UI does not
 /// compile
-const VANILLA_EXTRACT_COMPANIONS: [&str; 2] =
-    ["@vanilla-extract/recipes", "@vanilla-extract/sprinkles"];
+const VANILLA_EXTRACT_COMPANIONS: [&str; 3] = [
+    "@vanilla-extract/recipes",
+    "@vanilla-extract/sprinkles",
+    VANILLA_EXTRACT_DYNAMIC,
+];
 
-/// The value imports of vanilla-extract's companion packages, as errors at
-/// their offsets: while `@vanilla-extract/css` compiles to Devup UI, the
-/// rules they generate would never reach the stylesheet
+/// vanilla-extract's package assigning variables at runtime
+const VANILLA_EXTRACT_DYNAMIC: &str = "@vanilla-extract/dynamic";
+
+/// Where code loads vanilla-extract's companion packages, by an import, a
+/// re-export, `require()` or `import()`, and imports `globalKeyframes`, as
+/// errors at their offsets: while `@vanilla-extract/css` compiles to Devup UI,
+/// none of them reaches the stylesheet
 pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
     if !VANILLA_EXTRACT_COMPANIONS
         .iter()
         .any(|package| code.contains(package))
+        && !code.contains("globalKeyframes")
     {
         return Vec::new();
     }
     let allocator = Allocator::default();
     let source_type = crate::parsing::source_type(filename).unwrap_or_default();
     let program = Parser::new(&allocator, code, source_type).parse().program;
-    program
-        .body
+    let mut errors: Vec<(u32, String)> =
+        crate::module_loads::module_loads(&program, &VANILLA_EXTRACT_COMPANIONS)
+            .into_iter()
+            .map(|(offset, package)| (offset, companion_error(package)))
+            .collect();
+    for statement in &program.body {
+        if let Statement::ImportDeclaration(import) = statement
+            && import.source.value == "@vanilla-extract/css"
+        {
+            errors.extend(global_keyframes_imports(import));
+        }
+    }
+    errors.sort_unstable();
+    errors
+}
+
+fn companion_error(package: &str) -> String {
+    if package == VANILLA_EXTRACT_DYNAMIC {
+        return format!(
+            "`{VANILLA_EXTRACT_DYNAMIC}` assigns variables at runtime, which Devup UI does not compile, as nothing may stay at runtime. Fix: pass the value as a style prop, which Devup UI binds to a CSS variable, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin"
+        );
+    }
+    format!(
+        "`{package}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin"
+    )
+}
+
+/// The value imports of `globalKeyframes` in `import_decl`, as errors at their
+/// specifiers: Devup UI names keyframes itself, so it has no keyframes of a
+/// global name to compile them to
+fn global_keyframes_imports(import_decl: &ImportDeclaration<'_>) -> Vec<(u32, String)> {
+    import_decl
+        .specifiers
         .iter()
-        .filter_map(|statement| match statement {
-            Statement::ImportDeclaration(import)
-                if !import.import_kind.is_type()
-                    && VANILLA_EXTRACT_COMPANIONS.iter().any(|name| import.source.value == *name) =>
+        .flatten()
+        .filter_map(|specifier| match specifier {
+            ImportDeclarationSpecifier::ImportSpecifier(spec)
+                if !import_decl.import_kind.is_type()
+                    && !spec.import_kind.is_type()
+                    && imported_name(&spec.imported) == "globalKeyframes" =>
             {
                 Some((
-                    import.span.start,
-                    format!(
-                        "`{}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin",
-                        import.source.value.display()
-                    ),
+                    spec.span.start,
+                    "`globalKeyframes()` from `@vanilla-extract/css` is not compiled by Devup UI, which names every keyframes itself, so the global name would never reach the stylesheet. Fix: declare them with `keyframes()` and use the name it returns, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin".to_string(),
                 ))
             }
             _ => None,
@@ -1445,6 +1483,45 @@ import { createSprinkles } from '@vanilla-extract/sprinkles'",
         );
         assert_eq!(
             companion_errors("import { style } from '@vanilla-extract/css'", "a.css.ts"),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn test_vanilla_extract_companions_are_reported_however_loaded() {
+        let errors = companion_errors(
+            "export { recipe } from '@vanilla-extract/recipes'
+export * from '@vanilla-extract/sprinkles'
+export type { RecipeVariants } from '@vanilla-extract/recipes'
+const { assignInlineVars } = require('@vanilla-extract/dynamic')
+const load = () => import('@vanilla-extract/recipes')
+import { style, globalKeyframes as frames, type GlobalStyleRule } from '@vanilla-extract/css'
+import type { globalKeyframes } from '@vanilla-extract/css'
+import { type globalKeyframes as typed } from '@vanilla-extract/css'
+import * as ve from '@vanilla-extract/css'",
+            "a.css.ts",
+        );
+        let found: Vec<(u32, &str)> = errors
+            .iter()
+            .map(|(offset, message)| (*offset, &message[..message.find(' ').unwrap_or(0)]))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                (0, "`@vanilla-extract/recipes`"),
+                (50, "`@vanilla-extract/sprinkles`"),
+                (185, "`@vanilla-extract/dynamic`"),
+                (240, "`@vanilla-extract/recipes`"),
+                (291, "`globalKeyframes()`"),
+            ],
+            "{errors:?}"
+        );
+        assert!(errors[2].1.contains("assigns variables at runtime"));
+        assert_eq!(
+            companion_errors(
+                "import { style } from '@vanilla-extract/css'; const globalKeyframes = 1",
+                "a.css.ts"
+            ),
             vec![]
         );
     }

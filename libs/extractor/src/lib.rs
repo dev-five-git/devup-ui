@@ -12106,6 +12106,25 @@ export const e = spin.toString()",
             "{error}"
         );
         assert!(extract("a.css.ts", code, option(false)).is_ok());
+        // However the module loads, and `globalKeyframes`, the TypeError the
+        // stylesheet run gave named neither
+        for (filename, code, shown) in [
+            (
+                "a.tsx",
+                "import { style } from '@vanilla-extract/css'\nconst { assignInlineVars } = require('@vanilla-extract/dynamic')",
+                "a.tsx:2:30: `@vanilla-extract/dynamic`",
+            ),
+            (
+                "a.css.ts",
+                "import { style, globalKeyframes } from '@vanilla-extract/css'\nglobalKeyframes('fade', { from: { opacity: 0 } })",
+                "a.css.ts:1:17: `globalKeyframes()`",
+            ),
+        ] {
+            let error = extract(filename, code, option(true))
+                .unwrap_err()
+                .to_string();
+            assert!(error.starts_with(shown), "{error}");
+        }
     }
 
     #[rstest]
