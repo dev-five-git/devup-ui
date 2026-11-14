@@ -710,6 +710,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_at_rule_key_reads_every_condition_kind() {
+        assert!(matches!(
+            parse_at_rule_key("@media print"),
+            Some((AtRuleKind::Media, query)) if query == "print"
+        ));
+        assert!(matches!(
+            parse_at_rule_key("@supports (display: grid)"),
+            Some((AtRuleKind::Supports, query)) if query == "(display: grid)"
+        ));
+        assert!(matches!(
+            parse_at_rule_key("@container (min-width: 400px)"),
+            Some((AtRuleKind::Container, query)) if query == "(min-width: 400px)"
+        ));
+        assert!(parse_at_rule_key("@layer base").is_none());
+    }
+
+    #[test]
     fn test_decompose_folds_every_at_rule() {
         let allocator = oxc_allocator::Allocator::default();
         let source = "({ default: 'red', '@media print': { ':hover': { '@media (prefers-reduced-motion: reduce)': 'blue', '@media screen': 'green' } } })";

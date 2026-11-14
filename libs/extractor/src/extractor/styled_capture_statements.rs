@@ -16,23 +16,17 @@ pub(crate) fn capture_statements<'a>(
     let mut statements = Vec::with_capacity_in(bindings.len() + 1, builder);
     for (name, value) in bindings {
         let name = Ident::from_in(name.as_str(), builder.allocator());
-        let value = Expression::new_sequence_expression(
-            SPAN,
-            Vec::from_array_in(
-                [
-                    Expression::new_numeric_literal(
-                        SPAN,
-                        0.0,
-                        None,
-                        oxc_syntax::number::NumberBase::Decimal,
-                        builder,
-                    ),
-                    value,
-                ],
-                builder,
-            ),
-            builder,
-        );
+        // Only an anonymous definition would take the name it is declared under.
+        let value = if matches!(
+            crate::utils::unwrap_syntax_only(&value),
+            Expression::ArrowFunctionExpression(_)
+                | Expression::FunctionExpression(_)
+                | Expression::ClassExpression(_)
+        ) {
+            crate::utils::unbound_value(builder, value)
+        } else {
+            value
+        };
         let declaration = VariableDeclarator::new(
             SPAN,
             BindingPattern::new_binding_identifier(SPAN, name, builder),

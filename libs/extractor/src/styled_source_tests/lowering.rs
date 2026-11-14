@@ -110,13 +110,16 @@ fn passthrough_props_remain_when_attrs_wrap_the_renderer(
     );
     assert_eq!(
         calls[0].props[0].1,
-        "Object.fromEntries(Object.entries((({ \"theme\": __devupOmit0, ...__devupDom }) => __devupDom)(rest)).filter(([k]) => k[0] !== \"$\"))"
+        "Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\" && k !== \"theme\"))"
     );
     assert_eq!(calls[0].props[3].1, "forwardedAs");
     assert!(output.contains("as: \"section\""));
     assert!(output.contains("ref: callerRef"));
     assert!(output.contains("children: \"child\""));
-    assert!(output.contains("role:"));
+    assert!(
+        output.contains("role:") || output.contains("rest.role = "),
+        "{output}"
+    );
 }
 
 #[rstest]

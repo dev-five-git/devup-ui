@@ -26,7 +26,7 @@ fn sequential_chunks_keep_previous_atom_when_later_branch_omits_key(
     .map_err(|error| format!("{error:?}"))?;
     // When: the same traversal produces legacy emission and sequential authored chunks.
     let (_, authored) = extract_with_order(
-        &ast,
+        (&ast).into(),
         None,
         &mut expression,
         0,
@@ -85,7 +85,7 @@ fn located_dynamic_leaf_keeps_authored_conditional_layer_winners(
     let mut prepared = 0;
     // When: the combined entry locates leaves while retaining authored chunks.
     let (result, authored) = extract_with_order_policy::<true>(
-        &ast,
+        (&ast).into(),
         None,
         &mut expression,
         0,
@@ -180,7 +180,7 @@ fn preparation_reaches_nested_shorthand_member_siblings_with_original_binding(
     let mut prepared = Vec::new();
     // When: real binding normalization runs at the combined seam's prepare hook.
     let (_, authored) = extract_with_order_policy::<false>(
-        &ast,
+        StyleInputs::with_values(&ast, &values),
         None,
         &mut statement.expression,
         0,

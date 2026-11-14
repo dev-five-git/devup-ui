@@ -1,6 +1,6 @@
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
-    ast::{Expression, ObjectExpression},
+    ast::{Expression, FormalParameters, ObjectExpression},
     builder::AstBuilder,
 };
 use oxc_ast_visit::{VisitMut, walk_mut};
@@ -13,6 +13,7 @@ pub(super) struct Direct<'b, 'p, 'a> {
     pub name: &'p str,
     pub scope: Expression<'a>,
     pub next: usize,
+    pub whole: Option<&'p FormalParameters<'a>>,
 }
 
 impl<'a> Captures<'a> for Direct<'_, '_, 'a> {
@@ -26,9 +27,20 @@ impl<'a> Captures<'a> for Direct<'_, '_, 'a> {
             source.clone_in_with_semantic_ids(builder.allocator()),
             builder,
         ));
-        let Some(mut prepared) =
-            crate::extractor::styled_record::prepare(builder, &source, &self.scope)
-        else {
+        let source = if let Some(params) = self.whole {
+            super::discarded::mapped_rules(builder, params, &source)?
+        } else {
+            source
+        };
+        let prepare = if self.whole.is_some() {
+            crate::extractor::styled_record::prepare_whole
+        } else {
+            crate::extractor::styled_record::prepare
+        };
+        let Some(mut prepared) = prepare(builder, &source, &self.scope) else {
+            if self.whole.is_some() {
+                return Err(PropsRulesError::Rules);
+            }
             let evaluated = source.clone_in_with_semantic_ids(builder.allocator());
             return Ok((source, vec![evaluated]));
         };
@@ -47,6 +59,7 @@ impl<'a> Captures<'a> for Direct<'_, '_, 'a> {
             names,
         };
         slots.visit_expression(&mut prepared.rules);
+        slots.vector = local;
         let values = prepared
             .bindings
             .into_iter()

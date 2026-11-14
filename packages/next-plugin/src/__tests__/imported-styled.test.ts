@@ -5,8 +5,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import * as wasm from '@devup-ui/wasm'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
@@ -76,7 +78,7 @@ describe('styled components another module defines', () => {
     expect(app.code).not.toContain('DevupAs = Card')
     expect(app.code).toContain('DevupAs = "div"')
     expect(app.code).toContain('DevupAs = "section"')
-    expect(app.code).toContain('role: "note"')
+    expect(app.code).toContain('role="note"')
     expect([...app.dependencies].sort()).toEqual([
       'node_modules/@acme/ui/src/index.js',
       'src/Base.tsx',
@@ -111,6 +113,160 @@ describe('styled components another module defines', () => {
     expect(after.code).toContain('DevupAs = "main"')
     expect(wasm.getCss(null, false)).toContain('color:green')
   })
+
+  for (const singleCss of [false, true]) {
+    for (const trigger of ['', "import { styled } from '@devup-ui/react'\n"]) {
+      it.each([
+        ["import { Dyn } from '@/Base'", 'Dyn', 'Dyn'],
+        ["import * as UI from '@/Base'", 'UI', 'UI.Dyn'],
+        [
+          "import * as UI from '@/Base'",
+          'UI',
+          "((UI['Dyn'] as typeof UI.Dyn)!)",
+        ],
+      ])(
+        `retargets an imported dynamic component with a shadow (${singleCss}, ${!!trigger}, %s)`,
+        async (imported, shadow, receiver) => {
+          // Given the same origin and resolver as the composing consumer.
+          const source = `${trigger}${imported}\nexport function untouched(${shadow}) { return ${receiver}.withComponent('section') }\nexport const Retargeted = ${receiver}.withComponent('a')\n`
+          const relevant = wasm.hasDevupUI(
+            'src/Retargeted.tsx',
+            source,
+            '@devup-ui/react',
+            { '@emotion/react': null, '@emotion/styled': 'styled' },
+          )
+          const compile = (file: string, code: string) =>
+            wasm.codeExtractWithoutSourceMap(
+              file,
+              code,
+              '@devup-ui/react',
+              '@devup-ui/react',
+              singleCss,
+              false,
+              false,
+              { '@emotion/react': null, '@emotion/styled': 'styled' },
+            )
+          const transpiler = new Bun.Transpiler({
+            loader: 'tsx',
+            tsconfig: { compilerOptions: { jsx: 'react' } },
+          })
+          const preload = createRequire(import.meta.url).resolve(
+            'bun-test-env-dom',
+          )
+          const testing = createRequire(preload).resolve(
+            '@testing-library/react',
+          )
+          const react = pathToFileURL(
+            createRequire(testing).resolve('react'),
+          ).href
+          const moduleUrl = (code: string) => {
+            const javascript = transpiler
+              .transformSync(
+                code.replace(/^import ["'][^"']+\.css["'];?\s*$/gm, ''),
+              )
+              .replace(/from ["']react["']/g, `from ${JSON.stringify(react)}`)
+            return `data:text/javascript;base64,${Buffer.from(`import * as React from ${JSON.stringify(react)};\n${javascript}`).toString('base64')}`
+          }
+          const origin = compile(
+            'src/Base.tsx',
+            readFileSync(join(root, 'src/Base.tsx'), 'utf8'),
+          )
+          const base = moduleUrl(origin.code)
+          const original = await import(base)
+
+          // When the complete emitted consumer module is evaluated and rendered.
+          const emitted = compile('src/Retargeted.tsx', source)
+          const compiled = await import(
+            moduleUrl(
+              emitted.code.replace(
+                /from ["']@\/Base["']/g,
+                `from ${JSON.stringify(base)}`,
+              ),
+            )
+          )
+          expect(emitted.dependencies).toEqual(['src/Base.tsx'])
+          expect(emitted.code.match(/\.withComponent\(/g)).toHaveLength(1)
+          const calls: string[] = []
+          const sentinel = {
+            withComponent: (tag: string) => {
+              calls.push(tag)
+              return 'shadow-result'
+            },
+          }
+          expect(
+            compiled.untouched(shadow === 'Dyn' ? sentinel : { Dyn: sentinel }),
+          ).toBe('shadow-result')
+          expect(calls).toEqual(['section'])
+          const React = await import(react)
+          const { render } = await import(pathToFileURL(testing).href)
+          const css = [origin.cssFile, emitted.cssFile]
+            .map((file) => {
+              const number = /devup-ui-(\d+)\.css$/.exec(file ?? '')?.[1]
+              return wasm.getCss(number ? Number(number) : null, false)
+            })
+            .join('\n')
+          const ref = { current: null }
+          for (const [Component, tag, big] of [
+            [original.Base, 'DIV', undefined],
+            [original.Dyn, 'BUTTON', false],
+            [original.Dyn, 'BUTTON', true],
+            [compiled.Retargeted, 'A', false],
+            [compiled.Retargeted, 'A', true],
+          ] as const) {
+            const rendered = render(
+              React.createElement(
+                Component,
+                {
+                  ...(big === undefined ? {} : { big }),
+                  ref,
+                  className: 'caller',
+                  style: { opacity: 0.5 },
+                },
+                'child',
+              ),
+            )
+            try {
+              // Then real React reaches the final host through origin-owned stages.
+              const element = rendered.container.firstElementChild
+              expect(element.tagName).toBe(tag)
+              expect(ref.current).toBe(element)
+              expect(element.textContent).toBe('child')
+              expect(
+                element.className
+                  .split(' ')
+                  .filter((name: string) => name === 'caller'),
+              ).toHaveLength(1)
+              expect(element.style.opacity).toBe('0.5')
+              const declarations = element.className
+                .split(' ')
+                .flatMap((name: string) =>
+                  [
+                    ...css.matchAll(new RegExp(`\\.${name}\\{([^}]+)\\}`, 'g')),
+                  ].map((match) => match[1]),
+                )
+                .join(';')
+              const fontSize = /font-size:([^;}]+)/
+                .exec(declarations)?.[1]
+                ?.replace(
+                  /var\((--[\w-]+)\)/g,
+                  (_match: string, variable: string) =>
+                    element.style.getPropertyValue(variable),
+                )
+              if (big === undefined) {
+                expect(declarations).toMatch(/(?:^|;)color:red(?:;|$)/)
+                expect(declarations).toMatch(/(?:^|;)padding:4px(?:;|$)/)
+              } else {
+                expect(fontSize).toBe(big ? '20px' : '10px')
+              }
+            } finally {
+              rendered.unmount()
+            }
+          }
+          expect(relevant).toBe(true)
+        },
+      )
+    }
+  }
 
   it('selects a component by the class its own module gives it', () => {
     write(

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Reject unresolved imports and font-face values, misplaced font-template expressions and unusable functional-selector arguments with located build errors, preserving static values and genuine optional absence without a styling runtime.",
+  "date": "2026-10-19T00:00:00.000Z"
+}

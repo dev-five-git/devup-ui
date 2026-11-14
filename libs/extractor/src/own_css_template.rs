@@ -96,7 +96,8 @@ impl<'a> DevupVisitor<'a> {
             mixins.push(self.own_class(rules, part, offset));
         }
         self.css_styles = None;
-        merge_expression_for_class_name(&self.ast, mixins.into_iter().chain(class))
-            .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast))
+        // A template giving no class at all is the empty one
+        let empty = Expression::new_string_literal(SPAN, "", None, &self.ast);
+        merge_expression_for_class_name(&self.ast, mixins.into_iter().chain(class)).unwrap_or(empty)
     }
 }

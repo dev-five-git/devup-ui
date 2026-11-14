@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Avoid cloning unreferenced constant initializers and defer initialization analysis until constant reads need it. Extraction output and build errors are unchanged.",
+  "date": "2026-10-24T00:00:00.000Z"
+}

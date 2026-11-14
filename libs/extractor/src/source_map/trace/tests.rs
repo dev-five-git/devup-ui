@@ -23,8 +23,7 @@ fn marks_tie_the_generated_tokens_to_the_parsed_ones() {
     assert_eq!(output.code, "let a = 1;\nlet b = a;\n");
     let marks = output
         .map
-        .map(|map| marks(&map, &output.code, source))
-        .unwrap_or_default();
+        .map_or_default(|map| marks(&map, &output.code, source));
     assert!(marks.contains(&(15, 19)), "{marks:?}");
     assert!(marks.contains(&(19, 23)), "{marks:?}");
     assert!(marks.is_sorted(), "{marks:?}");

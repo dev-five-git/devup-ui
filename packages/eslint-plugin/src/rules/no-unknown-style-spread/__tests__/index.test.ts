@@ -87,9 +87,20 @@ describe('no-unknown-style-spread', () => {
       'function f() { return <Box {...unresolvedBinding} /> }',
       'function f(props: React.HTMLAttributes<HTMLDivElement>) { return <Box className="before" {...props} style={{ color: "red" }} /> }',
       'function f(props: React.HTMLAttributes<HTMLDivElement>) { return <Box style={{ color: "red" }} {...props} className="after" /> }',
+      // A side the build reads styles from next to a runtime one is a build error
+      'function f(rest: DevupProps | undefined) { return <Box {...(rest || { bg: "red" })} /> }',
+      'import { styles } from "./imported"; function f(rest: DevupProps) { return <Box {...(rest ?? styles)} /> }',
+      'const known = { bg: "red" }; function f(rest: DevupProps) { return <Box {...((rest as DevupProps) || known)} /> }',
+      'function f(rest: DevupProps, on: boolean) { return <Box {...(rest || (on && { p: 2 }))} /> }',
     ].map((code) => ({ code: imports + code, filename })),
     invalid: [
       ...runtimeCases,
+      // ... and a side the build cannot read styles from is passed through
+      'function f(rest: DevupProps) { return <Box {...(rest || { onClick() {} })} /> }',
+      'function f(rest: DevupProps) { const made = String(rest); return <Box {...(rest || made)} /> }',
+      'function f(rest: DevupProps, other: DevupProps) { const copied = { ...other }; return <Box {...(rest || copied)} /> }',
+      'function f(rest: DevupProps) { return <Box {...(rest || unresolvedBinding)} /> }',
+      'function f(rest: DevupProps) { return <Box {...(rest || String(rest))} /> }',
       ...invalidTypes.map(
         (type) => `function f(props: ${type}) { return <Box {...props} /> }`,
       ),

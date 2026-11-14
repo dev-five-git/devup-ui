@@ -69,3 +69,36 @@ fn exported_getters_cannot_hide_forbidden_reads_until_after_stylesheet_execution
     );
     Ok(())
 }
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn setup_errors_are_told_against_the_script_they_set_up(#[case] instrumented: bool) {
+    // Given an error of the sandbox the build sets up
+    let script = crate::module_loader::Script::default();
+    let located = crate::evaluation_sandbox::instrument_located(
+        "1",
+        crate::module_loader::SCRIPT_PATH,
+        &|_| true,
+    );
+    let error = boa_engine::JsNativeError::typ().with_message("helper is not configurable");
+    // When it is reported
+    let told = super::setup_error(&script, instrumented.then_some(&located), "a.css.ts")(&error);
+    // Then the script names the file and the instrumentation locates its frames
+    let text = error.to_string();
+    let expected = if instrumented {
+        script.explain(&located.explain(&text), "a.css.ts")
+    } else {
+        script.explain(&text, "a.css.ts")
+    };
+    assert_eq!(told, expected);
+    assert!(told.contains("helper is not configurable"), "{told}");
+}
+
+#[test]
+fn registration_errors_name_the_api_object() {
+    assert_eq!(
+        super::registration_error("not extensible"),
+        "Failed to register __vanilla_extract__: not extensible"
+    );
+}

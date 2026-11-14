@@ -30,6 +30,7 @@ fn discarded_rules_when_cloned_preserve_the_original_semantic_reference() {
         name: "captures",
         scope: statement.expression.clone_in_with_semantic_ids(&arena),
         next: 1,
+        whole: None,
     };
     // When: the direct-capture contract retains an object for evaluation only.
     let Ok(cloned) = direct.discarded_object(&statement.expression) else {

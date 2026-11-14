@@ -1,15 +1,18 @@
 use super::*;
+use crate::extract_style::{
+    extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
+};
 
 #[rstest]
 #[case(
     "const inner = [{ padding: props.padding, lineHeight: props.lineHeight }]; return <div css={inner} />;",
-    "inner[`0`][`padding`]",
-    "inner[`0`][`lineHeight`]"
+    "inner[\"0\"][\"padding\"]",
+    "inner[\"0\"][\"lineHeight\"]"
 )]
 #[case(
     "const inner = [...[...[{ padding: props.padding, lineHeight: props.lineHeight }]]]; return <div css={inner} />;",
-    "inner[`0`][`padding`]",
-    "inner[`0`][`lineHeight`]"
+    "inner[\"0\"][\"padding\"]",
+    "inner[\"0\"][\"lineHeight\"]"
 )]
 #[case(
     "return <div css={[...[{ padding: props.padding, lineHeight: props.lineHeight }]]} />;",
@@ -34,7 +37,6 @@ fn css_variables_when_exact_arrays_compose_keep_numeric_roles(
         format!("import {{ css }} from '@emotion/react'; export function f(props) {{ {body} }}");
     // When
     let output = extract("local-array.tsx", &code, emotion_option())?;
-    let compiled: String = output.code.split_whitespace().collect();
     // Then
     assert_eq!(
         output
@@ -44,18 +46,17 @@ fn css_variables_when_exact_arrays_compose_keep_numeric_roles(
             .count(),
         2
     );
-    assert!(
-        compiled.contains(&format!(")({padding})")),
-        "{}",
-        output.code
-    );
-    assert!(
-        compiled.contains(&format!(":{line_height}")),
-        "{}",
-        output.code
+    crate::style_slot_test_support::assert_variables(
+        &output,
+        "local-array.tsx",
+        &emotion_option(),
+        &[
+            ("padding", crate::style_slot_test_support::numeric(padding)),
+            ("line-height", line_height.to_owned()),
+        ],
     );
     assert_eq!(
-        compiled.matches("typeof__devupValue").count(),
+        output.code.matches("typeof __devupValue").count(),
         1,
         "{}",
         output.code
@@ -128,11 +129,7 @@ fn styled_callback_when_local_matches_inline_semantics(
         );
     } else {
         assert!(local.code.contains("tone=\"purple\""), "{}", local.code);
-        assert!(
-            local.code.contains("\"tone\": __devupOmit"),
-            "{}",
-            local.code
-        );
+        assert!(local.code.contains("k !== \"tone\""), "{}", local.code);
         assert!(local.code.contains(".tone"), "{}", local.code);
     }
     Ok(())
@@ -149,13 +146,26 @@ fn callbacks_when_passed_as_ordinary_props_keep_original_identity()
     // When
     let output = extract("local-callback.tsx", code, emotion_option())?;
     // Then
-    assert!(
-        output.code.contains("onClick: inner[\"onClick\"]"),
-        "{}",
-        output.code
+    assert_eq!(
+        output.styles,
+        std::iter::once(ExtractStyleValue::Static(ExtractStaticStyle::new(
+            "color", "red", 0, None
+        )))
+        .collect()
     );
+    let bucket = crate::css_bucket("local-callback.tsx", &emotion_option());
+    let Some(style) = output.styles.iter().next() else {
+        panic!("one static style");
+    };
+    let Some(metadata) = style.extract(bucket.as_deref()) else {
+        panic!("class metadata");
+    };
+    let StyleProperty::ClassName(class_name) = metadata else {
+        panic!("expected static callback class");
+    };
+    assert!(output.code.contains("const DevupAs0 = Custom || \"div\", __devupValue0 = inner[\"onClick\"], __devupValue1 = inner[\"data-format\"];\n\treturn <DevupAs0"), "{}", output.code);
     assert!(
-        output.code.contains("inner[\"data-format\"]"),
+        output.code.contains(&format!("className=\"{class_name}\"")),
         "{}",
         output.code
     );
@@ -191,15 +201,17 @@ fn array_leaves_when_captured_use_original_paths_once() -> Result<(), Box<dyn st
         "{}",
         output.code
     );
-    assert!(
-        output.code.contains("(inner[`0`][`padding`])"),
-        "{}",
-        output.code
-    );
-    assert!(
-        output.code.contains("inner[`0`][`lineHeight`]"),
-        "{}",
-        output.code
+    crate::style_slot_test_support::assert_variables(
+        &output,
+        "local-array.tsx",
+        &emotion_option(),
+        &[
+            (
+                "padding",
+                crate::style_slot_test_support::numeric("inner[\"0\"][\"padding\"]"),
+            ),
+            ("line-height", "inner[\"0\"][\"lineHeight\"]".to_owned()),
+        ],
     );
     Ok(())
 }

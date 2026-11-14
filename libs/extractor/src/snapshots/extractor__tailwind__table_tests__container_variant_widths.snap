@@ -1,0 +1,12 @@
+---
+source: libs/extractor/src/tailwind_table_tests.rs
+expression: "conditions(&[\"@2xs:p-4\", \"@xs:p-4\", \"@xl:p-4\", \"@2xl:p-4\", \"@3xl:p-4\",\n\"@4xl:p-4\", \"@5xl:p-4\", \"@6xl:p-4\",])"
+---
+@2xs:p-4 => @container(width>=18rem)
+@xs:p-4 => @container(width>=20rem)
+@xl:p-4 => @container(width>=36rem)
+@2xl:p-4 => @container(width>=42rem)
+@3xl:p-4 => @container(width>=48rem)
+@4xl:p-4 => @container(width>=56rem)
+@5xl:p-4 => @container(width>=64rem)
+@6xl:p-4 => @container(width>=72rem)

@@ -85,3 +85,61 @@ fn a_definition_that_fails_for_another_reason_leaves_runtime_values(
     );
     Ok(())
 }
+
+#[test]
+fn objects_spread_into_unknown_code_keep_their_reads_at_runtime() -> Result<(), String> {
+    // Given objects whose every element is handed on, under any key, to a call
+    // the build does not know.
+    let code = "import { css } from '@devup-ui/react';\nconst sizes = ['b', 'a'].map((item) => ({ w: item.length }));\nmutate(...sizes);\nexport const a = css({ w: sizes[0].w });";
+    // When the build evaluates the style value, then that code may have
+    // changed the objects, so it computes nothing.
+    assert!(
+        evaluate(code)
+            .map_err(|errors| format!("{errors:?}"))?
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
+fn numbers_spread_into_unknown_code_still_compute() -> Result<(), String> {
+    // Given only numbers handed on, under any key, to a call the build does not know.
+    let code = "import { css } from '@devup-ui/react';\nconst sizes = ['b', 'a'].map((item) => item.length * 2);\nmutate(...sizes);\nexport const a = css({ w: sizes[0] });";
+    // When the build evaluates the style value, then no object can change.
+    let result = evaluate(code)
+        .map_err(|errors| format!("{errors:?}"))?
+        .ok_or("no computed value")?;
+    assert!(result.contains("w: 2"), "{result}");
+    Ok(())
+}
+
+#[rstest]
+#[case(
+    "const box = { w: 2 };\nconst read = () => { delete box.w; return 1; };",
+    None
+)]
+#[case(
+    "const read = () => { const box = { w: 2 }; delete box.w; return 3; };",
+    Some("w: 3")
+)]
+fn delete_changes_only_what_the_value_owns(
+    #[case] definitions: &str,
+    #[case] expected: Option<&str>,
+) -> Result<(), String> {
+    // Given a value whose function deletes a key of an outside or its own object.
+    let code = format!(
+        "import {{ css }} from '@devup-ui/react';\n{definitions}\nexport const a = css({{ w: read() }});"
+    );
+    // When the build evaluates it, then only deleting its own key leaves it exact.
+    let result = evaluate(&code).map_err(|errors| format!("{errors:?}"))?;
+    match expected {
+        Some(expected) => assert!(
+            result
+                .as_deref()
+                .is_some_and(|code| code.contains(expected)),
+            "{result:?}"
+        ),
+        None => assert!(result.is_none(), "{result:?}"),
+    }
+    Ok(())
+}

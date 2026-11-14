@@ -165,11 +165,7 @@ fn gen_class_name<'a>(
                 false,
                 ast_builder,
             ));
-            if let Expression::Identifier(_) = &expression {
-                Some(convert_class_name(ast_builder, &exp))
-            } else {
-                Some(exp)
-            }
+            Some(convert_class_name(ast_builder, &exp))
         }
     }
 }
@@ -181,8 +177,10 @@ pub fn merge_expression_for_class_name<'a>(
     let mut unknown_expr: Vec<Expression<'a>> = Vec::new();
     let mut class_name = String::new();
     for expr in expressions {
-        if let Expression::StringLiteral(str) = &expr
-            && let Some(value) = str.value.as_str()
+        if matches!(
+            &expr,
+            Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
+        ) && let Some(value) = crate::utils::get_string_by_literal_expression(&expr)
         {
             let value = value.trim();
             if !value.is_empty() {

@@ -42,6 +42,10 @@ struct Closure {
     statements: BTreeSet<usize>,
     /// The imports it reads, by local name, each as the value the build knows
     imports: BTreeMap<String, String>,
+    /// The checks, as JavaScript, that the bindings it reads hold no object
+    /// where the module hands them to other code while the build cannot tell
+    /// what they hold: that code may change it, so it then computes nothing
+    handed: BTreeSet<String>,
 }
 
 /// An expression whose reads the build can run
@@ -54,9 +58,24 @@ struct Found {
     /// A part `css()` or `styled()` composes, which a class computed in its
     /// place would turn into CSS text
     rules_only: bool,
+    /// A prop of an element, which reads `undefined` and an array hole as
+    /// they are: what JSON would write as `null` or leave out is not computed
+    exact: bool,
 }
 
 const UTILS: [&str; 4] = ["css", "globalCss", "keyframes", "createGlobalStyle"];
+
+/// The props of the style components that are no style values: what renders,
+/// what it composes, and how its styles are ordered
+const STYLE_ONLY_PROPS: [&str; 7] = [
+    "as",
+    "className",
+    "style",
+    "styleOrder",
+    "styleVars",
+    "selectors",
+    "props",
+];
 
 /// Whether `code` has a style value that only running the module computes:
 /// one that the constants it reads do not give once inlined
@@ -92,6 +111,7 @@ pub(crate) fn has_build_time_values(
         &|source| crate::package_specifier::is_package(source, &option.package),
         &inlined.unknown,
         &|name| changes.is_changed(name),
+        &|name| changes.handed(name),
         &|name| changes.known(name),
     )
     .is_empty()
@@ -122,10 +142,10 @@ const GLOBALS: [&str; 18] = [
 
 /// The members of `Math` every engine gives exactly; the others are
 /// approximations that may differ in their last digits
-const EXACT_MATH: [&str; 20] = [
-    "abs", "ceil", "floor", "round", "trunc", "sign", "max", "min", "sqrt", "fround", "imul",
-    "clz32", "PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2",
-];
+pub(crate) mod exact_math;
+#[cfg(test)]
+mod w22_tests;
+use exact_math::EXACT_MATH;
 
 /// Members giving what the locale, the Unicode data of the engine or chance
 /// make them, and `toString`, which engines only approximate with a radix:
@@ -153,16 +173,27 @@ fn find(
     is_style: &dyn Fn(&str) -> bool,
     unknown: &crate::imported_constants::Unknown,
     is_changed: &dyn Fn(&str) -> bool,
+    is_handed: &Handed<'_>,
     known: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<Found> {
     let scoping = SemanticBuilder::new()
         .build(program)
         .semantic
         .into_scoping();
-    let mut finder = Finder::new(program, &scoping, is_style, unknown, is_changed, known);
+    let mut finder = Finder::new(
+        program,
+        &scoping,
+        is_style,
+        unknown,
+        (is_changed, is_handed),
+        known,
+    );
     finder.visit_program(program);
     finder.found
 }
+
+/// The paths in a binding the build cannot read that the module hands on
+type Handed<'s> = dyn Fn(&str) -> Vec<Vec<Option<String>>> + 's;
 
 /// A top-level binding: the statement declaring it, and whether the module
 /// can run it without the style packages
@@ -189,11 +220,16 @@ struct Finder<'s, 'a> {
     /// Whether a binding holds an object or array code changes, which the
     /// module would compute from as declared
     is_changed: &'s dyn Fn(&str) -> bool,
+    /// The paths of a binding the build cannot read that the module hands to
+    /// other code
+    is_handed: &'s Handed<'s>,
     /// The value of an import as JavaScript source, when the build knows all
     /// of it; the module it comes from never runs
     known: &'s dyn Fn(&str) -> Option<String>,
     closures: FxHashMap<usize, Option<Closure>>,
     found: Vec<Found>,
+    /// Whether the values found now are props of an element
+    exact: bool,
 }
 
 fn is_evaluated_stylex(name: &str) -> bool {
@@ -206,7 +242,7 @@ impl<'s, 'a> Finder<'s, 'a> {
         scoping: &'s Scoping,
         is_style: &dyn Fn(&str) -> bool,
         unknown: &'s crate::imported_constants::Unknown,
-        is_changed: &'s dyn Fn(&str) -> bool,
+        (is_changed, is_handed): (&'s dyn Fn(&str) -> bool, &'s Handed<'s>),
         known: &'s dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let mut finder = Self {
@@ -221,9 +257,11 @@ impl<'s, 'a> Finder<'s, 'a> {
             components: FxHashSet::default(),
             unknown,
             is_changed,
+            is_handed,
             known,
             closures: FxHashMap::default(),
             found: Vec::new(),
+            exact: false,
         };
         for (index, statement) in program.body.iter().enumerate() {
             finder.bind(index, statement, is_style);
@@ -435,6 +473,21 @@ impl<'s, 'a> Finder<'s, 'a> {
             .is_some_and(|symbol| self.styled.contains(&symbol))
     }
 
+    /// What the prop `name` of a component gives `value` to: the parts of a
+    /// selector, or a style the module computes from constants, which is
+    /// the class of what it computes
+    fn prop(&mut self, name: &str, value: &Expression<'a>) {
+        if name.starts_with('_') {
+            self.parts(value, false);
+        } else if !STYLE_ONLY_PROPS.contains(&name)
+            && !css::is_special_property::is_special_property(name)
+        {
+            self.exact = true;
+            self.values(value, None);
+            self.exact = false;
+        }
+    }
+
     /// The parts `css()` and `styled()` compose: rule objects, whose values
     /// are read when `rules` is set, and classes, which only rules the module
     /// computes replace
@@ -590,6 +643,7 @@ impl<'s, 'a> Finder<'s, 'a> {
             closure,
             shorthand: shorthand.map(str::to_string),
             rules_only,
+            exact: self.exact,
         });
         true
     }
@@ -622,9 +676,24 @@ impl<'s, 'a> Finder<'s, 'a> {
                 continue;
             }
             closure.statements.insert(statement);
+            for path in (self.is_handed)(name) {
+                let keys: Vec<String> = path
+                    .iter()
+                    .map(|key| {
+                        key.as_ref().map_or_else(
+                            || "null".to_string(),
+                            |key| serde_json::to_string(key).unwrap_or_default(),
+                        )
+                    })
+                    .collect();
+                closure
+                    .handed
+                    .insert(format!("__handed__({name}, [{}])", keys.join(", ")));
+            }
             let inner = self.statement_closure(statement)?;
             closure.statements.extend(inner.statements);
             closure.imports.extend(inner.imports);
+            closure.handed.extend(inner.handed);
         }
         Some(closure)
     }
@@ -677,13 +746,12 @@ impl<'a> Visit<'a> for Finder<'_, 'a> {
                     }
                     oxc_ast::ast::JSXAttributeItem::Attribute(attribute) => {
                         if let oxc_ast::ast::JSXAttributeName::Identifier(name) = &attribute.name
-                            && name.name.starts_with('_')
                             && let Some(oxc_ast::ast::JSXAttributeValue::ExpressionContainer(
                                 container,
                             )) = &attribute.value
                             && let Some(value) = container.expression.as_expression()
                         {
-                            self.parts(value, false);
+                            self.prop(&name.name, value);
                         }
                     }
                 }
@@ -1050,10 +1118,17 @@ fn value_script(code: &str, found: &Found) -> Generated {
         .iter()
         .map(ToString::to_string)
         .collect();
+    let handed: Vec<&str> = found.closure.handed.iter().map(String::as_str).collect();
+    let handed = if handed.is_empty() {
+        "false".to_string()
+    } else {
+        handed.join(" || ")
+    };
     let mut generated = Generated::default();
     generated.text = format!(
-        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ return __literal__((",
-        statements.join(", ")
+        "(() => {{ if ([{}].some((statement) => __failed_statements__.has(statement))) return undefined; try {{ if ({handed}) return undefined; return __literal__({}, (",
+        statements.join(", "),
+        found.exact,
     );
     generated.copy(code, found.span.start as usize, found.span.end as usize);
     generated
