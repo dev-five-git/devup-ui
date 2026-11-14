@@ -159,17 +159,80 @@ fn conditional_orders_keep_the_implicit_false_branch_absent() -> Result<(), Box<
 
 #[test]
 #[serial]
-fn order_validation_keeps_pass_through_data_and_runtime_authority_unchanged() {
+fn order_validation_keeps_pass_through_data_and_attrs_unchanged() {
     let source = format!("{IMPORTS}
 const data = {{ styleOrder: '100px' }};
 const native = <div styleOrder='100px' />;
 const view = <Box data-values={{data}} props={{data}} styleVars={{{{ '--order': '100px' }}}} bg='red' />;
-const styledData = styled.div.attrs({{ styleOrder: '100px' }})({{ color: 'red' }});
-export const Runtime = (order) => <Box styleOrder={{order}} bg='red' />;
-export const Shadowed = (undefined) => <Box styleOrder={{undefined}} bg='red' />;");
+const styledData = styled.div.attrs({{ styleOrder: '100px' }})({{ color: 'red' }});");
     reset_class_map();
     reset_file_map();
     assert!(extract("order.tsx", &source, ExtractOption::default()).is_ok());
+}
+
+#[test]
+#[serial]
+fn runtime_orders_when_public_values_are_shadowed_keep_the_located_runtime_refusal()
+-> Result<(), Box<dyn Error>> {
+    for (name, parameter) in [("Runtime", "order"), ("Shadowed", "undefined")] {
+        let source = format!(
+            "{IMPORTS}export const {name} = ({parameter}) => <Box styleOrder={{{parameter}}} bg='red' />;"
+        );
+        reset_class_map();
+        reset_file_map();
+        let error = extract("order.tsx", &source, ExtractOption::default())
+            .err()
+            .ok_or("runtime order compiled")?
+            .to_string();
+        assert!(
+            error.starts_with(&expected_location(&source, parameter)?),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!("`<Box>` cannot use `{parameter}`")),
+            "{error}"
+        );
+        assert!(
+            error.contains("since the stylesheet places rules by it before the code runs"),
+            "{error}"
+        );
+        assert!(!error.contains("`styleOrder()`"), "{error}");
+    }
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn undefined_orders_when_global_or_shadowed_have_distinct_located_authorities()
+-> Result<(), Box<dyn Error>> {
+    let source = format!(
+        "{IMPORTS}export const Shadowed = (undefined) => <Box styleOrder={{undefined}} bg='red' />;\nexport const Global = <Box styleOrder={{undefined}} bg='red' />;"
+    );
+    reset_class_map();
+    reset_file_map();
+    let error = extract("order.tsx", &source, ExtractOption::default())
+        .err()
+        .ok_or("undefined orders compiled")?
+        .to_string();
+    let runtime_offset = source.find("{undefined}").ok_or("runtime fixture")? + 1;
+    let global_offset = source.rfind("{undefined}").ok_or("global fixture")? + 1;
+    assert_eq!(error.lines().count(), 2, "{error}");
+    assert!(
+        error.lines().any(|line| line.starts_with(&format!(
+            "{}:",
+            crate::locate("order.tsx", &source, runtime_offset)
+        )) && line.contains("`<Box>` cannot use `undefined`")),
+        "{error}"
+    );
+    assert!(
+        error.lines().any(|line| line.starts_with(&format!(
+            "{}:",
+            crate::locate("order.tsx", &source, global_offset)
+        )) && line
+            .contains(&crate::style_order::invalid_order("undefined"))),
+        "{error}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -265,4 +328,168 @@ fn style_order_jsx_shapes_report_written_values() -> Result<(), Box<dyn Error>> 
         );
     }
     Ok(())
+}
+
+#[rstest::rstest]
+#[case::css(("css(RULES)", "css"))]
+#[case::css_alias(("rule(RULES)", "css"))]
+#[case::css_wrapped(("css(((RULES) as const))", "css"))]
+#[case::styled(("styled('div', RULES)", "styled"))]
+#[case::styled_member(("styled.div(RULES)", "styled"))]
+#[case::styled_curried(("styled('div')(RULES)", "styled"))]
+#[case::keyframes(("keyframes({ from: RULES })", "keyframes"))]
+#[serial]
+fn b1_object_orders_refuse_when_unresolved(
+    #[case] root: (&str, &str),
+    #[values("order", "cond || 2", "cond ? 1 : other", "cond && other", "undefined")]
+    expression: &str,
+    #[values(false, true)] single_css: bool,
+) -> Result<(), Box<dyn Error>> {
+    // Given a consumed root with genuinely parameter-bound values, including undefined.
+    let rules = format!("{{ color: 'red', styleOrder: {expression} }}");
+    let call = root.0.replace("RULES", &rules);
+    let source = format!(
+        "{IMPORTS}import {{ css as rule }} from '@devup-ui/react';\nexport const make = (order, cond, other, undefined) => {call};"
+    );
+    let offset = source.rfind(expression).ok_or("missing authored order")?;
+    let expected = format!("{}:", crate::locate("order.tsx", &source, offset));
+    reset_class_map();
+    reset_file_map();
+    // When the public compiler consumes this independent matrix cell.
+    let error = extract(
+        "order.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .err()
+    .ok_or("unresolved object styleOrder compiled")?
+    .to_string();
+    // Then B1 owns exactly one error at the whole expression, not its last branch.
+    assert_eq!(error.lines().count(), 1, "{error}");
+    assert!(error.starts_with(&expected), "{expected}\n{error}");
+    assert!(
+        error.contains(&format!("`{}()` cannot use `{expression}`", root.1)),
+        "{error}"
+    );
+    assert!(error.contains("`styleOrder` must be a number, or a condition choosing between numbers, since the stylesheet places rules by it before the code runs"), "{error}");
+    assert!(!error.contains("`styleOrder()`"), "{error}");
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::css("css(RULES)")]
+#[case::styled("styled('div', RULES)")]
+#[case::keyframes("keyframes({ from: RULES })")]
+#[serial]
+fn b1_controls_keep_a1_when_order_is_statically_invalid(
+    #[case] root: &str,
+    #[values("'100px'", "undefined", "cond ? 1 : '100px'", "cond ? other : '100px'")]
+    expression: &str,
+    #[values(false, true)] single_css: bool,
+) -> Result<(), Box<dyn Error>> {
+    // Given static invalid values, with undefined intentionally unbound.
+    let call = root.replace(
+        "RULES",
+        &format!("{{ color: 'red', styleOrder: {expression} }}"),
+    );
+    let source = format!("{IMPORTS}export const make = (cond) => {call};");
+    let expected = expected_location(&source, expression)?;
+    reset_class_map();
+    reset_file_map();
+    // When
+    let error = extract(
+        "order.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    )
+    .err()
+    .ok_or("static invalid order compiled")?
+    .to_string();
+    // Then A1 retains branch location and exclusive diagnostic ownership.
+    assert_eq!(error.lines().count(), 1, "{error}");
+    assert!(error.starts_with(&expected), "{expected}\n{error}");
+    let leaf = expression
+        .rsplit_once(" : ")
+        .map_or(expression, |(_, leaf)| leaf);
+    assert!(
+        error.contains(&crate::style_order::invalid_order(leaf)),
+        "{error}"
+    );
+    assert!(
+        !error.contains("since the stylesheet places rules by it before the code runs"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::omission("css({color:'red'}); styled.div({color:'red'}); keyframes({from:{opacity:0}})")]
+#[case::raw("css('styleOrder: 100px; color: red'); styled.div`styleOrder: 100px; color: red;`")]
+#[case::attrs("styled.div.attrs({styleOrder:'100px'})({color:'red'})")]
+#[case::data("({styleOrder:'100px'}); <div styleOrder='100px' />")]
+#[case::opaque_before("<Box {...{styleOrder:'100px',...rest}} bg='red' />")]
+#[case::opaque_after("<Box bg='red' {...{styleOrder:'100px',...rest}} />")]
+#[case::numeric(
+    "css({color:'red',styleOrder:2}); styled.div({color:'red',styleOrder:2}); keyframes({from:{opacity:0,styleOrder:2}})"
+)]
+#[case::css_ternary("css({color:'red',styleOrder:cond ? 1 : 2})")]
+#[case::css_and("css({color:'red',styleOrder:cond && 2})")]
+#[case::styled_ternary("styled.div({color:'red',styleOrder:cond ? 1 : 2})")]
+#[case::styled_and("styled.div({color:'red',styleOrder:cond && 2})")]
+#[case::frame_ternary("keyframes({from:{opacity:0,styleOrder:cond ? 1 : 2}})")]
+#[case::frame_and("keyframes({from:{opacity:0,styleOrder:cond && 2}})")]
+#[serial]
+fn b1_controls_compile_when_order_is_absent_raw_or_known(
+    #[case] body: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given existing successful controls; numeric conditions gain no new lowering.
+    let source = format!("{IMPORTS}export const make = (cond, rest) => {{ {body}; }};");
+    reset_class_map();
+    reset_file_map();
+    // When
+    let output = extract(
+        "order.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    );
+    // Then
+    assert!(output.is_ok(), "{source}\n{output:?}");
+}
+
+#[rstest::rstest]
+#[case::jsx("<Box {...{styleOrder:2,color:'red'}} color='blue' />")]
+#[case::factory("render(Box, {...{styleOrder:2,color:'red'},color:'blue'})")]
+#[case::css("css({...{styleOrder:2,color:'red'},color:'blue'})")]
+#[case::styled("styled.div({...{styleOrder:2,color:'red'},color:'blue'})")]
+#[case::keyframes("keyframes({from:{...{styleOrder:2,opacity:0},opacity:1}})")]
+#[serial]
+fn b1_controls_keep_d1_when_a_known_spread_is_consumed(
+    #[case] body: &str,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given a fully known D1 spread, not an opaque runtime record.
+    let source = format!("{IMPORTS}export const make = () => {body};");
+    reset_class_map();
+    reset_file_map();
+    // When
+    let output = extract(
+        "order.tsx",
+        &source,
+        ExtractOption {
+            single_css,
+            ..ExtractOption::default()
+        },
+    );
+    // Then known spreads retain their current successful compilation.
+    assert!(output.is_ok(), "{source}\n{output:?}");
 }

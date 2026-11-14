@@ -108,10 +108,29 @@ pub(super) fn lower<'a>(
         PropsRulesError::Theme(error) => error,
     };
     let skeleton = if let Expression::ObjectExpression(object) = unwrap_syntax_only(returned) {
-        if leaves::shape::needs_projection(returned) {
+        let structured_spread = object.properties.iter().any(|property| {
+            matches!(property,
+            oxc_ast::ast::ObjectPropertyKind::SpreadProperty(spread)
+                if !matches!(unwrap_syntax_only(&spread.argument), Expression::ObjectExpression(_)))
+        });
+        if leaves::shape::needs_projection(returned) || structured_spread {
             let local = evaluations.fresh_name();
-            let (skeleton, assignments) =
-                branches::Captures::object(&mut leaves, object, &local).map_err(map_error)?;
+            let (skeleton, assignments) = if structured_spread {
+                branches::Captures::object(
+                    &mut direct::Direct {
+                        builder,
+                        name: &name,
+                        scope: style.clone_in_with_semantic_ids(builder.allocator()),
+                        next: 0,
+                        whole: Some(params),
+                    },
+                    object,
+                    &local,
+                )
+            } else {
+                branches::Captures::object(&mut leaves, object, &local)
+            }
+            .map_err(map_error)?;
             let schedule = if assignments.is_empty() {
                 values::zero(builder)
             } else {
@@ -200,6 +219,7 @@ pub(super) fn lower_direct<'a>(
             name: &name,
             scope,
             next: 1,
+            whole: None,
         },
         local: &name,
         bindings,

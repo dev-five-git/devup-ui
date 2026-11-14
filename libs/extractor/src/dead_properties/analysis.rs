@@ -6,6 +6,11 @@ pub(super) struct Analysis {
     pub ranges: Vec<(u32, u32)>,
 }
 
+/// An offset as an index, which it always fits on the targets the build runs on
+fn wide(offset: u32) -> Result<usize, String> {
+    usize::try_from(offset).map_err(|error| error.to_string())
+}
+
 impl Analysis {
     pub fn diagnostics(
         &self,
@@ -21,7 +26,7 @@ impl Analysis {
         self.errors
             .iter()
             .map(|(offset, message)| {
-                let offset = usize::try_from(*offset).map_err(|error| error.to_string())?;
+                let offset = wide(*offset)?;
                 let key = authored(offset);
                 let call = self
                     .ranges
@@ -31,9 +36,8 @@ impl Analysis {
                             && usize::try_from(*end).is_ok_and(|end| offset <= end)
                     })
                     .min_by_key(|(start, end)| end - start)
-                    .map(|(start, _)| usize::try_from(*start).map(authored))
-                    .transpose()
-                    .map_err(|error| error.to_string())?;
+                    .map(|(start, _)| *start);
+                let call = call.map(wide).transpose()?.map(authored);
                 let owner = evaluated.and_then(|ranges| {
                     ranges
                         .iter()

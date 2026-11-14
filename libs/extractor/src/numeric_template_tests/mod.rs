@@ -113,41 +113,21 @@ fn template_values_preserve_interpolations_when_extracted(
                             (style.property(), style.level(), style.selector()),
                             (property, level, None)
                         );
-                        match surface {
-                            Surface::Box | Surface::Responsive => {
-                                let arena = Allocator::default();
-                                let input = Parser::new(&arena, expression, SourceType::mjs())
-                                    .parse_expression()
-                                    .unwrap_or_else(|error| {
-                                        panic!("invalid input expression: {error:?}")
-                                    });
-                                let retained =
-                                    Parser::new(&arena, style.identifier(), SourceType::mjs())
-                                        .parse_expression()
-                                        .unwrap_or_else(|error| {
-                                            panic!("invalid dynamic expression: {error:?}")
-                                        });
-                                let evaluate = |expression| {
-                                    let script = format!(
-                                        "const trace=[]; const value=5; JSON.stringify([{expression},trace]);"
-                                    );
-                                    Context::default()
-                                        .eval(Source::from_bytes(&script))
-                                        .unwrap_or_else(|error| {
-                                            panic!("template evaluation failed: {error}")
-                                        })
-                                        .as_string()
-                                        .unwrap_or_else(|| panic!("template must return JSON text"))
-                                        .to_std_string_escaped()
-                                };
-                                assert_eq!(
-                                    evaluate(crate::utils::readable_code(&retained)),
-                                    evaluate(crate::utils::readable_code(&input))
-                                );
-                            }
-                            Surface::Styled => assert_ne!(style.identifier(), ""),
+                        let invocation = match surface {
+                            Surface::Box | Surface::Responsive => "render(5, trace)",
+                            Surface::Styled => "render(5, trace)({})",
                             Surface::Css => unreachable!("runtime css must fail extraction"),
-                        }
+                        };
+                        let authored = format!(
+                            "const trace=[];const value=5;JSON.stringify([trace,[{expression}]]);"
+                        );
+                        let expected = Context::default()
+                            .eval(Source::from_bytes(&authored))
+                            .unwrap_or_else(|error| panic!("authored template failed: {error}"))
+                            .as_string()
+                            .unwrap_or_else(|| panic!("authored template must return JSON"))
+                            .to_std_string_escaped();
+                        assert_eq!(execution::observe(&output, invocation), expected);
                     }
                     other => panic!("unexpected template style: {other:?}"),
                 }

@@ -2,6 +2,7 @@
 //! `const fadeIn = keyframes({ ... })`: the build gives it a name, so styles
 //! reading the binding read that name
 
+mod absence;
 use std::rc::Rc;
 
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -45,6 +46,7 @@ pub struct StyleValues<'a> {
     texts: FxHashMap<SymbolId, String>,
     rules: FxHashMap<SymbolId, Expression<'a>>,
     calls: FxHashMap<u32, Expression<'a>>,
+    absent_references: FxHashSet<oxc_span::Span>,
 }
 
 impl<'a> StyleValues<'a> {
@@ -59,6 +61,7 @@ impl<'a> StyleValues<'a> {
             texts: FxHashMap::default(),
             rules: FxHashMap::default(),
             calls: FxHashMap::default(),
+            absent_references: FxHashSet::default(),
         }
     }
 
@@ -100,6 +103,20 @@ impl<'a> StyleValues<'a> {
         self.scoping
             .as_ref()
             .is_some_and(|scoping| scoping.symbol_scope_id(symbol) != scoping.root_scope_id())
+    }
+
+    /// Whether every read of `symbol` is one of `references`
+    pub fn read_only_by(
+        &self,
+        symbol: SymbolId,
+        references: &FxHashSet<oxc_syntax::reference::ReferenceId>,
+    ) -> bool {
+        self.scoping.as_ref().is_some_and(|scoping| {
+            scoping
+                .get_resolved_reference_ids(symbol)
+                .iter()
+                .all(|reference| references.contains(reference))
+        })
     }
 
     pub fn insert(&mut self, symbol: SymbolId, value: StyleValue) {
@@ -200,6 +217,13 @@ impl<'a> StyleValues<'a> {
 
     /// `expression` reading what the bindings recorded hold
     pub fn read_in(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
+        self.read_in_order(ast, expression);
+        crate::const_fold::fold(ast, expression);
+    }
+
+    /// `expression` reading what the bindings recorded hold, written as
+    /// written otherwise, as a `styleOrder` is reported
+    pub fn read_in_order(&self, ast: &AstBuilder<'a>, expression: &mut Expression<'a>) {
         if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_expression(expression);
         }
@@ -218,6 +242,20 @@ impl<'a> StyleValues<'a> {
         if let Some(mut reads) = self.reads(ast, false) {
             reads.visit_template_literal(template);
         }
+        self.fold_text(ast, template);
+    }
+
+    /// Fold the interpolations of the CSS text `template`, writing those that
+    /// give no text as part of it
+    pub(crate) fn fold_text(&self, ast: &AstBuilder<'a>, template: &mut TemplateLiteral<'a>) {
+        crate::const_fold::fold_text(ast, template, |identifier| {
+            self.scoping.as_ref().is_some_and(|scoping| {
+                identifier
+                    .reference_id
+                    .get()
+                    .is_some_and(|reference| scoping.get_reference(reference).symbol_id().is_none())
+            })
+        });
     }
 
     /// Retain the static source, not the generated class text, for nested reuse.
@@ -324,6 +362,38 @@ impl<'a> StyleValues<'a> {
     }
 }
 
+/// The references that only render what they name, as the tag of a JSX
+/// element given no `css`
+pub fn rendered(
+    program: &oxc_ast::ast::Program<'_>,
+) -> FxHashSet<oxc_syntax::reference::ReferenceId> {
+    #[derive(Default)]
+    struct Rendered(FxHashSet<oxc_syntax::reference::ReferenceId>);
+    impl<'a> oxc_ast_visit::Visit<'a> for Rendered {
+        fn visit_jsx_element(&mut self, it: &oxc_ast::ast::JSXElement<'a>) {
+            let css = it.opening_element.attributes.iter().any(|item| {
+                matches!(item, oxc_ast::ast::JSXAttributeItem::Attribute(attribute)
+                    if matches!(&attribute.name, oxc_ast::ast::JSXAttributeName::Identifier(name) if name.name == "css"))
+            });
+            if !css {
+                for name in std::iter::once(&it.opening_element.name)
+                    .chain(it.closing_element.as_ref().map(|closing| &closing.name))
+                {
+                    if let oxc_ast::ast::JSXElementName::IdentifierReference(id) = name
+                        && let Some(reference) = id.reference_id.get()
+                    {
+                        self.0.insert(reference);
+                    }
+                }
+            }
+            oxc_ast_visit::walk::walk_jsx_element(self, it);
+        }
+    }
+    let mut rendered = Rendered::default();
+    oxc_ast_visit::Visit::visit_program(&mut rendered, program);
+    rendered.0
+}
+
 /// The bindings styles read as selectors: interpolated in CSS text where a
 /// value cannot stand, or as the computed key of a rule object
 pub fn selected(program: &oxc_ast::ast::Program<'_>, values: &StyleValues) -> FxHashSet<SymbolId> {
@@ -384,28 +454,30 @@ struct Names<'s, 'a> {
     values: &'s FxHashMap<SymbolId, StyleValue>,
 }
 
-impl<'a> VisitMut<'a> for Names<'_, 'a> {
-    fn visit_expression(&mut self, it: &mut Expression<'a>) {
-        if let Expression::CallExpression(call) = it
-            && call.arguments.is_empty()
-            && let Expression::StaticMemberExpression(member) = &call.callee
-            && member.property.name == "getName"
-            && let Expression::Identifier(identifier) = &member.object
-            && let Some(StyleValue::Keyframes(name)) = identifier
-                .reference_id
-                .get()
-                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| self.values.get(&symbol))
-        {
-            *it = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(name.as_str(), self.ast.allocator()),
-                None,
-                self.ast,
-            );
-            return;
-        }
-        walk_mut::walk_expression(self, it);
+impl<'a> Names<'_, 'a> {
+    fn visit_program(&self, program: &mut oxc_ast::ast::Program<'a>) {
+        crate::utils::rewrite_program(program, &mut |it| {
+            if let Expression::CallExpression(call) = it
+                && call.arguments.is_empty()
+                && let Expression::StaticMemberExpression(member) = &call.callee
+                && member.property.name == "getName"
+                && let Expression::Identifier(identifier) = &member.object
+                && let Some(StyleValue::Keyframes(name)) = identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .and_then(|symbol| self.values.get(&symbol))
+            {
+                *it = Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(name.as_str(), self.ast.allocator()),
+                    None,
+                    self.ast,
+                );
+                return true;
+            }
+            false
+        });
     }
 }
 
@@ -613,22 +685,24 @@ struct ClassReads<'s, 'a> {
 
 impl<'a> VisitMut<'a> for ClassReads<'_, 'a> {
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
-        if let Expression::Identifier(identifier) = it
-            && let Some(text) = identifier
-                .reference_id
-                .get()
-                .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-                .and_then(|symbol| self.texts.get(&symbol))
-        {
-            *it = Expression::new_string_literal(
-                SPAN,
-                Str::from_in(text.as_str(), self.ast.allocator()),
-                None,
-                self.ast,
-            );
-            return;
-        }
-        walk_mut::walk_expression(self, it);
+        crate::utils::rewrite_expression(it, &mut |it| {
+            if let Expression::Identifier(identifier) = it
+                && let Some(text) = identifier
+                    .reference_id
+                    .get()
+                    .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+                    .and_then(|symbol| self.texts.get(&symbol))
+            {
+                *it = Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(text.as_str(), self.ast.allocator()),
+                    None,
+                    self.ast,
+                );
+                return true;
+            }
+            false
+        });
     }
 }
 

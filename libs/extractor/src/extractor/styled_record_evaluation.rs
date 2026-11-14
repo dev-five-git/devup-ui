@@ -86,16 +86,18 @@ impl<'b, 'a> Evaluations<'b, 'a> {
 fn visit_style_value_expression<'a>(
     builder: &AstBuilder<'a>,
     style: &mut crate::ExtractStyleValue,
-    visit: &mut impl FnMut(&mut Expression<'a>),
+    visit: &mut dyn FnMut(&mut Expression<'a>),
 ) {
     use crate::ExtractStyleValue;
     match style {
         ExtractStyleValue::Dynamic(value) => {
-            let mut expression = Expression::new_identifier(
-                SPAN,
-                oxc_ast::ast::Ident::from_in(value.identifier(), builder.allocator()),
-                builder,
-            );
+            let source = builder.allocator().alloc_str(value.identifier());
+            let mut expression =
+                oxc_parser::Parser::new(builder.allocator(), source, oxc_span::SourceType::tsx())
+                    .parse_expression()
+                    .unwrap_or_else(|error| {
+                        panic!("invalid generated dynamic expression: {error:?}")
+                    });
             visit(&mut expression);
             *value.identifier_mut() = crate::utils::readable_code(&expression);
         }
@@ -111,10 +113,10 @@ fn visit_style_value_expression<'a>(
     }
 }
 
-pub(super) fn visit_style_expressions<'a>(
+pub(crate) fn visit_style_expressions<'a>(
     builder: &AstBuilder<'a>,
     style: &mut crate::ExtractStyleProp<'a>,
-    visit: &mut impl FnMut(&mut Expression<'a>),
+    visit: &mut dyn FnMut(&mut Expression<'a>),
 ) {
     use crate::ExtractStyleProp;
     match style {

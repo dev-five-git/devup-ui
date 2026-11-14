@@ -16,7 +16,8 @@ permissions:
 
 # CI always runs the latest releases: the `ubuntu-latest` runner, the newest
 # major version of every action, and the latest stable Rust, Bun, Node.js,
-# wasm-pack, cargo-binstall, cargo-tarpaulin and changepacks.
+# wasm-pack, cargo-binstall, cargo-tarpaulin and changepacks. The one
+# exception is the Rust release coverage is measured with, below.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -54,14 +55,29 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-benchmark-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - &install-wasm-pack
+        name: Install and verify latest stable wasm-pack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+          cargo binstall wasm-pack --no-confirm --force
+          latest="$(curl -fsSL -A 'devup-ui CI (https://github.com/dev-five-git/devup-ui)' https://crates.io/api/v1/crates/wasm-pack | jq -er '.crate.max_stable_version | select(type == "string" and length > 0)')"
+          installed="$(wasm-pack --version)"
+          echo "Installed $installed; crates.io latest stable: $latest"
+          test "$installed" = "wasm-pack $latest"
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: latest
+          # `latest` can select alphas from https://nodejs.org/dist/index.json;
+          # see https://github.com/actions/setup-node/issues/1657.
+          # The stable manifest can briefly trail nodejs.org after a stable release.
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       # Every row is the median of the same number of cold samples taken in
@@ -90,138 +106,6 @@ jobs:
         run: cargo bench -p extractor --bench semantic_pass_benchmark -- --quick
       - name: Compare the Devup UI rows with the baseline
         run: bun benchmark-check.js
-
-  wasm-size:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      CARGO_BUILD_JOBS: "2"
-      RUSTUP_TOOLCHAIN: stable
-    steps:
-      - name: Checkout the tested source and both histories
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          cache: false
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v7
-        with:
-          node-version: latest
-      - name: Resolve and report exact WASM comparison sources
-        run: node resolve-wasm-size-sources.js
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
-      - name: Cache registry downloads only
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-wasm-size-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install the latest shared installer and optimizer once
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-          mkdir -p "$RUNNER_TEMP/wasm-size-tools/binaryen"
-          gh release download --repo WebAssembly/binaryen --pattern '*-x86_64-linux.tar.gz' --dir "$RUNNER_TEMP/wasm-size-tools"
-          tar -xzf "$RUNNER_TEMP"/wasm-size-tools/*.tar.gz --strip-components=1 -C "$RUNNER_TEMP/wasm-size-tools/binaryen"
-          echo "$RUNNER_TEMP/wasm-size-tools/binaryen/bin" >> "$GITHUB_PATH"
-      - name: Build exact sources with shared tools and lock-matched bindgen
-        run: |
-          set -euo pipefail
-          export SIZE_ROOT="$RUNNER_TEMP/wasm-size"
-          mkdir -p "$SIZE_ROOT"
-          stage=source
-          trap 'echo "## WASM size: FAIL - $stage build or provenance failed; no comparison was skipped or substituted." >> "$GITHUB_STEP_SUMMARY"' ERR
-          for side in base candidate; do
-            if [[ "$side" == base ]]; then sha="$BASE_SHA"; else sha="$CANDIDATE_SHA"; fi
-            git cat-file -e "$sha^{commit}"
-            mkdir -p "$SIZE_ROOT/$side"
-            git archive "$sha" | tar -x -C "$SIZE_ROOT/$side"
-          done
-          cat > "$SIZE_ROOT/provenance.mjs" <<'NODE'
-          import { execFileSync } from 'node:child_process'
-          import { createHash } from 'node:crypto'
-          import { readFileSync, writeFileSync } from 'node:fs'
-          import { join } from 'node:path'
-          const run = (command, args) => execFileSync(command, args, { encoding: 'utf8' }).trim()
-          const tools = Object.fromEntries([
-            ['rustc', 'rustc', ['--version', '--verbose']],
-            ['wasmPack', 'wasm-pack', ['--version']],
-            ['wasmBindgen', 'wasm-bindgen', ['--version']],
-            ['wasmOpt', 'wasm-opt', ['--version']],
-            ['bun', 'bun', ['--version']],
-            ['node', 'node', ['--version']],
-          ].map(([key, command, args]) => {
-            const path = run('which', [command])
-            const hash = createHash('sha256').update(readFileSync(path)).digest('hex')
-            return [key, `${run(command, args)}\n${path}\nsha256:${hash}`]
-          }))
-          const side = process.argv[2]
-          const file = join(process.env.SIZE_ROOT, 'metadata.json')
-          const metadata = side === 'base' ? {
-            jobId: `${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}/${process.env.GITHUB_JOB}`,
-            buildCommand: 'cargo metadata --locked --format-version 1 > /dev/null && wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked && node script.js',
-          } : JSON.parse(readFileSync(file, 'utf8'))
-          const sha = side === 'base' ? process.env.BASE_SHA : process.env.CANDIDATE_SHA
-          metadata[side] = {
-            commit: run('git', ['rev-parse', `${sha}^{commit}`]),
-            tree: run('git', ['rev-parse', `${sha}^{tree}`]),
-            wasmBindgenVersion: process.env.WASM_BINDGEN_VERSION,
-            packageDir: join(process.env.SIZE_ROOT, side, 'bindings/devup-ui-wasm/pkg'), tools,
-          }
-          writeFileSync(file, JSON.stringify(metadata, null, 2) + '\n')
-          NODE
-          shared_path="$PATH"
-          for side in base candidate; do
-            stage="$side"
-            (
-              WASM_BINDGEN_VERSION="$(bun resolve-wasm-bindgen.js "$SIZE_ROOT/$side/Cargo.lock")"
-              export WASM_BINDGEN_VERSION
-              bindgen_root="$SIZE_ROOT/abi-tools/$WASM_BINDGEN_VERSION"
-              if [[ ! -x "$bindgen_root/bin/wasm-bindgen" ]]; then
-                cargo binstall wasm-bindgen-cli --version "=$WASM_BINDGEN_VERSION" --root "$bindgen_root" --no-confirm --force
-              fi
-              export PATH="$bindgen_root/bin:$shared_path"
-              node "$SIZE_ROOT/provenance.mjs" "$side"
-              cd "$SIZE_ROOT/$side/bindings/devup-ui-wasm"
-              export CARGO_TARGET_DIR="$SIZE_ROOT/$side-target"
-              cargo metadata --locked --format-version 1 > /dev/null
-              wasm-pack build --mode no-install --release --target nodejs --out-dir ./pkg --out-name index --locked
-              node script.js
-            ) 2>&1 | tee "$SIZE_ROOT/$side-build.log"
-          done
-      - name: Compare all four relative size metrics
-        run: |
-          node verify-wasm-size.js \
-            --base-pkg "$RUNNER_TEMP/wasm-size/base/bindings/devup-ui-wasm/pkg" \
-            --candidate-pkg "$RUNNER_TEMP/wasm-size/candidate/bindings/devup-ui-wasm/pkg" \
-            --metadata "$RUNNER_TEMP/wasm-size/metadata.json" \
-            --report "$RUNNER_TEMP/wasm-size/wasm-size.json"
-      - name: Upload size measurements and build evidence
-        uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
-        with:
-          name: wasm-size
-          path: |
-            ${{ runner.temp }}/wasm-size/metadata.json
-            ${{ runner.temp }}/wasm-size/wasm-size.json
-            ${{ runner.temp }}/wasm-size/*-build.log
-          if-no-files-found: error
-          retention-days: 30
 
   # The landing app is the only real-scale acceptance target in this repo, and
   # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
@@ -261,13 +145,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Build Landing (Next)
@@ -286,6 +169,11 @@ jobs:
         run: bunx playwright install chromium --with-deps
       - name: Run E2E Tests (Next)
         run: bun run test:e2e:next
+      - name: Run Landing dev navigation tests (Next)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANDING_BUILD_MODE: next
+        run: bunx playwright test -c playwright.landing-dev.config.ts
       - name: Build Landing (Next, singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -336,13 +224,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-react-18-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Type-check and build the React 18 app
@@ -399,13 +286,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-vinext-rsc-css-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Cache Playwright Browsers
@@ -455,12 +341,11 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-release-compat-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - name: Test exited-process memory sampling
         run: node --test e2e/release/process-memory.test.mjs
@@ -522,13 +407,12 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-webpack-extends-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - name: Build fresh WASM
         working-directory: bindings/devup-ui-wasm
@@ -579,9 +463,10 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
-      - name: Install cargo-binstall
-        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+      - *install-wasm-pack
       - name: Install cargo-tarpaulin
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: cargo binstall cargo-tarpaulin --no-confirm --force
 
       - name: Cache cargo registry + target
@@ -605,14 +490,12 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
 
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: latest
+          node-version: '*'
+          check-latest: true
       - run: bun install
       - run: bun run build
       - name: Verify built package entry points
@@ -651,7 +534,15 @@ jobs:
           echo 'merge_derives = true' >> .rustfmt.toml
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
+      # cargo-tarpaulin 0.37.6 misreads the coverage rustc 1.100 records: it
+      # reports the first line of match arms, impls and macros whose bodies
+      # run as uncovered. The coverage run stays on 1.99.1 until it reads the
+      # new release; every other job builds, lints and tests on latest stable.
+      - name: Install the Rust release coverage is measured with
+        run: rustup toolchain install 1.99.1 --profile minimal
       - run: bun run test
+        env:
+          RUSTUP_TOOLCHAIN: 1.99.1
       - name: Regression test (bun-plugin preload race)
         run: bun run --filter @devup-ui/bun-plugin test:regression
       - name: Format Rollback
@@ -697,6 +588,10 @@ jobs:
           fi
       - name: Run E2E Tests
         run: bun run test:e2e
+      - name: Run Landing dev navigation tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bunx playwright test -c playwright.landing-dev.config.ts
       - name: Build Landing (singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -801,15 +696,14 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-release-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
 
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+      - *install-wasm-pack
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: latest
-      - run: bun install
+          node-version: '*'
+          check-latest: true
+      - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist

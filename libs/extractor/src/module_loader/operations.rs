@@ -116,9 +116,8 @@ impl Operations {
             NativeFunction::from_copy_closure_with_captures(
                 |_, args, sites, context| {
                     let id = args.get_or_undefined(0).to_u32(context)?;
-                    let index = usize::try_from(id).map_err(|error| {
-                        boa_engine::JsNativeError::range().with_message(error.to_string())
-                    })?;
+                    // A `u32` always fits the index of the targets the build runs on
+                    let index = id as usize;
                     if let Some(active) = context.get_data::<Active>() {
                         let mut active = active.0.borrow_mut();
                         if args.len() == 1 {

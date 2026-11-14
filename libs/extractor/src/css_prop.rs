@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
-    Argument, ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
+    ArrowFunctionBody, BinaryOperator, BindingPattern, CallExpression, Expression,
     FormalParameters, FunctionBody, IdentifierReference, ImportDeclarationSpecifier,
     JSXAttributeItem, JSXChild, JSXElement, JSXElementName, ObjectPropertyKind, Program, Statement,
     Str, TemplateElement, TemplateElementValue, TemplateLiteral,
@@ -19,7 +19,7 @@ use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashSet;
 
 use crate::ImportAlias;
-use crate::css_utils::{Place, interpolation_place};
+use crate::css_utils::{Place, template_interpolation_places};
 use crate::utils::{
     binding_root, get_key_by_literal_expression, get_string_by_literal_expression,
     unwrap_syntax_only,
@@ -110,6 +110,10 @@ pub(crate) struct CssTakers<'s> {
     scoping: &'s Scoping,
     /// The imported functions building elements from a type and props
     jsx: FxHashSet<SymbolId>,
+    /// React's `createElement`, imported by name
+    create_element: FxHashSet<SymbolId>,
+    /// `react`, imported whole
+    react: FxHashSet<SymbolId>,
     /// The imported `ClassNames` of Emotion
     class_names: FxHashSet<SymbolId>,
 }
@@ -154,19 +158,42 @@ impl<'s> CssTakers<'s> {
         compat: &str,
     ) -> Self {
         let mut jsx = FxHashSet::default();
+        let mut create_element = FxHashSet::default();
+        let mut react = FxHashSet::default();
         let mut class_names = FxHashSet::default();
         for statement in &program.body {
             if let Statement::ImportDeclaration(import) = statement {
+                if import.import_kind.is_type() {
+                    continue;
+                }
                 let Some(source) = import.source.value.as_str() else {
                     continue;
                 };
                 for specifier in import.specifiers.iter().flatten() {
-                    let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
-                        continue;
+                    let specifier = match specifier {
+                        ImportDeclarationSpecifier::ImportSpecifier(specifier) => specifier,
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(whole)
+                            if source == "react" =>
+                        {
+                            react.extend(whole.local.symbol_id.get());
+                            continue;
+                        }
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(whole)
+                            if source == "react" =>
+                        {
+                            react.extend(whole.local.symbol_id.get());
+                            continue;
+                        }
+                        _ => continue,
                     };
+                    if specifier.import_kind.is_type() {
+                        continue;
+                    }
                     let imported = specifier.imported.name();
                     if is_jsx_function(source, &imported, compat) {
                         jsx.extend(specifier.local.symbol_id.get());
+                    } else if source == "react" && imported == "createElement" {
+                        create_element.extend(specifier.local.symbol_id.get());
                     } else if imported == "ClassNames"
                         && (source == compat || source == EMOTION_REACT)
                     {
@@ -179,8 +206,43 @@ impl<'s> CssTakers<'s> {
             css_prop,
             scoping,
             jsx,
+            create_element,
+            react,
             class_names,
         }
+    }
+
+    /// Whether `call` builds a Devup UI component from props written as an
+    /// object literal, as `jsx(Box, { ... })` does; `devup` tells a
+    /// reference to one
+    pub(crate) fn builds_component(
+        &self,
+        call: &CallExpression<'_>,
+        devup: impl Fn(&IdentifierReference<'_>) -> bool,
+    ) -> bool {
+        let symbol = |identifier| binding_of(self.scoping, identifier);
+        let factory = match &call.callee {
+            Expression::Identifier(callee) => symbol(callee).is_some_and(|symbol| {
+                self.jsx.contains(&symbol) || self.create_element.contains(&symbol)
+            }),
+            Expression::StaticMemberExpression(member) => {
+                member.property.name == "createElement"
+                    && matches!(&member.object, Expression::Identifier(react)
+                        if symbol(react).is_some_and(|symbol| self.react.contains(&symbol)))
+            }
+            _ => false,
+        };
+        let [element, props, ..] = call.arguments.as_slice() else {
+            return false;
+        };
+        factory
+            && props.as_expression().is_some_and(|props| {
+                matches!(unwrap_syntax_only(props), Expression::ObjectExpression(_))
+            })
+            && element
+                .as_expression()
+                .and_then(|element| root_reference(unwrap_syntax_only(element)))
+                .is_some_and(devup)
     }
 
     /// The `css` and `cx` bindings a `<ClassNames>` child function `element`
@@ -239,7 +301,10 @@ impl<'s> CssTakers<'s> {
         let Expression::Identifier(callee) = &call.callee else {
             return None;
         };
-        let [element, Argument::ObjectExpression(props), ..] = call.arguments.as_slice() else {
+        let [element, props, ..] = call.arguments.as_slice() else {
+            return None;
+        };
+        let Expression::ObjectExpression(props) = unwrap_syntax_only(props.as_expression()?) else {
             return None;
         };
         let element = element.as_expression()?;
@@ -510,8 +575,7 @@ pub(crate) fn class_names_child(element: &JSXElement<'_>) -> Option<ClassNamesPa
 /// The child function's `css` and `cx` bindings, which read styles.
 pub(crate) fn class_names_calls(element: &JSXElement<'_>) -> Vec<SymbolId> {
     class_names_child(element)
-        .map(|names| [names.css, names.cx].into_iter().flatten().collect())
-        .unwrap_or_default()
+        .map_or_default(|names| [names.css, names.cx].into_iter().flatten().collect())
 }
 
 /// Write the reads of the active themes in `expression`, a CSS value
@@ -742,21 +806,13 @@ pub(crate) fn template_parts<'a>(
     mixins: bool,
 ) -> Result<Vec<Expression<'a>>, (Expression<'a>, &'static str)> {
     let mut parts = Vec::new();
-    let mut text = String::new();
-    let mut depth = 0usize;
-    let mut quotes = css::quoted::QuoteState::default();
     let mut from = 0;
-    for (index, expression) in template.expressions.iter().enumerate() {
-        let quasi = template.quasis[index].value.raw.as_str();
-        text.push_str(quasi);
-        for byte in quasi.bytes().filter(|&byte| quotes.is_syntax(byte)) {
-            match byte {
-                b'{' => depth += 1,
-                b'}' => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-        }
-        let place = interpolation_place(&text, &template.quasis[index + 1..]);
+    for (index, (expression, (place, depth))) in template
+        .expressions
+        .iter()
+        .zip(template_interpolation_places(template))
+        .enumerate()
+    {
         if matches!(place, Place::Value) || get_string_by_literal_expression(expression).is_some() {
             continue;
         }

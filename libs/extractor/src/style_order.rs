@@ -7,6 +7,20 @@ use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 
 use crate::utils::{ParsedStyleOrder, build_time_error, unwrap_syntax_only};
 
+pub(crate) const STYLE_ORDER_VALUE: &str = "`styleOrder` must be a number, or a condition choosing between numbers, since the stylesheet places rules by it before the code runs";
+
+pub(crate) fn supported_order(value: &Expression<'_>) -> bool {
+    match unwrap_syntax_only(value) {
+        Expression::ConditionalExpression(choice) => {
+            static_order(&choice.consequent).is_some() && static_order(&choice.alternate).is_some()
+        }
+        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+            static_order(&logical.right).is_some()
+        }
+        value => static_order(value).is_some(),
+    }
+}
+
 /// Canonical decimal digits naming one of the user-addressable layers.
 pub(crate) fn string_order(value: &str) -> Option<u8> {
     if !value

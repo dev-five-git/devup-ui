@@ -8,8 +8,14 @@ use extractor::extract_style::{
 use extractor::{
     ExtractOption, ImportAlias, ResolvedModule, extract_with_modules, extract_without_source_map,
 };
-use oxc_allocator::Allocator;
-use oxc_ast::ast::{ImportDeclarationSpecifier, Statement};
+use oxc_allocator::{Allocator, TakeIn};
+use oxc_ast::{
+    ast::{
+        BindingPattern, ImportDeclarationSpecifier, Statement, VariableDeclarationKind,
+        VariableDeclarator,
+    },
+    builder::AstBuilder,
+};
 use oxc_codegen::Codegen;
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
@@ -24,6 +30,22 @@ pub fn run(files: &[(&str, &str)], observation: &str) -> Value {
 }
 
 pub fn run_with_reading(files: &[(&str, &str)], observation: &str, readable: bool) -> Value {
+    run_with_options(
+        files,
+        observation,
+        RunOptions {
+            readable,
+            single_css: true,
+        },
+    )
+}
+
+pub struct RunOptions {
+    pub readable: bool,
+    pub single_css: bool,
+}
+
+pub fn run_with_options(files: &[(&str, &str)], observation: &str, options: RunOptions) -> Value {
     css::class_map::reset_class_map();
     css::file_map::reset_file_map();
     let modules: Vec<(String, String)> = files
@@ -48,6 +70,8 @@ pub fn run_with_reading(files: &[(&str, &str)], observation: &str, readable: boo
         r"const modules={};const frames=[];const order=[];
 function forwardRef(render){return {render};}
 function jsx(target,props){return {target,props};}
+function createElement(target,props,...children){return jsx(target,{...props,...(children.length?{children:children.length===1?children[0]:children}:{})});}
+const React={get createElement(){order.push('callee');return function(...args){order.push(this===React?'receiver':'lost-receiver');return createElement(...args);};}};
 function render(element){if(typeof element.target==='string')return element;const next=element.target.render(element.props,element.props.ref);frames.push(next);return render(next);}
 function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss')||k.startsWith('__devupForwarded'));}
 ",
@@ -55,14 +79,15 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
     let mut rules = BTreeMap::new();
     for (filename, source) in files {
         let option = ExtractOption {
-            single_css: true,
+            single_css: options.single_css,
             import_aliases: HashMap::from([(
                 "@emotion/react".to_string(),
                 ImportAlias::NamedToNamed,
             )]),
             ..ExtractOption::default()
         };
-        let output = if readable {
+        let bucket = (!options.single_css).then(|| css::file_map::canonical(filename));
+        let output = if options.readable {
             extract_with_modules(filename, source, option, false, &resolver)
         } else {
             extract_without_source_map(filename, source, option)
@@ -71,7 +96,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
         for style in &output.styles {
             let rule = match style {
                 ExtractStyleValue::Static(style) => {
-                    let StyleProperty::ClassName(name) = style.extract(None) else {
+                    let StyleProperty::ClassName(name) = style.extract(bucket.as_deref()) else {
                         panic!("static atom must have a class")
                     };
                     Some((
@@ -80,10 +105,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                             style.property(),
                             style.value(),
                             style.level(),
-                            style
-                                .selector()
-                                .map(ToString::to_string)
-                                .unwrap_or_default()
+                            style.selector().map_or_default(ToString::to_string)
                         ]),
                     ))
                 }
@@ -92,7 +114,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                         class_name,
                         variable_name,
                         ..
-                    } = style.extract(None)
+                    } = style.extract(bucket.as_deref())
                     else {
                         panic!("dynamic atom must have a variable")
                     };
@@ -102,10 +124,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                             style.property(),
                             format!("var({variable_name})"),
                             style.level(),
-                            style
-                                .selector()
-                                .map(ToString::to_string)
-                                .unwrap_or_default()
+                            style.selector().map_or_default(ToString::to_string)
                         ]),
                     ))
                 }
@@ -137,7 +156,12 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
         assert_eq!(transformed.diagnostics.len(), 0, "{}", output.code);
         let mut imports = String::new();
         let mut exports = Vec::new();
-        for statement in &program.body {
+        let ast = AstBuilder::new(&arena);
+        let mut default_name = String::from("__devupDefault");
+        while output.code.contains(&default_name) {
+            default_name.push('_');
+        }
+        for statement in &mut program.body {
             match statement {
                 Statement::ImportDeclaration(import) => {
                     for specifier in import.specifiers.iter().flatten() {
@@ -148,6 +172,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                 let helper = match imported.as_str() {
                                     "jsx" | "jsxs" | "jsxDEV" => Some("jsx"),
                                     "forwardRef" => Some("forwardRef"),
+                                    "createElement" => Some("createElement"),
                                     _ => None,
                                 };
                                 if let Some(helper) = helper {
@@ -172,6 +197,13 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                 }
                             }
                             ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) => {
+                                if import.source.value == "react" {
+                                    if namespace.local.name != "React" {
+                                        write!(imports, "const {}=React;", namespace.local.name)
+                                            .unwrap_or_else(|error| panic!("{error}"));
+                                    }
+                                    continue;
+                                }
                                 let module =
                                     resolver(
                                         import.source.value.as_str().unwrap_or_else(|| {
@@ -187,8 +219,21 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                 )
                                 .unwrap_or_else(|error| panic!("{error}"));
                             }
-                            ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
-                                panic!("fixture uses named or namespace imports")
+                            ImportDeclarationSpecifier::ImportDefaultSpecifier(default) => {
+                                let module =
+                                    resolver(
+                                        import.source.value.as_str().unwrap_or_else(|| {
+                                            panic!("fixture module must be UTF-8")
+                                        }),
+                                        filename,
+                                    )
+                                    .unwrap_or_else(|| panic!("fixture module must resolve"));
+                                write!(
+                                    imports,
+                                    "const {}=modules[{:?}].default;",
+                                    default.local.name, module.path
+                                )
+                                .unwrap_or_else(|error| panic!("{error}"));
                             }
                         }
                     }
@@ -198,13 +243,42 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                         format!("{}:{}", specifier.exported.name(), specifier.local.name())
                     }));
                 }
+                Statement::ExportDefaultDeclaration(export) => {
+                    let value = export
+                        .declaration
+                        .as_expression_mut()
+                        .unwrap_or_else(|| panic!("fixture default must be an expression"))
+                        .take_in(&ast);
+                    let declaration = VariableDeclarator::new(
+                        export.span,
+                        BindingPattern::new_binding_identifier(
+                            export.span,
+                            arena.alloc_str(&default_name),
+                            &ast,
+                        ),
+                        None,
+                        Some(value),
+                        false,
+                        &ast,
+                    );
+                    *statement = Statement::new_variable_declaration(
+                        export.span,
+                        VariableDeclarationKind::Const,
+                        oxc_allocator::Vec::from_array_in([declaration], &ast),
+                        false,
+                        &ast,
+                    );
+                    exports.push(format!("default:{default_name}"));
+                }
                 _ => {}
             }
         }
         program.body.retain(|statement| {
             !matches!(
                 statement,
-                Statement::ImportDeclaration(_) | Statement::ExportNamedDeclaration(_)
+                Statement::ImportDeclaration(_)
+                    | Statement::ExportNamedDeclaration(_)
+                    | Statement::ExportDefaultDeclaration(_)
             )
         });
         write!(
