@@ -3256,6 +3256,65 @@ mod tests {
     }
 
     #[test]
+    fn test_prop_cmp_orders_one_typography_declaration_by_value() {
+        let property = |value: &str| StyleSheetProperty {
+            class_name: "a".to_string(),
+            property: "font-size".to_string(),
+            value: value.to_string(),
+            selector: None,
+            layer: None,
+            typography: true,
+            hoisted: false,
+            order: 0,
+        };
+        assert_eq!(
+            prop_cmp(&property("12px"), &property("14px")),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            prop_cmp(&property("14px"), &property("12px")),
+            std::cmp::Ordering::Greater
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_update_styles_nests_a_layered_typography_preset_under_its_layer() {
+        use extractor::extract_style::extract_style_value::ExtractStyleValue;
+        let _state = css::test_state::TestStateGuard::new();
+        let mut theme = Theme::default();
+        theme.add_typography(
+            "small",
+            vec![Some(Typography::new(
+                None,
+                Some("12px".to_string()),
+                None,
+                None,
+                None,
+            ))],
+        );
+        let mut sheet = StyleSheet::default();
+        sheet.set_theme(theme);
+        let mut styles = FxHashSet::default();
+        styles.insert(ExtractStyleValue::Static(
+            ExtractStaticStyle::new_with_layer(
+                "typography",
+                "small",
+                0,
+                Some("&:hover".into()),
+                Some("components".to_string()),
+            ),
+        ));
+        let (collected, _) = sheet.update_styles(&styles, "index.tsx", true);
+        assert!(collected);
+        let css = sheet.create_css(None, false);
+        assert!(
+            css.ends_with("@layer components.t{.a:hover{font-size:12px}}"),
+            "{css}"
+        );
+    }
+
+    #[test]
     #[serial]
     fn test_global_styles_with_custom_layer() {
         let _state = css::test_state::TestStateGuard::new();

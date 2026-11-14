@@ -7,9 +7,8 @@ use rstest::rstest;
 fn folded(code: &str) -> String {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let mut expression = Parser::new(&allocator, code, SourceType::tsx())
-        .parse_expression()
-        .unwrap_or_else(|error| panic!("{error:?}"));
+    let parsed = Parser::new(&allocator, code, SourceType::tsx()).parse_expression();
+    let mut expression = parsed.unwrap_or_else(|error| panic!("{error:?}"));
     fold(&ast, &mut expression);
     crate::utils::readable_code(&expression)
 }

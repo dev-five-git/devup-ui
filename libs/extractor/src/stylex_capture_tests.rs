@@ -209,3 +209,24 @@ fn stylex_capture_accepts_defaults_when_no_storage_is_needed(
     assert_eq!(trace,["once"],"{}",output.code);
     assert_eq!(callable_count(&output.code), callable_count(&source));
 }
+
+#[test]
+#[serial]
+fn stylex_capture_still_awaits_a_test_a_later_style_overrides() {
+    // Given: a suspending test whose styles a later unconditional argument replaces.
+    reset_class_map();
+    reset_file_map();
+    let source = "import * as sx from '@stylexjs/stylex';const s=sx.create({base:{color:'red'},later:{color:'green'}});async function render(wait){return sx.props((trace.push('test'),await wait)&&s.base,s.later).className;}const reference=sx.props(s.later).className;";
+    // When: the emitted native JS runs its actual promise jobs.
+    let output = extract("capture-dead-await.js", source, ExtractOption::default()).unwrap();
+    let arena = Allocator::default();
+    let mut program = Parser::new(&arena, &output.code, SourceType::mjs()).parse().program;
+    program.body.retain(|s| !matches!(s, oxc_ast::ast::Statement::ImportDeclaration(_)));
+    let script = format!("{};const trace=[];let result;render(Promise.resolve(true)).then(value=>result=JSON.stringify([trace,value===reference]));", oxc_codegen::Codegen::new().build(&program).code);
+    let mut context = boa_engine::Context::default();
+    context.eval(boa_engine::Source::from_bytes(&script)).unwrap();
+    context.run_jobs().unwrap();
+    let result = context.eval(boa_engine::Source::from_bytes("result")).unwrap().as_string().unwrap().to_std_string_escaped();
+    // Then: the test still runs and awaits, but selects nothing.
+    assert_eq!(result, "[[\"test\"],true]", "{}", output.code);
+}

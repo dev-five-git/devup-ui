@@ -926,11 +926,9 @@ fn static_classes(expression: &Expression<'_>) -> Option<String> {
         Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
         Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
             .quasis
-            .first()?
-            .value
-            .cooked?
-            .as_str()
-            .map(str::to_string),
+            .first()
+            .and_then(|quasi| quasi.value.cooked)
+            .and_then(|cooked| cooked.as_str().map(str::to_string)),
         Expression::ParenthesizedExpression(parenthesized) => {
             static_classes(&parenthesized.expression)
         }

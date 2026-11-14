@@ -214,3 +214,18 @@ fn unsupported_retarget_source_types_remain_irrelevant() {
     assert_eq!(reading.components.len(), 0);
     assert_eq!(reading.dependencies.len(), 0);
 }
+
+#[test]
+#[serial]
+fn imported_retarget_with_variables_merges_them_into_the_composed_style() {
+    // Given a component extending an imported one with a CSS variable of its own
+    reset();
+    let code = "import styled from '@emotion/styled'; import { Pick } from './base'; export const B = styled(Pick)`width: ${(p) => p.w};`;";
+    // When it is compiled
+    let output = extract_with_modules("/src/app.tsx", code, option(), false, &resolve).unwrap();
+    // Then its stage spreads the variables a composing component gives before its own
+    assert_debug_snapshot!(
+        "own_variables",
+        format!("{}\n{:?}", output.code, output.dependencies)
+    );
+}

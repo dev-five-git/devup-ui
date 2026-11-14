@@ -11,6 +11,7 @@ const APIS: &str = "import { Box, css, styled } from '@devup-ui/react';\n";
 #[case("const a = (c) => <Box opacity={[1, 0.5, 0.2][c ? 5 : 1]} />;", &[".5"])]
 #[case("const a = (c) => <Box opacity={({ a: 1, a: 0.5 }).a} />;", &[".5"])]
 #[case("const a = (c) => <Box opacity={!0 ? 1 : 0.5} />;", &["1"])]
+#[case("const a = (c) => <Box opacity={!0 ? [1, 0.5] : c} />;", &["1", ".5"])]
 #[case("const a = (c) => <Box opacity={(0, 0.5)} />;", &[".5"])]
 #[case("const a = (c) => <Box styleOrder={2} opacity={[1, 0.5][0 + 1]} />;", &[".5"])]
 #[case("const a = (c) => jsx(Box, { opacity: [1, 0.5]['10'] });", &[])]

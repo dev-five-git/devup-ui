@@ -5,15 +5,15 @@ fn compile(template: &str) -> crate::ExtractOutput {
     let source = format!(
         "import {{ styled, css }} from '@devup-ui/react'; const mixin = css({{ color: 'red', padding: '4px' }}); export const Choice = styled.div`{template}`;"
     );
-    crate::extract(
+    let result = crate::extract(
         "context-mixin.tsx",
         &source,
         ExtractOption {
             single_css: true,
             ..ExtractOption::default()
         },
-    )
-    .unwrap_or_else(|error| panic!("{error}"))
+    );
+    result.unwrap_or_else(|error| panic!("{error}"))
 }
 
 #[test]

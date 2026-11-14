@@ -1560,10 +1560,13 @@ impl<'a> DevupVisitor<'a> {
             None => Expression::new_boolean_literal(SPAN, true, &self.ast),
             Some(JSXAttributeValue::StringLiteral(literal)) => Expression::StringLiteral(literal),
             Some(JSXAttributeValue::ExpressionContainer(mut container)) => {
-                container.expression.as_expression_mut().map_or_else(
-                    || Expression::new_identifier(SPAN, "undefined", &self.ast),
-                    |value| value.take_in(&self.ast),
-                )
+                // The parser rejects an empty attribute expression, so `undefined`
+                // only stands for one a transform could leave
+                let undefined = Expression::new_identifier(SPAN, "undefined", &self.ast);
+                container
+                    .expression
+                    .as_expression_mut()
+                    .map_or(undefined, |value| value.take_in(&self.ast))
             }
             Some(JSXAttributeValue::Element(element)) => Expression::JSXElement(element),
             Some(JSXAttributeValue::Fragment(fragment)) => Expression::JSXFragment(fragment),
@@ -2746,13 +2749,7 @@ impl<'a> DevupVisitor<'a> {
     /// `style` attribute
     fn style_text(&self, props: Vec<ObjectPropertyKind<'a>>) -> Expression<'a> {
         let mut text: Option<Expression<'a>> = None;
-        let props = props.into_iter().filter_map(|prop| {
-            if let ObjectPropertyKind::ObjectProperty(prop) = prop {
-                Some(prop.unbox())
-            } else {
-                None
-            }
-        });
+        let props = props.into_iter().filter_map(written_property);
         for (index, prop) in props.enumerate() {
             let name = get_string_by_property_key(&prop.key).unwrap_or_default();
             let prefix = format!("{}{name}:", if index == 0 { "" } else { ";" });
@@ -3666,13 +3663,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .extend(styles.into_iter().flat_map(ExtractStyleProp::into_extract));
 
                 // Extract className string for props() resolution
-                let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
-                    if let Expression::StringLiteral(s) = expr {
+                let mut class_name_str = match &class_name {
+                    Some(Expression::StringLiteral(s)) => {
                         s.value.as_str().map_or_else(String::new, str::to_string)
-                    } else {
-                        String::new()
                     }
-                });
+                    _ => String::new(),
+                };
 
                 // Resolve include() references — prepend included classNames
                 for inc_ref in &include_refs {
@@ -4393,11 +4389,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         it,
                         Expression::new_string_literal(SPAN, "", None, &self.ast),
                     );
+                    // Only classes that are all empty merge to none
+                    let empty = Expression::new_string_literal(SPAN, "", None, &self.ast);
                     *it = merge_expression_for_class_name(
                         &self.ast,
                         composed_classes.into_iter().chain([own]),
                     )
-                    .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
+                    .unwrap_or(empty);
                 }
                 if util_type.class_call().is_some() {
                     let classes = std::mem::replace(
@@ -5684,6 +5682,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 }
 
+/// The property `prop` writes by name, `None` for a spread
+fn written_property(prop: ObjectPropertyKind<'_>) -> Option<ObjectProperty<'_>> {
+    match prop {
+        ObjectPropertyKind::ObjectProperty(prop) => Some(prop.unbox()),
+        ObjectPropertyKind::SpreadProperty(_) => None,
+    }
+}
+
 #[cfg(test)]
 #[path = "visit_factory_params_tests.rs"]
 mod factory_params_tests;
@@ -5696,6 +5702,48 @@ mod tests {
     use oxc_parser::Parser;
     use oxc_span::SourceType;
     use serial_test::serial;
+
+    #[test]
+    fn test_written_property_keeps_named_properties_only() {
+        let allocator = Allocator::default();
+        let Expression::ObjectExpression(object) =
+            Parser::new(&allocator, "({ a: 1, ...rest })", SourceType::ts())
+                .parse_expression()
+                .unwrap()
+                .without_parentheses()
+                .clone_in(&allocator)
+        else {
+            panic!("expected an object");
+        };
+        let names: Vec<_> = object
+            .unbox()
+            .properties
+            .into_iter()
+            .map(|prop| written_property(prop).map(|prop| prop.key.is_specific_static_name("a")))
+            .collect();
+        assert_eq!(names, vec![Some(true), None]);
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_empty_namespace_gives_no_class() {
+        reset_class_map();
+        reset_file_map();
+        let output = crate::extract(
+            "empty.js",
+            "import * as sx from '@stylexjs/stylex';const s=sx.create({empty:{},base:{color:'red'}});export const a=sx.props(s.empty).className;",
+            crate::ExtractOption::default(),
+        )
+        .unwrap();
+        assert!(output.code.contains("\"empty\": \"\""), "{}", output.code);
+        assert!(
+            output
+                .code
+                .contains("export const a = { className: \"\" }.className;"),
+            "{}",
+            output.code
+        );
+    }
 
     #[test]
     fn test_style_property_variable_into_string() {

@@ -1,6 +1,6 @@
 use boa_engine::{Context, Source};
 
-use super::{compute, initialize_helpers, setup_failure, stop};
+use super::{compute, initialize_helpers, setup_failure, stop, unlocated};
 use crate::evaluation_sandbox::{Failure, Sandbox};
 
 #[test]
@@ -173,4 +173,14 @@ fn ordinary_js_failure_leaves_computation_at_runtime() -> Result<(), String> {
     // Then
     assert!(matches!(result, Ok(None)));
     Ok(())
+}
+
+#[test]
+fn sandbox_errors_are_located_at_the_start() {
+    // Given an error of the sandbox itself
+    let error = boa_engine::JsNativeError::typ().with_message("helper is not configurable");
+    // When it is reported
+    let errors = unlocated(&error);
+    // Then no source offset locates it
+    assert_eq!(errors, vec![(0, error.to_string())]);
 }

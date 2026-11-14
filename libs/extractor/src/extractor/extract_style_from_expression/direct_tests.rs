@@ -88,6 +88,8 @@ fn styles(source: &str, name: Option<&str>) -> (Vec<ExtractStyleValue>, Vec<Stri
 #[case("({a:'red'})['missing']", &[])]
 #[case("({a:'red',...rest,a:'green'})['a']", &["green"])]
 #[case("null ?? 'red'", &["red"])]
+#[case("true ? ['red', 'blue'] : unknown", &["red", "blue"])]
+#[case("0 ? unknown : ['red', 'blue']", &["red", "blue"])]
 fn literal_selection_when_the_selected_entry_is_known(
     #[case] source: &str,
     #[case] expected: &[&str],

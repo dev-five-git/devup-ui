@@ -95,11 +95,9 @@ impl Normalizer<'_, '_> {
             Expression::StringLiteral(string) => string.value.as_str().map(str::to_string),
             Expression::TemplateLiteral(template) if template.expressions.is_empty() => template
                 .quasis
-                .first()?
-                .value
-                .cooked?
-                .as_str()
-                .map(str::to_string),
+                .first()
+                .and_then(|quasi| quasi.value.cooked)
+                .and_then(|cooked| cooked.as_str().map(str::to_string)),
             expression => match self.bindings.get(&self.symbol(expression)?)? {
                 Binding::String(string) => Some(string.clone()),
                 Binding::Namespace(_) | Binding::Macro(_) => None,

@@ -980,8 +980,7 @@ impl Theme {
             if level == 0 {
                 css.push_str(&css_vec);
             } else if let Some(bp) = self.breakpoints.get(level as usize) {
-                write!(css, "@media(min-width:{bp}px)")
-                    .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+                let _ = write!(css, "@media(min-width:{bp}px)");
                 css.push('{');
                 css.push_str(&css_vec);
                 css.push('}');
@@ -1079,8 +1078,7 @@ impl Theme {
                         css.push_str(vars);
                         css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
-                        write!(css, "@media(min-width:{bp}px){{")
-                            .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+                        let _ = write!(css, "@media(min-width:{bp}px){{");
                         write_selector(css);
                         css.push('{');
                         css.push_str(vars);

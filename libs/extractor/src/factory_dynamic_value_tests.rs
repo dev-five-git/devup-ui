@@ -52,6 +52,22 @@ fn compiled_factory_values_when_an_opaque_literal_names_styles_are_build_errors(
     assert!(error.contains(crate::utils::SPREAD_KEYS), "{error}");
 }
 
+#[rstest]
+#[serial]
+fn compiled_factory_values_when_an_opaque_literal_names_dynamic_styles_are_build_errors(
+    #[values(false, true)] namespace: bool,
+) {
+    let _state = crate::test_state::TestStateGuard::new();
+    let source = format!(
+        "{} import {{jsx as o}} from 'react/jsx-runtime'; function render(raw, tone){{ return o(t, {{bg:'red', ...{{bg:tone, ...raw}}}}); }}",
+        imports(namespace)
+    );
+    let error = extract(FILE, &source, ExtractOption::default())
+        .err()
+        .map_or_default(|error| error.to_string());
+    assert!(error.contains(crate::utils::SPREAD_KEYS), "{error}");
+}
+
 fn imports(namespace: bool) -> &'static str {
     if namespace {
         "import {Box as t} from '@devup-ui/react'; import * as ui from '@devup-ui/react';"
@@ -61,15 +77,15 @@ fn imports(namespace: bool) -> &'static str {
 }
 
 fn extract_factory(source: &str, single_css: bool) -> ExtractOutput {
-    extract(
+    let result = extract(
         FILE,
         source,
         ExtractOption {
             single_css,
             ..ExtractOption::default()
         },
-    )
-    .unwrap_or_else(|error| panic!("{source}\n{error}"))
+    );
+    result.unwrap_or_else(|error| panic!("{source}\n{error}"))
 }
 
 fn render_observation(output: &ExtractOutput, invocation: &str, filename: Option<&str>) -> String {

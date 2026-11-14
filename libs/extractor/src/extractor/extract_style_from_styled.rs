@@ -1039,13 +1039,7 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
-        reads.read_in(
-            if let Argument::SpreadElement(spread) = &call.arguments[style_index] {
-                &spread.argument
-            } else {
-                call.arguments[style_index].to_expression()
-            },
-        );
+        reads.read_in(argument_value(&call.arguments[style_index]));
         let prepared = match &composed_rules {
             Some(_) => None,
             None => call.arguments[style_index]
@@ -1079,11 +1073,7 @@ pub fn extract_style_from_styled<'a>(
             let (result, projection) = extract_with_order(
                 inputs,
                 None,
-                if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
-                    &mut spread.argument
-                } else {
-                    call.arguments[style_index].to_expression_mut()
-                },
+                argument_value_mut(&mut call.arguments[style_index]),
                 0,
                 &None,
                 LiteralHandling::ExpandResponsiveThemeToken,
@@ -1584,14 +1574,31 @@ fn member<'a>(
     ))
 }
 
+/// What `argument` passes, whether it is spread or not
+fn argument_value<'b, 'a>(argument: &'b Argument<'a>) -> &'b Expression<'a> {
+    match argument {
+        Argument::SpreadElement(spread) => &spread.argument,
+        argument => argument.to_expression(),
+    }
+}
+
+/// What `argument` passes, whether it is spread or not, to change
+fn argument_value_mut<'b, 'a>(argument: &'b mut Argument<'a>) -> &'b mut Expression<'a> {
+    match argument {
+        Argument::SpreadElement(spread) => &mut spread.argument,
+        argument => argument.to_expression_mut(),
+    }
+}
+
 /// `[first, second].filter(Boolean).join(" ") || undefined`
 fn joined_class<'a>(
     ast_builder: &AstBuilder<'a>,
     first: Expression<'a>,
     second: Expression<'a>,
 ) -> Expression<'a> {
-    let joined = wrap_array_filter(ast_builder, &[first, second])
-        .unwrap_or_else(|| identifier(ast_builder, "undefined"));
+    // Two parts always join; `undefined` only stands in for none
+    let undefined = identifier(ast_builder, "undefined");
+    let joined = wrap_array_filter(ast_builder, &[first, second]).unwrap_or(undefined);
     Expression::new_logical_expression(
         SPAN,
         joined,
@@ -1903,27 +1910,23 @@ fn create_styled_component<'a>(
     let class_name = own_classes.as_ref().map_or_else(
         || Expression::new_identifier(SPAN, "className", ast_builder),
         |name| {
-            wrap_array_filter(
-                ast_builder,
-                &[
-                    name.clone_in(ast_builder.allocator()),
-                    Expression::new_identifier(SPAN, "className", ast_builder),
-                ],
-            )
-            .unwrap_or_else(|| name.clone_in(ast_builder.allocator()))
+            let name = name.clone_in(ast_builder.allocator());
+            let parts = [
+                name.clone_in(ast_builder.allocator()),
+                Expression::new_identifier(SPAN, "className", ast_builder),
+            ];
+            wrap_array_filter(ast_builder, &parts).unwrap_or(name)
         },
     );
     let style = style_vars.as_ref().map_or_else(
         || Expression::new_identifier(SPAN, "style", ast_builder),
         |style_vars| {
-            merge_object_expressions(
-                ast_builder,
-                &[
-                    style_vars.clone_in(ast_builder.allocator()),
-                    Expression::new_identifier(SPAN, "style", ast_builder),
-                ],
-            )
-            .unwrap_or_else(|| style_vars.clone_in(ast_builder.allocator()))
+            let style_vars = style_vars.clone_in(ast_builder.allocator());
+            let parts = [
+                style_vars.clone_in(ast_builder.allocator()),
+                Expression::new_identifier(SPAN, "style", ast_builder),
+            ];
+            merge_object_expressions(ast_builder, &parts).unwrap_or(style_vars)
         },
     );
     let omissions = capability.map(|slot| {

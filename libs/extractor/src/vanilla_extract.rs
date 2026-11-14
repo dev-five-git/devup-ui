@@ -360,23 +360,26 @@ pub(crate) fn execute_evaluated(
     }));
     let mut context = Context::default();
     let sandbox = crate::evaluation_sandbox::Sandbox::stylesheet(&mut context)
-        .map_err(|error| run.explain(&error.to_string(), filename))?;
+        .map_err(setup_error(&run, None, filename))?;
     loader
         .prepare_css(&mut context)
-        .map_err(|error| run.explain(&error.to_string(), filename))?;
+        .map_err(setup_error(&run, None, filename))?;
     let operations = crate::module_loader::operations::Operations::new(&run.text);
     operations
         .prepare(&mut context)
-        .map_err(|error| run.explain(&error.to_string(), filename))?;
+        .map_err(setup_error(&run, None, filename))?;
     let instrumented =
         crate::evaluation_sandbox::instrument_located(&operations.code, SCRIPT_PATH, &|offset| {
             run.authored(operations.source_offset(offset))
         });
     sandbox
         .prepare(&mut context, &instrumented)
-        .map_err(|error| run.explain(&instrumented.explain(&error.to_string()), filename))?;
-    register_vanilla_extract_apis(&mut context, &collector)
-        .map_err(|e| Script::default().explain(&e, filename))?;
+        .map_err(setup_error(&run, Some(&instrumented), filename))?;
+    register_vanilla_extract_apis(&mut context, &collector).map_err(setup_error(
+        &Script::default(),
+        None,
+        filename,
+    ))?;
     sandbox
         .run_source(
             &mut context,
@@ -866,6 +869,28 @@ fn api(collector: &StyleCollector, function: Api) -> NativeFunction {
     }
 }
 
+/// A failure setting up the sandbox the stylesheet runs in, which no stylesheet
+/// code causes, told against `run` once `instrumented` locates its frames
+fn setup_error<'s, E: std::fmt::Display>(
+    run: &'s Script,
+    instrumented: Option<&'s crate::evaluation_sandbox::Instrumented>,
+    filename: &'s str,
+) -> impl Fn(E) -> String + 's {
+    move |error| {
+        let error = error.to_string();
+        let error = match instrumented {
+            Some(instrumented) => instrumented.explain(&error),
+            None => error,
+        };
+        run.explain(&error, filename)
+    }
+}
+
+/// A failure registering the vanilla-extract APIs on a fresh global object
+fn registration_error(error: impl std::fmt::Display) -> String {
+    format!("Failed to register __vanilla_extract__: {error}")
+}
+
 /// Register vanilla-extract mock APIs in the JS context
 fn register_vanilla_extract_apis(
     context: &mut Context,
@@ -916,7 +941,7 @@ fn register_vanilla_extract_apis(
     let mock = builder.build();
     context
         .register_global_property(js_string!(PACKAGE_BINDING), mock, Attribute::all())
-        .map_err(|e| format!("Failed to register __vanilla_extract__: {e}"))
+        .map_err(registration_error)
 }
 
 fn style(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
