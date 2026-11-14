@@ -12,6 +12,9 @@ use oxc_ast_visit::{
 use oxc_span::GetSpan;
 use rustc_hash::FxHashMap;
 
+#[path = "params.rs"]
+mod params;
+
 pub(super) fn collect(
     stylesheet: crate::vanilla_extract::Stylesheet<'_>,
     package: &str,
@@ -149,12 +152,45 @@ impl Calls<'_> {
             });
         crate::locate(self.filename, self.source, offset)
     }
+
+    fn params(&mut self, expression: &Expression<'_>) {
+        for (offset, leaf) in params::errors(expression, self.scoping) {
+            self.errors.push((
+                offset,
+                crate::utils::build_time_error(
+                    "css",
+                    &leaf,
+                    crate::extractor::selector_params::SELECTOR_PARAMS,
+                ),
+            ));
+        }
+    }
 }
 
 impl<'a> Visit<'a> for Calls<'_> {
     fn visit_tagged_template_expression(&mut self, tagged: &TaggedTemplateExpression<'a>) {
         let tag = crate::utils::unwrap_syntax_only(&tagged.tag);
         if self.api(tag).as_deref() == Some("css") {
+            let mut before = String::new();
+            for (index, quasi) in tagged.quasi.quasis.iter().enumerate() {
+                before.push_str(&quasi.value.raw);
+                if let Some(expression) = tagged.quasi.expressions.get(index) {
+                    match crate::css_utils::interpolation_place(
+                        &before,
+                        &tagged.quasi.quasis[index + 1..],
+                    ) {
+                        crate::css_utils::Place::Statement => self.params(expression),
+                        crate::css_utils::Place::Value => {
+                            before.push_str("__EXPR__");
+                            continue;
+                        }
+                        crate::css_utils::Place::Other => {}
+                    }
+                    if let Some(text) = crate::utils::get_string_by_literal_expression(expression) {
+                        before.push_str(&text);
+                    }
+                }
+            }
             // Keep the template site and its eval/await/yield expressions outside the forwarding closure.
             let receiver = match tag {
                 Expression::StaticMemberExpression(member) => {
@@ -188,6 +224,15 @@ impl<'a> Visit<'a> for Calls<'_> {
             };
             if let Some((argument, kind)) = shape {
                 self.ranges.push((call.span.start, call.span.end));
+                if api == "css" {
+                    for argument in &call.arguments {
+                        if let Some(expression) = argument.as_expression() {
+                            self.params(expression);
+                        } else if let oxc_ast::ast::Argument::SpreadElement(spread) = argument {
+                            self.params(&spread.argument);
+                        }
+                    }
+                }
                 if !(api == "styleVariants" && call.arguments.len() > 1)
                     && let Some(expression) = call
                         .arguments

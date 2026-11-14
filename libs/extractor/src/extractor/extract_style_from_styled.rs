@@ -99,6 +99,7 @@ struct Base<'a> {
 /// renders in its place: what it renders, its classes and styles, and its
 /// attrs, as the extension applies them before its own
 pub struct StyledDefinition<'a> {
+    pub(crate) takes_styles: bool,
     name: String,
     target: Option<Expression<'a>>,
     bound: Option<Expression<'a>>,
@@ -238,6 +239,7 @@ impl<'a> StyledDefinition<'a> {
         }
         let allocator = builder.allocator();
         let mut inherited = Self {
+            takes_styles: self.takes_styles,
             name: self.name.clone(),
             target: self.target.as_ref().map(|value| value.clone_in(allocator)),
             composition_styles: self
@@ -322,13 +324,18 @@ impl<'a> StyledDefinition<'a> {
 }
 
 impl StyledDefinition<'_> {
+    /// Whether the styles and attrs of this component read the prop `name`
+    #[must_use]
+    pub fn reads_prop(&self, name: &str) -> bool {
+        self.reads.whole || self.reads.names.iter().any(|read| read == name)
+    }
+
     /// Whether an element using this component keeps passing the prop `name`:
     /// what its styles read, what it passes on, and what React or the
     /// component itself takes
     #[must_use]
     pub fn takes(&self, name: &str) -> bool {
-        self.reads.whole
-            || self.reads.names.iter().any(|read| read == name)
+        self.reads_prop(name)
             || matches!(
                 name,
                 "className" | "style" | "as" | "forwardedAs" | "key" | "ref" | "children"
@@ -364,11 +371,17 @@ impl<'a> StyledDefinition<'a> {
             && self.styles.iter().all(fixed)
     }
 
-    fn with_css_slot(mut self, slot: Option<&StyledCapability>, inherited: Option<&Self>) -> Self {
+    fn with_css_slot(
+        mut self,
+        slot: Option<&StyledCapability>,
+        inherited: Option<&Self>,
+        shared: bool,
+    ) -> Self {
         self.capability = slot
             .filter(|_| {
-                (!self.fixed_summary() && !self.portable())
-                    || (self.fixed_native() && !self.bindings.is_empty())
+                (shared
+                    && ((!self.fixed_summary() && !self.portable())
+                        || (self.fixed_native() && !self.bindings.is_empty())))
                     || !self.execution.replays()
                     || (!self.native()
                         && self.fixed_summary()
@@ -399,6 +412,7 @@ impl<'a> StyledDefinition<'a> {
     #[must_use]
     pub fn clone_in<'b>(&self, allocator: &'b oxc_allocator::Allocator) -> StyledDefinition<'b> {
         StyledDefinition {
+            takes_styles: self.takes_styles,
             name: self.name.clone(),
             composition_styles: self
                 .composition_styles
@@ -637,6 +651,7 @@ impl<'a> Base<'a> {
         let allocator = ast_builder.allocator();
         let (reads, forward) = props;
         StyledDefinition {
+            takes_styles: false,
             name: self.name.clone(),
             target: self
                 .target
@@ -826,7 +841,7 @@ fn resolve_styled_call_target<'a>(
 /// - styled.div({ bg: "red" })
 /// - styled(Component)({ bg: "red" })
 pub fn extract_style_from_styled<'a>(
-    ast_builder: &AstBuilder<'a>,
+    inputs: super::style_inputs::StyleInputs<'_, 'a>,
     expression: &mut Expression<'a>,
     naming: Naming<'_>,
     bindings: StyledBindings<'_>,
@@ -834,6 +849,7 @@ pub fn extract_style_from_styled<'a>(
     inherited: Option<&StyledDefinition<'a>>,
     context: StyledContext<'_>,
 ) -> StyledExtraction<'a> {
+    let ast_builder = inputs.ast;
     let imports = bindings.imports;
     let Naming {
         split_filename,
@@ -967,7 +983,7 @@ pub fn extract_style_from_styled<'a>(
                 &bindings,
             )
             .with_execution(ast_builder, inherited)
-            .with_css_slot(context.capability, inherited)
+            .with_css_slot(context.capability, inherited, context.shared)
             .with_markers(markers, inherited);
         let staged = stages::create(
             ast_builder,
@@ -1023,13 +1039,7 @@ pub fn extract_style_from_styled<'a>(
         // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
         // or styled("div", { bg: "red" })
 
-        reads.read_in(
-            if let Argument::SpreadElement(spread) = &call.arguments[style_index] {
-                &spread.argument
-            } else {
-                call.arguments[style_index].to_expression()
-            },
-        );
+        reads.read_in(argument_value(&call.arguments[style_index]));
         let prepared = match &composed_rules {
             Some(_) => None,
             None => call.arguments[style_index]
@@ -1061,13 +1071,9 @@ pub fn extract_style_from_styled<'a>(
             ..
         } = composed_rules.unwrap_or_else(|| {
             let (result, projection) = extract_with_order(
-                ast_builder,
+                inputs,
                 None,
-                if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
-                    &mut spread.argument
-                } else {
-                    call.arguments[style_index].to_expression_mut()
-                },
+                argument_value_mut(&mut call.arguments[style_index]),
                 0,
                 &None,
                 LiteralHandling::ExpandResponsiveThemeToken,
@@ -1128,7 +1134,7 @@ pub fn extract_style_from_styled<'a>(
             )
             .with_composition_styles(composition_styles)
             .with_execution(ast_builder, inherited)
-            .with_css_slot(context.capability, inherited)
+            .with_css_slot(context.capability, inherited, context.shared)
             .with_markers(markers, inherited);
         let staged = stages::create(
             ast_builder,
@@ -1568,14 +1574,31 @@ fn member<'a>(
     ))
 }
 
+/// What `argument` passes, whether it is spread or not
+fn argument_value<'b, 'a>(argument: &'b Argument<'a>) -> &'b Expression<'a> {
+    match argument {
+        Argument::SpreadElement(spread) => &spread.argument,
+        argument => argument.to_expression(),
+    }
+}
+
+/// What `argument` passes, whether it is spread or not, to change
+fn argument_value_mut<'b, 'a>(argument: &'b mut Argument<'a>) -> &'b mut Expression<'a> {
+    match argument {
+        Argument::SpreadElement(spread) => &mut spread.argument,
+        argument => argument.to_expression_mut(),
+    }
+}
+
 /// `[first, second].filter(Boolean).join(" ") || undefined`
 fn joined_class<'a>(
     ast_builder: &AstBuilder<'a>,
     first: Expression<'a>,
     second: Expression<'a>,
 ) -> Expression<'a> {
-    let joined = wrap_array_filter(ast_builder, &[first, second])
-        .unwrap_or_else(|| identifier(ast_builder, "undefined"));
+    // Two parts always join; `undefined` only stands in for none
+    let undefined = identifier(ast_builder, "undefined");
+    let joined = wrap_array_filter(ast_builder, &[first, second]).unwrap_or(undefined);
     Expression::new_logical_expression(
         SPAN,
         joined,
@@ -1703,11 +1726,7 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
         "ref",
         identifier(ast_builder, "__devupRef"),
     );
-    let body = wrap_direct_call(
-        ast_builder,
-        &Expression::new_parenthesized_expression(SPAN, component, ast_builder),
-        &[props],
-    );
+    let body = super::styled_inline::body(ast_builder, component, props);
     let render = Expression::new_arrow_function_expression(
         SPAN,
         false,
@@ -1723,7 +1742,7 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
             ast_builder,
         ),
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-        body.into(),
+        body,
         ast_builder,
     );
     wrap_direct_call(
@@ -1891,27 +1910,23 @@ fn create_styled_component<'a>(
     let class_name = own_classes.as_ref().map_or_else(
         || Expression::new_identifier(SPAN, "className", ast_builder),
         |name| {
-            wrap_array_filter(
-                ast_builder,
-                &[
-                    name.clone_in(ast_builder.allocator()),
-                    Expression::new_identifier(SPAN, "className", ast_builder),
-                ],
-            )
-            .unwrap_or_else(|| name.clone_in(ast_builder.allocator()))
+            let name = name.clone_in(ast_builder.allocator());
+            let parts = [
+                name.clone_in(ast_builder.allocator()),
+                Expression::new_identifier(SPAN, "className", ast_builder),
+            ];
+            wrap_array_filter(ast_builder, &parts).unwrap_or(name)
         },
     );
     let style = style_vars.as_ref().map_or_else(
         || Expression::new_identifier(SPAN, "style", ast_builder),
         |style_vars| {
-            merge_object_expressions(
-                ast_builder,
-                &[
-                    style_vars.clone_in(ast_builder.allocator()),
-                    Expression::new_identifier(SPAN, "style", ast_builder),
-                ],
-            )
-            .unwrap_or_else(|| style_vars.clone_in(ast_builder.allocator()))
+            let style_vars = style_vars.clone_in(ast_builder.allocator());
+            let parts = [
+                style_vars.clone_in(ast_builder.allocator()),
+                Expression::new_identifier(SPAN, "style", ast_builder),
+            ];
+            merge_object_expressions(ast_builder, &parts).unwrap_or(style_vars)
         },
     );
     let omissions = capability.map(|slot| {
@@ -1921,7 +1936,7 @@ fn create_styled_component<'a>(
     });
     let withheld = omissions.as_deref().unwrap_or(withheld);
     let ordinary =
-        super::styled_transient::filter(ast_builder, without_props(ast_builder, withheld));
+        super::styled_transient::filter(ast_builder, identifier(ast_builder, "rest"), withheld);
     let forwarded = capability.map_or_else(
         || ordinary.clone_in(ast_builder.allocator()),
         |slot| slot.forwarded(ast_builder, &ordinary),

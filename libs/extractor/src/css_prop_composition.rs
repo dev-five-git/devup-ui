@@ -21,6 +21,7 @@ impl<'a> DevupVisitor<'a> {
         symbol: Option<oxc_syntax::symbol::SymbolId>,
         renders: bool,
         class_name: Option<&Expression<'a>>,
+        raw: Option<&mut Vec<ExtractStyleProp<'a>>>,
     ) -> Option<(CssPropLowering, Vec<ExtractStyleProp<'a>>)> {
         let (element, lookup) = names;
         let allocator = self.ast.allocator();
@@ -55,7 +56,7 @@ impl<'a> DevupVisitor<'a> {
                 CssPropLowering::Inline(_) => markers,
                 CssPropLowering::Retained | CssPropLowering::Slot(_) => None,
             };
-            let mut props = self.compose_css_prop(element, css, styles, class_name);
+            let mut props = self.compose_css_prop(element, css, styles, class_name, raw);
             props.extend(markers.map(|expression| ExtractStyleProp::Expression {
                 expression,
                 styles: vec![],
@@ -69,7 +70,7 @@ impl<'a> DevupVisitor<'a> {
             )
         });
         let offset = css.offset;
-        let props = self.compose_css_prop(element, css, vec![], class_name);
+        let props = self.compose_css_prop(element, css, vec![], class_name, raw);
         if own.is_some_and(|own| match own {
             OwnStyles::Replay(styles) => overlaps(&styles, &props),
             OwnStyles::Residual(coverage) => coverage.overlaps(&props),

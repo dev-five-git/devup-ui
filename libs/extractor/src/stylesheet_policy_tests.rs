@@ -12,9 +12,14 @@ mod regressions;
 const HEAD: &str = "import { css, globalCss, keyframes, styled } from '@devup-ui/react';\n";
 
 fn plan_of(code: &str) -> Plan {
-    plan(code, "a.css.ts", &ExtractOption::default(), None, &|_| {
-        false
-    })
+    let never_static = |_: &str| false;
+    plan(
+        code,
+        "a.css.ts",
+        &ExtractOption::default(),
+        None,
+        &never_static,
+    )
 }
 
 fn plan_with_head(code: &str) -> Plan {
@@ -68,6 +73,7 @@ fn a_stylesheet_of_devup_styles_alone_is_extracted_as_written(#[case] code: &str
 #[case("const rules = { color: 'red' };\nexport const a = css`color: ${rules.color};`;")]
 #[case("export function f() {}\nexport const a = css({ w: 1 });")]
 #[case("function f() {}\nexport const a = css({ w: 1 });")]
+#[case("export const a = css({ opacity: NaN, zIndex: Infinity });")]
 #[case("export default function () {}")]
 #[case(
     "type Tokens = { a: string };\nconst tokens: Tokens = { a: 'red' } as const;\nexport const a = css({ color: tokens.a as string, w: Math.round(2.5)! });"

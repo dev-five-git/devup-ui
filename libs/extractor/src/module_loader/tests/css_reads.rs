@@ -119,8 +119,7 @@ fn css_retention_rejects_actual_read_at_original_site_when_export_is_unknown(
         &resolver,
     )
     .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
+    .map_or_default(|error| error.to_string());
     // Then
     let site = if read == "styles" {
         "/src/card.css.ts:1:88:"
@@ -175,8 +174,7 @@ fn css_retention_rejects_called_function_read_when_css_value_is_requested(
         &resolver,
     )
     .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
+    .map_or_default(|error| error.to_string());
     // Then
     assert!(error.starts_with("/src/helper.ts:3:10:"), "{error}");
     assert!(

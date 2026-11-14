@@ -188,3 +188,38 @@ fn static_atom_when_nested_in_layer_keeps_its_selector_and_inner_layer()
     );
     Ok(())
 }
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn opaque_conditional_branch_when_contextualized_fails_instead_of_dropping_it(
+    #[case] opaque_alternate: bool,
+) {
+    // Given a conditional whose one branch the context cannot place
+    let allocator = oxc_allocator::Allocator::default();
+    let ast = oxc_ast::builder::AstBuilder::new(&allocator);
+    let readable = || {
+        Box::new(ExtractStyleProp::Static(ExtractStyleValue::Static(
+            ExtractStaticStyle::new("color", "red", 0, None),
+        )))
+    };
+    let opaque = || {
+        Box::new(ExtractStyleProp::Static(ExtractStyleValue::Typography(
+            "body".into(),
+        )))
+    };
+    let (consequent, alternate) = if opaque_alternate {
+        (readable(), opaque())
+    } else {
+        (opaque(), readable())
+    };
+    let props = vec![ExtractStyleProp::Conditional {
+        condition: oxc_ast::ast::Expression::new_identifier(oxc_span::SPAN, "on", &ast),
+        consequent: Some(consequent),
+        alternate: Some(alternate),
+    }];
+    // When
+    let result = contextualize(props, &["&:hover {".into()]);
+    // Then
+    assert!(matches!(result, Err(ContextError::Opaque)));
+}

@@ -147,6 +147,9 @@ impl<'a, K: Fn(&Expression<'a>) -> bool> Preparation<'_, '_, 'a, K> {
                             if property.method || property.kind != PropertyKind::Init {
                                 return None;
                             }
+                            if property.key.name().is_some_and(|name| name == "params") {
+                                continue;
+                            }
                             // Keep authored keys and literal lookup tables intact:
                             // the extractor still owns their policy and atom choices.
                             self.value(&mut property.value, guard)?;

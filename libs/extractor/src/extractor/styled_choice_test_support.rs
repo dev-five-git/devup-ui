@@ -35,12 +35,11 @@ pub(crate) fn active(output: &ExtractOutput, props: &str) -> Vec<ExtractStyleVal
 pub(crate) fn evaluate(expression: &str, props: &str) -> String {
     let code = format!("const rest = {props}; const className = ''; ({expression});");
     let mut context = boa_engine::Context::default();
-    context
-        .eval(boa_engine::Source::from_bytes(&code))
-        .unwrap_or_else(|error| panic!("{error}: {code}"))
-        .to_string(&mut context)
-        .unwrap_or_else(|error| panic!("{error}"))
-        .to_std_string_escaped()
+    let value = context.eval(boa_engine::Source::from_bytes(&code));
+    let value = value.unwrap_or_else(|error| panic!("{error}: {code}"));
+    let text = value.to_string(&mut context);
+    let text = text.unwrap_or_else(|error| panic!("{error}"));
+    text.to_std_string_escaped()
 }
 
 pub(crate) fn declarations(styles: &[ExtractStyleValue]) -> Vec<(String, String)> {

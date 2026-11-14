@@ -12,12 +12,39 @@ use rustc_hash::FxHashMap;
 mod captures;
 pub(super) use captures::collect as collect_captures;
 
+/// Only a synthetic call with the complete generated guard AST is transparent.
+pub(crate) fn number_length_input<'e, 'a>(
+    call: &'e oxc_ast::ast::CallExpression<'a>,
+) -> Option<&'e Expression<'a>> {
+    use oxc_span::{ContentEq, SPAN};
+    if call.span != SPAN
+        || call.callee.span() != SPAN
+        || call.optional
+        || call.arguments.len() != 1
+        || call.type_arguments.is_some()
+    {
+        return None;
+    }
+    let arena = oxc_allocator::Allocator::default();
+    call.callee
+        .content_eq(&number_length_guard(&AstBuilder::new(&arena)))
+        .then(|| call.arguments[0].as_expression())
+        .flatten()
+}
+
 /// Convert a captured length once, leaving zero and nonnumeric values untouched.
-pub(super) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) -> Expression<'a> {
-    use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+pub(crate) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) -> Expression<'a> {
+    crate::utils::wrap_direct_call(builder, &number_length_guard(builder), &[leaf])
+}
+
+/// The caller owns a stable captured read; duplicate that read without another function.
+pub(crate) fn number_length_value<'a>(
+    builder: &AstBuilder<'a>,
+    leaf: Expression<'a>,
+) -> Expression<'a> {
     use oxc_span::SPAN;
     use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
-    let value = || Expression::new_identifier(SPAN, "__devupValue", builder);
+    let value = || leaf.clone_in(builder.allocator());
     let condition = Expression::new_logical_expression(
         SPAN,
         Expression::new_binary_expression(
@@ -43,7 +70,7 @@ pub(super) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) 
         ),
         builder,
     );
-    let body = Expression::new_conditional_expression(
+    Expression::new_conditional_expression(
         SPAN,
         condition,
         Expression::new_binary_expression(
@@ -55,6 +82,15 @@ pub(super) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) 
         ),
         value(),
         builder,
+    )
+}
+
+fn number_length_guard<'a>(builder: &AstBuilder<'a>) -> Expression<'a> {
+    use oxc_ast::ast::{BindingPattern, FormalParameter, FormalParameterKind, FormalParameters};
+    use oxc_span::SPAN;
+    let body = number_length_value(
+        builder,
+        Expression::new_identifier(SPAN, "__devupValue", builder),
     );
     let mut params = oxc_allocator::Vec::new_in(builder);
     params.push(FormalParameter::new(
@@ -69,7 +105,7 @@ pub(super) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) 
         false,
         builder,
     ));
-    let arrow = Expression::new_arrow_function_expression(
+    Expression::new_arrow_function_expression(
         SPAN,
         false,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
@@ -83,8 +119,7 @@ pub(super) fn number_length<'a>(builder: &AstBuilder<'a>, leaf: Expression<'a>) 
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
         body.into(),
         builder,
-    );
-    crate::utils::wrap_direct_call(builder, &arrow, &[leaf])
+    )
 }
 
 pub(super) fn has_tdz(

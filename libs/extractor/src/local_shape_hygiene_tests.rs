@@ -92,9 +92,10 @@ fn rendered_variables(code: &str) -> Result<serde_json::Value, Box<dyn std::erro
     let script = format!(
         "const __devupForwardRef = fn => props => fn(props, undefined); {compiled}\nJSON.stringify(Object.values(f({{color:'purple'}})({{}})));"
     );
-    let json = boa_engine::Context::default()
-        .eval(boa_engine::Source::from_bytes(&script))
-        .map_err(|error| format!("generated styled callback failed: {error}\n{script}"))?
+    let value = boa_engine::Context::default().eval(boa_engine::Source::from_bytes(&script));
+    let value =
+        value.map_err(|error| format!("generated styled callback failed: {error}\n{script}"))?;
+    let json = value
         .as_string()
         .ok_or("expected JSON")?
         .to_std_string_escaped();
@@ -178,8 +179,8 @@ fn captured_alias_when_existing_or_unresolved_names_collide_is_fresh(
 }
 
 #[rstest]
-#[case("const inner = [, {color:p.color}];", "inner[`1`][`color`]")]
-#[case("const inner = [...[, {color:p.color}]];", "inner[`1`][`color`]")]
+#[case("const inner = [, {color:p.color}];", "inner[\"1\"][\"color\"]")]
+#[case("const inner = [...[, {color:p.color}]];", "inner[\"1\"][\"color\"]")]
 #[serial]
 fn captured_sparse_array_when_expanded_retains_original_index(
     #[case] declaration: &str,
@@ -194,7 +195,12 @@ fn captured_sparse_array_when_expanded_retains_original_index(
     // When
     let output = extract("local-hygiene.tsx", &code, emotion_option())?;
     // Then
-    assert!(output.code.contains(read), "{}", output.code);
+    crate::style_slot_test_support::assert_variables(
+        &output,
+        "local-hygiene.tsx",
+        &emotion_option(),
+        &[("color", crate::style_slot_test_support::numeric(read))],
+    );
     assert_eq!(
         output
             .styles

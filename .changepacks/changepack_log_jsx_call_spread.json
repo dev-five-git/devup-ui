@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Attach extracted classes and authored CSS variables to jsx, jsxs and jsxDEV props wrapped in parentheses, as const or satisfies. Preserve source evaluation order, responsive and conditional styleOrder output, native className/style merging and whole unknown-spread pass-through. Syntax wrappers do not introduce spread replacement diagnostics or a styling runtime.",
+  "date": "2026-10-12T00:00:00.000Z"
+}

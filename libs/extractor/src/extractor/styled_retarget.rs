@@ -89,7 +89,7 @@ pub fn with_component<'a>(
                 .map(|styles| styles.clone_in(allocator)),
         )
         .with_execution(ast_builder, Some(&definition))
-        .with_css_slot(context.capability, Some(&definition))
+        .with_css_slot(context.capability, Some(&definition), context.shared)
         .with_markers(naming.markers, Some(&definition));
     let staged = stages::create(
         ast_builder,

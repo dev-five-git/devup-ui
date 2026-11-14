@@ -39,14 +39,14 @@ export const agreementCases = [
   {
     name: 'runtime-first nullish import fallback',
     body: 'export function render(rest: DevupProps | undefined) { return <Box {...(rest ?? knownImport)} /> }',
-    outcome: 'pass-through',
-    reports: 1,
+    outcome: 'refused',
+    reports: 0,
   },
   {
     name: 'runtime-first or import fallback',
     body: 'export function render(rest: DevupProps | undefined) { return <Box {...(rest || knownImport)} /> }',
-    outcome: 'pass-through',
-    reports: 1,
+    outcome: 'refused',
+    reports: 0,
   },
   {
     name: 'known import control',
@@ -75,14 +75,14 @@ export const agreementCases = [
   {
     name: 'runtime-first nullish literal fallback',
     body: 'export function render(rest: DevupProps | undefined) { return <Box {...(rest ?? { bg: "red" })} /> }',
-    outcome: 'pass-through',
-    reports: 1,
+    outcome: 'refused',
+    reports: 0,
   },
   {
     name: 'runtime-first or literal fallback',
     body: 'export function render(rest: DevupProps | undefined) { return <Box {...(rest || { bg: "red" })} /> }',
-    outcome: 'pass-through',
-    reports: 1,
+    outcome: 'refused',
+    reports: 0,
   },
   {
     name: 'runtime-first or empty literal fallback',

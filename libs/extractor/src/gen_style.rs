@@ -60,7 +60,18 @@ fn push_one_sided_conditional<'a>(
     for p in gen_style(ast_builder, styles, filename) {
         if let ObjectPropertyKind::ObjectProperty(p) = p {
             let value = p.value.clone_in(ast_builder.allocator());
-            let undefined = Expression::new_identifier(SPAN, "undefined", ast_builder);
+            let undefined = Expression::new_unary_expression(
+                SPAN,
+                oxc_ast::ast::UnaryOperator::Void,
+                Expression::new_numeric_literal(
+                    SPAN,
+                    0.0,
+                    None,
+                    oxc_ast::ast::NumberBase::Decimal,
+                    ast_builder,
+                ),
+                ast_builder,
+            );
             let (consequent, alternate) = if value_when_true {
                 (value, undefined)
             } else {
@@ -209,12 +220,9 @@ fn gen_style<'a>(
                 // Emit an alternate-only property when it has no consequent counterpart:
                 // either its key is absent from `c_keys`, or it has no resolvable key at
                 // all (the old probe's `matches!` never matched such an entry either).
-                let unmatched = if let ObjectPropertyKind::ObjectProperty(qq) = q {
-                    qq.key.name().is_none_or(|name| !c_keys.contains(&name))
-                } else {
-                    false
-                };
-                if unmatched && let ObjectPropertyKind::ObjectProperty(q) = q {
+                if let ObjectPropertyKind::ObjectProperty(q) = q
+                    && q.key.name().is_none_or(|name| !c_keys.contains(&name))
+                {
                     properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,
@@ -362,7 +370,7 @@ mod tests {
         let generated = gen_styles(&builder, &styles, None).unwrap();
         let code = expression_to_code(&generated);
 
-        assert!(code.contains("enabled?undefined:fallbackColor"));
+        assert!(code.contains("enabled?void 0:fallbackColor"));
     }
 
     #[test]

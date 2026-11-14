@@ -3347,6 +3347,10 @@ static CURSORS: phf::Set<&'static str> = phf_set! {
 };
 
 #[cfg(test)]
+#[path = "tailwind_table_tests.rs"]
+mod table_tests;
+
+#[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
