@@ -27,3 +27,5 @@ playwright-report
 benchmark-run.json
 release-results.json
 release-package-build.json
+/bindings/devup-ui-binding/pkg/
+/bindings/devup-ui-binding-*/*.node

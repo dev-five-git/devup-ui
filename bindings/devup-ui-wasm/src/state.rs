@@ -3,10 +3,9 @@ use wasm_bindgen::prelude::*;
 /// Internal test boundary: clear the engine, including calling-thread caches.
 /// Never call during extraction or a resolver callback, or between build environments.
 pub fn reset_state_internal() {
-    super::with_style_sheet_mut(|sheet| *sheet = sheet::StyleSheet::default());
-    super::MODULE_RESOLVER.with_borrow_mut(|resolver| *resolver = None);
-    css::test_state::reset_state_for_testing();
-    extractor::test_state::reset_caches_for_testing();
+    devup_ui_binding_core::reset_state_internal(|| {
+        super::MODULE_RESOLVER.with_borrow_mut(|resolver| *resolver = None);
+    });
 }
 
 /// Internal/testing-only reset, deliberately present in normal WASM artifacts.

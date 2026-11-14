@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["libs/extractor", "bindings/devup-ui-wasm", "libs/sheet", "libs/css"]
+members = ["libs/extractor", "bindings/devup-ui-wasm", "libs/sheet", "libs/css", "libs/binding", "bindings/devup-ui-binding"]
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
@@ -59,3 +59,7 @@ codegen-units = 1
 strip = true
 # Abort on panic: smaller binary, no unwinding overhead
 panic = "abort"
+
+[profile.native]
+inherits = "release"
+opt-level = 3
