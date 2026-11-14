@@ -82,21 +82,21 @@ impl<'a> Projection<'a> {
         }
     }
 
-    pub(super) fn extract<const LOCATE: bool>(
+    pub(super) fn extract(
         &mut self,
         inputs: StyleInputs<'_, 'a>,
         name: Option<&str>,
         expression: &mut Expression<'a>,
-        coordinates: (u8, &Option<StyleSelector>),
+        coordinates: (u8, &Option<StyleSelector>, bool),
         handling: LiteralHandling,
-        prepare: &mut impl FnMut(&mut Expression<'a>),
+        prepare: &mut dyn FnMut(&mut Expression<'a>),
     ) -> ExtractResult<'a> {
         let mut child = if self.children.is_some() {
             Self::enabled()
         } else {
             Self::default()
         };
-        let result = extract_style_from_expression::extract_projected::<LOCATE>(
+        let result = extract_style_from_expression::extract_projected(
             inputs,
             name,
             expression,
@@ -221,14 +221,14 @@ pub(crate) fn extract_with_order_policy<'a, const LOCATE: bool>(
     level: u8,
     selector: &Option<StyleSelector>,
     handling: LiteralHandling,
-    prepare: &mut impl FnMut(&mut Expression<'a>),
+    prepare: &mut dyn FnMut(&mut Expression<'a>),
 ) -> (ExtractResult<'a>, AuthoredStyles<'a>) {
     let mut projection = Projection::enabled();
-    let result = extract_style_from_expression::extract_projected::<LOCATE>(
+    let result = extract_style_from_expression::extract_projected(
         inputs,
         name,
         expression,
-        (level, selector),
+        (level, selector, LOCATE),
         handling,
         &mut projection,
         prepare,

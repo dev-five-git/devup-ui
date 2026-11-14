@@ -1,9 +1,48 @@
 use super::{Leaves, PropsRulesError};
 use crate::utils::{unwrap_syntax_only, unwrap_syntax_only_mut};
 use oxc_allocator::{CloneIn, GetAllocator};
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKind};
 use oxc_span::SPAN;
 use oxc_syntax::operator::UnaryOperator;
+
+pub(super) fn spread_data(value: &Expression<'_>, allow_object: bool) -> bool {
+    let projected = |value| spread_data(value, false);
+    match unwrap_syntax_only(value) {
+        Expression::ObjectExpression(object) => {
+            allow_object
+                && object.properties.iter().all(|property| match property {
+                    ObjectPropertyKind::ObjectProperty(property) => {
+                        !property.computed
+                            && !property.method
+                            && property.kind == PropertyKind::Init
+                            && property
+                                .key
+                                .static_name()
+                                .is_some_and(|key| key != "__proto__")
+                            && spread_data(&property.value, true)
+                    }
+                    ObjectPropertyKind::SpreadProperty(spread) => {
+                        matches!(
+                            unwrap_syntax_only(&spread.argument),
+                            Expression::ObjectExpression(_)
+                        ) && spread_data(&spread.argument, true)
+                    }
+                })
+        }
+        Expression::ArrayExpression(array) => array.elements.iter().all(|element| {
+            matches!(element, ArrayExpressionElement::Elision(_))
+                || element.as_expression().is_some_and(projected)
+        }),
+        Expression::ConditionalExpression(branch) => {
+            projected(&branch.consequent) && projected(&branch.alternate)
+        }
+        Expression::LogicalExpression(logical) => {
+            projected(&logical.left) && projected(&logical.right)
+        }
+        Expression::SequenceExpression(sequence) => sequence.expressions.iter().all(projected),
+        _ => true,
+    }
+}
 
 pub(crate) fn needs_projection(value: &Expression<'_>) -> bool {
     match unwrap_syntax_only(value) {
@@ -19,7 +58,9 @@ pub(crate) fn needs_projection(value: &Expression<'_>) -> bool {
                 oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) => {
                     needs_projection(&property.value)
                 }
-                oxc_ast::ast::ObjectPropertyKind::SpreadProperty(_) => false,
+                oxc_ast::ast::ObjectPropertyKind::SpreadProperty(spread) => {
+                    needs_projection(&spread.argument)
+                }
             })
         }
         _ => false,

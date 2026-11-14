@@ -1028,18 +1028,16 @@ impl Theme {
         let default_optimized: HashMap<(&str, usize), String> = if sorted_variants.len() <= 1 {
             HashMap::new()
         } else {
-            default_theme
-                .map(|dt| {
-                    dt.iter()
-                        .flat_map(|(name, values)| {
-                            values.0.iter().enumerate().filter_map(move |(idx, dval)| {
-                                dval.as_ref()
-                                    .map(|d| ((name.as_str(), idx), optimize_value(d).into_owned()))
-                            })
+            default_theme.map_or_default(|dt| {
+                dt.iter()
+                    .flat_map(|(name, values)| {
+                        values.0.iter().enumerate().filter_map(move |(idx, dval)| {
+                            dval.as_ref()
+                                .map(|d| ((name.as_str(), idx), optimize_value(d).into_owned()))
                         })
-                        .collect()
-                })
-                .unwrap_or_default()
+                    })
+                    .collect()
+            })
         };
 
         for (variant_name, token_theme) in &sorted_variants {

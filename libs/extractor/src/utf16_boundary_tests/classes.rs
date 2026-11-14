@@ -1,42 +1,10 @@
 use super::*;
 use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
-use oxc_ast::ast::{JSXAttribute, JSXAttributeValue, VariableDeclarator};
-use oxc_ast_visit::{Visit, walk};
 
 fn rendered_class(code: &str) -> Vec<u16> {
-    struct ClassExpression(Option<String>);
-    impl<'a> Visit<'a> for ClassExpression {
-        fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
-            if declarator.id.get_identifier_name() == Some("result".into())
-                && let Some(
-                    expression @ (Expression::StringLiteral(_) | Expression::TemplateLiteral(_)),
-                ) = &declarator.init
-            {
-                self.0 = Some(crate::utils::expression_to_code(expression));
-            }
-            walk::walk_variable_declarator(self, declarator);
-        }
-        fn visit_jsx_attribute(&mut self, attribute: &JSXAttribute<'a>) {
-            if attribute
-                .name
-                .as_identifier()
-                .is_some_and(|name| name.name == "className")
-                && let Some(JSXAttributeValue::ExpressionContainer(container)) = &attribute.value
-                && let Some(expression) = container.expression.as_expression()
-            {
-                self.0 = Some(crate::utils::expression_to_code(expression));
-            }
-        }
-    }
-    let allocator = Allocator::default();
-    let parsed = Parser::new(&allocator, code, SourceType::tsx()).parse();
-    assert_eq!(parsed.diagnostics.len(), 0, "{code}");
-    let mut class = ClassExpression(None);
-    class.visit_program(&parsed.program);
-    let expression = class
-        .0
-        .unwrap_or_else(|| panic!("missing class expression: {code}"));
-    let script = format!("let name = 'active'; {expression}");
+    let compiled = crate::jsx_semantics_tests::whole::plain_script(code);
+    let script =
+        format!("let name='active';const h=(_tag,props)=>props.className;{compiled}\nresult;");
     let value = boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(&script))
         .unwrap_or_else(|error| panic!("{script}: {error}"));

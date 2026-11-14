@@ -15,17 +15,21 @@ mod finite_selection;
 mod forward_ref_captures;
 mod lowering;
 pub(crate) mod namespace_module_execution;
+mod scalar_lookup;
 
 use crate::{ExtractOption, extract, utils::readable_code};
 use css::{class_map::reset_class_map, file_map::reset_file_map};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    ArrowFunctionExpression, BindingPattern, CallExpression, Expression,
-    ImportDeclarationSpecifier, ObjectPropertyKind, Program, Statement,
+    ArrowFunctionExpression, BindingPattern, BlockStatement, CallExpression, Expression,
+    ImportDeclarationSpecifier, ObjectPropertyKind, Program, Statement, VariableDeclarator,
 };
 use oxc_ast_visit::{
     Visit,
-    walk::{walk_arrow_function_expression, walk_call_expression},
+    walk::{
+        walk_arrow_function_expression, walk_block_statement, walk_call_expression,
+        walk_variable_declarator,
+    },
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -87,62 +91,79 @@ struct Render {
 #[derive(Default)]
 struct Renders(Vec<Render>, Vec<Target>);
 
-impl<'a> Visit<'a> for Renders {
-    fn visit_arrow_function_expression(&mut self, arrow: &ArrowFunctionExpression<'a>) {
-        for parameter in &arrow.params.items {
-            let pattern = match &parameter.pattern {
-                BindingPattern::ObjectPattern(pattern) => pattern,
-                _ => continue,
-            };
-            let keys: Vec<_> = pattern
+impl Renders {
+    fn pattern(&mut self, pattern: &BindingPattern<'_>) {
+        let pattern = match pattern {
+            BindingPattern::ObjectPattern(pattern) => pattern,
+            _ => return,
+        };
+        let keys: Vec<_> = pattern
+            .properties
+            .iter()
+            .filter_map(|property| property.key.static_name())
+            .collect();
+        if keys.iter().any(|key| key == "style") && keys.iter().any(|key| key == "className") {
+            assert_eq!(
+                keys.iter()
+                    .map(|key| key
+                        .as_str()
+                        .unwrap_or_else(|| panic!("expected UTF-8 render key")))
+                    .collect::<Vec<_>>(),
+                ["style", "className", "as", "forwardedAs"]
+            );
+            let targets: Vec<_> = pattern
                 .properties
                 .iter()
-                .filter_map(|property| property.key.static_name())
+                .filter_map(|property| match &property.value {
+                    BindingPattern::AssignmentPattern(value) => Some(&value.right),
+                    _ => None,
+                })
                 .collect();
-            if keys.iter().any(|key| key == "style") && keys.iter().any(|key| key == "className") {
-                assert_eq!(
-                    keys.iter()
-                        .map(|key| key
-                            .as_str()
-                            .unwrap_or_else(|| panic!("expected UTF-8 render key")))
-                        .collect::<Vec<_>>(),
-                    ["style", "className", "as", "forwardedAs"]
-                );
-                let targets: Vec<_> = pattern
-                    .properties
-                    .iter()
-                    .filter_map(|property| match &property.value {
-                        BindingPattern::AssignmentPattern(value) => Some(&value.right),
-                        _ => None,
-                    })
-                    .collect();
-                assert_eq!(targets.len(), 1);
-                self.1.push(match targets[0] {
-                    Expression::StringLiteral(tag) => Target::Tag(
-                        tag.value
-                            .as_str()
-                            .unwrap_or_else(|| panic!("expected UTF-8 tag"))
-                            .to_string(),
-                    ),
-                    Expression::Identifier(component) => {
-                        Target::Component(component.name.to_string())
-                    }
-                    expression => Target::Member(readable_code(expression)),
-                });
-                assert_eq!(
-                    pattern
-                        .rest
-                        .as_ref()
-                        .and_then(|rest| rest.argument.get_binding_identifier())
-                        .map(|id| id.name.as_str()),
-                    Some("rest")
-                );
+            if targets.is_empty() {
+                return;
             }
+            assert_eq!(targets.len(), 1);
+            self.1.push(match targets[0] {
+                Expression::StringLiteral(tag) => Target::Tag(
+                    tag.value
+                        .as_str()
+                        .unwrap_or_else(|| panic!("expected UTF-8 tag"))
+                        .to_string(),
+                ),
+                Expression::Identifier(component) => Target::Component(component.name.to_string()),
+                expression => Target::Member(readable_code(expression)),
+            });
+            assert_eq!(
+                pattern
+                    .rest
+                    .as_ref()
+                    .and_then(|rest| rest.argument.get_binding_identifier())
+                    .map(|id| id.name.as_str()),
+                Some("rest")
+            );
+        }
+    }
+}
+
+impl<'a> Visit<'a> for Renders {
+    fn visit_arrow_function_expression(&mut self, arrow: &ArrowFunctionExpression<'a>) {
+        let depth = self.1.len();
+        for parameter in &arrow.params.items {
+            self.pattern(&parameter.pattern);
         }
         walk_arrow_function_expression(self, arrow);
-        if arrow.params.items.iter().any(|parameter| matches!(&parameter.pattern, BindingPattern::ObjectPattern(pattern) if pattern.properties.iter().any(|property| property.key.static_name().is_some_and(|name| name == "forwardedAs")))) {
-            self.1.pop();
-        }
+        self.1.truncate(depth);
+    }
+
+    fn visit_block_statement(&mut self, block: &BlockStatement<'a>) {
+        let depth = self.1.len();
+        walk_block_statement(self, block);
+        self.1.truncate(depth);
+    }
+
+    fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
+        self.pattern(&declarator.id);
+        walk_variable_declarator(self, declarator);
     }
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {

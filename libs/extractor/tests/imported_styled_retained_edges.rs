@@ -1,6 +1,6 @@
 mod retained;
 
-use retained::{BASE, run};
+use retained::{BASE, RunOptions, run, run_with_options};
 use rstest::rstest;
 use serial_test::serial;
 
@@ -182,4 +182,145 @@ fn bound_import_keeps_original_value_when_lowercase_name_requires_eager_binding(
             ["controller", "leaf", "controller", "leaf"]
         ])
     );
+}
+
+#[rstest]
+#[case::ordinary(("styled(Base)({opacity:p=>(trace.push('guard'),enabled)?({a:0.5,b:{nested:'raw'}})[state.key]:undefined,...(enabled?{lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:p=>(trace.push('spacing'),2),margin:p=>(trace.push('pixels'),2)})", "2"))]
+#[case::whole(("styled(Base)(p=>({...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)}))", "2px"))]
+#[case::template(("styled(Base)`${p=>({...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)})}`", "2px"))]
+#[serial]
+fn scalar_and_rule_lookups_when_staged_keep_native_selection_and_property_units(
+    #[case] fixture: (&str, &str),
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: each route extends a real retained base and uses independent native key coercion.
+    let app = format!(
+        "import {{styled}} from '@devup-ui/react';import {{Base}} from './base';const trace=[];let enabled,key;const state={{get key(){{trace.push('key');return {{toString(){{trace.push('coerce');if(key==='throw')throw new Error('stop');return key;}}}};}}}};const Card={};const set=(on,next)=>{{enabled=on;key=next;trace.length=0;}};export {{Card,trace,set}};",
+        fixture.0
+    );
+    let base = BASE.replace(
+        "color:'green'",
+        "color:'green',lineHeight:[null,1.25],_hover:{color:[null,'yellow']}",
+    );
+    let observation = r"
+const app=modules['/src/app.ts'];const before=[app.trace.slice(),modules['/src/base.ts'].trace.slice()];
+const scenarios=[[false,'b'],[true,'a'],[true,'b'],[true,'missing'],[true,'throw']];
+const normalize=values=>values.map(value=>typeof value==='number'?String(value):value);
+const expected=scenarios.map(([enabled,key])=>{const trace=[];const state={get key(){trace.push('key');return {toString(){trace.push('coerce');if(key==='throw')throw new Error('stop');return key;}};}};
+try{const rules={...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)};
+const responsive=[0,1,2].map(level=>[normalize([rules.lineHeight?.[level]??[null,1.25][level]].filter(v=>v!=null)),[rules._hover?.color[level]??[null,'yellow'][level]].filter(v=>v!=null)]);
+return [[rules.opacity==null?[]:normalize([rules.opacity]),rules._hover?[rules._hover.color[0]]:[],['8px'],[LONGHAND],['green'],responsive],trace];}catch(error){return [error.message,trace];}});
+const actual=scenarios.map(([on,key])=>{app.set(on,key);try{const e=render(jsx(app.Card,{}));return [[normalize(values(e,'opacity')),values(e,'color',0,'&:hover'),normalize(values(e,'padding')),normalize(values(e,'margin')),values(e,'color'),[0,1,2].map(level=>[normalize(values(e,'line-height',level)),values(e,'color',level,'&:hover')])],app.trace.slice()];}catch(error){return [error.message,app.trace.slice()];}});
+JSON.stringify([before,actual,expected,modules['/src/base.ts'].trace]);
+".replace("LONGHAND", &format!("{:?}", fixture.1));
+    // When: hit, container, miss, throw and inactive cases traverse the actual staged renderers.
+    let result = run_with_options(
+        &[("/src/base.ts", &base), ("/src/app.ts", &app)],
+        &observation,
+        RunOptions {
+            readable: true,
+            single_css,
+        },
+    );
+    // Then: all active declarations and effects agree with authored evaluation, including throw cutoff.
+    assert_eq!(result[0], serde_json::json!([[], []]));
+    assert_eq!(result[1], result[2], "{result}");
+    assert_eq!(
+        result[3],
+        serde_json::json!([
+            "controller",
+            "leaf",
+            "controller",
+            "leaf",
+            "controller",
+            "leaf",
+            "controller",
+            "leaf"
+        ])
+    );
+}
+
+#[rstest]
+#[case::jsx(("import {jsx as build} from 'react/jsx-runtime';", "build(ui.Base, (PROPS))", false))]
+#[case::jsxs(("import {jsxs as build} from 'react/jsx-runtime';", "build(ui.Base, ((PROPS as const)))", false))]
+#[case::jsx_dev(("import {jsxDEV as build} from 'react/jsx-dev-runtime';", "build(ui.Base, (PROPS satisfies object))", false))]
+#[case::create_element(("import * as React from 'react';", "React.createElement(ui.Base, ((PROPS) as const), (order.push('children'),'child'))", true))]
+#[serial]
+fn wrapped_factory_props_when_retained_keep_css_slots_forwarding_and_native_order(
+    #[case] fixture: (&str, &str, bool),
+    #[values(false, true)] readable: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    // Given: a namespace retained definition owns attrs while each caller owns its props and ref.
+    let base = BASE.replace(
+        "styled.article(",
+        "styled.article.attrs({'data-base':'attrs'})(",
+    );
+    let children = if fixture.2 {
+        ""
+    } else {
+        ",children:(order.push('children'),'child')"
+    };
+    let props = format!(
+        "{{title:(order.push('props'),'caller'),as:(order.push('as'),target),css:{{padding:'4px'}},ref:7,className:'caller',style:{{color:'inline'}}{children}}}"
+    );
+    let call = fixture.1.replace("PROPS", &props);
+    let app = format!(
+        "/** @jsxImportSource @emotion/react */\n{}import * as ui from './base';const App=target=>{call};export {{App}};",
+        fixture.0
+    );
+    // When: real factory execution, including the original receiver, precedes retained rendering.
+    let result = run_with_options(
+        &[("/src/base.ts", &base), ("/src/app.tsx", &app)],
+        "JSON.stringify(['nav','section'].map(target=>{const raw=modules['/src/app.tsx'].App(target);const e=render(raw);return [e.target,e.props.title,e.props['data-base'],e.props.ref,e.props.children,e.props.className.split(/\\s+/).includes('caller'),e.props.style.color,values(e,'color'),values(e,'padding'),slots(e),order.slice(),modules['/src/base.ts'].trace.slice(),raw.props.css?.padding??null];}));",
+        RunOptions {
+            readable,
+            single_css,
+        },
+    );
+    // Then: private slot transport does not change CSS ownership, DOM forwarding or source effects.
+    let effects = if fixture.2 {
+        vec!["callee", "props", "as", "children", "receiver"]
+    } else {
+        vec!["props", "as", "children"]
+    };
+    // Plain React.createElement keeps user CSS even under an Emotion JSX pragma.
+    for (index, target) in ["nav", "section"].iter().enumerate() {
+        assert_eq!(
+            result[index],
+            serde_json::json!([
+                target,
+                "caller",
+                "attrs",
+                7,
+                "child",
+                true,
+                "inline",
+                ["green"],
+                if fixture.2 { vec![] } else { vec!["4px"] },
+                [],
+                effects.repeat(index + 1),
+                (["controller", "leaf"].repeat(index + 1)),
+                if fixture.2 { Some("4px") } else { None }
+            ])
+        );
+    }
+}
+
+#[rstest]
+#[serial]
+fn unbranded_react_namespace_when_opaque_keeps_user_css(
+    #[values(false, true)] readable: bool,
+    #[values(false, true)] single_css: bool,
+) {
+    let app = "import {jsx} from 'react/jsx-runtime';import * as ui from './base';const App=()=>jsx(ui.Base,{css:{padding:'4px'}});export {App};";
+    let result = run_with_options(
+        &[("/src/base.ts", BASE), ("/src/app.tsx", app)],
+        "const raw=modules['/src/app.tsx'].App();const e=render(raw);JSON.stringify([raw.props.css.padding,values(e,'padding')]);",
+        RunOptions {
+            readable,
+            single_css,
+        },
+    );
+    assert_eq!(result, serde_json::json!(["4px", []]));
 }

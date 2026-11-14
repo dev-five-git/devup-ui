@@ -178,8 +178,8 @@ fn captured_alias_when_existing_or_unresolved_names_collide_is_fresh(
 }
 
 #[rstest]
-#[case("const inner = [, {color:p.color}];", "inner[`1`][`color`]")]
-#[case("const inner = [...[, {color:p.color}]];", "inner[`1`][`color`]")]
+#[case("const inner = [, {color:p.color}];", "inner[\"1\"][\"color\"]")]
+#[case("const inner = [...[, {color:p.color}]];", "inner[\"1\"][\"color\"]")]
 #[serial]
 fn captured_sparse_array_when_expanded_retains_original_index(
     #[case] declaration: &str,
@@ -194,7 +194,12 @@ fn captured_sparse_array_when_expanded_retains_original_index(
     // When
     let output = extract("local-hygiene.tsx", &code, emotion_option())?;
     // Then
-    assert!(output.code.contains(read), "{}", output.code);
+    crate::style_slot_test_support::assert_variables(
+        &output,
+        "local-hygiene.tsx",
+        &emotion_option(),
+        &[("color", crate::style_slot_test_support::numeric(read))],
+    );
     assert_eq!(
         output
             .styles

@@ -7,7 +7,7 @@ use oxc_ast::{
     },
     builder::AstBuilder,
 };
-use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
+use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::Scoping;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::{reference::ReferenceId, symbol::SymbolId};
@@ -247,19 +247,21 @@ struct Rewrite<'s, 'a> {
     sites: Vec<(Span, Address)>,
 }
 
-impl<'a> VisitMut<'a> for Rewrite<'_, 'a> {
-    fn visit_expression(&mut self, expression: &mut Expression<'a>) {
-        if let Expression::Identifier(identifier) = expression
-            && let Some(callback) = identifier
-                .reference_id
-                .get()
-                .and_then(|id| self.replacements.get(&id))
-        {
-            let span = identifier.span;
-            *expression = callback.clone_in_with_semantic_ids(self.builder.allocator());
-            self.sites.push((span, expression.address()));
-            return;
-        }
-        walk_mut::walk_expression(self, expression);
+impl<'a> Rewrite<'_, 'a> {
+    fn visit_program(&mut self, program: &mut Program<'a>) {
+        crate::utils::rewrite_program(program, &mut |expression| {
+            if let Expression::Identifier(identifier) = expression
+                && let Some(callback) = identifier
+                    .reference_id
+                    .get()
+                    .and_then(|id| self.replacements.get(&id))
+            {
+                let span = identifier.span;
+                *expression = callback.clone_in_with_semantic_ids(self.builder.allocator());
+                self.sites.push((span, expression.address()));
+                return true;
+            }
+            false
+        });
     }
 }

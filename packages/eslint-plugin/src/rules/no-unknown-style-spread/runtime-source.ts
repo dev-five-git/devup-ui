@@ -82,3 +82,49 @@ export function runtimeSource(source: TSESLint.SourceCode) {
   }
   return unknown
 }
+
+/** The values a spread of `node` may copy, as the build reads its sides */
+export function spreadSides(node: TSESTree.Expression): TSESTree.Expression[] {
+  switch (node.type) {
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return spreadSides(node.expression)
+    case AST_NODE_TYPES.ConditionalExpression:
+      return [...spreadSides(node.consequent), ...spreadSides(node.alternate)]
+    case AST_NODE_TYPES.LogicalExpression:
+      // A falsy left side of `&&` is a primitive, which spreads nothing
+      return node.operator === '&&'
+        ? spreadSides(node.right)
+        : [...spreadSides(node.left), ...spreadSides(node.right)]
+    default:
+      return [node]
+  }
+}
+
+/** Whether the build reads `node` as an object of written keys: an object
+ * literal naming keys, an import, or a const holding one */
+export function buildObject(
+  source: TSESLint.SourceCode,
+  node: TSESTree.Expression,
+): boolean {
+  switch (node.type) {
+    case AST_NODE_TYPES.ObjectExpression:
+      return node.properties.some(
+        (property) => property.type === AST_NODE_TYPES.Property,
+      )
+    case AST_NODE_TYPES.Identifier: {
+      const definition = findBinding(source, node, node.name)?.defs[0]
+      if (definition?.type === 'ImportBinding') return true
+      return (
+        definition?.type === 'Variable' &&
+        definition.parent.kind === 'const' &&
+        definition.node.init?.type === AST_NODE_TYPES.ObjectExpression &&
+        buildObject(source, definition.node.init)
+      )
+    }
+    default:
+      return false
+  }
+}

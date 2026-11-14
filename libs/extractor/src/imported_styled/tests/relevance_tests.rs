@@ -145,10 +145,10 @@ fn literal_namespace_retargets_match_dot_with_and_without_trigger(#[case] trigge
     let actual = extract_with_modules("/src/app.tsx", &computed, option, false, &resolve).unwrap();
     // Staged rendering keeps the authored receiver. Normalize only that one
     // expression, not imports, forwarding, target selection or render stages.
-    let receiver = "((UI[\"Dyn\"] as typeof UI.Dyn)!)";
+    let receiver = "(UI[\"Dyn\"] as typeof UI.Dyn)!";
     assert_eq!(actual.code.matches(receiver).count(), 1);
-    assert_eq!(expected.code.matches("(UI.Dyn)").count(), 1);
-    assert_eq!(actual.code.replace(receiver, "(UI.Dyn)"), expected.code);
+    assert_eq!(expected.code.matches("UI.Dyn").count(), 1);
+    assert_eq!(actual.code.replace(receiver, "UI.Dyn"), expected.code);
     assert!(!actual.code.contains(".withComponent("));
     assert!(actual.code.contains("import * as UI from \"./base\";"));
     assert_eq!(actual.styles, expected.styles);

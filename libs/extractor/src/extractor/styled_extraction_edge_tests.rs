@@ -90,6 +90,7 @@ fn raw_styled_spread_when_received_by_extractor_keeps_reads_or_composition_error
             filename: "linux.tsx",
             jsx: &mut None,
             capability: None,
+            shared: true,
         },
     );
     // Then
@@ -163,6 +164,7 @@ fn raw_styled_spread_when_array_contains_written_objects_extracts_exact_value()
             filename: "linux.tsx",
             jsx: &mut None,
             capability: None,
+            shared: true,
         },
     );
     // Then

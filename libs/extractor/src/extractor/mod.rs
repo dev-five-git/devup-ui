@@ -16,6 +16,8 @@ pub(crate) mod style_inputs;
 pub(crate) mod style_order_projection;
 pub(super) mod styled_capability;
 pub(super) mod styled_css_slot;
+mod styled_inline;
+mod styled_inline_simplify;
 pub(super) mod styled_jsx;
 mod styled_record;
 pub(super) mod styled_record_evaluation;

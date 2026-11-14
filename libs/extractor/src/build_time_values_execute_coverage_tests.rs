@@ -70,9 +70,11 @@ fn definitions_skip_ambient_declarators_when_generating_initialized_values() -> 
         closure: Closure {
             statements: [0, 1].into_iter().collect(),
             imports: Default::default(),
+            handed: Default::default(),
         },
         shorthand: None,
         rules_only: false,
+        exact: false,
     };
     // When
     let generated = definitions(&program, code, &[found]);
@@ -92,7 +94,7 @@ fn helpers_initialize_when_realm_is_fresh() -> Result<(), String> {
     assert!(result.is_ok());
     assert_eq!(
         context
-            .eval(Source::from_bytes("__literal__({ width: 3 })"))
+            .eval(Source::from_bytes("__literal__(false, { width: 3 })"))
             .map_err(|error| error.to_string())?
             .as_string()
             .ok_or("literal helper did not serialize value")?

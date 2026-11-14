@@ -11,6 +11,9 @@ use crate::{
     has_devup_ui_with,
 };
 
+#[path = "namespace_escape_tests.rs"]
+mod namespace_escape_tests;
+
 /// A project of real files on disk, removed when dropped
 struct Project {
     root: PathBuf,
@@ -838,12 +841,13 @@ fn long_code_in_an_error_is_shortened() {
 
 #[test]
 #[serial]
-fn namespace_passed_whole_is_left_to_the_runtime() {
-    let code = namespace_code(&format!(
-        "{NS}export const a = Object.keys(Devup)\nexport const b = ((fn) => fn)(Devup)\nexport default Devup\nexport const c = typeof Devup\n"
-    ));
-    assert!(code.contains("Object.keys(Devup)"), "{code}");
-    assert!(code.contains("export default Devup"), "{code}");
+fn namespace_passed_whole_is_a_located_build_error() {
+    let error = namespace_error(&format!("{NS}spyOn(Devup, 'css')\n"));
+    assert!(
+        error.contains("test.tsx:2:7: `Devup` cannot use `Devup` at build time"),
+        "{error}"
+    );
+    assert!(error.contains("read its members by name"), "{error}");
 }
 
 #[test]
@@ -983,11 +987,10 @@ fn barrel_module_exports_what_it_aliases_as_re_exports() {
 #[serial]
 fn namespace_aliases_read_members() {
     let code = namespace_code(&format!(
-        "{NS}const D = Devup\nexport const a = <D.Box bg=\"red\" />\nexport const b = D.css({{ color: 'blue' }})\nlet L = Devup\nexport const c = L\n"
+        "{NS}const D = Devup\nexport const a = <D.Box bg=\"red\" />\nexport const b = D.css({{ color: 'blue' }})\n"
     ));
     assert!(code.contains("<div className="), "{code}");
     assert!(!code.contains("css("), "{code}");
-    assert!(code.contains("export const c = L"), "{code}");
 }
 
 #[test]

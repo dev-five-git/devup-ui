@@ -87,6 +87,16 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "color",
+                value: "darker(.4)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "content",
                 value: "\"---A\"",
                 level: 0,
@@ -203,15 +213,6 @@ ToBTreeSet {
                 layer: None,
             },
         ),
-        Dynamic(
-            ExtractDynamicStyle {
-                property: "color",
-                level: 0,
-                identifier: "darken(.4,`#336699`)",
-                selector: None,
-                style_order: None,
-            },
-        ),
         Keyframes(
             ExtractKeyframes {
                 keyframes: {
@@ -229,5 +230,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { PRIMARY, SPACE } from \"./color\";\nimport { card } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nfunction darken(amount: number, color: string): string {\n\treturn color === PRIMARY ? `darker(${amount})` : color;\n}\nconst LIGHT = darken(.2, PRIMARY);\nconst color = darken(.3, PRIMARY);\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nconst label = (text: string) => text.toUpperCase().padStart(4, \"-\");\nexport const a = \"a-n a-o a-p a-q a-e a-r\";\nexport const b = \"a-s\";\n;\nconst styles = { \"base\": \"a-t\" };\nexport const c = <div {...{ className: \"a-t\" }} className=\"a-t a-a\" style={{ \"--a\": darken(.4,`#336699`) }} />;\nexport const d = \"a-u a-v a-w a-x a-y a-i\";\nexport const e = (dark: boolean) => `a-_ ${dark ? \"a-t\" : \"a-j\"} ${dark ? \"a-z\" : \"\"}`;\nexport const f = \"a-aa\";\n",
+    code: "import \"@devup-ui/react/devup-ui-0.css\";\nimport * as stylex from \"@stylexjs/stylex\";\nimport { PRIMARY, SPACE } from \"./color\";\nimport { card } from \"./styles\";\nimport { BEFORE } from \"./fails\";\nexport const SIZE = 4;\nexport default function twice(n: number) {\n\treturn n * 2;\n}\nenum Level {\n\tLow = 1,\n\tHigh = twice(2)\n}\nfunction darken(amount: number, color: string): string {\n\treturn color === PRIMARY ? `darker(${amount})` : color;\n}\nconst LIGHT = darken(.2, PRIMARY);\nconst color = darken(.3, PRIMARY);\nconst make = (size: number) => ({\n\tp: size,\n\t_hover: { color: LIGHT }\n});\nconst label = (text: string) => text.toUpperCase().padStart(4, \"-\");\nexport const a = \"a-n a-o a-p a-q a-e a-r\";\nexport const b = \"a-s\";\n;\nconst styles = { \"base\": \"a-t\" };\nexport const c = ((__devupSpread0) => <div {...__devupSpread0} className={`${__devupSpread0.className || \"\"} a-u`} style={__devupSpread0.style} />)({\n\t__proto__: null,\n\tclassName: \"a-t\"\n});\nexport const d = \"a-v a-w a-x a-y a-z a-i\";\nexport const e = (dark: boolean) => `a-aa ${dark ? \"a-t\" : \"a-j\"} ${dark ? \"a-_\" : \"\"}`;\nexport const f = \"a-ab\";\n",
 }
