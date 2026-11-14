@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use oxc_allocator::Allocator;
 use oxc_ast::{
     AstKind,
@@ -24,6 +26,18 @@ pub fn original_module_reference_locations(
     source: &str,
     specifier: &str,
 ) -> Vec<ModuleReferenceLocation> {
+    original_module_references(filename, source)
+        .remove(specifier)
+        .unwrap_or_default()
+}
+
+/// The locations of every module the source references, by specifier, from one
+/// parse: what `original_module_reference_locations` finds for each of them.
+#[must_use]
+pub fn original_module_references(
+    filename: &str,
+    source: &str,
+) -> HashMap<String, Vec<ModuleReferenceLocation>> {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
     let parsed = Parser::new(&allocator, source, source_type).parse();
@@ -36,10 +50,13 @@ pub fn original_module_reference_locations(
             Statement::ExportAllDeclaration(export) => Some(&export.source),
             _ => None,
         };
-        if let Some(literal) = literal
-            && literal.value == specifier
-        {
-            offsets.push(literal.span.start);
+        if let Some(literal) = literal {
+            offsets.extend(
+                literal
+                    .value
+                    .as_str()
+                    .map(|value| (literal.span.start, value)),
+            );
         }
     }
     let semantic = SemanticBuilder::new()
@@ -55,39 +72,49 @@ pub fn original_module_reference_locations(
             let node = semantic.scoping().get_reference(*reference).node_id();
             if let AstKind::CallExpression(call) = semantic.nodes().parent_kind(node)
                 && let [Argument::StringLiteral(literal)] = call.arguments.as_slice()
-                && literal.value == specifier
             {
-                offsets.push(literal.span.start);
+                offsets.extend(
+                    literal
+                        .value
+                        .as_str()
+                        .map(|value| (literal.span.start, value)),
+                );
             }
         }
     }
     offsets.sort_unstable();
     offsets.dedup();
-    offsets
-        .into_iter()
-        .filter_map(|offset| {
-            let prefix = source.get(..usize::try_from(offset).ok()?)?;
-            let mut location = ModuleReferenceLocation { line: 1, column: 1 };
-            let mut chars = prefix.chars().peekable();
-            while let Some(character) = chars.next() {
-                match character {
-                    '\r' => {
-                        if chars.peek() == Some(&'\n') {
-                            chars.next();
-                        }
-                        location.line += 1;
-                        location.column = 1;
-                    }
-                    '\n' | '\u{2028}' | '\u{2029}' => {
-                        location.line += 1;
-                        location.column = 1;
-                    }
-                    _ => location.column += 1,
-                }
+    let mut references = HashMap::<String, Vec<ModuleReferenceLocation>>::new();
+    let mut location = ModuleReferenceLocation { line: 1, column: 1 };
+    let mut chars = source.char_indices().peekable();
+    for (offset, specifier) in offsets {
+        let offset = usize::try_from(offset).unwrap_or(usize::MAX);
+        while let Some(&(index, character)) = chars.peek() {
+            if index >= offset {
+                break;
             }
-            Some(location)
-        })
-        .collect()
+            chars.next();
+            match character {
+                '\r' => {
+                    if chars.peek().is_some_and(|&(_, next)| next == '\n') {
+                        chars.next();
+                    }
+                    location.line += 1;
+                    location.column = 1;
+                }
+                '\n' | '\u{2028}' | '\u{2029}' => {
+                    location.line += 1;
+                    location.column = 1;
+                }
+                _ => location.column += 1,
+            }
+        }
+        references
+            .entry(specifier.to_string())
+            .or_default()
+            .push(location);
+    }
+    references
 }
 
 #[cfg(test)]

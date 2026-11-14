@@ -109,3 +109,33 @@ fn locations_when_duplicate_specifiers_and_unicode_are_present() {
         ]
     );
 }
+
+#[test]
+fn references_index_every_specifier_from_one_parse() {
+    // Given
+    let source = "import { a } from './a';\nconst b = require('./b');\nexport * from './a';";
+    // When
+    let references = original_module_references("theme.ts", source);
+    // Then
+    assert_eq!(references.len(), 2);
+    assert_eq!(
+        references["./a"],
+        vec![
+            ModuleReferenceLocation {
+                line: 1,
+                column: 19
+            },
+            ModuleReferenceLocation {
+                line: 3,
+                column: 15
+            },
+        ]
+    );
+    assert_eq!(
+        references["./b"],
+        vec![ModuleReferenceLocation {
+            line: 2,
+            column: 19
+        }]
+    );
+}
