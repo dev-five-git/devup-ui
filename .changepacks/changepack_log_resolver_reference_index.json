@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "Resolving the imports of a file parses it once to find where it references each module, instead of once per import resolved. A component with ten imports was parsed again ten times during extraction just to locate possible resolver errors; diagnostics are unchanged",
+  "date": "2026-11-15T00:00:00.000Z"
+}

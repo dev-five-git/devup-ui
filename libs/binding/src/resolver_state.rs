@@ -1,7 +1,8 @@
+use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashMap};
 
 use extractor::ResolvedModule;
-use extractor::module_reference::{ModuleReferenceLocation, original_module_reference_locations};
+use extractor::module_reference::{ModuleReferenceLocation, original_module_references};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct OriginSite {
@@ -18,6 +19,18 @@ struct OriginSites {
 struct ModuleSource {
     code: String,
     ingress: Option<OriginSites>,
+    /// Where the code references each module, found on the first request
+    references: OnceCell<HashMap<String, Vec<ModuleReferenceLocation>>>,
+}
+
+impl ModuleSource {
+    fn new(code: &str, ingress: Option<OriginSites>) -> Self {
+        Self {
+            code: code.to_string(),
+            ingress,
+            references: OnceCell::new(),
+        }
+    }
 }
 
 /// A callback request with at least one original reference site.
@@ -55,13 +68,7 @@ pub struct ResolverState {
 impl ResolverState {
     pub fn new(filename: &str, source: &str) -> Self {
         Self {
-            sources: HashMap::from([(
-                filename.to_string(),
-                ModuleSource {
-                    code: source.to_string(),
-                    ingress: None,
-                },
-            )]),
+            sources: HashMap::from([(filename.to_string(), ModuleSource::new(source, None))]),
             failures: BTreeSet::new(),
         }
     }
@@ -69,30 +76,26 @@ impl ResolverState {
     pub fn cache(&mut self, module: &ResolvedModule, request: &ResolverRequest) {
         self.sources.insert(
             module.path.clone(),
-            ModuleSource {
-                code: module.code.clone(),
-                ingress: Some(request.origins.clone()),
-            },
+            ModuleSource::new(&module.code, Some(request.origins.clone())),
         );
     }
 
     pub fn add_source(&mut self, filename: &str, code: &str) {
-        self.sources.insert(
-            filename.to_string(),
-            ModuleSource {
-                code: code.to_string(),
-                ingress: None,
-            },
-        );
+        self.sources
+            .insert(filename.to_string(), ModuleSource::new(code, None));
     }
 
     /// Bind original references before calling JS; recursive exploratory reads
     /// without a semantic reference retain the real import that loaded the module.
     pub fn request(&self, specifier: &str, importer: &str) -> Option<ResolverRequest> {
         let source = self.sources.get(importer)?;
-        let mut sites = original_module_reference_locations(importer, &source.code, specifier)
+        let mut sites = source
+            .references
+            .get_or_init(|| original_module_references(importer, &source.code))
+            .get(specifier)
             .into_iter()
-            .map(|location| OriginSite {
+            .flatten()
+            .map(|&location| OriginSite {
                 filename: importer.to_string(),
                 location,
             });
