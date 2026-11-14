@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Compile imported style utility calls before serializing dynamic JSX factory values, preserving lexical shadows and deterministic CSS-variable output. Existing located css/keyframes errors now also reject unreadable nested factory values instead of emitting missing runtime calls; no new error kind.",
-  "date": "2026-10-23T00:00:00.000Z"
-}
