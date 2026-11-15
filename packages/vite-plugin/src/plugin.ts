@@ -276,7 +276,9 @@ async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
   inputs: Set<string>,
   publishTailwind: (files: string[]) => void,
-): Promise<void> {
+  watching: boolean,
+): Promise<unknown> {
+  let themeError: unknown
   try {
     const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
@@ -291,8 +293,13 @@ async function writeDataFiles(
       'utf-8',
     )
   } catch (error) {
+    // A one-shot build fails on a theme it cannot load or register: an empty
+    // theme would ship unstyled output. A watcher keeps running, since
+    // devup.json may be mid-edit, and reports the error until it is fixed.
+    if (!watching) throw error
     console.error(error)
     compiler.registerTheme({})
+    themeError = error
   }
   // Sequential: writing into cssDir concurrently with its own mkdir loses the
   // race on a cold start (no `df/`) and fails the build with ENOENT.
@@ -304,6 +311,25 @@ async function writeDataFiles(
       join(options.cssDir, 'devup-ui.css'),
       compiler.getCss(null, false),
     )
+  }
+  return themeError
+}
+
+/**
+ * The dev server's answer to a devup.json update: a reload, or the error
+ * overlay when the theme failed, since a reload would hide it.
+ */
+function themeUpdate(themeError: unknown) {
+  if (themeError === undefined) return { type: 'full-reload' as const }
+  const error =
+    themeError instanceof Error ? themeError : new Error(String(themeError))
+  return {
+    type: 'error' as const,
+    err: {
+      message: error.message,
+      stack: error.stack ?? '',
+      plugin: 'devup-ui',
+    },
   }
 }
 
@@ -433,7 +459,7 @@ export function DevupUI({
   let refreshTail = Promise.resolve()
   const isConfigFile = (file: string) =>
     configFiles.has(resolve(file)) || activeConfigFiles.has(resolve(file))
-  async function refreshConfig() {
+  async function refreshConfig(watching: boolean): Promise<unknown> {
     configState.generation++
     configState.refreshing++
     const previous = refreshTail
@@ -443,7 +469,7 @@ export function DevupUI({
     try {
       await previous
       activeConfigFiles = inputs
-      await writeDataFiles(
+      const themeError = await writeDataFiles(
         compiler,
         {
           package: libPackage,
@@ -457,9 +483,11 @@ export function DevupUI({
           activeTailwindFiles = files
           watchConfigInputs?.()
         },
+        watching,
       )
       if (singleCss)
         await writeCssFile('devup-ui.css', compiler.getCss(null, false))
+      return themeError
     } finally {
       configFiles = inputs
       tailwindFiles = activeTailwindFiles
@@ -508,7 +536,8 @@ export function DevupUI({
         createCompatTypes(importAliases),
         'utf-8',
       )
-      await refreshConfig()
+      // A dev server or `vite build --watch` outlives a broken devup.json
+      await refreshConfig(isServe || !!config?.build?.watch)
 
       try {
         // Numbers come from the sorted paths of every file the build can
@@ -612,7 +641,7 @@ export function DevupUI({
       reservation.invalidate(id)
       if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
-          await own(refreshConfig)()
+          await own(refreshConfig)(true)
         } catch (error) {
           console.error(error)
         }
@@ -650,7 +679,7 @@ export function DevupUI({
         return
       }
 
-      await own(refreshConfig)()
+      const themeError = await own(refreshConfig)(true)
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
       // A Tailwind class compiles from the definitions of the Tailwind CSS, so
@@ -670,7 +699,7 @@ export function DevupUI({
           true,
         )
       }
-      environment.hot.send({ type: 'full-reload' })
+      environment.hot.send(themeUpdate(themeError))
       return []
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
@@ -692,7 +721,7 @@ export function DevupUI({
         return
       }
 
-      await own(refreshConfig)()
+      const themeError = await own(refreshConfig)(true)
 
       const invalidatedModules = new Set<ModuleNode>()
       for (const mod of isTailwind
@@ -710,7 +739,7 @@ export function DevupUI({
           true,
         )
       }
-      server.ws.send({ type: 'full-reload' })
+      server.ws.send(themeUpdate(themeError))
       return []
     },
     resolveId(id, importer) {
