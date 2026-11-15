@@ -5402,6 +5402,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             // extract ExtractStyleProp and remain style and class name, just extract
             let mut duplicate_set = FxHashSet::default();
+            // Attributes are read from the last, so the ones read so far are
+            // the later ones
+            let mut later = crate::composition::shorthands::LaterDeclarations::default();
             let mut parsed_style_order = ParsedStyleOrder::None;
             let mut style_vars = None;
             let mut props = None;
@@ -5470,7 +5473,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     &disassembled,
                                     at,
                                 );
-                                props_styles.extend(styles.into_iter().rev());
+                                props_styles.extend(later.before(styles).into_iter().rev());
                                 tag_name = tag.unwrap_or(tag_name);
                             }
                             duplicate_set.insert(disassembled);
@@ -5492,7 +5495,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &None,
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
-                        props_styles.extend(styles.into_iter().rev());
+                        props_styles.extend(later.before(styles).into_iter().rev());
                         if element_props::has_runtime_props(&spread.argument) {
                             attrs.insert(i, attr);
                         }
@@ -5540,7 +5543,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         style_vars = style_vars.or(extracted.style_vars);
                         props = props.or(extracted.props);
-                        props_styles.extend(extracted.styles);
+                        props_styles.extend(later.before(extracted.styles));
                         if !object.properties.is_empty() {
                             attrs.insert(i, attr);
                         }

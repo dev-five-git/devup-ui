@@ -221,9 +221,9 @@ fn unknown_local_numbers_when_api_has_no_element_remain_located_error() {
 }
 
 #[rstest]
-#[case("return <div css={{padding:3,lineHeight:2,p:3,mx:2,margin:0,vars:{'--raw':3}}}/>;")]
+#[case("return <div css={{padding:3,lineHeight:2,p:3,margin:0,mx:2,vars:{'--raw':3}}}/>;")]
 #[case(
-    "const inner={padding:3,lineHeight:2,p:3,mx:2,margin:0,vars:{'--raw':3}}; return <div css={inner}/>;"
+    "const inner={padding:3,lineHeight:2,p:3,margin:0,mx:2,vars:{'--raw':3}}; return <div css={inner}/>;"
 )]
 #[serial]
 fn static_numbers_when_css_prop_expands_keep_shorthands_and_unitless_values(

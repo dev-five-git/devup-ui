@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "A shorthand written after a longhand it covers now wins, as the later declaration: `css({ borderTopWidth: 2, borderWidth: 1 })` keeps only `border-width`, now that the sheet writes a longhand after its shorthands. The earlier longhand's atom is dropped in a css() object, Box props, styled objects (and their nested selectors) and css() composition, only when both are static and unconditional at the same selector, breakpoint, layer and style order; a conditional or dynamic value keeps both and the sheet order decides. globalCss keeps every declaration in the order written. No new build errors",
+  "date": "2026-11-16T00:00:00.000Z"
+}

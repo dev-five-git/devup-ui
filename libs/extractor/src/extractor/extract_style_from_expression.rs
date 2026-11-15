@@ -1,6 +1,7 @@
 use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
+    composition::shorthands::LaterDeclarations,
     css_utils::{css_to_style, css_to_style_literal, theme_var_reference},
     extract_style::{
         extract_dynamic_style::ExtractDynamicStyle,
@@ -326,6 +327,9 @@ pub(super) fn extract_projected<'a>(
             Expression::ObjectExpression(obj) => {
                 flatten_spreads(ast_builder, obj);
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
+                // Read from the last declaration, so the ones read so far are
+                // the later ones
+                let mut later = LaterDeclarations::default();
                 let mut tag = None;
                 projection.root();
                 for idx in (0..obj.properties.len()).rev() {
@@ -375,7 +379,7 @@ pub(super) fn extract_projected<'a>(
                                             LiteralHandling::ExpandResponsiveThemeToken,
                                             prepare,
                                         );
-                                        props_styles.extend(styles);
+                                        props_styles.extend(later.before(styles));
                                         tag = _tag.or(tag);
                                     }
                                 }
@@ -395,7 +399,7 @@ pub(super) fn extract_projected<'a>(
                                 LiteralHandling::ExpandResponsiveThemeToken,
                                 prepare,
                             );
-                            props_styles.extend(styles);
+                            props_styles.extend(later.before(styles));
                             tag = _tag.or(tag);
                             false
                         }
@@ -1067,7 +1071,8 @@ pub(super) fn extract_projected<'a>(
             }
             Expression::ObjectExpression(obj) => {
                 flatten_spreads(ast_builder, obj);
-                let mut props = vec![];
+                // Each declaration's styles, in source order
+                let mut props: Vec<Vec<ExtractStyleProp<'a>>> = vec![];
                 let selector = match super::selector_params::resolve(inputs, obj, selector) {
                     Ok(selector) => selector,
                     Err(error) => {
@@ -1082,7 +1087,7 @@ pub(super) fn extract_projected<'a>(
                     let o = match p {
                         ObjectPropertyKind::ObjectProperty(o) => o,
                         ObjectPropertyKind::SpreadProperty(spread) => {
-                            props.extend(
+                            props.push(
                                 projection
                                     .extract(
                                         inputs,
@@ -1104,7 +1109,7 @@ pub(super) fn extract_projected<'a>(
                     else {
                         let error = unreadable_key(&o.key, false);
                         projection.record(ast_builder, &error);
-                        props.push(error);
+                        props.push(vec![error]);
                         continue;
                     };
                     if key_name == "params" {
@@ -1115,7 +1120,7 @@ pub(super) fn extract_projected<'a>(
                         o.key.span().start,
                     ) {
                         projection.record(ast_builder, &error);
-                        props.push(error);
+                        props.push(vec![error]);
                         continue;
                     }
                     let mut properties = disassemble_property(&key_name);
@@ -1123,7 +1128,7 @@ pub(super) fn extract_projected<'a>(
                         let name: &str = &name;
                         let mut sibling = (properties.len() != 0)
                             .then(|| o.value.clone_in_with_semantic_ids(ast_builder.allocator()));
-                        props.extend(
+                        props.push(
                             projection
                                 .extract(
                                     inputs,
@@ -1138,7 +1143,7 @@ pub(super) fn extract_projected<'a>(
                     }
                 }
                 ExtractResult {
-                    styles: props,
+                    styles: crate::composition::shorthands::in_source_order(props),
                     ..ExtractResult::default()
                 }
             }
