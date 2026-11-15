@@ -148,6 +148,7 @@ mod utf16_boundary_tests;
 mod util_type;
 mod utils;
 mod vanilla_extract;
+mod vanilla_extract_calc;
 mod visit;
 
 mod dead_properties;
@@ -496,7 +497,12 @@ fn extract_source(
             return Err(located_errors(filename, code, &[], errors).into());
         }
     }
-    let errors = import_alias_visit::emotion_errors(code, filename, &option.import_aliases);
+    let mut errors = import_alias_visit::emotion_errors(code, filename, &option.import_aliases);
+    errors.extend(vanilla_extract_calc::errors(
+        code,
+        filename,
+        &option.import_aliases,
+    ));
     if evaluated.is_none() && !errors.is_empty() {
         return Err(located_errors(filename, code, &[], errors).into());
     }

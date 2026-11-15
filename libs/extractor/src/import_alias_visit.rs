@@ -702,6 +702,14 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    if !redirect_every_name && crate::vanilla_extract_calc::reads(code, import_aliases) {
+        let scoping = SemanticBuilder::new()
+            .build(&program)
+            .semantic
+            .into_scoping();
+        transformations
+            .extend(crate::vanilla_extract_calc::compile(&program, &scoping, false).replacements);
+    }
     let mut scoping = None;
     let may_take_css = CssProp::of(import_aliases, code, false) != CssProp::Off;
     let mut symbol = |local: &BindingIdentifier<'_>| {
@@ -770,6 +778,7 @@ pub fn transform_import_aliases_with_edits<'a>(
                     format!("\"{runtime}\""),
                 ));
             } else if let Some(alias) = import_aliases.get(source_value)
+                && source_value != crate::vanilla_extract_calc::CSS_UTILS
                 && !import_decl.import_kind.is_type()
             {
                 let span = import_decl.span;

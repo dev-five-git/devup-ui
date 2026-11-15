@@ -14,6 +14,7 @@ describe('css-utils-literal-only rule: libraries the build reads as Devup UI', (
   const emotion = `import { css, keyframes, Global } from "@emotion/react";\nimport styled from "@emotion/styled";\n`
   const styledComponents = `import styled, { css, keyframes, createGlobalStyle } from "styled-components";\n`
   const vanilla = `import { style, globalStyle, keyframes } from "@vanilla-extract/css";\n`
+  const cssUtils = `import { calc } from "@vanilla-extract/css-utils";\n`
   const devup = `import { css, globalCss } from "@devup-ui/react";\n`
   const emotionCss = `import { css, cx, injectGlobal } from "@emotion/css";\n`
   const error = { messageId: 'cssUtilsLiteralOnly' as const }
@@ -54,6 +55,15 @@ describe('css-utils-literal-only rule: libraries the build reads as Devup UI', (
         [styledComponents, 'styled.div`color: ${(props) => props.color};`'],
         [vanilla, 'style({ color: "red" })'],
         [vanilla, 'globalStyle("body", { color: "red" })'],
+        [
+          vanilla + cssUtils,
+          'const GAP = "4px";\nstyle({ width: calc.add("1px", GAP), height: calc("2px").multiply(2).toString() })',
+        ],
+        [
+          devup +
+            `import { "calc" as c, other } from "@vanilla-extract/css-utils";\n`,
+          'css({ width: c.negate("1px") })',
+        ],
         [devup, 'globalCss({ body: { color: "red" } })'],
         [emotionCss, 'css({ color: "red" })'],
         [emotionCss, 'injectGlobal({ body: { color: "red" } })'],
@@ -114,6 +124,11 @@ describe('css-utils-literal-only rule: libraries the build reads as Devup UI', (
         [vanilla, 'style({ color: window.name })'],
         [vanilla, 'let v = 1;\nglobalStyle("body", { color: v })'],
         [vanilla, 'let v = 1;\nkeyframes({ from: { opacity: v } })'],
+        [vanilla + cssUtils, 'let v = "1px";\nstyle({ width: calc.add(v) })'],
+        [
+          `import * as utils from "@vanilla-extract/css-utils";\n` + vanilla,
+          'style({ width: utils.calc.add("1px") })',
+        ],
         [devup, 'let v = 1;\nglobalCss({ body: { color: v } })'],
         [emotionCss, 'css({ color: window.name })'],
         [emotionCss, 'let v = 1;\ninjectGlobal({ body: { color: v } })'],
