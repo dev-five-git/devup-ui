@@ -375,7 +375,7 @@ fn resolved_token_keys_are_reserved_before_real_output() -> TestResult {
         ),
         &option,
     )?;
-    let css = output.css.ok_or("expected token CSS")?;
+    let css = output.css.ok_or("expected token CSS")?.get();
     assert!(css.contains("width:8px"));
     assert!(css.contains("box-shadow:0 0 1px red"));
     assert!(!css.contains("$size"));
