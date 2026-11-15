@@ -78,6 +78,19 @@ const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/
 const routeFileRegex =
   /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.(tsx|ts|jsx|js)$/
 const leafRouteFileRegex = /(^|\/)page\.(tsx|ts|jsx|js)$/
+// Every App Router file Next compiles as part of a route tree: pages, route
+// handlers, and each segment file, including the ones (parallel-route
+// `default`, root `not-found`) no page sits below.
+const appRouterFileRegex =
+  /(^|\/)(page|route|layout|template|default|loading|error|not-found|forbidden|unauthorized|global-error|global-not-found)\.(tsx|ts|jsx|js)$/
+// Every module in the Pages Router directory is a route, `_app`, `_document`
+// and `_error` included.
+const pagesRouterFileRegex = /^pages\/.+\.(tsx|ts|jsx|js)$/
+
+/** Whether Next compiles this `srcDir`-relative file as a route entry. */
+function isCompiledRouteEntry(relPath: string): boolean {
+  return appRouterFileRegex.test(relPath) || pagesRouterFileRegex.test(relPath)
+}
 
 let cachedOxcParser: false | OxcParser | undefined
 
@@ -292,8 +305,10 @@ export interface ComputeCompiledFilesOptions {
 
 /**
  * Every source file the bundler will compile for the app's routes: the closure
- * of all leaf routes (plus their ancestor route shells) over BOTH static and
- * dynamic `import()` edges.
+ * of every route entry over BOTH static and dynamic `import()` edges. Route
+ * entries are all App Router route files (pages, route handlers, layouts and
+ * the other segment files) and every Pages Router module (`pages/**`,
+ * `_app`/`_document` included).
  *
  * This is deliberately WIDER than `computeFileRoutes`, whose closure stops at
  * static edges because a lazily-loaded file belongs to its own chunk for
@@ -305,7 +320,7 @@ export interface ComputeCompiledFilesOptions {
  *
  * Keys are POSIX paths relative to `cwd`, matching the extraction filename the
  * loader posts. Returns a sorted array (deterministic across runs). Empty when
- * no leaf route is detected, which keeps callers on their idle fallback rather
+ * no route entry is detected, which keeps callers on their idle fallback rather
  * than blocking on a set that can never complete.
  */
 export function computeCompiledFiles(
@@ -323,16 +338,10 @@ export function computeCompiledFiles(
     allImports.set(file, edges)
   }
 
-  const routeShellFilesByDir = getRouteShellFilesByDir(files, srcDir)
   const compiled = new Set<string>()
   for (const file of files) {
-    if (!leafRouteFileRegex.test(toPosixRelative(srcDir, file))) continue
-    for (const reached of getLeafRouteClosure(
-      file,
-      srcDir,
-      allImports,
-      routeShellFilesByDir,
-    )) {
+    if (!isCompiledRouteEntry(toPosixRelative(srcDir, file))) continue
+    for (const reached of getStaticClosure(file, allImports)) {
       compiled.add(reached)
     }
   }
