@@ -23,6 +23,7 @@ import {
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -283,17 +284,13 @@ async function writeDataFiles(
 
     compiler.registerTheme(withTailwindCss(theme, config))
     publishTailwind(tailwindCssFiles(config))
-    const interfaceCode = compiler.getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    await writeFile(
+      join(options.distDir, 'theme.d.ts'),
+      compiler.getThemeInterface(...createThemeInterfaceArgs(options.package)),
+      'utf-8',
     )
-
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
   } catch (error) {
     console.error(error)
     compiler.registerTheme({})
@@ -327,6 +324,7 @@ export function DevupUI({
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
@@ -485,6 +483,20 @@ export function DevupUI({
     sheetRevisions.set(fileName, (sheetRevisions.get(fileName) ?? 0) + 1)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
+  // A deleted source file is never transformed again, so its styles stay in
+  // the sheet until the engine forgets the file. Every sheet written so far
+  // is written again; only the ones that changed reach the disk.
+  async function removeSource(id: string) {
+    if (!compiler.removeFile(id.split('?')[0])) return
+    await Promise.all(
+      [...new Set(['devup-ui.css', ...writtenCss.keys()])].map((fileName) =>
+        writeCssFile(
+          fileName,
+          compiler.getCss(getFileNumByFilename(fileName), false),
+        ),
+      ),
+    )
+  }
   const plugin = {
     name: 'devup-ui',
     // The compiler sheet and transform state are intentionally shared. Vite
@@ -529,8 +541,15 @@ export function DevupUI({
             importAliases,
           }),
         )
-      } catch {
+      } catch (error) {
         // Best-effort; on failure numbering falls back to arrival order.
+        console.warn(
+          setupWarning(
+            'Vite file numbering',
+            error,
+            'Stylesheet file numbers follow the order Vite transforms files in, so they can differ between builds of the same source.',
+          ),
+        )
       }
       reservation.configure(config)
       if (extractionSession === session) session.ready = true
@@ -612,8 +631,9 @@ export function DevupUI({
       drained ??= Promise.withResolvers<void>()
       return drained.promise
     },
-    async watchChange(id) {
+    async watchChange(id, change) {
       reservation.invalidate(id)
+      if (change?.event === 'delete') await own(removeSource)(id)
       if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
           await own(refreshConfig)()
@@ -748,7 +768,7 @@ export function DevupUI({
 
       const fileName = id.split('?')[0]
       if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
-      if (createNodeModulesExcludeRegex(include).test(fileName)) {
+      if (excludeRegex.test(fileName)) {
         return
       }
       await reservation.reserve()

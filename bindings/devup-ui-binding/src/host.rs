@@ -1,7 +1,7 @@
 use crate::output::NativeOutput;
 use crate::value::{Access, AccessCallback, binding_error, decode, decode_preflight, schema_error};
 use devup_ui_binding_core as core;
-use extractor::{ExtractOption, ImportAlias, ModuleResolver, ResolvedModule};
+use extractor::{ExtractOption, ImportAlias, ModuleResolver};
 use napi::bindgen_prelude::{Array, Either, FnArgs, FromNapiValue, FunctionRef, Unknown};
 use napi::{Env, Error, Result};
 use napi_derive::napi;
@@ -71,12 +71,16 @@ fn with_resolver<T>(
                 callback.call((specifier.to_string(), importer.to_string()).into())
             }) {
                 Ok(Some(Either::B(module))) => {
-                    let module = ResolvedModule {
-                        path: module.path,
-                        code: module.code,
-                    };
-                    diagnostics.borrow_mut().cache(&module, &request);
-                    Some(module)
+                    match core::resolved_module(module.path, module.code) {
+                        Ok(module) => {
+                            diagnostics.borrow_mut().cache(&module, &request);
+                            Some(module)
+                        }
+                        Err(cause) => {
+                            diagnostics.borrow_mut().record(&request, &cause);
+                            None
+                        }
+                    }
                 }
                 Ok(Some(Either::A(cause))) => {
                     diagnostics.borrow_mut().record(&request, &cause);
