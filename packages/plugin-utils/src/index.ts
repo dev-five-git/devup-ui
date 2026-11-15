@@ -4,6 +4,7 @@ export {
   type ResettableEngine,
 } from './build-session'
 export { loadCompiler } from './compiler'
+export { type CompilerSession, openCompilerSession } from './compiler-session'
 export type {
   DevupCompiler,
   DevupCompilerOutput,
