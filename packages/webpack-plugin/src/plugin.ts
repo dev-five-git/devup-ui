@@ -228,6 +228,24 @@ export class DevupUIWebpackPlugin {
     }
   }
 
+  /**
+   * Forget the source files deleted since the last compilation: they are never
+   * loaded again, so their styles would otherwise stay in the sheet. The
+   * stylesheet modules are built from the sheet on every compilation.
+   */
+  removeFiles(files: ReadonlySet<string> | undefined) {
+    const cwd = process.cwd()
+    let removed = false
+    for (const file of files ?? [])
+      if (this.compiler.removeFile(relative(cwd, file).replaceAll('\\', '/')))
+        removed = true
+    if (!removed || !this.options.watch) return
+    // The next start restores the sheet without the deleted files
+    writeFileSync(this.sheetFile, this.compiler.exportSheet())
+    writeFileSync(this.classMapFile, this.compiler.exportClassMap())
+    writeFileSync(this.fileMapFile, this.compiler.exportFileMap())
+  }
+
   apply(compiler: Compiler) {
     // A build starts from its own options, not from what an earlier build in
     // this process left in the engine
@@ -396,6 +414,7 @@ export class DevupUIWebpackPlugin {
       compiler.hooks.watchRun.tapPromise(
         'DevupUIWebpackPluginReservation',
         async () => {
+          this.removeFiles(compiler.removedFiles)
           reserveBeforeCompile()
         },
       )
@@ -407,6 +426,7 @@ export class DevupUIWebpackPlugin {
       )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
+        this.removeFiles(compiler.removedFiles)
         const stamps: number[] = []
         if (existsDevup)
           stamps.push((await stat(this.options.devupFile)).mtimeMs)

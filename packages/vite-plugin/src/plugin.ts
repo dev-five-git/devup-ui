@@ -485,6 +485,20 @@ export function DevupUI({
     sheetRevisions.set(fileName, (sheetRevisions.get(fileName) ?? 0) + 1)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
   }
+  // A deleted source file is never transformed again, so its styles stay in
+  // the sheet until the engine forgets the file. Every sheet written so far
+  // is written again; only the ones that changed reach the disk.
+  async function removeSource(id: string) {
+    if (!compiler.removeFile(id.split('?')[0])) return
+    await Promise.all(
+      [...new Set(['devup-ui.css', ...writtenCss.keys()])].map((fileName) =>
+        writeCssFile(
+          fileName,
+          compiler.getCss(getFileNumByFilename(fileName), false),
+        ),
+      ),
+    )
+  }
   const plugin = {
     name: 'devup-ui',
     // The compiler sheet and transform state are intentionally shared. Vite
@@ -612,8 +626,9 @@ export function DevupUI({
       drained ??= Promise.withResolvers<void>()
       return drained.promise
     },
-    async watchChange(id) {
+    async watchChange(id, change) {
       reservation.invalidate(id)
+      if (change?.event === 'delete') await own(removeSource)(id)
       if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
           await own(refreshConfig)()

@@ -112,6 +112,19 @@ pub fn seed_file_map(files: &[String]) {
     css::file_map::seed_file_numbers(files);
 }
 
+/// Forget a deleted source file: its global CSS, its own bucket with the class
+/// names handed out in it, and the bucket it collapsed into.
+///
+/// File numbers stay, as they are handed out by count and a freed one would be
+/// handed out twice. Returns whether the sheet changed.
+pub fn remove_file_internal(filename: &str) -> bool {
+    let (bucket, alone) = css::file_map::remove_bucket_membership(filename);
+    if alone {
+        css::class_map::remove_class_scope(&bucket);
+    }
+    with_style_sheet_mut(|sheet| sheet.rm_file(filename, &bucket, alone))
+}
+
 /// Clear production build state, retaining theme registries, shorthands and debug.
 /// The host adapter separately clears its resolver handle.
 pub fn reset_build_state_internal() {

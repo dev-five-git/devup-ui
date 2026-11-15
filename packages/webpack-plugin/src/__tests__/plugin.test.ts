@@ -433,6 +433,51 @@ describe('devupUIWebpackPlugin', () => {
     },
   )
 
+  it.each([false, true])(
+    'forgets deleted sources at watchRun with watch=%s',
+    async (watch) => {
+      // Given: a compilation that deleted two sources, one with styles left
+      const compiler = createCompiler()
+      new DevupUIWebpackPlugin({ engine: 'wasm', watch }).apply(
+        asCompiler(compiler),
+      )
+      using removeFile = spyOn(wasm, 'removeFile').mockImplementation(
+        (file) => file === 'src/styled.tsx',
+      )
+      using exportSheet = spyOn(wasm, 'exportSheet').mockReturnValue('sheet')
+      const watchRun = compiler.hooks.watchRun.tapPromise.mock.calls[0][1]
+      // When: nothing was removed, then two files were
+      await watchRun()
+      Object.assign(compiler, {
+        removedFiles: new Set([
+          resolve('src', 'plain.tsx'),
+          resolve('src', 'styled.tsx'),
+        ]),
+      })
+      writeFileSyncSpy.mockClear()
+      await watchRun()
+      // Then: each is forgotten under its cwd-relative name, and only watch
+      // persistence writes the pruned state
+      expect(removeFile.mock.calls).toEqual([
+        ['src/plain.tsx'],
+        ['src/styled.tsx'],
+      ])
+      expect(
+        writeFileSyncSpy.mock.calls.some(([, content]) => content === 'sheet'),
+      ).toBe(watch)
+      expect(exportSheet).toHaveBeenCalledTimes(watch ? 1 : 0)
+    },
+  )
+
+  it('keeps the persisted state when no deleted source had styles', () => {
+    const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
+    using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(false)
+    using exportSheet = spyOn(wasm, 'exportSheet').mockReturnValue('sheet')
+    plugin.removeFiles(new Set([resolve('src', 'plain.tsx')]))
+    expect(removeFile).toHaveBeenCalledTimes(1)
+    expect(exportSheet).not.toHaveBeenCalled()
+  })
+
   it('also reserves at native watchRun when watch persistence is disabled', async () => {
     const manager = {
       invalidate: mock(),
