@@ -17,12 +17,14 @@ import {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
   type ImportAliases,
+  isMissingDirectory,
   loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -262,8 +264,16 @@ export const DevupUI = ({
               '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
             )
           }
-        } catch {
+        } catch (error) {
           // Best-effort; on failure atom hoisting stays off (identity).
+          if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+            console.warn(
+              setupWarning(
+                'Rsbuild import graph',
+                error,
+                'Atom hoisting is off, so atoms several routes share are not moved into the shared stylesheet.',
+              ),
+            )
         }
       }
 

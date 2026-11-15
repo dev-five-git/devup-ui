@@ -223,6 +223,33 @@ describe('registered Bun hooks', () => {
     expect(loads.length).toBe(2)
   })
 
+  it('warns when runtime file numbering fails, and stays quiet without src', async () => {
+    const collect = spyOn(pluginUtils, 'collectNumberedFiles')
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      collect.mockImplementation(() => {
+        throw new Error('scan boom')
+      })
+      await register({ engine: 'wasm' })
+      expect(warn).toHaveBeenCalledWith(
+        '[devup-ui] Bun file numbering failed: scan boom. Stylesheet file numbers follow the order Bun loads files in, so they can differ between runs of the same source.',
+      )
+
+      warn.mockClear()
+      collect.mockImplementation(() => {
+        throw Object.assign(new Error('ENOENT'), {
+          code: 'ENOENT',
+          path: nodePath.resolve('src'),
+        })
+      })
+      await register({ engine: 'wasm' })
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+      collect.mockRestore()
+    }
+  })
+
   it('leaves invalid JavaScript to the native loader after scanning fails', async () => {
     const path = join(root, 'malformed.ts')
     const source = 'import {'

@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+
 import type { DevupEngine } from './compiler-types'
 import type { CustomShorthands, ImportAliases } from './types'
 
@@ -118,4 +120,32 @@ export interface DevupUIBasePluginOptions {
   importAliases?: ImportAliases
   /** Build-time aliases that expand one style prop into multiple CSS properties. */
   shorthands?: CustomShorthands
+}
+
+/**
+ * The warning a plugin prints when an optional setup step fails and the build
+ * goes on without it: the step, the root cause and what the build loses.
+ */
+export function setupWarning(
+  step: string,
+  error: unknown,
+  impact: string,
+): string {
+  const cause = error instanceof Error ? error.message : String(error)
+  return `[devup-ui] ${step} failed: ${cause}. ${impact}`
+}
+
+/**
+ * Whether `error` reports that `dir` itself does not exist. A project without
+ * that source root has nothing there to scan, so the step loses nothing.
+ */
+export function isMissingDirectory(error: unknown, dir: string): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === 'ENOENT' &&
+    'path' in error &&
+    typeof error.path === 'string' &&
+    resolve(error.path) === resolve(dir)
+  )
 }

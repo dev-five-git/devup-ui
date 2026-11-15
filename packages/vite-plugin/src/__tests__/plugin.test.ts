@@ -627,15 +627,23 @@ describe('devupUIVitePlugin', () => {
       expect(seedFileMapSpy).not.toHaveBeenCalled()
     })
 
-    it('keeps building when the scan fails', async () => {
+    it('keeps building when the scan fails, and says what numbering loses', async () => {
       onlyDirs('src')
       collectSpy.mockImplementation(() => {
         throw new Error('scan boom')
       })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
 
-      await createPlugin({}).configResolved({ root: '/p' })
+      try {
+        await createPlugin({}).configResolved({ root: '/p' })
 
-      expect(seedFileMapSpy).not.toHaveBeenCalled()
+        expect(seedFileMapSpy).not.toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] Vite file numbering failed: scan boom. Stylesheet file numbers follow the order Vite transforms files in, so they can differ between builds of the same source.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
     })
 
     describe('source collection before seeding', () => {

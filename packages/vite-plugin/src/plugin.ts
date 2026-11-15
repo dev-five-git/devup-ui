@@ -23,6 +23,7 @@ import {
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -526,8 +527,15 @@ export function DevupUI({
             importAliases,
           }),
         )
-      } catch {
+      } catch (error) {
         // Best-effort; on failure numbering falls back to arrival order.
+        console.warn(
+          setupWarning(
+            'Vite file numbering',
+            error,
+            'Stylesheet file numbers follow the order Vite transforms files in, so they can differ between builds of the same source.',
+          ),
+        )
       }
       reservation.configure(config)
       if (extractionSession === session) session.ready = true

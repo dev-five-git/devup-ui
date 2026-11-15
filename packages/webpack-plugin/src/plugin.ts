@@ -19,6 +19,7 @@ import {
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
+  isMissingDirectory,
   loadCompiler,
   loadDevupConfigSync,
   mergeImportAliases,
@@ -26,6 +27,7 @@ import {
   planAtomHoist,
   readJsxImportSource,
   seedFileNumbers,
+  setupWarning,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -225,6 +227,13 @@ export class DevupUIWebpackPlugin {
       if (this.options.productionPrewarmFiles !== undefined) throw error
       // Best-effort warm-up; on failure the css-loader still serves whatever
       // atoms were extracted, matching pre-fix behavior.
+      console.warn(
+        setupWarning(
+          'webpack stylesheet warm-up',
+          error,
+          'A stylesheet webpack builds before every file it holds is extracted can miss their styles.',
+        ),
+      )
     }
   }
 
@@ -335,6 +344,16 @@ export class DevupUIWebpackPlugin {
         throw error
       // Best-effort; on failure canonical() is the identity (no merge) and atom
       // hoisting stays off.
+      if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+        console.warn(
+          setupWarning(
+            'webpack import graph',
+            error,
+            atomMode
+              ? 'Classes are not merged across files only one module imports, and atom hoisting is off.'
+              : 'Classes are not merged across files only one module imports.',
+          ),
+        )
     }
 
     // Number every file the build can extract in path order, so class
@@ -361,6 +380,13 @@ export class DevupUIWebpackPlugin {
         )
           throw error
         // Best-effort; numbering falls back to arrival order.
+        console.warn(
+          setupWarning(
+            'webpack file numbering',
+            error,
+            'Stylesheet file numbers follow the order webpack compiles files in, so they can differ between builds of the same source.',
+          ),
+        )
       }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
