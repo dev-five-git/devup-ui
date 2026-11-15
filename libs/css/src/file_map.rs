@@ -182,6 +182,17 @@ pub fn get_canonical_map() -> std::collections::HashMap<String, String> {
     with_canonical_map(Clone::clone)
 }
 
+/// Forget the bucket `filename` collapses into, returning that bucket and
+/// whether it is the file's own one with no other file collapsed into it.
+#[must_use]
+pub fn remove_bucket_membership(filename: &str) -> (String, bool) {
+    with_canonical_map_mut(|map| {
+        let bucket = map.remove(filename).unwrap_or_else(|| filename.to_string());
+        let alone = bucket == filename && !map.values().any(|root| root == filename);
+        (bucket, alone)
+    })
+}
+
 /// Resolve a filename to its bucket-root via `CANONICAL_MAP`, or identity when absent.
 #[must_use]
 pub fn canonical(filename: &str) -> String {

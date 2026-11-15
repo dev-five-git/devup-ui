@@ -29,8 +29,8 @@ const schemes: Record<string, (root: string) => (path: string) => string> = {
 }
 
 describe('class and file numbers do not depend on the order files are seen', () => {
+  // Every path below is built from root; the process cwd is never changed.
   let root: string
-  const original = process.cwd()
 
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), 'devup-ui-numbering-order-'))
@@ -38,12 +38,10 @@ describe('class and file numbers do not depend on the order files are seen', () 
       mkdirSync(dirname(join(root, path)), { recursive: true })
       writeFileSync(join(root, path), code)
     }
-    process.chdir(root)
   })
 
   afterAll(() => {
     wasm.resetBuildState()
-    process.chdir(original)
     rmSync(root, { recursive: true, force: true })
   })
 

@@ -64,6 +64,7 @@ describe('@devup-ui/wasm exports', () => {
       'isDebug',
       'registerShorthands',
       'registerTheme',
+      'removeFile',
       'reserveClassSlots',
       'resetBuildState',
       'resetStateForTesting',

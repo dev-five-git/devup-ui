@@ -218,6 +218,11 @@ pub fn set_atom_hoist(value: Option<u32>) {
 pub fn get_css(value: Option<u32>, import_main: bool) -> String {
     core::get_css(value.map(widen_index), import_main)
 }
+/// Forget a deleted source file, returning whether the sheet changed.
+#[napi]
+pub fn remove_file(filename: String) -> bool {
+    core::remove_file_internal(&filename)
+}
 /// Seed the array-like wrapper's copied strings, not arbitrary JS iterables.
 #[napi]
 pub fn seed_file_map(files: Vec<String>) {

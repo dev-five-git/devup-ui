@@ -24,6 +24,7 @@ export const {
   isDebug,
   registerShorthands,
   registerTheme,
+  removeFile,
   reserveClassSlots,
   resetBuildState,
   resetStateForTesting,
