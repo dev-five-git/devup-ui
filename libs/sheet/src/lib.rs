@@ -11,6 +11,7 @@ use css::{
     atom_hoist::{atom_plan, freeze_atom_plan, is_atom_hoist, is_hoisted_bucket},
     file_map::canonical,
     get_custom_shorthand_names,
+    property_order::cmp_properties,
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
@@ -51,16 +52,16 @@ fn selector_group(selector: Option<&str>) -> (u8, u8) {
 
 /// Typography preset declarations come first so a declaration written directly
 /// on the same selector wins, and each preset stays contiguous so its rules merge.
+/// Properties follow `cmp_properties`, so a longhand wins over a shorthand covering it.
 fn prop_cmp(a: &StyleSheetProperty, b: &StyleSheetProperty) -> std::cmp::Ordering {
     b.typography.cmp(&a.typography).then_with(|| {
         if a.typography {
             a.class_name
                 .cmp(&b.class_name)
-                .then_with(|| a.property.cmp(&b.property))
+                .then_with(|| cmp_properties(&a.property, &b.property))
                 .then_with(|| a.value.cmp(&b.value))
         } else {
-            a.property
-                .cmp(&b.property)
+            cmp_properties(&a.property, &b.property)
                 .then_with(|| a.value.cmp(&b.value))
                 .then_with(|| a.class_name.cmp(&b.class_name))
         }
@@ -2015,6 +2016,66 @@ mod tests {
         sheet.add_property("test", "display", 0, "none", None, None, None);
         sheet.add_property("test", "display", 2, "flex", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[rstest]
+    #[case("border-width", "border-top-width")]
+    #[case("place-items", "align-items")]
+    #[case("border", "border-top-width")]
+    #[case("overflow", "overflow-x")]
+    #[case("padding", "padding-top")]
+    #[serial]
+    fn longhand_rule_follows_its_shorthand(#[case] shorthand: &str, #[case] longhand: &str) {
+        let _state = css::test_state::TestStateGuard::new();
+        for selector in [None, Some(StyleSelector::from("hover"))] {
+            for (first, second) in [(shorthand, longhand), (longhand, shorthand)] {
+                let mut sheet = StyleSheet::default();
+                sheet.add_property("a", first, 0, "1px", selector.as_ref(), None, None);
+                sheet.add_property("b", second, 0, "2px", selector.as_ref(), None, None);
+                sheet.add_property("c", first, 1, "1px", selector.as_ref(), Some(1), None);
+                sheet.add_property("d", second, 1, "2px", selector.as_ref(), Some(1), None);
+                let css = sheet.create_css(None, false);
+                let at = |property: &str| css.find(&format!("{{{property}:")).unwrap();
+                // Within the default bucket and inside a breakpoint of an order layer.
+                let (shorthand_at, longhand_at) = (at(shorthand), at(longhand));
+                assert!(shorthand_at < longhand_at, "{css}");
+                let (shorthand_at, longhand_at) = (
+                    css.rfind(&format!("{{{shorthand}:")).unwrap(),
+                    css.rfind(&format!("{{{longhand}:")).unwrap(),
+                );
+                assert!(shorthand_at < longhand_at, "{css}");
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::stylex(
+        "import * as stylex from '@stylexjs/stylex';const s=stylex.create({a:{borderTopWidth:2,alignItems:'end'},b:{borderWidth:1,placeItems:'start'}});<div {...stylex.props(s.a,s.b)}/>"
+    )]
+    #[case::box_props(
+        "import {Box} from '@devup-ui/react';<Box borderTopWidth='2px' alignItems='end' borderWidth='1px' placeItems='start'/>"
+    )]
+    #[serial]
+    fn extracted_longhands_win_over_shorthands(#[case] code: &str) {
+        let _state = css::test_state::TestStateGuard::new();
+        let output = extract(
+            "index.tsx",
+            code,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+        let mut sheet = StyleSheet::default();
+        sheet.update_styles(&output.styles, "index.tsx", true);
+        let css = sheet.create_css(None, true);
+        let at = |property: &str| css.find(&format!("{{{property}:")).unwrap();
+        assert!(at("border-width") < at("border-top-width"), "{css}");
+        assert!(at("place-items") < at("align-items"), "{css}");
     }
 
     #[test]
