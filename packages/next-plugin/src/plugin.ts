@@ -15,7 +15,9 @@ import {
   computeCompiledFiles,
   createCompatTypes,
   createNodeModulesExcludeRegex,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
+  type DevupCompiler,
   type DevupUIBasePluginOptions,
   extractedNeedles,
   loadDevupConfigSync,
@@ -24,6 +26,7 @@ import {
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
+  type WasmImportAliases,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
@@ -135,6 +138,47 @@ function sourceDir(cwd: string): string {
     : resolve(cwd, 'src')
 }
 
+interface SharedSlotOptions {
+  libPackage: string
+  include: string[]
+  importAliases: WasmImportAliases
+  cssDir: string
+  singleCss: boolean
+}
+
+/**
+ * Reserve the class slots files share, in path order, with the filenames and
+ * CSS directories the coordinator extracts them with.
+ */
+function reserveSharedSlots(
+  wasm: Pick<DevupCompiler, 'reserveClassSlots'>,
+  { libPackage, include, importAliases, cssDir, singleCss }: SharedSlotOptions,
+): void {
+  const cwd = process.cwd()
+  try {
+    createSharedSlotReservation(wasm).reserve(
+      {
+        roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+        include,
+        cwd,
+        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        package: libPackage,
+        importAliases,
+        toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+      },
+      {
+        singleCss,
+        importMainCssInCode: false,
+        importMainCssInCss: true,
+        cssDir: ({ physicalPath }) =>
+          `./${relative(dirname(physicalPath), cssDir).replaceAll('\\', '/')}`,
+      },
+    )
+  } catch {
+    // Best-effort; shared slots fall back to arrival order.
+  }
+}
+
 /**
  * Devup UI Next Plugin
  * @param config
@@ -230,7 +274,7 @@ export function DevupUI(
     }
     if (requestedAtomHoist) {
       console.warn(
-        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names, while existing shared slots remain arrival-ordered.',
+        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names.',
       )
     }
     if (!existsSync(distDir))
@@ -376,6 +420,18 @@ export function DevupUI(
     } catch {
       // Best-effort; numbering falls back to arrival order.
     }
+    // A class shared by several files takes the next free slot of whichever
+    // file extracts it first. `next dev` extracts in Turbopack's request
+    // order, so reserve those slots in path order before any loader runs.
+    // One-shot builds already extract in path order through the prewarm below.
+    if (watch)
+      reserveSharedSlots(wasm, {
+        libPackage,
+        include,
+        importAliases,
+        cssDir,
+        singleCss,
+      })
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:
     // a CSS request can itself hold up the next extraction wave. In one-shot

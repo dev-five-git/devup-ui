@@ -1182,6 +1182,62 @@ export const box = style({ color: 'red' })`
         seedSpy.mockRestore()
       }
     })
+    it('reserves shared class slots in path order before next dev extracts', () => {
+      process.env.TURBOPACK = '1'
+      const reserve = mock()
+      const reservationSpy = spyOn(
+        importGraphModule,
+        'createSharedSlotReservation',
+      ).mockReturnValue({
+        dependencies: [],
+        packageManifests: [],
+        invalidate: mock(),
+        reserve,
+      })
+      try {
+        // One-shot builds take their order from the sorted prewarm instead.
+        DevupUI({})
+        expect(reservationSpy).not.toHaveBeenCalled()
+
+        setNodeEnv('development')
+        DevupUI({}, { include: ['@acme/ui'], singleCss: true })
+        expect(reservationSpy).toHaveBeenCalledWith(wasm)
+        const [discovery, options] = reserve.mock.calls[0] as Parameters<
+          ReturnType<
+            typeof importGraphModule.createSharedSlotReservation
+          >['reserve']
+        >
+        expect(discovery).toMatchObject({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          include: ['@acme/ui'],
+          cwd: process.cwd(),
+          tsconfigPath: resolve('tsconfig.json'),
+          package: '@devup-ui/react',
+        })
+        // The coordinator's own filename and CSS directory for each file.
+        expect(discovery.toId?.(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+        expect(options).toMatchObject({
+          singleCss: true,
+          importMainCssInCode: false,
+          importMainCssInCss: true,
+        })
+        expect(
+          options.cssDir({
+            filename: 'src/app/page.tsx',
+            physicalPath: resolve('src', 'app', 'page.tsx'),
+            code: '',
+          }),
+        ).toBe('./../../df/devup-ui')
+
+        // A failing reservation leaves extraction in arrival order.
+        reserve.mockImplementation(() => {
+          throw new Error('reserve boom')
+        })
+        expect(() => DevupUI({})).not.toThrow()
+      } finally {
+        reservationSpy.mockRestore()
+      }
+    })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy
