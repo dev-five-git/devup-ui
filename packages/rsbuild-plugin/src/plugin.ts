@@ -17,12 +17,14 @@ import {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
   type ImportAliases,
+  isMissingDirectory,
   loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -84,32 +86,28 @@ async function writeDataFiles(
 
     compiler.registerTheme(withTailwindCss(theme, config))
     tailwindFiles = tailwindCssFiles(config)
-    const interfaceCode = compiler.getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    await writeFile(
+      join(options.distDir, 'theme.d.ts'),
+      compiler.getThemeInterface(...createThemeInterfaceArgs(options.package)),
+      'utf-8',
     )
-
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
   } catch (error) {
     console.error(error)
     compiler.registerTheme({})
   }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(
-          join(options.cssDir, 'devup-ui.css'),
-          compiler.getCss(null, false),
-        )
-      : Promise.resolve(),
-  ])
+  // Sequential: writing into cssDir concurrently with its own mkdir loses the
+  // race on a cold start (no `df/`) and fails the build with ENOENT.
+  if (!existsSync(options.cssDir)) {
+    await mkdir(options.cssDir, { recursive: true })
+  }
+  if (!options.singleCss) {
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      compiler.getCss(null, false),
+    )
+  }
   return tailwindFiles
 }
 
@@ -139,6 +137,7 @@ export const DevupUI = ({
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
   const importAliases = mergeImportAliases(
@@ -265,8 +264,16 @@ export const DevupUI = ({
               '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
             )
           }
-        } catch {
+        } catch (error) {
           // Best-effort; on failure atom hoisting stays off (identity).
+          if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+            console.warn(
+              setupWarning(
+                'Rsbuild import graph',
+                error,
+                'Atom hoisting is off, so atoms several routes share are not moved into the shared stylesheet.',
+              ),
+            )
         }
       }
 
@@ -326,6 +333,12 @@ export const DevupUI = ({
       })
 
       const servedCss = new Map<string, Map<string, string>>()
+      // Forget deleted source files, under the names the transform extracts
+      // them under
+      const removeFiles = (files: ReadonlySet<string> | undefined) => {
+        for (const file of files ?? [])
+          compiler.removeFile(atomMode ? file.replaceAll('\\', '/') : file)
+      }
       const stylesheet = (resourcePath: string) =>
         // A file's stylesheet imports the shared base, except in atom mode,
         // where the entry code imports the base itself so that hoisted atoms
@@ -365,6 +378,9 @@ export const DevupUI = ({
             compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
             compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
               passes = 0
+              // A deleted source file is never transformed again; the
+              // stylesheets it was in are checked against the sheet below
+              removeFiles(compiler.removedFiles)
               reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
@@ -437,8 +453,11 @@ export const DevupUI = ({
             }
           }) => {
             rspackConfig.optimization ??= {}
-            const sc = rspackConfig.optimization.splitChunks
-            if (sc && typeof sc === 'object') {
+            // No splitChunks config yet still gets the group (rspack fills
+            // in its defaults around it); `false` turns chunk splitting off
+            // on purpose, so the base CSS stays in each entry.
+            const sc = (rspackConfig.optimization.splitChunks ??= {})
+            if (sc) {
               sc.cacheGroups ??= {}
               sc.cacheGroups['devupUiShared'] = {
                 type: 'css/mini-extract',
@@ -463,8 +482,7 @@ export const DevupUI = ({
         resourcePath,
         addDependency,
       }) => {
-        if (createNodeModulesExcludeRegex(include).test(resourcePath))
-          return code
+        if (excludeRegex.test(resourcePath)) return code
         for (const file of tailwindFiles) addDependency(file)
         // The stylesheet import is emitted relative to the importing file, as
         // in the next/webpack/vite loaders. An absolute cssDir would bake this

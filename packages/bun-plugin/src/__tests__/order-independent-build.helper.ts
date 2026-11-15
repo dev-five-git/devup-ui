@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict'
+import { realpathSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 
 import type { BunPlugin, OnLoadCallback, PluginBuilder } from 'bun'
 
 const [fixture, schedule] = process.argv.slice(2)
 assert(fixture && (schedule === 'AB' || schedule === 'BA'))
-process.chdir(fixture)
+// The parent spawns this process inside the fixture; the plugin resolves df
+// from that cwd at import time, so never change directory here.
+assert.equal(realpathSync.native(process.cwd()), realpathSync.native(fixture))
 
-// Import only after entering the isolated fixture: the plugin resolves df at import time.
 const { DevupUI } = await import('../plugin')
 const { getUnreservedClassSlotCount } = await import('@devup-ui/wasm')
 const a = join(fixture, 'src/A.tsx')

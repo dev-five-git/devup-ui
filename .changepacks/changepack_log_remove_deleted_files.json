@@ -1,0 +1,12 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "A source file deleted or renamed in watch mode or the dev server no longer leaves its styles behind: its `globalCss`, its own stylesheet and the class names handed out in it are dropped, and it leaves the bucket it collapsed into. The engine gains `removeFile(filename)` (native and WASM), which Vite calls on a `delete` watch change, webpack and Rsbuild on the removed files of a watch run (webpack watch mode also saves the pruned state), and the Next.js Turbopack coordinator when an edited file is extracted again. Atoms in a stylesheet other files share stay, as nothing records which file added them; they style nothing once no module uses them",
+  "date": "2026-11-15T00:00:00.000Z"
+}
