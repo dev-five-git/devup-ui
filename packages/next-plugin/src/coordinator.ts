@@ -1,6 +1,6 @@
-import { writeFile, writeFileSync } from 'node:fs'
+import { statSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 
@@ -171,6 +171,48 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 let server: Server | null = null
+
+// The latest extraction of each file. Next compiles a module that both the
+// server and the client graph import once per graph, with the same source,
+// and in no guaranteed order. Re-running WASM for the second copy only
+// rebuilds the same styles, so it answers from here instead. Keeping only the
+// latest source per file bounds the cache by the project's file count and
+// guarantees the sheet still holds exactly that source's styles.
+interface CachedExtract {
+  code: string
+  relCssDir: string
+  /** mtime and size of the files the extraction read through the resolver */
+  dependencies: string
+  output: ExtractOutputSnapshot
+}
+
+const transformCache = new Map<string, CachedExtract>()
+
+function dependencyStamp(dependencies: string[] = []): string {
+  return dependencies
+    .map((dependency) => {
+      try {
+        const stats = statSync(resolve(dependency))
+        return `${stats.mtimeMs}:${stats.size}`
+      } catch {
+        return 'missing'
+      }
+    })
+    .join('|')
+}
+
+function cachedExtract(
+  filename: string,
+  code: string,
+  relCssDir: string,
+): ExtractOutputSnapshot | undefined {
+  const cached = transformCache.get(filename)
+  return cached?.code === code &&
+    cached.relCssDir === relCssDir &&
+    cached.dependencies === dependencyStamp(cached.output.dependencies)
+    ? cached.output
+    : undefined
+}
 
 // Extraction tracking for waitForIdle.
 //
@@ -390,6 +432,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   extractedFiles.clear()
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   fileNumToBucket.clear()
+  transformCache.clear()
 
   const coordinatorServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
@@ -466,22 +509,37 @@ export function startCoordinator(options: CoordinatorOptions): {
         // Require exact source equality because Turbopack may hand a loader
         // code modified by an earlier transform.
         const prewarmed = prewarmedOutputs.get(filename)
-        const cacheHit = prewarmed?.source === code
         const extractStartedAt = profileStart()
-        const result = cacheHit
-          ? prewarmed
-          : takeExtractOutput(
-              extract(
-                filename,
-                code,
-                libPackage,
-                relCssDir,
-                singleCss,
-                false,
-                true,
-                importAliases,
-              ),
-            )
+        const cached =
+          prewarmed?.source === code
+            ? prewarmed
+            : cachedExtract(filename, code, relCssDir)
+        const cacheHit = cached !== undefined
+        let result: ExtractOutputSnapshot
+        if (cached) {
+          result = cached
+        } else {
+          // Whatever the engine kept of an earlier source is gone if this throws.
+          transformCache.delete(filename)
+          result = takeExtractOutput(
+            extract(
+              filename,
+              code,
+              libPackage,
+              relCssDir,
+              singleCss,
+              false,
+              true,
+              importAliases,
+            ),
+          )
+          transformCache.set(filename, {
+            code,
+            relCssDir,
+            dependencies: dependencyStamp(result.dependencies),
+            output: result,
+          })
+        }
         const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
@@ -708,6 +766,7 @@ export const resetCoordinator = () => {
   bucketToMembers = new Map()
   canonicalMapRef = {}
   expectedBaseFiles = new Set()
+  transformCache.clear()
   writeChain.clear()
   latestContent.clear()
 }
