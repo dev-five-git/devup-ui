@@ -133,7 +133,7 @@ interface ViteTestPlugin {
     root?: string
     plugins?: readonly object[]
   }) => Promise<void>
-  watchChange: (id: string) => Promise<void>
+  watchChange: (id: string, change?: { event: string }) => Promise<void>
   hotUpdate: (
     this: { environment: HotUpdateEnvironment },
     options: { file: string; modules: object[]; timestamp: number },
@@ -685,15 +685,23 @@ describe('devupUIVitePlugin', () => {
       expect(seedFileMapSpy).not.toHaveBeenCalled()
     })
 
-    it('keeps building when the scan fails', async () => {
+    it('keeps building when the scan fails, and says what numbering loses', async () => {
       onlyDirs('src')
       collectSpy.mockImplementation(() => {
         throw new Error('scan boom')
       })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
 
-      await createPlugin({}).configResolved({ root: '/p' })
+      try {
+        await createPlugin({}).configResolved({ root: '/p' })
 
-      expect(seedFileMapSpy).not.toHaveBeenCalled()
+        expect(seedFileMapSpy).not.toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] Vite file numbering failed: scan boom. Stylesheet file numbers follow the order Vite transforms files in, so they can differ between builds of the same source.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
     })
 
     describe('source collection before seeding', () => {
@@ -1562,6 +1570,45 @@ describe('devupUIVitePlugin', () => {
     await plugin.watchChange('wrong')
   })
 
+  it('forgets a deleted source and writes the sheets it changed', async () => {
+    // Given: a transformed source whose bucket sheet was written
+    const plugin = createPlugin({})
+    await plugin.configResolved({ command: 'serve' })
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({ cssFile: 'devup-ui-1.css', css: 'old' }),
+    )
+    await plugin.transform('code', 'removed.tsx')
+    using removeFileSpy = spyOn(wasm, 'removeFile')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    getCssSpy.mockImplementation((fileNum: number | null) =>
+      fileNum === null ? 'base' : 'bucket',
+    )
+    // When: an edit is no removal, and a removal that changed nothing writes nothing
+    await plugin.watchChange('removed.tsx', { event: 'update' })
+    await plugin.watchChange('removed.tsx', { event: 'delete' })
+    expect(writeFileSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui-1.css'),
+      'bucket',
+      'utf-8',
+    )
+    // When: the engine dropped styles of the deleted source
+    await plugin.watchChange('removed.tsx?v=1', { event: 'delete' })
+    // Then: the base and the bucket sheet are written again
+    const cssDir = resolve('df', 'devup-ui')
+    expect(removeFileSpy.mock.calls).toEqual([['removed.tsx'], ['removed.tsx']])
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join(cssDir, 'devup-ui-1.css'),
+      'bucket',
+      'utf-8',
+    )
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join(cssDir, 'devup-ui.css'),
+      'base',
+      'utf-8',
+    )
+  })
+
   it('should invalidate and reload on devup hot update', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
@@ -1997,15 +2044,15 @@ describe('devupUIVitePlugin', () => {
     ).toEqual(expect.any(String))
   })
 
-  it('should not write interface code when no theme', async () => {
+  it('overwrites the interface code with nothing when the theme has no tokens', async () => {
     readFileSpy.mockResolvedValueOnce(JSON.stringify({}))
     getThemeInterfaceSpy.mockReturnValue('')
     existsSyncSpy.mockReturnValue(true)
     const plugin = createPlugin({})
     await plugin.configResolved()
-    expect(writeFileSpy).not.toHaveBeenCalledWith(
+    expect(writeFileSpy).toHaveBeenCalledWith(
       join('df', 'theme.d.ts'),
-      expect.any(String),
+      '',
       'utf-8',
     )
   })
