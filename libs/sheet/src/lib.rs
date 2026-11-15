@@ -3752,6 +3752,77 @@ mod tests {
         );
     }
 
+    fn responsive_token_theme() -> Theme {
+        serde_json::from_str(
+            r##"{
+                "colors": {
+                    "default": { "primary": "#f00", "text": "#000" },
+                    "dark": { "primary": "#0f0", "text": "#fff" }
+                },
+                "length": {
+                    "default": { "containerX": ["16px", null, "32px"] },
+                    "compact": { "containerX": ["8px", null, "12px"] }
+                },
+                "shadow": {
+                    "default": { "card": ["0 1px 2px #0003", null, null, "0 4px 8px #0003"] }
+                }
+            }"##,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::length_first_slot(
+        r#"<Box w={["$containerX", "10%"]} />"#,
+        &[".c0{width:var(--containerX)}", "@media(min-width:480px){.c1{width:10%}}"],
+        "width:16px"
+    )]
+    #[case::length_later_slot(
+        r#"<Box w={["8px", null, "$containerX"]} />"#,
+        &[".c0{width:8px}", "@media(min-width:768px){.c1{width:var(--containerX)}}"],
+        "width:16px"
+    )]
+    #[case::length_only_slot(
+        r#"<Box w={["$containerX"]} />"#,
+        &[".c0{width:var(--containerX)}"],
+        "width:16px"
+    )]
+    #[case::shadow_later_slot(
+        r#"<Box boxShadow={["none", null, null, "$card"]} />"#,
+        &[".c0{box-shadow:none}", "@media(min-width:992px){.c1{box-shadow:var(--card)}}"],
+        "box-shadow:0 1px 2px"
+    )]
+    #[case::color_slots(
+        r#"<Box bg={["$primary", null, "$text"]} />"#,
+        &[".c0{background:var(--primary)}", "@media(min-width:768px){.c1{background:var(--text)}}"],
+        "background:#"
+    )]
+    #[serial]
+    fn responsive_array_slots_read_theme_token_variables(
+        #[case] source: &str,
+        #[case] expected: &[&str],
+        #[case] literal: &str,
+    ) {
+        let css = pipeline_css(responsive_token_theme(), source);
+        // The theme redefines each variable per breakpoint and per theme variant
+        assert!(
+            css.contains("@media(min-width:768px){:root{--containerX:32px}}"),
+            "{css}"
+        );
+        assert!(
+            css.contains(":root[data-theme=compact]{--containerX:8px}"),
+            "{css}"
+        );
+        assert!(
+            css.contains("@media(min-width:992px){:root{--card:0 4px 8px #0003}}"),
+            "{css}"
+        );
+        for rule in expected {
+            assert!(css.contains(rule), "{rule} missing from {css}");
+        }
+        assert!(!css.contains(literal), "{literal} inlined in {css}");
+    }
+
     fn pipeline_css(theme: Theme, source: &str) -> String {
         pipeline_css_in_mode(theme, source, true)
     }
