@@ -46,6 +46,16 @@ stylex.props(on && styles.active) // conditional
 stylex.props(styles?.base) // optional chaining
 ```
 
+## Style resolution
+
+StyleX's compiler has a `styleResolution` option: `'property-specificity'` (the default), `'application-order'` or `'legacy-expand-shorthands'`. Devup UI has no such option and follows only StyleX's default policy:
+
+- In one `props()` or `attrs()` call, a later style replaces an earlier one for the same property and condition: `stylex.props(colors.red, colors.blue)` keeps only the blue class.
+- Shorthands are not expanded into longhands, and a later shorthand does not remove an earlier longhand: `stylex.props(styles.marginTop, styles.margin)` keeps both classes. Which one applies is decided by the order of the generated stylesheet, not by the argument order.
+- StyleX's default makes the longhand win over its shorthand. Devup UI does not guarantee this for every pair (`borderTopWidth` against `borderWidth`, `alignItems` against `placeItems`), so prefer longhands and do not mix a shorthand with its own longhands.
+
+Code written for `application-order` or `legacy-expand-shorthands`, where a later shorthand resets earlier longhands, has no equivalent: rewrite it with longhands before migrating.
+
 ## Variables and themes
 
 ```tsx
@@ -154,8 +164,10 @@ const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
 
 ## Value helpers
 
-`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value, and `include()` merges another namespace's classes. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
+`firstThatWorks()` emits its fallbacks in CSS order and `types.*()` unwraps to the inner value. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
+
+`include()` is not part of the current StyleX API. StyleX deprecated it and current `@stylexjs/stylex` releases no longer export it; StyleX composes namespaces by passing several of them to `props()` instead. Only the `@devup-ui/react/compat/stylex` declarations still type it. Devup UI still compiles the legacy `...stylex.include(base.root)` spread inside `create()` as a Devup UI extension, so code written for older StyleX keeps building: the namespace gets the classes of `base.root` before its own. The argument must be a namespace that a `create()` call earlier in the same file defines; anything else is a build error. The included classes are only added, so a property that the namespace sets again is not guaranteed to override the included value. To override, pass both namespaces to `props()` (`stylex.props(base.root, styles.fancy)`), which works the same in StyleX.
 
 ## Unsupported APIs
 
-Devup UI compiles `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `include` and `types`. Any other export of `@stylexjs/stylex` (`when`, `env`, `defaultMarker`, ...) would stay a StyleX call that throws at runtime, so importing it or reading it from the package is a build error naming it.
+Devup UI compiles `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks` and `types`, plus the legacy `include` described above. Any other export of `@stylexjs/stylex` (`when`, `env`, `defaultMarker`, ...) would stay a StyleX call that throws at runtime, so importing it or reading it from the package is a build error naming it.
