@@ -1,0 +1,5 @@
+{
+  "changes": { "packages/vite-plugin/package.json": "Patch" },
+  "note": "Name each devup-ui sheet in the source Vite loads during a build, so two sheets that are equal when loaded are no longer emitted as one file holding only one of them",
+  "date": "2026-11-15T00:00:00.000Z"
+}

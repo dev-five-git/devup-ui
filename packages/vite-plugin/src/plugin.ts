@@ -738,7 +738,11 @@ export function DevupUI({
         const fileNum = getFileNumByFilename(fileName)
         const css = compiler.getCss(fileNum, false)
         cssMap.set(fileNum, css)
-        return css
+        // The bundler emits two assets whose sources match as one file, so two
+        // sheets that are equal when loaded (empty ones, say) would share a
+        // file and `generateBundle` would give it one sheet. Name each sheet in
+        // its source to keep them apart; `generateBundle` replaces the source.
+        return isServe ? css : `/*! ${fileName} */${css}`
       }
     },
     enforce: 'pre',
