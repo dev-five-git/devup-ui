@@ -22,7 +22,7 @@ describe('withTheme', () => {
         <Themed ref={ref} />
       </ThemeProvider>,
     )
-    expect(container.textContent).toBe('red')
+    expect(ref.current?.textContent).toBe('red')
     expect(ref.current?.tagName).toBe('DIV')
     expect(Themed.displayName).toBe('WithTheme(Swatch)')
   })
@@ -50,7 +50,7 @@ describe('ThemeConsumer', () => {
         <ThemeConsumer>{(theme) => String(theme.brand)}</ThemeConsumer>
       </ThemeProvider>,
     )
-    expect(container.textContent).toBe('green')
+    expect(container.querySelector('div')?.textContent).toBe('green')
     expect(
       render(<ThemeConsumer>{(theme) => JSON.stringify(theme)}</ThemeConsumer>)
         .container.textContent,

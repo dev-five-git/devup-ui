@@ -85,7 +85,7 @@ const heading = <Heading $tone="teal" $track="hero" id="intro" />
 
 ## Theme interpolation
 
-`ThemeProvider` redefines CSS variables on a `display: contents` wrapper, so it scopes the theme to its subtree without touching layout. Interpolations that read the theme are resolved at build time — no runtime lookup:
+`ThemeProvider` redefines CSS variables on a `display: contents` wrapper, so it scopes the theme to its subtree without touching layout. The outermost provider also declares them on `:root`, so `createGlobalStyle` rules on `html` or `body` read the theme too. Interpolations that read the theme are resolved at build time — no runtime lookup:
 
 ```tsx
 const Card = styled.div`

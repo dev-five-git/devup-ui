@@ -33,3 +33,16 @@ export function themeToCssVariables(theme?: StyledTheme): CSSProperties {
   if (theme) walk(theme, [])
   return style as CSSProperties
 }
+
+/**
+ * The same variables as one `:root` rule, for what no provider element can
+ * reach: global styles on `html`, `body` or `:root` read variables from their
+ * own ancestors, never from a descendant element. `<` is escaped so a value
+ * cannot close the `<style>` element that carries the rule.
+ */
+export function themeToRootRule(theme: StyledTheme): string {
+  const declarations = Object.entries(themeToCssVariables(theme))
+    .filter(([name]) => name.startsWith('--'))
+    .map(([name, value]) => `${name}:${String(value).replaceAll('<', '\\3c ')}`)
+  return `:root{${declarations.join(';')}}`
+}
