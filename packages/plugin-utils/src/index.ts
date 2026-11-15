@@ -6,8 +6,8 @@ export {
 export {
   type ConditionResolveOptions,
   esmImportConditions,
-  viteImportConditions,
   type ViteConditionConfig,
+  viteImportConditions,
 } from './bundler-conditions'
 export { loadCompiler } from './compiler'
 export type {
