@@ -1,0 +1,1 @@
+{"changes":{"packages/next-plugin/package.json":"Patch","packages/plugin-utils/package.json":"Patch"},"note":"Count Pages Router modules and every App Router route file as Next route entries, so Pages Router projects get a deterministic CSS completion set","date":"2026-11-15T00:00:00.000Z"}

@@ -853,6 +853,55 @@ describe('computeCompiledFiles', () => {
     expect(compiled).not.toContain('src/orphan.tsx')
   })
 
+  it('treats every Pages Router module as a route entry', () => {
+    writeFixture('src/pages/_app.tsx', "import '../shell'\n")
+    writeFixture('src/pages/_document.tsx', 'export default 1\n')
+    writeFixture('src/pages/index.tsx', 'export default 1\n')
+    writeFixture('src/pages/blog/[slug].tsx', "import '../../post'\n")
+    writeFixture('src/pages/api/hello.ts', 'export default 1\n')
+    writeFixture('src/shell.tsx', 'export const S = 1\n')
+    writeFixture('src/post.tsx', 'export const P = 1\n')
+    writeFixture('src/orphan.tsx', 'export const O = 1\n')
+
+    expect(computeCompiledFiles({ cwd, srcDir })).toEqual([
+      'src/pages/_app.tsx',
+      'src/pages/_document.tsx',
+      'src/pages/api/hello.ts',
+      'src/pages/blog/[slug].tsx',
+      'src/pages/index.tsx',
+      'src/post.tsx',
+      'src/shell.tsx',
+    ])
+  })
+
+  it('finds a Pages Router at the project root', () => {
+    writeFixture('pages/about.jsx', "import './about-body'\n")
+    writeFixture('pages/about-body.jsx', 'export const B = 1\n')
+
+    expect(computeCompiledFiles({ cwd, srcDir: cwd })).toEqual([
+      'pages/about-body.jsx',
+      'pages/about.jsx',
+    ])
+  })
+
+  it('includes App Router files no page sits below', () => {
+    writeFixture('src/app/api/route.ts', "import '../../handler'\n")
+    writeFixture('src/app/@modal/default.tsx', "import '../../modal'\n")
+    writeFixture('src/app/not-found.tsx', 'export default 1\n')
+    writeFixture('src/app/global-error.tsx', 'export default 1\n')
+    writeFixture('src/handler.ts', 'export const H = 1\n')
+    writeFixture('src/modal.tsx', 'export const M = 1\n')
+
+    expect(computeCompiledFiles({ cwd, srcDir })).toEqual([
+      'src/app/@modal/default.tsx',
+      'src/app/api/route.ts',
+      'src/app/global-error.tsx',
+      'src/app/not-found.tsx',
+      'src/handler.ts',
+      'src/modal.tsx',
+    ])
+  })
+
   it('returns an empty list when no leaf route exists', () => {
     writeFixture('src/index.tsx', "import './a'\n")
     writeFixture('src/a.tsx', 'export const A = 1\n')
