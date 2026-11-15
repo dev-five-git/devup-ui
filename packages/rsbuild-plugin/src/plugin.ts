@@ -437,8 +437,11 @@ export const DevupUI = ({
             }
           }) => {
             rspackConfig.optimization ??= {}
-            const sc = rspackConfig.optimization.splitChunks
-            if (sc && typeof sc === 'object') {
+            // No splitChunks config yet still gets the group (rspack fills
+            // in its defaults around it); `false` turns chunk splitting off
+            // on purpose, so the base CSS stays in each entry.
+            const sc = (rspackConfig.optimization.splitChunks ??= {})
+            if (sc) {
               sc.cacheGroups ??= {}
               sc.cacheGroups['devupUiShared'] = {
                 type: 'css/mini-extract',
