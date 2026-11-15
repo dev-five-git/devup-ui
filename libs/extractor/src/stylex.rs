@@ -101,9 +101,13 @@ pub fn unsupported_stylex_error(name: &str) -> String {
 }
 
 /// The custom property `stylex.defineVars()` in `filename` declares for `key`;
-/// a module importing it computes the same name
+/// a module importing it computes the same name. A key that is already a
+/// custom property name, as `'--global'`, keeps that name, as `StyleX` does.
 #[must_use]
 pub fn define_vars_variable(filename: &str, key: &str, split_filename: Option<&str>) -> String {
+    if key.starts_with("--") {
+        return key.to_string();
+    }
     format!(
         "--{}",
         keyframes_to_keyframes_name(&format!("sxv-{filename}-{key}"), split_filename)
@@ -164,6 +168,79 @@ fn collect_variable_values(
         conditions.pop();
     }
     Some(())
+}
+
+/// The `@property` syntax each `stylex.types` helper registers a variable with
+static TYPE_SYNTAX: phf::Map<&'static str, &'static str> = phf::phf_map! {
+    "angle" => "<angle>",
+    "color" => "<color>",
+    "image" => "<image>",
+    "integer" => "<integer>",
+    "length" => "<length>",
+    "lengthPercentage" => "<length-percentage>",
+    "number" => "<number>",
+    "percentage" => "<percentage>",
+    "resolution" => "<resolution>",
+    "time" => "<time>",
+    "transformFunction" => "<transform-function>",
+    "transformList" => "<transform-list>",
+    "url" => "<url>",
+};
+
+/// The `@property` rule a `stylex.defineVars()` value wrapped in a
+/// `stylex.types` helper registers `variable` with, its initial value the
+/// `default` of `values`. `None` when `value` is not wrapped in a helper; an
+/// error when the helper is unknown, the value has no default, or an
+/// `integer` is given another number.
+pub fn typed_variable_rule(
+    variable: &str,
+    value: &Expression<'_>,
+    values: &[(Conditions, String)],
+    resolver: StylexResolver<'_>,
+) -> Option<Result<String, String>> {
+    let Expression::CallExpression(call) = value else {
+        return None;
+    };
+    is_types_call(&call.callee, resolver).then_some(())?;
+    let name = call
+        .callee
+        .as_member_expression()?
+        .static_property_name()?
+        .as_str()?;
+    let code = readable_code(value);
+    let Some(syntax) = TYPE_SYNTAX.get(name) else {
+        return Some(Err(build_time_error(
+            "stylex.defineVars",
+            &code,
+            &format!("`types.{name}` is not a `stylex.types` helper"),
+        )));
+    };
+    let Some((_, initial)) = values.iter().find(|(conditions, _)| conditions.is_empty()) else {
+        return Some(Err(build_time_error(
+            "stylex.defineVars",
+            &code,
+            "a typed variable registers its `default` value as the initial value of its `@property`; give it a `default`",
+        )));
+    };
+    if name == "integer"
+        && values
+            .iter()
+            .any(|(_, value)| value.parse::<i64>().is_err())
+    {
+        return Some(Err(build_time_error(
+            "stylex.defineVars",
+            &code,
+            "`types.integer` takes whole numbers",
+        )));
+    }
+    Some(Ok(css_variable_block(
+        &format!("@property {variable}"),
+        &[
+            ("syntax".to_string(), format!("\"{syntax}\"")),
+            ("inherits".to_string(), "true".to_string()),
+            ("initial-value".to_string(), initial.clone()),
+        ],
+    )))
 }
 
 #[must_use]
@@ -622,7 +699,12 @@ pub fn decompose_value_conditions(
                 continue;
             }
         };
-        let Some(key) = get_string_by_property_key(&prop.key) else {
+        // A computed key reads a constant, as `[constants.wide]` naming a query
+        let Some(key) = get_string_by_property_key(&prop.key).or_else(|| {
+            prop.key
+                .as_expression()
+                .and_then(|key| leaf(css_property, key))
+        }) else {
             errors.push(key_error("stylex.create", &prop.key));
             continue;
         };

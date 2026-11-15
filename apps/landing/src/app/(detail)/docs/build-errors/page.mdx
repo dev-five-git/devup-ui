@@ -2562,7 +2562,7 @@ export function example() {
 ```tsx
 import * as stylex from '@stylexjs/stylex'
 export function example() {
-  const result = stylex.viewTransitionClass({ color: 'red' })
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
   return result
 }
 ```
@@ -3240,7 +3240,7 @@ export function example(extra) {
 ```tsx
 import * as stylex from '@stylexjs/stylex'
 export function example() {
-  const result = stylex.viewTransitionClass({ color: 'red' })
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
   return result
 }
 ```
@@ -3274,7 +3274,7 @@ export function example(key) {
 ```tsx
 import * as stylex from '@stylexjs/stylex'
 export function example() {
-  const result = stylex.viewTransitionClass({ color: 'red' })
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
   return result
 }
 ```
@@ -3642,7 +3642,7 @@ export function example() {
 ```tsx-error
 import * as stylex from '@stylexjs/stylex';
 export function example() {
-  const result = stylex.viewTransitionClass({ color: null });
+  const result = stylex.viewTransitionClass({ old: { color: null } });
   return result;
 }
 ```
@@ -3656,7 +3656,7 @@ export function example() {
 ```tsx
 import * as stylex from '@stylexjs/stylex'
 export function example() {
-  const result = stylex.viewTransitionClass({ color: 'red' })
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
   return result
 }
 ```
@@ -3676,7 +3676,7 @@ export function example() {
 ```tsx-error
 import * as stylex from '@stylexjs/stylex';
 export function example() {
-  const result = stylex.viewTransitionClass({ color: stylex.types.color('red') });
+  const result = stylex.viewTransitionClass({ old: { color: stylex.types.color('red') } });
   return result;
 }
 ```
@@ -3690,7 +3690,7 @@ export function example() {
 ```tsx
 import * as stylex from '@stylexjs/stylex'
 export function example() {
-  const result = stylex.viewTransitionClass({ color: 'red' })
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
   return result
 }
 ```

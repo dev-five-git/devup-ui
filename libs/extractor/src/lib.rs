@@ -86,6 +86,8 @@ mod scope;
 mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
+#[cfg(test)]
+mod stylex_api_semantics_tests;
 
 mod peephole;
 mod source_map;
@@ -20516,7 +20518,7 @@ const el = <div {...stylex.props(dark, styles.box)} />;"
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import stylex from '@stylexjs/stylex';
 const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });
-const transition = stylex.viewTransitionClass({ animationDuration: '300ms' });"
+const transition = stylex.viewTransitionClass({ old: { animationDuration: '300ms' } });"
         )));
     }
 
@@ -21042,7 +21044,7 @@ export const light = stylex.createTheme(colors, { primary: 'white' });",
                 ],
             ),
             (
-                "const fallback = stylex.positionTry(notAnObject);\nconst entries = stylex.positionTry({ ...spread, [computed]: '0', top: someVar });\nconst transition = stylex.viewTransitionClass({ animationDuration: later });\nconst fade = stylex.keyframes(frames);",
+                "const fallback = stylex.positionTry(notAnObject);\nconst entries = stylex.positionTry({ ...spread, [computed]: '0', top: someVar });\nconst transition = stylex.viewTransitionClass({ old: { animationDuration: later } });\nconst fade = stylex.keyframes(frames);",
                 &[
                     "`stylex.positionTry()` cannot use `notAnObject` at build time: it takes one object literal",
                     "`stylex.positionTry()` cannot use `...spread`",
