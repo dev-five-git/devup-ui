@@ -506,6 +506,15 @@ pub(super) fn get_key_by_literal_expression<'a>(expr: &Expression<'a>) -> Option
     }
 }
 
+/// The name a literal computed member such as `styled['div']` reads, when it
+/// is one a static member could spell, so it reads as `styled.div` does
+pub(super) fn literal_member_name<'a>(
+    member: &oxc_ast::ast::ComputedMemberExpression<'a>,
+) -> Option<Cow<'a, str>> {
+    get_key_by_literal_expression(&member.expression)
+        .filter(|name| !member.optional && oxc_syntax::identifier::is_identifier_name(name))
+}
+
 pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     match expr {
         Expression::ParenthesizedExpression(value) => {

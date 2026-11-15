@@ -28,9 +28,12 @@ const G = styled(motion.div)`
   color: red;
 `
 const H = styled(forwardRef(Field))({ bg: 'red' })
+const I = styled['div']`
+  color: red;
+`
 ```
 
-Any base renders: a tag, a component, a member such as `motion.div`, or any other value, read once where the component is declared. `null`, numbers, booleans and `undefined` never render, so they are build errors, as is a `styled` left uncompiled (`styled('div')` never given styles, `styled.div` exported bare): its import is removed, and that code would throw at runtime.
+Any base renders: a tag, a component, a member such as `motion.div`, or any other value, read once where the component is declared. A tag may also be read as a literal key, `styled['div']` or `` styled[`div`] ``, which builds what `styled.div` does, `.attrs` and `.withConfig` included; a key the build cannot read (`styled[tag]`) or one `styled.` could not spell (`styled['my-element']`) is a build error. `null`, numbers, booleans and `undefined` never render, so they are build errors, as is a `styled` left uncompiled (`styled('div')` never given styles, `styled.div` exported bare): its import is removed, and that code would throw at runtime.
 
 A `keyframes` or `css` result held in a `const` of the same file is a build-time value, so `` css`animation: ${fadeIn} 1s;` `` and `styled.div({ ['.' + card + ':hover &']: { margin: 0 } })` work. In CSS text a class standing where a declaration would is a mixin, composed with the component's class. One imported from another module is not: its name is only known once that file is built, so declare it where it is used.
 

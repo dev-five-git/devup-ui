@@ -86,6 +86,8 @@ mod scope;
 mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
+#[cfg(test)]
+mod styled_computed_tag_tests;
 
 mod peephole;
 mod source_map;
@@ -23768,7 +23770,7 @@ const e = <Box bg='red' props={extraProps} />;"
         reset_file_map();
         let message = extract(
             "test.tsx",
-            "import { styled } from '@devup-ui/react';\nconst S = styled['div']`color: red;`;",
+            "import { styled } from '@devup-ui/react';\nconst S = styled[tag]`color: red;`;",
             ExtractOption::default(),
         )
         .err()
