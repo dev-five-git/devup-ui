@@ -1,4 +1,6 @@
 mod boundary;
+mod panic;
+pub use panic::panic_message;
 mod reservation;
 pub use reservation::{
     ReservationInput, get_unreserved_class_slot_count, reserve_class_slots_internal,
