@@ -1939,15 +1939,15 @@ describe('devupUIVitePlugin', () => {
     ).toEqual(expect.any(String))
   })
 
-  it('should not write interface code when no theme', async () => {
+  it('overwrites the interface code with nothing when the theme has no tokens', async () => {
     readFileSpy.mockResolvedValueOnce(JSON.stringify({}))
     getThemeInterfaceSpy.mockReturnValue('')
     existsSyncSpy.mockReturnValue(true)
     const plugin = createPlugin({})
     await plugin.configResolved()
-    expect(writeFileSpy).not.toHaveBeenCalledWith(
+    expect(writeFileSpy).toHaveBeenCalledWith(
       join('df', 'theme.d.ts'),
-      expect.any(String),
+      '',
       'utf-8',
     )
   })

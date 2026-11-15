@@ -61,8 +61,10 @@ async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
     const config = await loadDevupConfig(devupFile)
     theme = withTailwindCss(config.theme ?? {}, config)
     tailwindFiles = tailwindCssFiles(config)
-  } catch {
-    // Error reading devup.json, use empty theme
+  } catch (error) {
+    // A broken devup.json clears the theme, as in the other plugins; the
+    // error says which file and how to fix it.
+    console.error(error)
   }
   compiler.registerTheme(theme)
 

@@ -287,9 +287,16 @@ describe('registered Bun hooks', () => {
 
   it('registers an empty theme when reading configuration fails', async () => {
     exists.mockReturnValue(true)
-    readConfig.mockRejectedValue(new Error('unreadable fixture config'))
-    await register({ engine: 'wasm' })
-    expect(wasm.getDefaultTheme()).toBeUndefined()
+    const error = new Error('unreadable fixture config')
+    readConfig.mockRejectedValue(error)
+    const logged = spyOn(console, 'error').mockReturnValue(undefined)
+    try {
+      await register({ engine: 'wasm' })
+      expect(wasm.getDefaultTheme()).toBeUndefined()
+      expect(logged).toHaveBeenCalledWith(error)
+    } finally {
+      logged.mockRestore()
+    }
   })
 
   it('resolves generated stylesheets and loads their runtime placeholder', async () => {

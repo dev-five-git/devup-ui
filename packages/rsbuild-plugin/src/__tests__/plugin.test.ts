@@ -688,6 +688,35 @@ const App = () => <Box></Box>`,
     }
   })
 
+  it('overwrites theme.d.ts when the theme has no tokens and creates cssDir before writing into it', async () => {
+    getThemeInterfaceSpy.mockReturnValue('')
+    const cssDir = resolve('df', 'devup-ui')
+    let made = false
+    mkdirSpy.mockImplementation(
+      () =>
+        new Promise<undefined>((done) =>
+          setTimeout(() => {
+            made = true
+            done(undefined)
+          }, 5),
+        ),
+    )
+    const writtenAfterMkdir = new Map<string, boolean>()
+    writeFileSpy.mockImplementation((path: string) => {
+      writtenAfterMkdir.set(path, made)
+      return Promise.resolve()
+    })
+    const plugin = DevupUI({ atomHoist: 0 })
+    await plugin.setup(createSetupContext())
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      '',
+      'utf-8',
+    )
+    expect(mkdirSpy).toHaveBeenCalledWith(cssDir, { recursive: true })
+    expect(writtenAfterMkdir.get(join(cssDir, 'devup-ui.css'))).toBe(true)
+  })
+
   it('should call setPrefix when prefix option is provided', async () => {
     const plugin = DevupUI({ prefix: 'my-prefix' })
     await plugin.setup(
