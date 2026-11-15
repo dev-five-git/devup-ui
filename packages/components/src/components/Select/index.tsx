@@ -472,11 +472,10 @@ export function SelectOption({
   }
 
   const handleClick = (e?: React.MouseEvent<HTMLDivElement>) => {
-    if (onClick) {
-      onClick(value, e)
-      return
-    }
-    if (typeof value === 'string') setValue(value)
+    // A custom handler replaces the value update, but choosing the option
+    // still closes the list and returns focus to the trigger
+    if (onClick) onClick(value, e)
+    else if (typeof value === 'string') setValue(value)
     handleClose()
   }
 
