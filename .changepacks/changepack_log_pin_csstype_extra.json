@@ -1,0 +1,1 @@
+{"changes":{"packages/react/package.json":"Patch"},"note":"Depend on csstype-extra ^0.1.37 instead of the latest dist-tag, so installs resolve to a reviewed, compatible type package.","date":"2026-11-15T00:00:00.000Z"}

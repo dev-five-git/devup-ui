@@ -715,7 +715,7 @@
       "name": "@devup-ui/react",
       "version": "1.0.44",
       "dependencies": {
-        "csstype-extra": "latest",
+        "csstype-extra": "^0.1.37",
       },
       "devDependencies": {
         "@types/node": "^26.6.6",
