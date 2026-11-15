@@ -1021,10 +1021,20 @@ const App = () => <Box></Box>`,
       expect(
         rspackCfg.optimization.splitChunks.cacheGroups?.devupUiShared.type,
       ).toBe('css/mini-extract')
-      // splitChunks missing/false -> no cacheGroup added, no throw
-      const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
+      // no optimization or splitChunks yet -> the group is still added
+      const rspackCfg2 = {} as {
+        optimization?: {
+          splitChunks?: { cacheGroups?: Record<string, { type?: string }> }
+        }
+      }
       inject(rspackCfg2)
-      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+      expect(
+        rspackCfg2.optimization?.splitChunks?.cacheGroups?.devupUiShared.type,
+      ).toBe('css/mini-extract')
+      // splitChunks false (chunk splitting off on purpose) -> left as it is
+      const rspackCfg3 = { optimization: { splitChunks: false } }
+      inject(rspackCfg3)
+      expect(rspackCfg3.optimization.splitChunks).toBe(false)
     })
 
     it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {

@@ -1,0 +1,1 @@
+{"changes":{"packages/rsbuild-plugin/package.json":"Patch"},"note":"With atomHoist on, the shared devup-ui.css cacheGroup is now also added when the rspack config has no optimization.splitChunks yet, so hoisted atoms load once across entries instead of being inlined per entry. splitChunks: false is still left as it is.","date":"2026-11-15T00:00:00.000Z"}
