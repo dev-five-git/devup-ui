@@ -84,32 +84,28 @@ async function writeDataFiles(
 
     compiler.registerTheme(withTailwindCss(theme, config))
     tailwindFiles = tailwindCssFiles(config)
-    const interfaceCode = compiler.getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    await writeFile(
+      join(options.distDir, 'theme.d.ts'),
+      compiler.getThemeInterface(...createThemeInterfaceArgs(options.package)),
+      'utf-8',
     )
-
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
   } catch (error) {
     console.error(error)
     compiler.registerTheme({})
   }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(
-          join(options.cssDir, 'devup-ui.css'),
-          compiler.getCss(null, false),
-        )
-      : Promise.resolve(),
-  ])
+  // Sequential: writing into cssDir concurrently with its own mkdir loses the
+  // race on a cold start (no `df/`) and fails the build with ENOENT.
+  if (!existsSync(options.cssDir)) {
+    await mkdir(options.cssDir, { recursive: true })
+  }
+  if (!options.singleCss) {
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      compiler.getCss(null, false),
+    )
+  }
   return tailwindFiles
 }
 

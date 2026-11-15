@@ -498,25 +498,21 @@ describe('devupUIWebpackPlugin', () => {
         'CustomShadows',
         'DevupTheme',
       )
-      if (_options.getThemeInterface)
-        expect(writeFileSyncSpy).toHaveBeenCalledWith(
-          join(options.distDir, 'theme.d.ts'),
-          _options.getThemeInterface,
-          {
-            encoding: 'utf-8',
-          },
-        )
-      else expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 1 : 0)
+      // Written even when empty, so removed tokens leave no stale declarations.
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join(options.distDir, 'theme.d.ts'),
+        _options.getThemeInterface,
+        {
+          encoding: 'utf-8',
+        },
+      )
 
       if (options.watch)
         expect(writeFileSyncSpy).toHaveBeenCalledWith(
           join(options.cssDir, 'devup-ui.css'),
           _options.getCss,
         )
-      else
-        expect(writeFileSyncSpy).toHaveBeenCalledTimes(
-          _options.getThemeInterface ? 1 : 0,
-        )
+      expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 2 : 1)
     })
   })
 

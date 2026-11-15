@@ -148,15 +148,15 @@ export class DevupUIWebpackPlugin {
 
       this.compiler.registerTheme(withTailwindCss(theme, config))
       this.tailwindFiles = tailwindCssFiles(config)
-      const interfaceCode = this.compiler.getThemeInterface(
-        ...createThemeInterfaceArgs(this.options.package),
+      // Written even when empty, so tokens removed from the theme leave no
+      // stale declarations behind.
+      writeFileSync(
+        join(this.options.distDir, 'theme.d.ts'),
+        this.compiler.getThemeInterface(
+          ...createThemeInterfaceArgs(this.options.package),
+        ),
+        { encoding: 'utf-8' },
       )
-
-      if (interfaceCode) {
-        writeFileSync(join(this.options.distDir, 'theme.d.ts'), interfaceCode, {
-          encoding: 'utf-8',
-        })
-      }
     } catch (error) {
       console.error(error)
       this.compiler.registerTheme({})

@@ -283,17 +283,13 @@ async function writeDataFiles(
 
     compiler.registerTheme(withTailwindCss(theme, config))
     publishTailwind(tailwindCssFiles(config))
-    const interfaceCode = compiler.getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    await writeFile(
+      join(options.distDir, 'theme.d.ts'),
+      compiler.getThemeInterface(...createThemeInterfaceArgs(options.package)),
+      'utf-8',
     )
-
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
   } catch (error) {
     console.error(error)
     compiler.registerTheme({})
