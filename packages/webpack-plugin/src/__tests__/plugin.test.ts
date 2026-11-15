@@ -402,9 +402,17 @@ describe('devupUIWebpackPlugin', () => {
         collectSpy.mockImplementation(() => {
           throw new Error('scan boom')
         })
-        new DevupUIWebpackPlugin({ engine: 'wasm', debug: true }).apply(
-          asCompiler(createCompiler()),
-        )
+        const warn = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          new DevupUIWebpackPlugin({ engine: 'wasm', debug: true }).apply(
+            asCompiler(createCompiler()),
+          )
+          expect(warn).toHaveBeenCalledWith(
+            '[devup-ui] webpack file numbering failed: scan boom. Stylesheet file numbers follow the order webpack compiles files in, so they can differ between builds of the same source.',
+          )
+        } finally {
+          warn.mockRestore()
+        }
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
@@ -1288,9 +1296,52 @@ describe('devupUIWebpackPlugin', () => {
         throw new Error('boom')
       })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
-      // apply must still complete without throwing
-      plugin.apply(asCompiler(createCompiler()))
-      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        // apply must still complete without throwing
+        plugin.apply(asCompiler(createCompiler()))
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack import graph failed: boom. Classes are not merged across files only one module imports, and atom hoisting is off.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('warns without atom hoisting when a pre-pass outside atom mode fails', () => {
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw new Error('boom')
+      })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 }).apply(
+          asCompiler(createCompiler()),
+        )
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack import graph failed: boom. Classes are not merged across files only one module imports.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('stays quiet when the project has no src directory to scan', () => {
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw Object.assign(new Error('ENOENT'), {
+          code: 'ENOENT',
+          path: resolve(process.cwd(), 'src'),
+        })
+      })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
+          asCompiler(createCompiler()),
+        )
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+      }
     })
 
     it('configures atom hoisting BEFORE registering loader rules', () => {

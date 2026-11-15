@@ -12,6 +12,7 @@ import {
   type CustomShorthands,
   type DevupCompiler,
   type DevupEngine,
+  isMissingDirectory,
   isProjectJsx,
   loadCompiler,
   loadDevupConfig,
@@ -19,6 +20,7 @@ import {
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -236,6 +238,14 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
           )
         } catch (error) {
           if (!(error instanceof Error)) throw error
+          if (!isMissingDirectory(error, resolve('src')))
+            console.warn(
+              setupWarning(
+                'Bun file numbering',
+                error,
+                'Stylesheet file numbers follow the order Bun loads files in, so they can differ between runs of the same source.',
+              ),
+            )
         }
       }
 

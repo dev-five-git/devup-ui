@@ -6,7 +6,46 @@ import {
   DEFAULT_THEME_INTERFACE_NAMES,
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
+  isMissingDirectory,
+  setupWarning,
 } from '../shared'
+
+describe('isMissingDirectory', () => {
+  const missing = (path?: unknown, code = 'ENOENT') =>
+    Object.assign(new Error('missing'), { code, path })
+
+  it('recognizes the directory itself not existing', () => {
+    expect(isMissingDirectory(missing('/project/src/'), '/project/src')).toBe(
+      true,
+    )
+  })
+
+  it('rejects another path, another code and other thrown values', () => {
+    expect(
+      isMissingDirectory(missing('/project/src/a.ts'), '/project/src'),
+    ).toBe(false)
+    expect(
+      isMissingDirectory(missing('/project/src', 'EACCES'), '/project/src'),
+    ).toBe(false)
+    expect(isMissingDirectory(missing(), '/project/src')).toBe(false)
+    expect(isMissingDirectory(new Error('boom'), '/project/src')).toBe(false)
+    expect(isMissingDirectory('ENOENT', '/project/src')).toBe(false)
+  })
+})
+
+describe('setupWarning', () => {
+  it('names the step, the cause and what the build loses', () => {
+    expect(
+      setupWarning('Vite file numbering', new Error('EACCES'), 'Numbers vary.'),
+    ).toBe('[devup-ui] Vite file numbering failed: EACCES. Numbers vary.')
+  })
+
+  it('reads a thrown value that is not an Error', () => {
+    expect(setupWarning('Step', 'gone', 'Impact.')).toBe(
+      '[devup-ui] Step failed: gone. Impact.',
+    )
+  })
+})
 
 describe('getFileNumByFilename', () => {
   it('should return null for devup-ui.css', () => {
