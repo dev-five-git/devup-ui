@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/rsbuild-plugin/package.json": "Patch"
-  },
-  "note": "Create the Rsbuild CSS directory before writing devup-ui.css into it, so a first build into a missing nested cssDir no longer races mkdir against the write.",
-  "date": "2026-11-15T00:00:00.000Z"
-}

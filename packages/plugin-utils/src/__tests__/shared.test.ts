@@ -6,7 +6,46 @@ import {
   DEFAULT_THEME_INTERFACE_NAMES,
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
+  isMissingDirectory,
+  setupWarning,
 } from '../shared'
+
+describe('isMissingDirectory', () => {
+  const missing = (path?: unknown, code = 'ENOENT') =>
+    Object.assign(new Error('missing'), { code, path })
+
+  it('recognizes the directory itself not existing', () => {
+    expect(isMissingDirectory(missing('/project/src/'), '/project/src')).toBe(
+      true,
+    )
+  })
+
+  it('rejects another path, another code and other thrown values', () => {
+    expect(
+      isMissingDirectory(missing('/project/src/a.ts'), '/project/src'),
+    ).toBe(false)
+    expect(
+      isMissingDirectory(missing('/project/src', 'EACCES'), '/project/src'),
+    ).toBe(false)
+    expect(isMissingDirectory(missing(), '/project/src')).toBe(false)
+    expect(isMissingDirectory(new Error('boom'), '/project/src')).toBe(false)
+    expect(isMissingDirectory('ENOENT', '/project/src')).toBe(false)
+  })
+})
+
+describe('setupWarning', () => {
+  it('names the step, the cause and what the build loses', () => {
+    expect(
+      setupWarning('Vite file numbering', new Error('EACCES'), 'Numbers vary.'),
+    ).toBe('[devup-ui] Vite file numbering failed: EACCES. Numbers vary.')
+  })
+
+  it('reads a thrown value that is not an Error', () => {
+    expect(setupWarning('Step', 'gone', 'Impact.')).toBe(
+      '[devup-ui] Step failed: gone. Impact.',
+    )
+  })
+})
 
 describe('getFileNumByFilename', () => {
   it('should return null for devup-ui.css', () => {
@@ -97,6 +136,48 @@ describe('createNodeModulesExcludeRegex', () => {
     expect(regex.test('src/page.mdx.ts')).toBe(true)
     // Should NOT match @devup-ui
     expect(regex.test('node_modules/@devup-ui/react/index.js')).toBe(false)
+  })
+
+  it('should match included names as whole package directories', () => {
+    const regex = createNodeModulesExcludeRegex(['foo.bar', 'pkg', 'foo+bar'])
+    expect(regex.test('node_modules/foo.bar/index.js')).toBe(false)
+    expect(regex.test('node_modules/fooXbar/index.js')).toBe(true)
+    expect(regex.test('node_modules/pkg/index.js')).toBe(false)
+    expect(regex.test('node_modules/pkg')).toBe(false)
+    expect(regex.test('node_modules/@scope/pkg/index.js')).toBe(true)
+    expect(regex.test('node_modules/pkg-extra/index.js')).toBe(true)
+    expect(regex.test('node_modules/foo+bar/index.js')).toBe(false)
+    expect(regex.test('node_modules/foooobar/index.js')).toBe(true)
+  })
+
+  it('should match included packages in Windows and store paths', () => {
+    const regex = createNodeModulesExcludeRegex(['@scope/pkg', 'pkg'])
+    expect(regex.test('C:\\app\\node_modules\\@scope\\pkg\\index.js')).toBe(
+      false,
+    )
+    expect(regex.test('C:\\app\\node_modules\\@other\\pkg\\index.js')).toBe(
+      true,
+    )
+    expect(
+      regex.test(
+        '/app/node_modules/.pnpm/pkg@1.0.0/node_modules/pkg/dist/index.js',
+      ),
+    ).toBe(false)
+    expect(
+      regex.test(
+        '/app/node_modules/.bun/@scope+pkg@1.0.0/node_modules/@scope/pkg/index.js',
+      ),
+    ).toBe(false)
+  })
+
+  it('should take the package from the innermost node_modules', () => {
+    const regex = createNodeModulesExcludeRegex(['pkg'])
+    expect(
+      regex.test('node_modules/@devup-ui/react/node_modules/lodash/index.js'),
+    ).toBe(true)
+    expect(regex.test('node_modules/pkg/node_modules/dep/index.js')).toBe(true)
+    expect(regex.test('node_modules/dep/node_modules/pkg/index.js')).toBe(false)
+    expect(regex.test('src/my_node_modules/lodash/index.js')).toBe(false)
   })
 
   it('should handle empty include array', () => {
