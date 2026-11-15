@@ -3,7 +3,6 @@
 import { css, Flex } from '@devup-ui/react'
 import clsx from 'clsx'
 import {
-  ComponentProps,
   ComponentPropsWithoutRef,
   createContext,
   forwardRef,
