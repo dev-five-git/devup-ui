@@ -206,7 +206,7 @@ fn var_reference<'v>(
     value: &Expression<'_>,
     var_refs: &'v FxHashMap<String, String>,
 ) -> Option<&'v str> {
-    let (Expression::Identifier(object), key) = (match value {
+    let (object, key) = match value {
         Expression::StaticMemberExpression(member) => {
             (&member.object, Cow::Borrowed(member.property.name.as_str()))
         }
@@ -215,7 +215,8 @@ fn var_reference<'v>(
             get_string_by_literal_expression(&member.expression)?,
         ),
         _ => return None,
-    }) else {
+    };
+    let Expression::Identifier(object) = object else {
         return None;
     };
     var_refs
