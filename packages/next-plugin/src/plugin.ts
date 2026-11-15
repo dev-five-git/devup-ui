@@ -35,7 +35,9 @@ import {
 } from './coordinator'
 import {
   removeStalePortFile,
+  removeStaleStateDirs,
   resolveCoordinatorPortFile,
+  resolveStateDir,
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
@@ -178,12 +180,16 @@ export function DevupUI(
     )
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
-    const sheetFile = join(distDir, 'sheet.json')
-    const classMapFile = join(distDir, 'classMap.json')
-    const fileMapFile = join(distDir, 'fileMap.json')
-    const canonicalMapFile = join(distDir, 'canonicalMap.json')
+    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
+    // Another live `next dev`/`next build` on this distDir keeps its state;
+    // this process then writes its own (see resolveStateDir).
+    const stateDir = resolveStateDir(distDir, coordinatorPortFile)
+    const sheetFile = join(stateDir, 'sheet.json')
+    const classMapFile = join(stateDir, 'classMap.json')
+    const fileMapFile = join(stateDir, 'fileMap.json')
+    const canonicalMapFile = join(stateDir, 'canonicalMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
-    const setupHandoffFile = join(distDir, 'setup.bin')
+    const setupHandoffFile = join(stateDir, 'setup.bin')
     // Next loads next.config twice for a production Turbopack build in isolated
     // module contexts, but both evaluations share the same process. Hand the
     // completed first setup to exactly one different module instance so the
@@ -242,6 +248,8 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+    removeStaleStateDirs(distDir)
+    if (stateDir !== distDir) mkdirSync(stateDir, { recursive: true })
 
     const wasm = loadWasm(engine)
     const {
@@ -274,10 +282,18 @@ export function DevupUI(
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM
     // starts empty and CSS for cached files would be missing.
+    // Always restore from the shared `distDir` state: a process writing its
+    // own state dir still starts from what the cache was built against.
     try {
-      importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
-      importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
-      importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
+      importSheet(
+        JSON.parse(readFileSync(join(distDir, 'sheet.json'), 'utf-8')),
+      )
+      importClassMap(
+        JSON.parse(readFileSync(join(distDir, 'classMap.json'), 'utf-8')),
+      )
+      importFileMap(
+        JSON.parse(readFileSync(join(distDir, 'fileMap.json'), 'utf-8')),
+      )
     } catch {
       // No previous session state (first run) or corrupt files, start fresh
     }
@@ -296,8 +312,6 @@ export function DevupUI(
     }
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
-
-    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
     // Collapse and legacy whole-file hoisting remain independent of the deferred
     // Turbopack atom reservation. Never install atom reach/threshold without it.
