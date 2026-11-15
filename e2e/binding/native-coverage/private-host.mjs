@@ -81,6 +81,21 @@ if (group === 'raw-resolver-failure') {
     })
     assert.ok(calls > 0)
   })
+  check('unwrapped-resolver-empty-path', () => {
+    // Given: a raw resolver that bypasses the adapter's result validation.
+    w.resetStateForTesting()
+    let calls = 0
+    raw.setResolver(() => {
+      calls++
+      return { path: '', code: 'export { Box } from "@devup-ui/react"' }
+    })
+    // Then: native code rejects the empty path exactly as WASM does.
+    assert.throws(
+      () => call('hasDevupUi', request()),
+      /native-private.tsx:1:21: module resolver failed for `\.\/barrel` from `native-private.tsx`: malformed module resolver result: `path` must be a non-empty string/,
+    )
+    assert.ok(calls > 0)
+  })
   check('unwrapped-resolver-failure-blocks-publication', () => {
     for (const maps of [true, false]) {
       w.resetStateForTesting()
