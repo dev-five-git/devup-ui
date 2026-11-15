@@ -56,6 +56,8 @@ pub mod module_reference;
 mod mutations;
 #[cfg(test)]
 mod numeric_template_tests;
+#[cfg(test)]
+mod object_selector_keys_tests;
 mod own_css_context;
 mod own_css_lower;
 mod own_css_merge;

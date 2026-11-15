@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/object_selector_keys_tests.rs
+expression: rules(source)
+---
+{
+    "Some(Selector(\"& span\")) 0 color: blue",
+    "Some(Selector(\"&:hover\")) 0 color: red",
+}
