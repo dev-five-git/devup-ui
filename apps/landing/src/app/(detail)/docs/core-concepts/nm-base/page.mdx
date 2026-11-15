@@ -30,11 +30,15 @@ The N/M base system uses two character sets:
 
 Numbers are converted to N/M base using a two-phase approach:
 
-1. **Zero handling**: Returns 'a' when the number is 0
-2. **Base conversion**: Uses base-26 to convert numbers to alphabetic characters
-   - First digit: Uses N base array (a-z)
-   - Remaining digits: Uses M base array (a-z)
+1. **Zero handling**: Returns `a` when the number is 0
+2. **Base conversion**: The first character comes from the N base, so a name
+   never starts with a digit; every further character comes from the M base
+   - N base, in order: `abcdefghijklmnopqrstuvwxyz_` (27 characters)
+   - M base, in order: `abcdefghijklmnopqrstuvwxyz0123456789_` (37 characters)
+   - Numbers 0 to 26 are the 27 single-character names `a` … `z`, `_`; 27 is
+     `aa`, 28 is `ab`, and so on
 3. **Ad-blocker conflict prevention**: Changes result to "a-d" if it ends with "ad"
+   (number 30 is `a-d`, not `ad`)
 
 ### **Class Name Generation**
 
@@ -139,12 +143,12 @@ Ad-blockers recognize and block class names containing "ad" patterns as advertis
 Devup UI prevents ad-blocker conflicts through the following methods:
 
 - **Pattern avoidance**: Automatically converts class names ending with "ad" to "a-d"
-- **Safe character usage**: Uses only `a-z`, `-`, `_` to avoid blocking patterns
-- **No numbers**: Ensures class names don't start with digits to comply with CSS constraints
+- **Safe character usage**: Uses only `a-z`, `0-9`, `_` and `-` to avoid blocking patterns
+- **No leading digits**: Digits only appear after the first character, so class names comply with CSS constraints
 
 ## Advantages
 
-- **Compact class names**: First 26 styles generate single characters like `a`, `b`, `c`
+- **Compact class names**: The first 27 styles generate single characters like `a`, `b`, `c`
 - **Build consistency**: Always generates the same class name for identical input
 - **Cache optimization**: Consistent class names improve browser cache efficiency
 - **Collision prevention**: Each style has a unique signature to prevent class name collisions

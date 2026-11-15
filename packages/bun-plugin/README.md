@@ -60,11 +60,23 @@ module in the bundle. Imports of the packages Devup UI takes the place of
 Class names are short in `Bun.build` and readable under the runtime; pass
 `debug` to choose.
 
+## Compiled Files
+
+`.ts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever they are, and
+`.js` files only inside `@devup-ui` packages and the packages you list in
+`include`, as in the other plugins. Devup UI code in a `.js` file of your own
+project is not compiled and reaches the runtime placeholders
+(`Cannot run on the runtime`). Give such files a `.jsx`, `.tsx` or `.mjs`
+extension.
+
+The runtime cannot take those files on. A Bun runtime plugin must return the
+source of every file its filter matches, it cannot hand a file back to Bun, and
+Bun reads returned source as an ES module, so a CommonJS `.js` file
+(`require`, `module.exports`) it matched would stop loading.
+
 ## Libraries
 
-TypeScript and JSX sources are compiled wherever they are. Published `.js`
-files are compiled only for Devup UI itself and the packages you list in
-`include`, as in the other plugins:
+List a library that ships Devup UI components as compiled `.js` in `include`:
 
 ```ts
 DevupUI({ include: ['my-design-system'] })
@@ -74,7 +86,8 @@ await register({ include: ['my-design-system'] })
 
 Each name matches that whole package (`my-lib` is not `my-lib-extra` or
 `@scope/my-lib`), including in pnpm and Bun stores, but not the dependencies
-in its own `node_modules`.
+in its own `node_modules`. Under the runtime its `.js` files are read as ES
+modules, as above, so list only packages that publish ES modules there.
 
 ## Compiler Engine
 
