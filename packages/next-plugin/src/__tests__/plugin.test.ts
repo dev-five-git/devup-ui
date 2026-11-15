@@ -765,12 +765,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -818,12 +813,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -914,12 +904,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },

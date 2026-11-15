@@ -47,17 +47,28 @@ export function getFileNumByFilename(filename: string): number | null {
  * Create a regex that excludes node_modules paths, except for @devup-ui
  * and any additional included packages.
  *
+ * The package a file belongs to is the directory right under its innermost
+ * `node_modules` directory (pnpm and Bun stores included), and a name matches
+ * only that whole directory: `foo.bar` does not match `fooXbar`, `pkg` does not
+ * match `@scope/pkg` or `pkg-extra`, a name with regex characters such as
+ * `foo+bar` matches itself, and a dependency nested in an included package's
+ * own `node_modules` is not included with it.
+ *
  * @param include - Additional package names to include (not exclude)
  * @param extraExcludes - Optional extra regex pattern to OR with the node_modules exclusion
  * @returns A RegExp for use in bundler exclude/condition rules
  */
 export function createNodeModulesExcludeRegex(
-  include: string[],
+  include: readonly string[],
   extraExcludes?: string,
 ): RegExp {
-  const base = `node_modules(?!.*(${['@devup-ui', '@devup-editor', ...include]
+  const separator = '[\\/\\\\]'
+  const names = ['@devup-ui', '@devup-editor', ...include]
+    .map((name) =>
+      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', '[\\/\\\\_]'),
+    )
     .join('|')
-    .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`
+  const base = `(?:^|${separator})node_modules${separator}(?!.*${separator}node_modules${separator})(?!(?:${names})(?:${separator}|$))`
   return new RegExp(extraExcludes ? `(${base})|(${extraExcludes})` : base)
 }
 
