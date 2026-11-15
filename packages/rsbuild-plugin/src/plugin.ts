@@ -99,17 +99,14 @@ async function writeDataFiles(
     console.error(error)
     compiler.registerTheme({})
   }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(
-          join(options.cssDir, 'devup-ui.css'),
-          compiler.getCss(null, false),
-        )
-      : Promise.resolve(),
-  ])
+  // The directory must exist before the first write into it starts
+  if (!existsSync(options.cssDir))
+    await mkdir(options.cssDir, { recursive: true })
+  if (!options.singleCss)
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      compiler.getCss(null, false),
+    )
   return tailwindFiles
 }
 
