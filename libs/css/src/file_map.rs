@@ -38,7 +38,7 @@ where
 }
 
 #[inline]
-fn with_file_map_mut<F, R>(f: F) -> R
+pub(crate) fn with_file_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut BiHashMap<String, usize>) -> R,
 {
@@ -150,7 +150,7 @@ where
 }
 
 #[inline]
-fn with_canonical_map_mut<F, R>(f: F) -> R
+pub(crate) fn with_canonical_map_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut std::collections::HashMap<String, String>) -> R,
 {

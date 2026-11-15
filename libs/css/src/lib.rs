@@ -6,6 +6,7 @@ pub mod atom_name;
 pub mod class_map;
 mod constant;
 pub mod debug;
+pub mod engine_state;
 pub mod file_map;
 pub mod file_routes;
 pub mod is_special_property;
@@ -267,7 +268,7 @@ static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
 
 /// Clear custom aliases at a quiescent test boundary, including the fast-path flag.
 pub fn reset_custom_shorthands() {
-    test_state::replace_shorthands((BTreeMap::new(), false));
+    engine_state::replace_shorthands((BTreeMap::new(), false));
 }
 
 /// Replace the custom shorthand registry used by style extraction.

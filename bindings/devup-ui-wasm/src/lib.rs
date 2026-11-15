@@ -38,7 +38,9 @@ mod css_output_edge_tests;
 mod dynamic_as_sibling_props_tests;
 
 thread_local! {
-    static MODULE_RESOLVER: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
+    /// The resolver `setModuleResolver` set in each engine session
+    static MODULE_RESOLVER: RefCell<binding_core::PerSession<js_sys::Function>> =
+        const { RefCell::new(binding_core::PerSession::new()) };
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -302,7 +304,7 @@ pub fn seed_file_map(files: Vec<String>) {
 /// alone. Theme, shorthands and debug mode are set by every build, and stay.
 pub fn reset_build_state_internal() {
     binding_core::reset_build_state_internal();
-    MODULE_RESOLVER.with_borrow_mut(|current| *current = None);
+    MODULE_RESOLVER.with_borrow_mut(|current| current.set_live(None));
 }
 
 #[wasm_bindgen(js_name = "resetBuildState")]
@@ -464,7 +466,7 @@ fn code_extract_internal_impl(
 #[wasm_bindgen(js_name = "setModuleResolver")]
 #[cfg(not(tarpaulin_include))]
 pub fn set_module_resolver(resolver: Option<js_sys::Function>) {
-    MODULE_RESOLVER.with_borrow_mut(|current| *current = resolver);
+    MODULE_RESOLVER.with_borrow_mut(|current| current.set_live(resolver));
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -529,7 +531,7 @@ fn call_module_resolver(
 /// The resolver set by `setModuleResolver`, if any
 #[cfg(not(tarpaulin_include))]
 fn resolver_from_js(state: std::rc::Rc<RefCell<ResolverState>>) -> Option<Box<ModuleResolver>> {
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone)?;
+    let resolver = MODULE_RESOLVER.with_borrow(binding_core::PerSession::live)?;
     Some(Box::new(move |specifier: &str, importer: &str| {
         let request = state.borrow().request(specifier, importer)?;
         call_module_resolver(&resolver, request, &state)

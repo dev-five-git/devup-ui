@@ -3,6 +3,7 @@
 mod output;
 mod reservation;
 mod resolver_state;
+pub mod session;
 
 pub use css::atom_hoist::set_atom_hoist;
 pub use css::debug::{is_debug, set_debug};
@@ -13,6 +14,9 @@ pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};
 pub use reservation::{ReservationInput, reserve_class_slots_internal};
 pub use resolver_state::{ResolverRequest, ResolverState};
+pub use session::{
+    PerSession, create_session, drop_session, live_session, select_session, with_session,
+};
 
 use css::class_map::{set_class_map, with_class_map};
 use css::file_map::{set_canonical_map, set_file_map, with_canonical_map, with_file_map};
@@ -127,7 +131,10 @@ pub fn reset_build_state_internal() {
 }
 
 /// Clear test state at a quiescent boundary, clearing the host resolver before registries.
+///
+/// Every engine session but 0 goes, and session 0 starts clean.
 pub fn reset_state_internal(clear_resolver: impl FnOnce()) {
+    session::reset_sessions();
     with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
     clear_resolver();
     css::test_state::reset_state_for_testing();

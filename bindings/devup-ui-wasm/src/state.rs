@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 /// Never call during extraction or a resolver callback, or between build environments.
 pub fn reset_state_internal() {
     devup_ui_binding_core::reset_state_internal(|| {
-        super::MODULE_RESOLVER.with_borrow_mut(|resolver| *resolver = None);
+        super::MODULE_RESOLVER.with_borrow_mut(|resolver| *resolver = Default::default());
     });
 }
 
@@ -17,7 +17,7 @@ pub fn reset_state_for_testing() {
 #[cfg(test)]
 pub(crate) struct TestStateGuard {
     sheet: sheet::StyleSheet,
-    resolver: Option<js_sys::Function>,
+    resolver: devup_ui_binding_core::PerSession<js_sys::Function>,
     _engine: extractor::test_state::TestStateGuard,
 }
 
@@ -26,7 +26,7 @@ impl TestStateGuard {
     pub(crate) fn new() -> Self {
         Self {
             sheet: super::with_style_sheet_mut(std::mem::take),
-            resolver: super::MODULE_RESOLVER.with_borrow_mut(Option::take),
+            resolver: super::MODULE_RESOLVER.with_borrow_mut(std::mem::take),
             _engine: extractor::test_state::TestStateGuard::new(),
         }
     }
@@ -36,6 +36,7 @@ impl TestStateGuard {
 impl Drop for TestStateGuard {
     fn drop(&mut self) {
         super::with_style_sheet_mut(|sheet| *sheet = std::mem::take(&mut self.sheet));
-        super::MODULE_RESOLVER.with_borrow_mut(|resolver| *resolver = self.resolver.take());
+        super::MODULE_RESOLVER
+            .with_borrow_mut(|resolver| *resolver = std::mem::take(&mut self.resolver));
     }
 }
