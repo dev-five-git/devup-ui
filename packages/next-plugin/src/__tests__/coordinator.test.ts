@@ -115,6 +115,90 @@ afterEach(async () => {
 })
 
 describe('coordinator', () => {
+  it('writes the newest pending CSS and state synchronously on close', async () => {
+    // `close` runs from `process.on('exit')`, where no asynchronous write
+    // completes: every running and queued write lands before it returns.
+    const held: (() => void)[] = []
+    let holding = true
+    writeFileSpy.mockImplementation(
+      (_path: any, _data: any, _encOrCb: any, maybeCb?: any) => {
+        const cb = typeof _encOrCb === 'function' ? _encOrCb : maybeCb
+        if (holding) held.push(() => cb(null))
+        else cb(null)
+      },
+    )
+    let revision = 0
+    codeExtractSpy.mockImplementation(() => {
+      revision += 1
+      return {
+        code: 'transformed code',
+        map: undefined,
+        cssFile: 'devup-ui-1.css',
+        updatedBaseStyle: true,
+        dependencies: [],
+        free: mock(),
+        [Symbol.dispose]: mock(),
+      }
+    })
+    getCssSpy.mockImplementation((fileNum: number | null) =>
+      fileNum === null ? `base-css-${revision}` : `file-css-${revision}`,
+    )
+    exportSheetSpy.mockImplementation(() => `sheet-${revision}`)
+    exportClassMapSpy.mockReturnValue('classmap-json')
+    exportFileMapSpy.mockReturnValue('filemap-json')
+    const options = makeOptions()
+    const coordinator = startCoordinator(options)
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    const extract = (filename: string) =>
+      httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({
+          filename,
+          code: 'const x = <Box bg="red" />',
+          resourcePath: join(process.cwd(), filename),
+        }),
+      )
+    const until = async (done: () => boolean) => {
+      for (let tick = 0; tick < 200 && !done(); tick++)
+        await new Promise((r) => setTimeout(r, 5))
+    }
+
+    // The first extraction's writes run; the second's queue behind them
+    const first = extract('src/A.tsx')
+    await until(() => held.length === 5)
+    const second = extract('src/B.tsx')
+    await until(() => codeExtractSpy.mock.calls.length === 2)
+    writeFileSyncSpy.mockClear()
+
+    coordinator.close()
+
+    const written = new Map(
+      writeFileSyncSpy.mock.calls.map(([path, content]) => [path, content]),
+    )
+    holding = false
+    for (const release of held.splice(0)) release()
+    expect(written.get(join(options.cssDir, 'devup-ui.css'))).toStartWith(
+      'base-css-2',
+    )
+    expect(written.get(join(options.cssDir, 'devup-ui-1.css'))).toBe(
+      'file-css-2',
+    )
+    expect(written.get(options.sheetFile)).toBe('sheet-2')
+    expect(written.get(options.classMapFile)).toBe('classmap-json')
+    expect(written.get(options.fileMapFile)).toBe('filemap-json')
+
+    await Promise.all([first, second])
+    // Nothing is left to write on a second close
+    writeFileSyncSpy.mockClear()
+    coordinator.close()
+    expect(writeFileSyncSpy).not.toHaveBeenCalled()
+  })
+
   it('should start and respond to /health', async () => {
     const options = makeOptions()
     const coordinator = startCoordinator(options)
