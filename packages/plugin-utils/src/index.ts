@@ -63,6 +63,8 @@ export {
   type DevupThemeInterfaceNames,
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
+  isMissingDirectory,
+  setupWarning,
 } from './shared'
 export {
   createSharedSlotReservation,

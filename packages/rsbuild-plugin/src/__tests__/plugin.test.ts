@@ -749,6 +749,35 @@ const App = () => <Box></Box>`,
     }
   })
 
+  it('overwrites theme.d.ts when the theme has no tokens and creates cssDir before writing into it', async () => {
+    getThemeInterfaceSpy.mockReturnValue('')
+    const cssDir = resolve('df', 'devup-ui')
+    let made = false
+    mkdirSpy.mockImplementation(
+      () =>
+        new Promise<undefined>((done) =>
+          setTimeout(() => {
+            made = true
+            done(undefined)
+          }, 5),
+        ),
+    )
+    const writtenAfterMkdir = new Map<string, boolean>()
+    writeFileSpy.mockImplementation((path: string) => {
+      writtenAfterMkdir.set(path, made)
+      return Promise.resolve()
+    })
+    const plugin = DevupUI({ atomHoist: 0 })
+    await plugin.setup(createSetupContext())
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      '',
+      'utf-8',
+    )
+    expect(mkdirSpy).toHaveBeenCalledWith(cssDir, { recursive: true })
+    expect(writtenAfterMkdir.get(join(cssDir, 'devup-ui.css'))).toBe(true)
+  })
+
   it('should call setPrefix when prefix option is provided', async () => {
     const plugin = DevupUI({ prefix: 'my-prefix' })
     await plugin.setup(
@@ -1115,10 +1144,20 @@ const App = () => <Box></Box>`,
       expect(
         rspackCfg.optimization.splitChunks.cacheGroups?.devupUiShared.type,
       ).toBe('css/mini-extract')
-      // splitChunks missing/false -> no cacheGroup added, no throw
-      const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
+      // no optimization or splitChunks yet -> the group is still added
+      const rspackCfg2 = {} as {
+        optimization?: {
+          splitChunks?: { cacheGroups?: Record<string, { type?: string }> }
+        }
+      }
       inject(rspackCfg2)
-      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+      expect(
+        rspackCfg2.optimization?.splitChunks?.cacheGroups?.devupUiShared.type,
+      ).toBe('css/mini-extract')
+      // splitChunks false (chunk splitting off on purpose) -> left as it is
+      const rspackCfg3 = { optimization: { splitChunks: false } }
+      inject(rspackCfg3)
+      expect(rspackCfg3.optimization.splitChunks).toBe(false)
     })
 
     it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {
@@ -1305,6 +1344,28 @@ const App = () => <Box></Box>`,
         resolve('src', 'App.tsx').replaceAll('\\', '/'),
       )
     })
+
+    it.each([
+      [2, resolve('src', 'Gone.tsx').replaceAll('\\', '/')],
+      [0, resolve('src', 'Gone.tsx')],
+    ])(
+      'forgets deleted sources at watchRun with atomHoist=%s',
+      async (atomHoist, name) => {
+        // Given: a watch revision that deleted a source
+        using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+        const { compiler, taps } = await setup({ atomHoist })
+        assert(taps.watchRun)
+        taps.watchRun()
+        expect(removeFile).not.toHaveBeenCalled()
+        Object.assign(compiler, {
+          removedFiles: new Set([resolve('src', 'Gone.tsx')]),
+        })
+        // When
+        taps.watchRun()
+        // Then: the engine forgets it under the name the transform used
+        expect(removeFile.mock.calls).toEqual([[name]])
+      },
+    )
 
     it('reserves public compiler revisions without adding watch prewarm', async () => {
       const reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(

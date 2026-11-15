@@ -60,6 +60,21 @@ module in the bundle. Imports of the packages Devup UI takes the place of
 Class names are short in `Bun.build` and readable under the runtime; pass
 `debug` to choose.
 
+## Compiled Files
+
+`.ts`, `.mts`, `.cts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever
+they are, and `.js` files inside `@devup-ui` packages. `Bun.build` also
+compiles the `.js` and `.cjs` files of your own project outside
+`node_modules`. Under the runtime, Devup UI code in a `.js` file of your own
+project is not compiled and reaches the runtime placeholders
+(`Cannot run on the runtime`). Give such files a `.jsx`, `.tsx` or `.mjs`
+extension.
+
+The runtime cannot take those files on. A Bun runtime plugin must return the
+source of every file its filter matches, it cannot hand a file back to Bun, and
+Bun reads returned source as an ES module, so a CommonJS `.js` file
+(`require`, `module.exports`) it matched would stop loading.
+
 ## Compiler Engine
 
 The native compiler is selected by default, including the zero-config preload.

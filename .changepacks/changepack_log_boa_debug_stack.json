@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Test infrastructure: debug and test builds compile Boa (boa_parser, boa_engine, boa_ast) at opt-level 1, so a vanilla-extract stylesheet with a call nested in a chained call, such as `g(f(1)).d(3).toString()`, no longer overflows the 2 MiB stack of a test thread while Boa parses the instrumented stylesheet. Release builds and the published packages are unchanged. No new build errors",
+  "date": "2026-11-15T00:00:00.000Z"
+}
