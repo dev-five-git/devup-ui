@@ -557,8 +557,13 @@ impl StyleSheet {
         } else {
             canonical(file)
         };
+        self.rm_global_atoms(file, &property_key);
+        true
+    }
 
-        let bucket_empty = if let Some(prop_map) = self.properties.get_mut(&property_key) {
+    /// Drop the global-selector atoms `file` wrote into the `property_key` bucket.
+    fn rm_global_atoms(&mut self, file: &str, property_key: &str) {
+        let bucket_empty = if let Some(prop_map) = self.properties.get_mut(property_key) {
             for map in prop_map.values_mut() {
                 for props in map.values_mut() {
                     props.retain(|prop| match prop.selector.as_ref() {
@@ -579,9 +584,29 @@ impl StyleSheet {
             true
         };
         if bucket_empty {
-            self.properties.remove(&property_key);
+            self.properties.remove(property_key);
         }
-        true
+    }
+
+    /// Forget a deleted source file: everything it wrote globally and, when
+    /// `drop_bucket` says no other file shares it, its whole `bucket`.
+    ///
+    /// Atoms other files share (the single-CSS sheet, a bucket other files
+    /// collapse into) stay: nothing records which file added them, and a class
+    /// no module references any more styles nothing. Returns whether the sheet
+    /// changed.
+    pub fn rm_file(&mut self, file: &str, bucket: &str, drop_bucket: bool) -> bool {
+        // Global CSS of a single-CSS or global file sits in the shared bucket,
+        // otherwise in the file's own one.
+        let mut removed = self.rm_global_css(file, true);
+        if removed {
+            self.rm_global_atoms(file, bucket);
+        }
+        if drop_bucket {
+            removed |= self.properties.remove(bucket).is_some();
+            removed |= self.keyframes.remove(bucket).is_some();
+        }
+        removed
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -1829,6 +1854,54 @@ mod tests {
             css.contains("@layer o2{@layer components{div{border-radius:9px}}}"),
             "layered global hoist must keep its layer: {css}"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn rm_file_drops_what_only_the_file_wrote() {
+        let _state = css::test_state::TestStateGuard::new();
+        let global = |file: &str| Some(StyleSelector::Global("body".to_string(), file.to_string()));
+        let mut sheet = StyleSheet::default();
+        // Given: a file's own bucket, keyframes and global CSS in both buckets.
+        sheet.add_property("a", "color", 0, "red", None, None, Some("a.tsx"));
+        sheet.add_property(
+            "b",
+            "margin",
+            0,
+            "0",
+            global("a.tsx").as_ref(),
+            Some(0),
+            None,
+        );
+        sheet.add_property(
+            "c",
+            "padding",
+            0,
+            "0",
+            global("a.tsx").as_ref(),
+            Some(0),
+            Some("root.tsx"),
+        );
+        sheet.add_property("d", "color", 0, "blue", None, None, Some("root.tsx"));
+        sheet.add_keyframes("spin", BTreeMap::new(), Some("a.tsx"));
+        sheet.add_css("a.tsx", "html { gap: 1px }");
+
+        // When / Then: a file collapsed into `root.tsx` takes only its global CSS.
+        assert!(sheet.rm_file("a.tsx", "root.tsx", false));
+        let css = sheet.create_css(None, false) + &sheet.create_css(Some("root.tsx"), false);
+        assert!(
+            !css.contains("margin:0") && !css.contains("padding:0") && !css.contains("gap: 1px"),
+            "{css}"
+        );
+        assert!(css.contains("color:blue"), "{css}");
+        assert!(sheet.properties.contains_key("a.tsx"));
+
+        // When / Then: the file's own bucket goes when no other file shares it.
+        assert!(sheet.rm_file("a.tsx", "a.tsx", true));
+        assert!(!sheet.properties.contains_key("a.tsx"));
+        assert!(!sheet.keyframes.contains_key("a.tsx"));
+        assert!(!sheet.rm_file("a.tsx", "a.tsx", true));
+        assert!(!sheet.rm_file("a.tsx", "a.tsx", false));
     }
 
     // Under single-importer collapse, a collapsed file's globalCss atoms are

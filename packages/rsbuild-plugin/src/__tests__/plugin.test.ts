@@ -1250,6 +1250,28 @@ const App = () => <Box></Box>`,
       )
     })
 
+    it.each([
+      [2, resolve('src', 'Gone.tsx').replaceAll('\\', '/')],
+      [0, resolve('src', 'Gone.tsx')],
+    ])(
+      'forgets deleted sources at watchRun with atomHoist=%s',
+      async (atomHoist, name) => {
+        // Given: a watch revision that deleted a source
+        using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+        const { compiler, taps } = await setup({ atomHoist })
+        assert(taps.watchRun)
+        taps.watchRun()
+        expect(removeFile).not.toHaveBeenCalled()
+        Object.assign(compiler, {
+          removedFiles: new Set([resolve('src', 'Gone.tsx')]),
+        })
+        // When
+        taps.watchRun()
+        // Then: the engine forgets it under the name the transform used
+        expect(removeFile.mock.calls).toEqual([[name]])
+      },
+    )
+
     it('reserves public compiler revisions without adding watch prewarm', async () => {
       const reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
         undefined,

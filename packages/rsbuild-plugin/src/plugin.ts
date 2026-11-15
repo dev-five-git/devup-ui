@@ -333,6 +333,12 @@ export const DevupUI = ({
       })
 
       const servedCss = new Map<string, Map<string, string>>()
+      // Forget deleted source files, under the names the transform extracts
+      // them under
+      const removeFiles = (files: ReadonlySet<string> | undefined) => {
+        for (const file of files ?? [])
+          compiler.removeFile(atomMode ? file.replaceAll('\\', '/') : file)
+      }
       const stylesheet = (resourcePath: string) =>
         // A file's stylesheet imports the shared base, except in atom mode,
         // where the entry code imports the base itself so that hoisted atoms
@@ -372,6 +378,9 @@ export const DevupUI = ({
             compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
             compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
               passes = 0
+              // A deleted source file is never transformed again; the
+              // stylesheets it was in are checked against the sheet below
+              removeFiles(compiler.removedFiles)
               reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {

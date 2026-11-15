@@ -133,7 +133,7 @@ interface ViteTestPlugin {
     root?: string
     plugins?: readonly object[]
   }) => Promise<void>
-  watchChange: (id: string) => Promise<void>
+  watchChange: (id: string, change?: { event: string }) => Promise<void>
   hotUpdate: (
     this: { environment: HotUpdateEnvironment },
     options: { file: string; modules: object[]; timestamp: number },
@@ -1510,6 +1510,45 @@ describe('devupUIVitePlugin', () => {
     )
 
     await plugin.watchChange('wrong')
+  })
+
+  it('forgets a deleted source and writes the sheets it changed', async () => {
+    // Given: a transformed source whose bucket sheet was written
+    const plugin = createPlugin({})
+    await plugin.configResolved({ command: 'serve' })
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({ cssFile: 'devup-ui-1.css', css: 'old' }),
+    )
+    await plugin.transform('code', 'removed.tsx')
+    using removeFileSpy = spyOn(wasm, 'removeFile')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    getCssSpy.mockImplementation((fileNum: number | null) =>
+      fileNum === null ? 'base' : 'bucket',
+    )
+    // When: an edit is no removal, and a removal that changed nothing writes nothing
+    await plugin.watchChange('removed.tsx', { event: 'update' })
+    await plugin.watchChange('removed.tsx', { event: 'delete' })
+    expect(writeFileSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui-1.css'),
+      'bucket',
+      'utf-8',
+    )
+    // When: the engine dropped styles of the deleted source
+    await plugin.watchChange('removed.tsx?v=1', { event: 'delete' })
+    // Then: the base and the bucket sheet are written again
+    const cssDir = resolve('df', 'devup-ui')
+    expect(removeFileSpy.mock.calls).toEqual([['removed.tsx'], ['removed.tsx']])
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join(cssDir, 'devup-ui-1.css'),
+      'bucket',
+      'utf-8',
+    )
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join(cssDir, 'devup-ui.css'),
+      'base',
+      'utf-8',
+    )
   })
 
   it('should invalidate and reload on devup hot update', async () => {
