@@ -505,11 +505,7 @@ fn call_module_resolver(
                 })
         };
         let path = field("path")?;
-        if path.is_empty() {
-            return Err(
-                "malformed module resolver result: `path` must be a non-empty string".to_string(),
-            );
-        }
+        binding_core::check_resolved_path(&path)?;
         Ok(Some(ResolvedModule {
             path,
             code: field("code")?,
