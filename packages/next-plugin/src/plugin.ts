@@ -297,9 +297,9 @@ export function DevupUI(
       const themeInterface = getThemeInterface(
         ...createThemeInterfaceArgs(libPackage),
       )
-      if (themeInterface) {
-        writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
-      }
+      // Written even when empty, so tokens removed from the theme leave no
+      // stale declarations behind.
+      writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
       return { theme, files: [...inputs, ...(tailwind?.files ?? [])] }
     }
     const { theme, files: themeFiles } = registerProjectTheme()

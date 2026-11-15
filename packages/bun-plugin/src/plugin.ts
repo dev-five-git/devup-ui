@@ -12,6 +12,7 @@ import {
   type CustomShorthands,
   type DevupCompiler,
   type DevupEngine,
+  isMissingDirectory,
   isProjectJsx,
   loadCompiler,
   loadDevupConfig,
@@ -19,6 +20,7 @@ import {
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -61,8 +63,10 @@ async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
     const config = await loadDevupConfig(devupFile)
     theme = withTailwindCss(config.theme ?? {}, config)
     tailwindFiles = tailwindCssFiles(config)
-  } catch {
-    // Error reading devup.json, use empty theme
+  } catch (error) {
+    // A broken devup.json clears the theme, as in the other plugins; the
+    // error says which file and how to fix it.
+    console.error(error)
   }
   compiler.registerTheme(theme)
 
@@ -155,14 +159,13 @@ async function loadSourceFile(
       importAliases,
     )
     // Under the runtime the stylesheet is read from disk. singleCss stores
-    // every extracted style in the base sheet; synchronous writes keep
-    // concurrent source loads from overwriting a newer sheet with an older one.
-    if (!bundling)
-      writeFileSync(
-        join(cssDir, 'devup-ui.css'),
-        compiler.getCss(null, false),
-        'utf-8',
-      )
+    // every extracted style in the base sheet, which the output carries only
+    // when this module changed it, so a module that adds no style writes
+    // nothing. Synchronous writes keep concurrent source loads from
+    // overwriting a newer sheet with an older one.
+    const sheet = code.css
+    if (!bundling && sheet !== undefined)
+      writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
     return { contents: code.code, loader }
   }
   return { contents, loader }
@@ -236,6 +239,14 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
           )
         } catch (error) {
           if (!(error instanceof Error)) throw error
+          if (!isMissingDirectory(error, resolve('src')))
+            console.warn(
+              setupWarning(
+                'Bun file numbering',
+                error,
+                'Stylesheet file numbers follow the order Bun loads files in, so they can differ between runs of the same source.',
+              ),
+            )
         }
       }
 

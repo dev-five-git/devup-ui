@@ -1737,3 +1737,79 @@ describe('coordinator theme reload', () => {
     coordinator.close()
   })
 })
+
+describe('coordinator deleted sources', () => {
+  it('forgets the files deleted since when a file is extracted again', async () => {
+    // Given: three extracted files, two of which are deleted later
+    using removeFile = spyOn(wasm, 'removeFile').mockImplementation(
+      (filename) => filename === 'src/Styled.tsx',
+    )
+    const deleted = new Set<string>()
+    using existsSync = spyOn(fs, 'existsSync').mockImplementation(
+      (path) => !deleted.has(String(path)),
+    )
+    codeExtractSpy.mockImplementation(() => ({
+      code: 'code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }))
+    getCssSpy.mockReturnValue('base')
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classes')
+    exportFileMapSpy.mockReturnValue('files')
+    const coordinator = startCoordinator(makeOptions())
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    const extract = (filename: string) =>
+      httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({
+          filename,
+          code: 'c',
+          resourcePath: join(tmpDir, filename),
+        }),
+      )
+    for (const filename of ['src/Plain.tsx', 'src/Styled.tsx', 'src/App.tsx'])
+      await extract(filename)
+    expect(existsSync).not.toHaveBeenCalled()
+
+    // When: an edit of a file that stays, after both were deleted
+    deleted.add(join(tmpDir, 'src/Plain.tsx'))
+    deleted.add(join(tmpDir, 'src/Styled.tsx'))
+    writeFileSpy.mockClear()
+    await extract('src/App.tsx')
+    await flushCoordinatorWrites()
+
+    // Then: the engine forgets both, and the sheets are written again
+    expect(removeFile.mock.calls).toEqual([
+      ['src/Plain.tsx'],
+      ['src/Styled.tsx'],
+    ])
+    const written = new Map(
+      writeFileSpy.mock.calls.map(([path, data]) => [String(path), data]),
+    )
+    expect(written.get(join(tmpDir, 'sheet.json'))).toBe('sheet')
+    expect(written.get(join(tmpDir, 'classMap.json'))).toBe('classes')
+    expect(written.get(join(tmpDir, 'fileMap.json'))).toBe('files')
+    expect(
+      String(written.get(join(tmpDir, 'css', 'devup-ui.css'))),
+    ).toStartWith('base\n/* ')
+
+    // When: another edit finds nothing deleted since, or nothing to forget
+    writeFileSpy.mockClear()
+    await extract('src/App.tsx')
+    deleted.add(join(tmpDir, 'src/App.tsx'))
+    await extract('src/App.tsx')
+    await flushCoordinatorWrites()
+    expect(removeFile.mock.calls.length).toBe(3)
+    expect(writeFileSpy).not.toHaveBeenCalled()
+    coordinator.close()
+  })
+})

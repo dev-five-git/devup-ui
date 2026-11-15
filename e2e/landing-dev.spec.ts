@@ -1,4 +1,4 @@
-import { expect, test as base } from '@playwright/test'
+import { expect, type Page, test as base } from '@playwright/test'
 
 const test = base.extend<{ browserErrors: string[] }>({
   browserErrors: [
@@ -43,11 +43,30 @@ const routes = [
   ['/ko/docs/features', '/docs/features'],
 ] as const
 
+/**
+ * An untranslated localized route answers with an HTML refresh to the English
+ * page. The refresh replaces the localized document while it is still loading
+ * its dev modules, and Chromium never reports some of the requests it aborts as
+ * finished, so Playwright counts them against the English document and
+ * networkidle never fires there. Follow the refresh, then settle the target in
+ * a fresh document.
+ */
+async function open(page: Page, route: string, target: string) {
+  if (route === target) {
+    return page.goto(route, { waitUntil: 'networkidle' })
+  }
+  const response = await page.goto(route, { waitUntil: 'commit' })
+  await page.waitForURL(`http://localhost:3098${target}`, { waitUntil: 'load' })
+  await page.goto('about:blank')
+  await page.goto(target, { waitUntil: 'networkidle' })
+  return response
+}
+
 for (const [route, target] of routes) {
   test(`renders ${route} without a dev overlay or lazy import failure`, async ({
     page,
   }) => {
-    const response = await page.goto(route, { waitUntil: 'networkidle' })
+    const response = await open(page, route, target)
 
     expect(response?.status()).toBe(200)
     await expect(page).toHaveURL(`http://localhost:3098${target}`)
