@@ -355,6 +355,29 @@ describe('registered Bun hooks', () => {
     expect(writeSync).not.toHaveBeenCalled()
   })
 
+  it('writes the runtime sheet only when a module changes it', async () => {
+    const first = join(root, 'sheet-first.ts')
+    const same = join(root, 'sheet-same.ts')
+    const style =
+      "import { css } from '@devup-ui/react'; export const className = css({ color: 'olive' })"
+    await Bun.write(first, style)
+    await Bun.write(same, style)
+    await register({ engine: 'wasm' })
+
+    await load(first)
+    expect(writeSync).toHaveBeenCalledTimes(1)
+    expect(writeSync).toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui.css'),
+      wasm.getCss(null, false),
+      'utf-8',
+    )
+
+    // The same file again, and another file with only styles the sheet holds
+    await load(first)
+    await load(same)
+    expect(writeSync).toHaveBeenCalledTimes(1)
+  })
+
   it('propagates source read errors instead of returning partial output', async () => {
     await register({ engine: 'wasm' })
     await expect(load(join(root, 'missing.ts'))).rejects.toThrow()
