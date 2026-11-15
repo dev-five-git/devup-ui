@@ -1,0 +1,14 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/reset-css/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "Package READMEs are refreshed: the React and plugin READMEs show the current build output instead of fixed d0/d1 class names and link to the generated benchmark tables instead of an outdated copy; @devup-ui/components and @devup-ui/reset-css get their own READMEs instead of a copy of the @devup-ui/react one; the ESLint README notes that preset rules can report the same code. Documentation only",
+  "date": "2026-11-15T00:00:00.000Z"
+}

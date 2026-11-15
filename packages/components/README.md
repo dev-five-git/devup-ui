@@ -9,12 +9,12 @@
 ---
 
 <div>
-<img src='https://img.shields.io/npm/v/@devup-ui/react'>
-<img src='https://img.shields.io/bundlephobia/minzip/@devup-ui/react'>
+<img src='https://img.shields.io/npm/v/@devup-ui/components'>
+<img src='https://img.shields.io/bundlephobia/minzip/@devup-ui/components'>
 <img alt="Github Checks" src="https://badgen.net/github/checks/dev-five-git/devup-ui"/>
 <img alt="Apache-2.0 License" src="https://img.shields.io/github/license/dev-five-git/devup-ui"/>
-<a href="https://www.npmjs.com/package/@devup-ui/react">
-<img alt="NPM Downloads" src="https://img.shields.io/npm/dm/@devup-ui/react.svg?style=flat"/>
+<a href="https://www.npmjs.com/package/@devup-ui/components">
+<img alt="NPM Downloads" src="https://img.shields.io/npm/dm/@devup-ui/components.svg?style=flat"/>
 </a>
 <a href="https://badgen.net/github/stars/dev-five-git/devup-ui">
 <img alt="Github Stars" src="https://badgen.net/github/stars/dev-five-git/devup-ui" />
@@ -29,150 +29,69 @@
 
 ---
 
-English | [한국어](README_ko.md)
+English | [한국어](https://github.com/dev-five-git/devup-ui/blob/main/README_ko.md)
+
+# @devup-ui/components
+
+Ready-made React components built with [Devup UI](https://devup-ui.com):
+`Button`, `Checkbox`, `Input`, `Radio`, `RadioGroup`, `Select`, `Stepper`,
+`Textarea` and `Toggle`. Their styles are compiled by the Devup UI build plugin
+like your own code, so they ship no styling runtime.
 
 ## Install
 
 ```sh
-npm install @devup-ui/react
+npm install @devup-ui/components @devup-ui/react
 
-# on next.js
-npm install @devup-ui/next-plugin
-
-# on vite
+# and the build plugin for your bundler, for example
 npm install @devup-ui/vite-plugin
-
-# on rsbuild
-npm install @devup-ui/rsbuild-plugin
-
-# on webpack
-npm install @devup-ui/webpack-plugin
 ```
 
-## Features
+The components need the Devup UI build plugin
+([Vite](https://www.npmjs.com/package/@devup-ui/vite-plugin),
+[Next.js](https://www.npmjs.com/package/@devup-ui/next-plugin),
+[Rsbuild](https://www.npmjs.com/package/@devup-ui/rsbuild-plugin),
+[Webpack](https://www.npmjs.com/package/@devup-ui/webpack-plugin) or
+[Bun](https://www.npmjs.com/package/@devup-ui/bun-plugin)). The plugins compile
+`@devup-ui/*` packages in `node_modules` by default, so no extra `include`
+option is needed. React 18 and 19 are supported.
 
-- Preprocessor
-- Zero Config
-- Zero FOUC
-- Zero Runtime
-- RSC Support
-- Must not use JavaScript, client-side logic, or hybrid solutions
-- Support Library mode
-- Zero Cost Dynamic Theme Support based on CSS Variables
-- Theme with Typing
-- Smallest size, fastest speed
-
-## Inspirations
-
-- Styled System
-- Chakra UI
-- Theme UI
-- Vanilla Extract
-- Rainbow Sprinkles
-- Kuma UI
-
-## Comparison Benchmarks
-
-[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/33239265133) on `ubuntu-latest`. All Next.js builds use the native TypeScript 7 CLI for type checking.
-
-Webpack values are one cold build:
-
-| Library                     | Version | Build Time | Build Size        |
-| --------------------------- | ------- | ---------- | ----------------- |
-| tailwindcss                 | 4.3.3   | 15.55s     | 66,479,450 bytes  |
-| styleX                      | 0.19.0  | 34.27s     | 95,417,163 bytes  |
-| vanilla-extract             | 1.21.2  | 14.91s     | 67,711,539 bytes  |
-| kuma-ui                     | 1.6.4   | 16.43s     | 74,774,187 bytes  |
-| panda-css                   | 1.12.0  | 16.82s     | 70,983,831 bytes  |
-| chakra-ui                   | 3.37.0  | 24.79s     | 206,598,161 bytes |
-| mui                         | 9.4.0   | 17.12s     | 100,621,370 bytes |
-| **devup-ui (per-file CSS)** | 1.0.40  | **13.43s** | 66,577,087 bytes  |
-| **devup-ui (single CSS)**   | 1.0.40  | **13.37s** | 66,564,796 bytes  |
-
-Turbopack values are medians of six cold builds in alternating order:
-
-| Library                                | Version | Median Build Time | Build Size           |
-| -------------------------------------- | ------- | ----------------- | -------------------- |
-| tailwindcss                            | 4.3.3   | 6.55s             | 38,386,955 bytes     |
-| **devup-ui (direct APIs, single CSS)** | 1.0.40  | **6.54s**         | **36,519,234 bytes** |
-| **devup-ui (static `.css.ts`)**        | 1.0.40  | **6.47s**         | 36,550,197 bytes     |
-
-The Turbopack ranges overlap, so the direct-API result is effectively parity with Tailwind on this fixture. The static `.css.ts` row was measured with the former `lite` fast path for static modules; every `.css.ts` module now runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one.
-
-## How it works
-
-Devup UI is a CSS in JS preprocessor that does not require runtime.
-Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
-We develop a preprocessor that considers all grammatical cases.
+## Usage
 
 ```tsx
-const before = <Box bg="red" />
+import { Button, Input, Toggle } from '@devup-ui/components'
 
-const after = <div className="d0" />
-```
-
-Variables are fully supported.
-
-```tsx
-const before = <Box bg={colorVariable} />
-
-const after = (
-  <div
-    className="d0"
-    style={{
-      '--d0': colorVariable,
-    }}
-  />
-)
-```
-
-Various expressions and responsiveness are also fully supported.
-
-```tsx
-const before = <Box bg={['red', 'blue', a > b ? 'yellow' : variable]} />
-
-const after = (
-  <div
-    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
-    style={{
-      '--d2': variable,
-    }}
-  />
-)
-```
-
-Support Theme with Typing
-
-`devup.json`
-
-```json
-{
-  "theme": {
-    "colors": {
-      "default": {
-        "text": "#000"
-      },
-      "dark": {
-        "text": "white"
-      }
-    }
-  }
+export function Form() {
+  return (
+    <form>
+      <Input aria-label="Email" name="email" placeholder="Email" />
+      <Toggle aria-label="Subscribe" name="subscribe" />
+      <Button type="submit" variant="primary">
+        Submit
+      </Button>
+    </form>
+  )
 }
 ```
 
-```tsx
-// Type Safe
-<Text color="$text" />
-```
+## Exports
 
-Support Responsive And Pseudo Selector
+| Export                                                                                                        | What it is                                    |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `Button`                                                                                                      | Button with variants, sizes and loading state |
+| `Checkbox`                                                                                                    | Checkbox with a label                         |
+| `Input`, `Textarea`                                                                                           | Text fields with error messages               |
+| `Radio`, `RadioGroup`                                                                                         | Radio buttons and a group sharing one value   |
+| `Select`, `SelectTrigger`, `SelectContainer`, `SelectOption`, `SelectDivider`, `useSelect`, `SelectContext`   | Single and multiple selection popup           |
+| `Stepper`, `StepperContainer`, `StepperDecreaseButton`, `StepperIncreaseButton`, `StepperInput`, `useStepper` | Numeric stepper                               |
+| `Toggle`                                                                                                      | Switch storing a boolean, submitted in forms  |
 
-You can use responsive and pseudo selector.
+Most components accept `className`, `style`, a `colors` object that overrides
+their colors through CSS variables, and the props of the element they render.
 
-```tsx
-// Responsive with Selector
-const box = <Box _hover={{ bg: ['red', 'blue'] }} />
+See the [component documentation](https://devup-ui.com/components/overview)
+for each component's props and live examples.
 
-// Same
-const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
-```
+## License
+
+Apache-2.0

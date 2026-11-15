@@ -29,7 +29,7 @@
 
 ---
 
-English | [한국어](README_ko.md)
+English | [한국어](https://github.com/dev-five-git/devup-ui/blob/main/README_ko.md)
 
 ## Install
 
@@ -51,16 +51,15 @@ npm install @devup-ui/webpack-plugin
 
 ## Features
 
-- Preprocessor
-- Zero Config
-- Zero FOUC
-- Zero Runtime
-- RSC Support
-- Must not use JavaScript, client-side logic, or hybrid solutions
-- Support Library mode
-- Zero Cost Dynamic Theme Support based on CSS Variables
-- Theme with Typing
-- Smallest size, fastest speed
+- **Preprocessor** — All CSS extraction happens at build time
+- **Zero Config** — Works out of the box with sensible defaults
+- **Zero FOUC** — No flash of unstyled content, no Provider required
+- **Zero Runtime** — No client-side JavaScript for styling
+- **RSC Support** — Full React Server Components compatibility
+- **Library Mode** — Build component libraries with extracted styles
+- **Dynamic Themes** — Zero-cost theme switching via CSS variables
+- **Type-Safe Themes** — Full TypeScript support for theme tokens
+- **Smallest & Fastest** — Proven by benchmarks
 
 ## Inspirations
 
@@ -73,75 +72,84 @@ npm install @devup-ui/webpack-plugin
 
 ## Comparison Benchmarks
 
-[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/33239265133) on `ubuntu-latest`. All Next.js builds use the native TypeScript 7 CLI for type checking.
-
-Webpack values are one cold build:
-
-| Library                     | Version | Build Time | Build Size        |
-| --------------------------- | ------- | ---------- | ----------------- |
-| tailwindcss                 | 4.3.3   | 15.55s     | 66,479,450 bytes  |
-| styleX                      | 0.19.0  | 34.27s     | 95,417,163 bytes  |
-| vanilla-extract             | 1.21.2  | 14.91s     | 67,711,539 bytes  |
-| kuma-ui                     | 1.6.4   | 16.43s     | 74,774,187 bytes  |
-| panda-css                   | 1.12.0  | 16.82s     | 70,983,831 bytes  |
-| chakra-ui                   | 3.37.0  | 24.79s     | 206,598,161 bytes |
-| mui                         | 9.4.0   | 17.12s     | 100,621,370 bytes |
-| **devup-ui (per-file CSS)** | 1.0.40  | **13.43s** | 66,577,087 bytes  |
-| **devup-ui (single CSS)**   | 1.0.40  | **13.37s** | 66,564,796 bytes  |
-
-Turbopack values are medians of six cold builds in alternating order:
-
-| Library                                | Version | Median Build Time | Build Size           |
-| -------------------------------------- | ------- | ----------------- | -------------------- |
-| tailwindcss                            | 4.3.3   | 6.55s             | 38,386,955 bytes     |
-| **devup-ui (direct APIs, single CSS)** | 1.0.40  | **6.54s**         | **36,519,234 bytes** |
-| **devup-ui (static `.css.ts`)**        | 1.0.40  | **6.47s**         | 36,550,197 bytes     |
-
-The Turbopack ranges overlap, so the direct-API result is effectively parity with Tailwind on this fixture. The static `.css.ts` row was measured with the former `lite` fast path for static modules; every `.css.ts` module now runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one.
+The benchmark tables live in the [repository README](https://github.com/dev-five-git/devup-ui#comparison-benchmarks), which CI regenerates from each checked benchmark run, so this package README does not copy them.
 
 ## How it works
 
-Devup UI is a CSS in JS preprocessor that does not require runtime.
-Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
-What the build cannot know is kept as a CSS variable or reported as a [located build error](https://devup-ui.com/docs/build-errors); see [supported syntax & limitations](https://devup-ui.com/docs/limitations).
+Devup UI transforms your components at build time. Class names are generated using a compact base-37 encoding for minimal CSS size. What the build cannot know is kept as a CSS variable or reported as a [located build error](https://devup-ui.com/docs/build-errors); see [supported syntax & limitations](https://devup-ui.com/docs/limitations).
+
+**Basic transformation:**
+
+Generated class and CSS variable names may change between versions, build state, and prefix settings; do not manually reuse them.
+
+You write:
 
 ```tsx
-const before = <Box bg="red" />
+import { Box } from '@devup-ui/react'
 
-const after = <div className="d0" />
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
 ```
 
-Variables become CSS variables.
+Devup UI generates:
 
 ```tsx
-const before = <Box bg={colorVariable} />
-
-const after = (
-  <div
-    className="d0"
-    style={{
-      '--d0': colorVariable,
-    }}
-  />
-)
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a b c" />;
 ```
 
-Conditions and responsive arrays compile too.
+With CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
+```
+
+**Dynamic values become CSS variables:**
+
+You write:
 
 ```tsx
-const before = <Box bg={['red', 'blue', a > b ? 'yellow' : variable]} />
+import { Box } from '@devup-ui/react'
 
-const after = (
-  <div
-    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
-    style={{
-      '--d2': variable,
-    }}
-  />
-)
+const example = <Box bg={colorVariable} />
 ```
 
-Support Theme with Typing
+Devup UI generates:
+
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className="a" style={{ "--b": colorVariable }} />;
+```
+
+With CSS:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+```
+
+**Complex expressions and responsive arrays:**
+
+You write:
+
+```tsx
+import { Box } from '@devup-ui/react'
+
+const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+```
+
+Devup UI generates:
+
+```tsx
+import "@devup-ui/react/devup-ui.css";
+const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": dynamicColor }} />;
+```
+
+With responsive CSS for each breakpoint:
+
+```css
+/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
+```
+
+**Type-safe theming:**
 
 `devup.json`
 
@@ -150,10 +158,20 @@ Support Theme with Typing
   "theme": {
     "colors": {
       "default": {
+        "primary": "#0070f3",
         "text": "#000"
       },
       "dark": {
-        "text": "white"
+        "primary": "#3291ff",
+        "text": "#fff"
+      }
+    },
+    "typography": {
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
       }
     }
   }
@@ -161,8 +179,47 @@ Support Theme with Typing
 ```
 
 ```tsx
-// Type Safe
-<Text color="$text" />
+// Type-safe theme tokens
+const textExample = <Text color="$primary" />
+const boxExample = <Box typography="heading" />
+```
+
+**Responsive + Pseudo selectors together:**
+
+```tsx
+// Responsive with pseudo selector
+const example = <Box _hover={{ bg: ['red', 'blue'] }} />
+
+// Equivalent syntax
+const example2 = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+```
+
+**styled-components / Emotion compatible `styled()` API:**
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+// Familiar syntax for styled-components and Emotion users
+const Card = styled('div', {
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  _hover: {
+    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
+  },
+})
+
+const Button = styled('button', {
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
+  borderRadius: '4px',
+  cursor: 'pointer',
+})
+
+// Usage
+const cardExample = <Card>Content</Card>
+const buttonExample = <Button>Click me</Button>
 ```
 
 ## Custom Shorthand Types
@@ -191,15 +248,3 @@ Restart the build plugin after changing shorthand configuration so the
 generated declaration is refreshed.
 If `tsconfig.json` only includes `src`, add `df/*.d.ts` (or your plugin's custom
 `distDir`) to `include`.
-
-Support Responsive And Pseudo Selector
-
-You can use responsive and pseudo selector.
-
-```tsx
-// Responsive with Selector
-const box = <Box _hover={{ bg: ['red', 'blue'] }} />
-
-// Same
-const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
-```
