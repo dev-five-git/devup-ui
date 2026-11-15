@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/lib.rs
+expression: errors
+---
+[
+    (
+        "import { StyleSheetManager } from 'styled-components';\nexport const App = () => (\n  <StyleSheetManager stylisPlugins={[rtl]} shouldForwardProp={valid}>x</StyleSheetManager>\n);",
+        "App.tsx:3:22: `stylisPlugins` of `StyleSheetManager` from `styled-components` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { 'styled-components': false }` and build with styled-components\nApp.tsx:3:44: `shouldForwardProp` of `StyleSheetManager` from `styled-components` filters at runtime the props every styled component passes on, which Devup UI does not compile, so no prop would be filtered by it. Fix: pass `shouldForwardProp` to `.withConfig()` of each styled component, or set `importAliases: { 'styled-components': false }` and build with styled-components",
+    ),
+    (
+        "import createCache from '@emotion/cache';\nimport { CacheProvider } from '@emotion/react';\nconst cache = createCache({ key: 'x', stylisPlugins: [rtl] });\nexport const App = () => <CacheProvider value={cache}>x</CacheProvider>;",
+        "App.tsx:3:39: `stylisPlugins` of `createCache()` from `@emotion/cache` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion",
+    ),
+    (
+        "import createCache from '@emotion/cache';\nimport { CacheProvider } from '@emotion/react';\nconst cache = createCache({ key: 'x' });\nexport const App = () => <CacheProvider value={cache}>x</CacheProvider>;",
+        "",
+    ),
+]
