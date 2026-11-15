@@ -82,7 +82,7 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 | `@emotion/css` `cache`, `flush`, `hydrate`, `sheet`             | Stay on `@emotion/css`; they work on styles inserted at runtime                                      |
 | `@emotion/css/create-instance`                                  | A build error while `@emotion/css` is aliased; import `css`, `cx` and the rest from `@emotion/css`   |
 | `@emotion/react` `ThemeContext`, `withEmotionCache`, `* as`     | A build error while `@emotion/react` is aliased; import what Devup UI compiles by name               |
-| `ThemeProvider`                                                 | Renders a `display: contents` wrapper that sets the theme's CSS variables                            |
+| `ThemeProvider`                                                 | Given a `theme`, renders a `display: contents` `<div>` declaring the variables it changes            |
 | `jest-styled-components`, `@emotion/jest`, React Native targets | Not supported                                                                                        |
 | vanilla-extract `recipes`, `sprinkles`                          | A build error however they load (import, re-export, `require()`, `import()`) while aliased           |
 | vanilla-extract `dynamic`, `globalKeyframes`                    | A build error while `@vanilla-extract/css` is aliased; use a style prop, or `keyframes()`            |
@@ -93,6 +93,8 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 - A class, `keyframes` name or styled component defined in another module is not read as a build-time value: its name is only known once that file is built. Declare it in the file that uses it, or read it from a style prop.
 - `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so a runtime value there is a build error. Move it to a style prop.
 - A styled-components or Emotion style function may read the theme only as `theme.a.b` (or `theme.a[2]`). Calls, whole-theme reads and runtime keys are build errors.
+- CSS variables need an element to live on, so a `ThemeProvider` given a `theme` renders a `<div style="display: contents">` around its children (one without a `theme` renders none). It stays out of layout, but it is still an element: it is invalid where only certain children are allowed (inside `<table>`, `<tr>`, `<select>`, `<ul>`), and it sits between a parent and its children for `>`, `+`, `:first-child` and similar selectors. Put the provider outside such structures.
+- A theme key becomes part of a CSS variable name (`theme.a.b` is `--a-b`), so `ThemeProvider` throws on a key that cannot be (such as `'brand color'`), on two paths giving the same variable (`{ a: { b } }` and `'a-b'`), and on a theme that contains itself. `null` and `undefined` values declare nothing.
 - Inside `<ClassNames>`, `cx(getClass())` is a build error; put the result in a variable first, which then joins as a class.
 - `withComponent` takes a tag name or a component written as a name or `a.b`. A target only the runtime knows, as `withComponent(make())`, is a build error: the styled component compiles to a plain function with no `withComponent`. Pass the target directly, or render with `as`.
 - The plugins read `jsxImportSource` from the `tsconfig.json` (or `jsconfig.json`) in the working directory. Opt out with `importAliases: { '@emotion/react/jsx-runtime': false }`.

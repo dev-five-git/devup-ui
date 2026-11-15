@@ -1,6 +1,19 @@
 import type { ReactElement, ReactNode } from 'react'
 
 /**
+ * What `ServerStyleSheet.instance` gives: the sheet SSR setups pass to
+ * `StyleSheetManager sheet={...}` and clear after flushing (as the Next.js
+ * App Router registry calls `instance.clearTag()`). It holds no rules.
+ */
+export class StyleSheetInstance {
+  clearTag(): void {}
+
+  toString(): string {
+    return ''
+  }
+}
+
+/**
  * styled-components SSR plumbing, kept as no-ops.
  *
  * Those APIs exist to collect runtime-injected styles and flush them into the
@@ -9,6 +22,8 @@ import type { ReactElement, ReactNode } from 'react'
  * compiling while producing no markup of their own.
  */
 export class ServerStyleSheet {
+  readonly instance = new StyleSheetInstance()
+
   constructor() {}
 
   collectStyles(children: ReactNode): ReactNode {
