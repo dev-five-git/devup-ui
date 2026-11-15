@@ -31,6 +31,8 @@ export const base = style({ padding: 8 })
 
 숫자는 스타일시트와 일반 모듈 모두에서 vanilla-extract와 같은 의미를 유지합니다. `padding: 8`은 `8px`이 되고, `lineHeight`나 `zIndex`처럼 단위가 없는 속성은 작성한 그대로 유지됩니다. vanilla-extract와 마찬가지로 시간 값에 숫자를 쓰면 `px`가 붙으므로(`transitionDuration: 300`은 `300px`이 되어 브라우저가 무시합니다) 시간은 `transitionDuration: '300ms'`처럼 단위와 함께 작성하세요.
 
+`debugId`는 `createVar`, `createContainer`, `layer`, `fontFace`, `createTheme`가 생성하는 이름에 쓰입니다. `style`, `styleVariants`, `keyframes`는 `debugId`를 받지만 무시합니다. 이들의 클래스 이름과 keyframes 이름은 Devup UI가 만들며(`debug` 옵션을 켜면 읽기 쉬운 이름이 됩니다) `debugId`를 담지 않습니다.
+
 스타일시트는 다른 스타일시트와 일반 모듈(ES 모듈 또는 CommonJS)을 import할 수 있으며, 이들은 번들러와 같은 방식(상대 경로, `tsconfig` `paths`, 패키지)으로 해석됩니다. import된 스타일시트는 번들러가 추출하는 방식 그대로 추출되므로, 내보내는 클래스 이름과 커스텀 속성은 해당 스타일시트의 CSS에서 사용하는 것과 같습니다. 또한 그 CSS가 로드되도록 import하는 쪽의 import 구문은 유지됩니다.
 
 ```ts
