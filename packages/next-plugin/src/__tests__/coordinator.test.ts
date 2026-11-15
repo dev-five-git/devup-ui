@@ -16,8 +16,10 @@ import {
 } from 'bun:test'
 
 import {
+  coordinatorKey,
   type CoordinatorOptions,
   flushCoordinatorWrites,
+  openCoordinatorCompiler,
   resetCoordinator,
   startCoordinator,
 } from '../coordinator'
@@ -39,6 +41,7 @@ function makeOptions(
   overrides: Partial<CoordinatorOptions> = {},
 ): CoordinatorOptions {
   return {
+    distDir: tmpDir,
     wasm,
     package: '@devup-ui/react',
     cssDir: join(tmpDir, 'css'),
@@ -858,6 +861,83 @@ describe('coordinator', () => {
     expect(res).toEqual({ status: 200, body: 'ok' })
 
     second.close()
+  })
+
+  it('keeps the coordinators of different apps running side by side', async () => {
+    // Given: two apps in one process, each with its own distDir and port file.
+    const app = (name: string) =>
+      makeOptions({
+        distDir: join(tmpDir, name),
+        coordinatorPortFile: join(tmpDir, name, 'coordinator.port'),
+      })
+    const portOf = (options: CoordinatorOptions) =>
+      parseInt(
+        (
+          writeFileSyncSpy.mock.calls.findLast(
+            ([path]) => path === options.coordinatorPortFile,
+          ) as [string, string]
+        )[1],
+      )
+    const one = app('one')
+    const two = app('two')
+
+    // When: the second app starts its coordinator after the first.
+    const first = startCoordinator(one)
+    const second = startCoordinator(two)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Then: both answer, and closing one leaves the other running.
+    expect(await httpRequest(portOf(one), 'GET', '/health')).toEqual({
+      status: 200,
+      body: 'ok',
+    })
+    first.close()
+    expect(await httpRequest(portOf(two), 'GET', '/health')).toEqual({
+      status: 200,
+      body: 'ok',
+    })
+    second.close()
+  })
+
+  it('keeps one engine session per app until its last coordinator closes', () => {
+    // Given: one app's engine, read through two spellings of its distDir.
+    const distDir = join(tmpDir, 'app')
+    const engine = openCoordinatorCompiler(distDir, wasm)
+    expect(openCoordinatorCompiler(join(distDir, 'x', '..'), wasm)).toBe(engine)
+    expect(coordinatorKey(join(distDir, 'x', '..'))).toBe(
+      coordinatorKey(distDir),
+    )
+    const other = openCoordinatorCompiler(join(tmpDir, 'other'), wasm)
+    expect(other).not.toBe(engine)
+    engine.setPrefix('app-')
+    expect(other.exportSheet()).not.toContain('app-')
+
+    // When: a config re-evaluation starts a second coordinator for the app.
+    const options = makeOptions({ distDir, wasm: engine })
+    const first = startCoordinator(options)
+    const second = startCoordinator(options)
+    first.close()
+    first.close()
+
+    // Then: the session outlives the superseded coordinator, even closed twice.
+    expect(engine.getCss(null, false)).toBeString()
+    second.close()
+    expect(() => engine.getCss(null, false)).toThrow('does not exist')
+    expect(openCoordinatorCompiler(distDir, wasm)).not.toBe(engine)
+  })
+
+  it('opens a new session when an app moves to another engine', () => {
+    // Given: an app whose session lives in the WASM engine.
+    const distDir = join(tmpDir, 'moving')
+    const before = openCoordinatorCompiler(distDir, wasm)
+
+    // When: a re-evaluation hands over another engine namespace.
+    const after = openCoordinatorCompiler(distDir, new Proxy(wasm, {}))
+
+    // Then: the first session is dropped and a new one is used.
+    expect(after).not.toBe(before)
+    expect(() => before.getCss(null, false)).toThrow('does not exist')
+    expect(after.getCss(null, false)).toBeString()
   })
 
   it('should touch devup-ui.css to invalidate Turbopack cache when singleCss=false and new CSS collected', async () => {

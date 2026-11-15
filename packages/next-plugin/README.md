@@ -211,8 +211,11 @@ The build-time compiler defaults to `native` for Webpack and Turbopack. Select
 WASM explicitly with `DevupUI(nextConfig, { engine: 'wasm' })`. The chosen engine
 is retained by configuration, prewarm, extraction, CSS and delayed callbacks.
 Turbopack loader options carry only the engine string; the coordinator retains
-the selected physical compiler. Independent concurrent builds in one process
-are unsupported.
+the selected physical compiler. Turbopack apps in one process keep one
+coordinator and one engine session per resolved `distDir`, so their numbering,
+sheet, theme and settings stay apart; give each app its own `distDir`. A config
+re-evaluation of the same app replaces only that app's coordinator. Independent
+concurrent Webpack builds in one process are unsupported.
 
 Native load failures identify the required platform package and retain the
 original cause. There is no automatic fallback to WASM. Install optional native

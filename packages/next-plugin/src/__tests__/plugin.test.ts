@@ -165,6 +165,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  coordinatorModule.resetCoordinator()
   resetTurboSetupCacheForTesting()
   setWasmForTesting(undefined)
   setWebpackPluginForTesting(undefined)
@@ -981,7 +982,8 @@ describe('DevupUINextPlugin', () => {
         },
       })
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
+        distDir: 'df',
+        wasm: coordinatorModule.openCoordinatorCompiler('df', wasm),
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,
@@ -1268,7 +1270,8 @@ export const box = style({ color: 'red' })`
 
         // Verify coordinator was started with correct options
         expect(startCoordinatorSpy).toHaveBeenCalledWith({
-          wasm,
+          distDir: 'df',
+          wasm: coordinatorModule.openCoordinatorCompiler('df', wasm),
           package: '@devup-ui/react',
           cssDir: resolve('df', 'devup-ui'),
           singleCss: false,
