@@ -64,11 +64,19 @@ function fetchCssFromCoordinator(
       const chunks: Buffer[] = []
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf-8')
         if (res.statusCode !== 200) {
-          callback(new Error(`Coordinator CSS error: ${res.statusCode}`))
+          // The coordinator says why (e.g. which files never extracted).
+          callback(
+            new Error(
+              body
+                ? `Coordinator CSS error: ${res.statusCode}: ${body}`
+                : `Coordinator CSS error: ${res.statusCode}`,
+            ),
+          )
           return
         }
-        callback(null, Buffer.concat(chunks).toString('utf-8'))
+        callback(null, body)
       })
     },
   )

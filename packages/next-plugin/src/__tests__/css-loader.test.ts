@@ -397,7 +397,42 @@ describe('devupUICssLoader', () => {
       } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
     })
 
-    expect(error.message).toBe('Coordinator CSS error: 500')
+    expect(error.message).toBe(
+      'Coordinator CSS error: 500: Internal Server Error',
+    )
+    server.close()
+  })
+
+  it('should error with only the status when the coordinator sends no reason', async () => {
+    const server = http.createServer((_req, res) => {
+      res.writeHead(503)
+      res.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as { port: number }).port
+    const portFile = `test-coordinator-empty-err-${port}.port`
+
+    existsSyncSpy.mockImplementation((p: unknown) => p === portFile)
+    readFileSyncSpy.mockImplementation((p: unknown) =>
+      p === portFile ? String(port) : '{}',
+    )
+
+    const error = await new Promise<Error>((resolve) => {
+      const asyncCallback = mock((err: Error | null) => {
+        if (err) resolve(err)
+      })
+      devupUICssLoader.bind({
+        async: () => asyncCallback,
+        addContextDependency: mock(),
+        getOptions: () => ({
+          ...defaultOptions,
+          coordinatorPortFile: portFile,
+        }),
+        resourcePath: 'devup-ui.css',
+      } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
+    })
+
+    expect(error.message).toBe('Coordinator CSS error: 503')
     server.close()
   })
 
