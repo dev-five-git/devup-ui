@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch"
+  },
+  "note": "tsconfig `paths` and `baseUrl` are read through `extends` the way TypeScript reads them: relative and package configs (a package's `tsconfig` field or `tsconfig.json`), lists of configs where a later one wins, and cycles stop. `baseUrl` is relative to the config that declares it, and `paths` without `baseUrl` to the config that declares `paths`. Imports through such aliases now resolve for build-time constants, atom hoisting and single-importer collapse",
+  "date": "2026-11-15T00:00:00.000Z"
+}

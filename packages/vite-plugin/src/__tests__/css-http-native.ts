@@ -7,13 +7,15 @@ import { createServer } from 'vite'
 
 import { DevupUI } from '../plugin'
 
-// This helper is bundled into an owned temp directory, then run only by Node.
+// This helper is bundled into an owned temp directory, then run only by Node
+// with the project below as its cwd, so it never changes directory itself.
 const root = join(
   realpathSync(dirname(fileURLToPath(import.meta.url))),
   'project',
 )
 const accept = process.argv[2]
 assert(accept === 'text/css' || accept === '*/*')
+assert.equal(realpathSync.native(process.cwd()), realpathSync.native(root))
 mkdirSync(join(root, 'src'), { recursive: true })
 writeFileSync(join(root, 'devup.json'), '{}')
 writeFileSync(join(root, 'package.json'), '{"type":"module"}')
@@ -25,7 +27,6 @@ writeFileSync(
   join(root, 'src/main.js'),
   "import { globalCss } from '@devup-ui/react'; globalCss({ body: { outlineStyle: 'dashed' } });",
 )
-process.chdir(root)
 
 // Given: actual extraction and Vite with its default strict filesystem policy.
 const server = await createServer({

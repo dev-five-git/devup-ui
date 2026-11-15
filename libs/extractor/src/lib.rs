@@ -131,6 +131,8 @@ mod stylesheet_gate_boundaries_tests;
 mod stylesheet_policy;
 #[cfg(test)]
 mod stylesheet_regression_tests;
+#[cfg(test)]
+mod stylesheet_stack_tests;
 mod stylex;
 mod tailwind;
 mod tailwind_children;
