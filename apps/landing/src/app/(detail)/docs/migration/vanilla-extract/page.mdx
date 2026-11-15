@@ -112,9 +112,10 @@ Generated CSS:
 still follow the CSS cascade; class-name string order is not an override rule.
 
 Ordinary-module extraction does **not** execute a vanilla-extract theme contract
-to discover its generated custom properties. Keep contracts and their consuming
-styles together in `.css.ts` / `.css.js`. For example, the stylesheet example
-at the top of this page is not valid if saved as an ordinary `theme.ts` module:
+declared in that module to discover its generated custom properties. Declare
+contracts and themes in `.css.ts` / `.css.js`. For example, the stylesheet
+example at the top of this page is not valid if saved as an ordinary `theme.ts`
+module:
 
 ```ts
 // theme.ts (not a stylesheet file)
@@ -131,8 +132,12 @@ The probe locates the call at line 6, column 20 and reports this message:
 `css()` cannot use `vars.colors.bg` at build time: its values must be literals, theme tokens or constants, or be computed from them
 ```
 
-The two-file stylesheet example above likewise does not promise that the same
-imports work in an ordinary `.ts` module:
+An ordinary module can import what a stylesheet exports, though. The build
+extracts the imported `.css.ts` / `.css.js` the way the bundler extracts it and
+reads its exports as the literals its own CSS uses: the vars objects of
+`createThemeContract`, `createTheme` and `createGlobalTheme`, theme classes,
+`createVar` variables and `style` class names. So the two-file example above
+also works as an ordinary module:
 
 ```ts
 // button.ts (not a stylesheet file)
@@ -144,18 +149,18 @@ import { PRIMARY } from './tokens'
 export const button = style([base, { color: PRIMARY, margin: vars.space }])
 ```
 
-Even when `theme.css.ts` and `tokens.ts` resolve, the probe locates the
-theme-variable read at line 7, column 23 and reports:
+`vars.space` reads as the custom property `theme.css.ts` declares,
+`margin: var(--space-…)`, and `base` contributes the class `theme.css.ts`
+generates. The import of `./theme.css` stays, so its CSS is loaded, and a
+change to it — or to a file it reads — rebuilds `button.ts`.
+
+Only the stylesheet's exports are read this way. A stylesheet that throws while
+it is extracted, or an export the build cannot read as a literal, still
+reports the read as a located error:
 
 ```text
 `css()` cannot use `vars.space` at build time: its values must be literals, theme tokens or constants, or be computed from them
 ```
-
-Move that consuming module to `button.css.ts` and export the styles and theme
-values from valid stylesheet modules. Ordinary modules can read resolvable
-literal constants, but that does not make a generated theme object an ordinary
-literal constant. A build-time-known composition must not be confused with a
-theme-variable read the ordinary-module path cannot resolve.
 
 The remaining APIs stay imported from `@vanilla-extract/css` outside a
 stylesheet file. For example, `createVar()` and `styleVariants()` remain calls
