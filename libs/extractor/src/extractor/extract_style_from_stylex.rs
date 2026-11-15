@@ -123,6 +123,9 @@ const VIEW_TRANSITION_GROUPS: [(&str, &str); 4] = [
     ("new", "::view-transition-new"),
 ];
 
+/// The API whose groups `extract_view_transition_groups` reads
+const VIEW_TRANSITION_API: &str = "stylex.viewTransitionClass";
+
 /// The declarations of each group a `stylex.viewTransitionClass()` object
 /// gives, as the pseudo-element they style
 pub fn extract_view_transition_groups(
@@ -130,18 +133,17 @@ pub fn extract_view_transition_groups(
     errors: &mut Vec<(u32, String)>,
     resolver: StylexResolver<'_>,
 ) -> Vec<(&'static str, Vec<(String, String)>)> {
-    const API: &str = "stylex.viewTransitionClass";
     let mut groups = vec![];
     for property in &object.properties {
         let property = match property {
             ObjectPropertyKind::ObjectProperty(property) => property,
             ObjectPropertyKind::SpreadProperty(spread) => {
-                errors.push(spread_error(API, spread));
+                errors.push(spread_error(VIEW_TRANSITION_API, spread));
                 continue;
             }
         };
         let Some(key) = get_str_by_property_key(&property.key) else {
-            errors.push(key_error(API, &property.key));
+            errors.push(key_error(VIEW_TRANSITION_API, &property.key));
             continue;
         };
         let Some((_, pseudo)) = VIEW_TRANSITION_GROUPS
@@ -151,7 +153,7 @@ pub fn extract_view_transition_groups(
             errors.push((
                 property.key.span().start,
                 build_time_error(
-                    API,
+                    VIEW_TRANSITION_API,
                     &key,
                     "it takes the groups `group`, `imagePair`, `old` and `new`, each an object of declarations",
                 ),
@@ -162,7 +164,7 @@ pub fn extract_view_transition_groups(
             errors.push((
                 property.value.span().start,
                 build_time_error(
-                    API,
+                    VIEW_TRANSITION_API,
                     &readable_code(&property.value),
                     "each group takes an object of declarations",
                 ),
@@ -171,7 +173,7 @@ pub fn extract_view_transition_groups(
         };
         groups.push((
             *pseudo,
-            extract_stylex_declarations(API, declarations, errors, resolver),
+            extract_stylex_declarations(VIEW_TRANSITION_API, declarations, errors, resolver),
         ));
     }
     groups
