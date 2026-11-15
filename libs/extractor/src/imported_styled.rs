@@ -13,7 +13,7 @@ use oxc_ast::ast::{
 use oxc_ast::builder::AstBuilder;
 use oxc_ast_visit::{Visit, VisitMut, walk};
 use oxc_parser::{Parser, ParserReturn};
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::css_prop::{CssProp, CssTakers};
@@ -245,7 +245,12 @@ impl<'a> Reader<'_, 'a> {
             mut program,
             fatal_error,
             ..
-        } = Parser::new(&sub, &transformed, SourceType::from_path(path).ok()?).parse();
+        } = Parser::new(
+            &sub,
+            &transformed,
+            crate::parsing::path_source_type(path).ok()?,
+        )
+        .parse();
         if fatal_error {
             return None;
         }
@@ -325,8 +330,12 @@ impl<'a> Reader<'_, 'a> {
             &self.option.import_aliases,
         );
         let allocator = Allocator::default();
-        let parsed =
-            Parser::new(&allocator, &transformed, SourceType::from_path(path).ok()?).parse();
+        let parsed = Parser::new(
+            &allocator,
+            &transformed,
+            crate::parsing::path_source_type(path).ok()?,
+        )
+        .parse();
         if parsed.fatal_error {
             return None;
         }
@@ -833,7 +842,7 @@ mod tests {
         let source = format!(
             "import * as UI from './base'; import {{ Child }} from './base'; import {{ jsx }} from 'react/jsx-runtime'; {body}"
         );
-        let parsed = Parser::new(&allocator, &source, SourceType::tsx()).parse();
+        let parsed = Parser::new(&allocator, &source, oxc_span::SourceType::tsx()).parse();
         assert_eq!(parsed.diagnostics.len(), 0);
         let scoping = oxc_semantic::SemanticBuilder::new()
             .build(&parsed.program)
@@ -1778,7 +1787,7 @@ export default styled.span`margin: 1px;`;
     fn exports_name_what_a_module_gives_other_files() {
         let code = "import styled from '@emotion/styled';\nexport const A = 1, { b } = {};\nconst C = 2;\nexport { C, C as D };\nexport default C;\nexport function f() {}\nexport type { C as T };";
         let allocator = Allocator::default();
-        let program = Parser::new(&allocator, code, SourceType::ts())
+        let program = Parser::new(&allocator, code, oxc_span::SourceType::ts())
             .parse()
             .program;
         let exports = Exports::scan(&program);
@@ -1789,7 +1798,7 @@ export default styled.span`margin: 1px;`;
         assert_eq!(exports.index("D"), 2);
         assert!(!exports.has_anonymous_default());
         let code = "export default styled.div`color: red;`;";
-        let program = Parser::new(&allocator, code, SourceType::ts())
+        let program = Parser::new(&allocator, code, oxc_span::SourceType::ts())
             .parse()
             .program;
         let exports = Exports::scan(&program);

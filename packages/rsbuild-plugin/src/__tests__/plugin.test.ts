@@ -370,6 +370,22 @@ describe('DevupUIRsbuildPlugin', () => {
       getCssSpy.mockRestore()
     }
   })
+  it('extracts MDX in a post transform, after the MDX loader compiled it', async () => {
+    const transform = mock()
+    await DevupUI().setup(
+      createSetupContext({ transform, modifyRsbuildConfig: mock() }),
+    )
+    const source = transform.mock.calls.find(
+      ([descriptor]) =>
+        String(descriptor.test) === String(/\.(tsx|ts|js|mjs|jsx)$/),
+    )
+    const mdx = transform.mock.calls.find(
+      ([descriptor]) => descriptor.order === 'post',
+    )
+    expect(mdx?.[0]).toEqual({ test: /\.mdx$/i, order: 'post' })
+    expect(mdx?.[1]).toBe(source?.[1])
+  })
+
   it('should transform code', async () => {
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
