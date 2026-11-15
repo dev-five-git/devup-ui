@@ -1702,9 +1702,20 @@ fn named_arrow<'a>(
 /// The binding the generated styled components forward refs through
 pub const FORWARD_REF: &str = "__devupForwardRef";
 
-/// `__devupForwardRef((p, ref) => component({ ...p, ref }))`: React 18 gives a
-/// function component no `ref` prop, so the component takes it as one and
-/// passes it to what it renders with the rest of its props
+/// The binding marking a generated styled component, so `isStyledComponent`
+/// recognizes it at runtime the way styled-components does: by its
+/// `styledComponentId` property
+pub const STYLED_MARK: &str = "__devupStyled";
+
+/// The declaration of [`STYLED_MARK`] a file with styled components starts
+/// with, once for every component it marks
+pub const STYLED_MARKING: &str =
+    "const __devupStyled = (c) => ((c.styledComponentId = 'devup'), c);";
+
+/// `__devupStyled(__devupForwardRef((p, ref) => component({ ...p, ref })))`:
+/// React 18 gives a function component no `ref` prop, so the component takes
+/// it as one and passes it to what it renders with the rest of its props, and
+/// the mark tells `isStyledComponent` it is a styled component
 pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
     let parameter = |name: &'static str| {
         FormalParameter::new(
@@ -1745,10 +1756,15 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
         body,
         ast_builder,
     );
-    wrap_direct_call(
+    let component = wrap_direct_call(
         ast_builder,
         &identifier(ast_builder, FORWARD_REF),
         &[render],
+    );
+    wrap_direct_call(
+        ast_builder,
+        &identifier(ast_builder, STYLED_MARK),
+        &[component],
     )
 }
 

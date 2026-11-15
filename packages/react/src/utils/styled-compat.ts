@@ -48,6 +48,15 @@ export function CacheProvider({
   return children
 }
 
-export function isStyledComponent(_target: unknown): boolean {
-  return false
+/**
+ * styled-components' `isStyledComponent`: the build marks every component it
+ * compiles from `styled` with a `styledComponentId` property, the one
+ * styled-components itself checks for
+ */
+export function isStyledComponent(target: unknown): boolean {
+  return (
+    (typeof target === 'object' || typeof target === 'function') &&
+    target !== null &&
+    'styledComponentId' in target
+  )
 }

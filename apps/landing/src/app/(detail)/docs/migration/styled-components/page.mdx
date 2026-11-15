@@ -141,7 +141,7 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `createGlobalStyle`, `Global`            | extracted, render nothing                                                        |
 | `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
 | `CacheProvider`                          | renders its children; the cache it configures has nothing to hold                |
-| `isStyledComponent`                      | always `false`                                                                   |
+| `isStyledComponent`                      | `true` for components compiled from `styled`, marked with `styledComponentId`    |
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
 | Component selectors (`${Child}`)         | a marker class on the selected component                                         |

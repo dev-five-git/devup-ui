@@ -38,8 +38,8 @@ use crate::extractor::{
     extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        FORWARD_REF, Naming, StyledBindings, StyledDefinition, StyledExtraction, extended,
-        extract_style_from_styled, read_forward, take_styled_modifiers, with_component,
+        FORWARD_REF, Naming, STYLED_MARKING, StyledBindings, StyledDefinition, StyledExtraction,
+        extended, extract_style_from_styled, read_forward, take_styled_modifiers, with_component,
     },
     rule_array_evaluation::{self, composes_array_under_condition},
     styled_capability::StyledCapability,
@@ -3385,14 +3385,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .ast
                 .allocator()
                 .alloc_str(&if it.source_type.is_commonjs() {
-                    format!("const {FORWARD_REF} = require('react').forwardRef;")
+                    format!("const {FORWARD_REF} = require('react').forwardRef;{STYLED_MARKING}")
                 } else {
-                    format!("import {{ forwardRef as {FORWARD_REF} }} from 'react';")
+                    format!(
+                        "import {{ forwardRef as {FORWARD_REF} }} from 'react';{STYLED_MARKING}"
+                    )
                 });
-            let program =
+            let mut program =
                 oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
                     .parse()
                     .program;
+            crate::utils::clear_generated_program_spans(&mut program);
             for statement in program.body.into_iter().rev() {
                 it.body.insert(0, statement);
             }

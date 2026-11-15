@@ -53,6 +53,11 @@ pub(super) fn clear_generated_spans(expression: &mut Expression<'_>) {
     oxc_ast_visit::VisitMut::visit_expression(&mut Rewrite(&mut |_| false, true), expression);
 }
 
+/// A parsed generated program, its offsets cleared like [`clear_generated_spans`]
+pub(super) fn clear_generated_program_spans(program: &mut Program<'_>) {
+    oxc_ast_visit::VisitMut::visit_program(&mut Rewrite(&mut |_| false, true), program);
+}
+
 /// Rewrite program expressions with the same preorder and replacement boundary.
 pub(super) fn rewrite_program<'a>(
     program: &mut Program<'a>,
