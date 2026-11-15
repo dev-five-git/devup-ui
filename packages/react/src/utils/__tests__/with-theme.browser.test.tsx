@@ -17,7 +17,7 @@ describe('withTheme', () => {
   it('injects the theme the nearest provider gives and forwards refs', () => {
     const Themed = withTheme(Swatch)
     const ref = createRef<HTMLDivElement>()
-    const { container } = render(
+    render(
       <ThemeProvider theme={{ brand: 'red' }}>
         <Themed ref={ref} />
       </ThemeProvider>,
