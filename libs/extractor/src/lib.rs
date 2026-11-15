@@ -107,6 +107,8 @@ mod styled_reads;
 #[cfg(test)]
 mod styled_source_tests;
 #[cfg(test)]
+mod styled_theme_prop_tests;
+#[cfg(test)]
 mod stylesheet_coverage_contract_tests;
 #[cfg(test)]
 mod stylesheet_css_adapter_error_tests;

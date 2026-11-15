@@ -76,9 +76,9 @@ use oxc_ast::ast::{
     ComputedMemberExpression, ExportDefaultDeclaration, Expression, ExpressionStatement,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
-    JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
-    UnaryOperator, VariableDeclarator,
+    JSXExpressionContainer, JSXOpeningElement, ObjectExpression, ObjectProperty,
+    ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str,
+    StringLiteral, UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut;
@@ -1580,6 +1580,38 @@ impl<'a> DevupVisitor<'a> {
                 JSXAttributeItem::SpreadAttribute(_) => None,
             })
             .collect()
+    }
+
+    /// Report a `theme` attribute on an element of a styled component whose
+    /// styles read the theme: they read it as CSS variables of the theme the
+    /// page declares, which a theme given to one element cannot change
+    fn report_theme_prop(&mut self, element: &JSXOpeningElement<'a>) {
+        let name = element.name.to_string();
+        let reads_theme = self
+            .css_definition(self.style_values.jsx_symbol(&element.name), &name)
+            .is_some_and(StyledDefinition::reads_theme);
+        let theme = element
+            .attributes
+            .iter()
+            .find_map(|attribute| match attribute {
+                Attribute(attribute)
+                    if attribute
+                        .name
+                        .as_identifier()
+                        .is_some_and(|name| name.name == "theme") =>
+                {
+                    Some(attribute.span.start)
+                }
+                _ => None,
+            });
+        if let Some(offset) = theme.filter(|_| reads_theme) {
+            self.errors.push((
+                offset,
+                format!(
+                    "`<{name} theme={{...}}>` cannot change the theme at build time: the styles of `{name}` read the theme as CSS variables, so the theme passed to one element would be ignored. Fix: wrap the element in a `ThemeProvider` with that theme, or pass the values as props the styles read"
+                ),
+            ));
+        }
     }
 
     /// Whether the element `name` takes Emotion's `css` prop
@@ -5267,6 +5299,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.pending_replacement = Some(rendered);
             return;
         }
+        self.report_theme_prop(&elem.opening_element);
         let styled_symbol = self.style_values.jsx_symbol(&elem.opening_element.name);
         // The style props of a styled Devup UI component are compiled in the
         // element as they are for the component, where only what the
