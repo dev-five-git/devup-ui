@@ -57,6 +57,27 @@ add('sessions-keep-apart-until-dropped', (h) => {
   h.call('dropSession', session)
   h.call('dropSession', session)
 })
+add('remove-file-stays-in-its-session', (h) => {
+  h.extract(source, { single: false })
+  const session = h.call('createSession').value.value
+  h.call('selectSession', session)
+  h.extract(box('color="blue"'), { single: false })
+  h.call('selectSession', 0)
+  h.call('removeFile', file)
+  h.call('removeFile', file)
+  h.call('selectSession', session)
+  h.call('removeFile', file)
+  h.call('dropSession', session)
+})
+add('remove-file-drops-its-own-styles', (h) => {
+  h.call('importCanonicalMap', { 'src/child.tsx': 'src/root.tsx' })
+  h.extract(source, { single: false })
+  h.extract(box('color="blue"'), { filename: 'src/root.tsx', single: false })
+  h.extract(box('color="teal"'), { filename: 'src/child.tsx', single: false })
+  for (const filename of ['src/root.tsx', file, file, 'src/child.tsx'])
+    h.call('removeFile', filename)
+  h.call('removeFile', 'src/root.tsx')
+})
 add('four-raw-states-explicit-import-roundtrip', (h) => {
   h.call('registerTheme', theme)
   h.call('importCanonicalMap', { [file]: 'src/root.tsx' })

@@ -104,6 +104,7 @@ exports.createBinding = function createBinding(raw) {
     isDebug: raw.isDebug,
     registerShorthands: (value) => call(raw.registerShorthands, value),
     registerTheme: (value) => call(raw.registerTheme, value),
+    removeFile: (filename) => raw.removeFile(filename),
     reserveClassSlots: (rows, pkg, single, code, css, aliases) =>
       call(raw.reserve, [rows, pkg, single, code, css, aliases]),
     resetBuildState: () => raw.reset(false),

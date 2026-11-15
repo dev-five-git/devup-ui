@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
-    ExtractionMode, SourceMapMode, code_extract, get_css, register_theme_internal, with_style_sheet,
+    ExtractionMode, SourceMapMode, code_extract, get_css, register_theme_internal,
+    remove_file_internal, with_style_sheet,
 };
 use extractor::ExtractOption;
 use serial_test::serial;
@@ -29,11 +30,24 @@ fn clean() -> Clean {
 }
 
 fn extract(filename: &str, color: &str) -> String {
-    code_extract(
-        (
-            filename,
-            &format!("import {{Box}} from '@devup-ui/react'; <Box color=\"{color}\" />;"),
+    extract_source(
+        filename,
+        &format!("import {{Box}} from '@devup-ui/react'; <Box color=\"{color}\" />;"),
+    )
+}
+
+fn extract_global(filename: &str, color: &str) -> String {
+    extract_source(
+        filename,
+        &format!(
+            "import {{globalCss}} from '@devup-ui/react'; globalCss({{ body: {{ color: \"{color}\" }} }});"
         ),
+    )
+}
+
+fn extract_source(filename: &str, source: &str) -> String {
+    code_extract(
+        (filename, source),
         ExtractOption {
             single_css: true,
             ..ExtractOption::default()
@@ -83,6 +97,26 @@ fn sessions_keep_their_own_numbering_settings_and_sheet() {
         get_css(None, false)
     });
     assert!(css.is_ok_and(|css| css.contains("color:blue") && css.contains("--brand")));
+}
+
+#[test]
+#[serial]
+fn removing_a_file_forgets_it_only_in_the_live_session() {
+    let _clean = clean();
+    // Given: two sessions each extracted global CSS from the same filename
+    extract_global("shared.tsx", "red");
+    let session = create_session();
+    assert!(with_session(session, || extract_global("shared.tsx", "blue")).is_ok());
+    // When: the live session 0 forgets the file
+    assert!(remove_file_internal("shared.tsx"));
+    // Then: session 0 lost its styles while the other session kept its own
+    assert!(!get_css(None, false).contains("color:red"));
+    let css = with_session(session, || get_css(None, false));
+    assert!(css.is_ok_and(|css| css.contains("color:blue")));
+    assert_eq!(
+        with_session(session, || remove_file_internal("shared.tsx")),
+        Ok(true)
+    );
 }
 
 #[test]

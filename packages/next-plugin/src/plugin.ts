@@ -295,9 +295,9 @@ export function DevupUI(
     const themeInterface = getThemeInterface(
       ...createThemeInterfaceArgs(libPackage),
     )
-    if (themeInterface) {
-      writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
-    }
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 

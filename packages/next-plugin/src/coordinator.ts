@@ -1,4 +1,4 @@
-import { writeFile, writeFileSync } from 'node:fs'
+import { existsSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
@@ -222,6 +222,8 @@ interface CoordinatorState {
   quietMs: number
   maxWaitMs: number
   extractedFiles: Set<string>
+  // Where each file the loaders posted lives, to notice the ones deleted since
+  extractedSources: Map<string, string>
   fileNumToBucket: Map<number, string>
   bucketToMembers: Map<string, Set<string>>
   canonicalMap: Record<string, string>
@@ -241,6 +243,7 @@ function createState(options: CoordinatorOptions): CoordinatorState {
     quietMs: options.quietMs ?? 10_000,
     maxWaitMs: options.maxWaitMs ?? 60_000,
     extractedFiles: new Set(options.prewarmedFiles),
+    extractedSources: new Map(),
     fileNumToBucket: new Map(),
     bucketToMembers: buildBucketToMembers(options.canonicalMap),
     canonicalMap: options.canonicalMap,
@@ -466,13 +469,36 @@ export function startCoordinator(options: CoordinatorOptions): {
     exportFileMap,
     exportSheet,
     getCss,
+    removeFile,
   } = wasm
   const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
   const extract =
     options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
   const state = createState(options)
-  const { extractedFiles, fileNumToBucket } = state
+  const { extractedFiles, extractedSources, fileNumToBucket } = state
+
+  // A deleted file is never extracted again, so its styles would stay in the
+  // sheet; its importers are, once they stop importing it. A repeated
+  // extraction (an edit, never the first build) forgets the files gone since.
+  const removeDeletedSources = async () => {
+    let removed = false
+    for (const [filename, resourcePath] of extractedSources) {
+      if (existsSync(resourcePath)) continue
+      extractedSources.delete(filename)
+      if (removeFile(filename)) removed = true
+    }
+    if (!removed) return
+    await Promise.all([
+      safeWrite(
+        join(cssDir, 'devup-ui.css'),
+        `${getCss(null, false)}\n/* ${Date.now()} */`,
+      ),
+      safeWrite(sheetFile, exportSheet()),
+      safeWrite(classMapFile, exportClassMap()),
+      safeWrite(fileMapFile, exportFileMap()),
+    ])
+  }
 
   const coordinatorServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
@@ -536,6 +562,8 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
+        const repeated = extractedSources.has(filename)
+        extractedSources.set(filename, resourcePath)
 
         let relCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
           '\\',
@@ -589,6 +617,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         let sheetSnapshotBytes: number | undefined
         let sheetSnapshotMs: number | undefined
         const promises: Promise<void>[] = []
+        if (repeated) promises.push(removeDeletedSources())
 
         if (!cacheHit && result.updatedBaseStyle) {
           const cssStartedAt =
