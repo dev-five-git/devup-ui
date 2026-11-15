@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
@@ -1514,5 +1514,243 @@ describe('createModuleResolver', () => {
     expect(resolveModule('./tokens', join(root, 'src/App.tsx'))?.path).toBe(
       join(root, 'src/tokens.ts'),
     )
+  })
+})
+
+describe('tsconfig extends', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'devup-ui-tsconfig-extends-'))
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  function write(files: Record<string, unknown>): void {
+    for (const [path, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true })
+      writeFileSync(
+        join(root, path),
+        typeof content === 'string' ? content : JSON.stringify(content),
+      )
+    }
+  }
+
+  /** Where `specifier` resolves from `src/App.tsx`, relative to the root */
+  function resolveAlias(
+    specifier: string,
+    tsconfig = 'tsconfig.json',
+  ): string | undefined {
+    const resolved = createModuleResolver({
+      cwd: root,
+      tsconfigPath: join(root, tsconfig),
+    })(specifier, join(root, 'src/App.tsx'))
+    return resolved && relative(root, resolved.path).replaceAll('\\', '/')
+  }
+
+  const sources = {
+    'src/value.ts': 'export const value = 1',
+    'app/src/value.ts': 'export const value = 2',
+    'lib/value.ts': 'export const value = 3',
+    'configs/lib/value.ts': 'export const value = 4',
+  }
+
+  it('resolves inherited paths against a baseUrl relative to the config that declares it', () => {
+    write({
+      ...sources,
+      'configs/base.json': {
+        compilerOptions: { baseUrl: '..', paths: { '@base/*': ['src/*'] } },
+      },
+      'tsconfig.json': { extends: './configs/base.json' },
+    })
+    expect(resolveAlias('@base/value')).toBe('src/value.ts')
+  })
+
+  it('resolves inherited paths without baseUrl against the config that declares them', () => {
+    write({
+      ...sources,
+      'configs/base.json': {
+        // Comments and trailing commas, as tsconfig allows
+        compilerOptions: { paths: { '@lib/*': ['../lib/*'] } },
+      },
+      // `.json` may be left out
+      'tsconfig.json': '{ "extends": "./configs/base", /* base */ }',
+    })
+    expect(resolveAlias('@lib/value')).toBe('lib/value.ts')
+  })
+
+  it('resolves inherited paths against the baseUrl of the extending config', () => {
+    write({
+      ...sources,
+      'configs/base.json': { compilerOptions: { paths: { '@/*': ['src/*'] } } },
+      'tsconfig.json': {
+        extends: './configs/base.json',
+        compilerOptions: { baseUrl: './app' },
+      },
+    })
+    expect(resolveAlias('@/value')).toBe('app/src/value.ts')
+  })
+
+  it('takes its own paths over the inherited ones', () => {
+    write({
+      ...sources,
+      'configs/base.json': {
+        compilerOptions: { baseUrl: '..', paths: { '@/*': ['src/*'] } },
+      },
+      'tsconfig.json': {
+        extends: './configs/base.json',
+        compilerOptions: { paths: { '@/*': ['lib/*'] } },
+      },
+    })
+    // baseUrl is still inherited, so the own paths resolve against it
+    expect(resolveAlias('@/value')).toBe('lib/value.ts')
+  })
+
+  it('follows a chain of extends', () => {
+    write({
+      ...sources,
+      'configs/root.json': {
+        compilerOptions: { paths: { '@lib/*': ['./lib/*'] } },
+      },
+      'configs/middle.json': { extends: './root.json' },
+      'tsconfig.json': { extends: './configs/middle.json' },
+    })
+    expect(resolveAlias('@lib/value')).toBe('configs/lib/value.ts')
+  })
+
+  it('lets a later entry of an extends list win, skipping what it cannot read', () => {
+    write({
+      ...sources,
+      'first.json': {
+        compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } },
+      },
+      'second.json': { compilerOptions: { paths: { '@/*': ['lib/*'] } } },
+      'tsconfig.json': {
+        extends: [
+          './first.json',
+          42,
+          './missing.json',
+          'not-installed',
+          './second.json',
+        ],
+      },
+    })
+    // second.json sets only paths: the baseUrl of first.json still applies
+    expect(resolveAlias('@/value')).toBe('lib/value.ts')
+  })
+
+  it('ignores an extends that is not a name or a list', () => {
+    write({
+      ...sources,
+      'tsconfig.json': { extends: 42, compilerOptions: { baseUrl: '.' } },
+    })
+    expect(resolveAlias('@/value')).toBeUndefined()
+  })
+
+  it('reads a config that is not an object as setting nothing', () => {
+    write({
+      ...sources,
+      'base.json': 'null',
+      'tsconfig.json': {
+        extends: './base.json',
+        compilerOptions: { paths: { '@/*': ['./src/*'] } },
+      },
+    })
+    expect(resolveAlias('@/value')).toBe('src/value.ts')
+    expect(resolveAlias('@/value', 'base.json')).toBeUndefined()
+  })
+
+  it('stops at a cycle and keeps what the chain sets', () => {
+    write({
+      ...sources,
+      'a.json': {
+        extends: './b.json',
+        compilerOptions: { paths: { '@a/*': ['./src/*'] } },
+      },
+      'b.json': {
+        extends: './a.json',
+        compilerOptions: { paths: { '@b/*': ['./lib/*'] } },
+      },
+    })
+    expect(resolveAlias('@a/value', 'a.json')).toBe('src/value.ts')
+    expect(resolveAlias('@b/value', 'b.json')).toBe('lib/value.ts')
+    expect(resolveAlias('@b/value', 'a.json')).toBeUndefined()
+  })
+
+  it.each<[string, string, Record<string, unknown>, string?]>([
+    [
+      'the tsconfig field of a package',
+      'shared-config',
+      {
+        'node_modules/shared-config/package.json': {
+          tsconfig: 'configs/base.json',
+        },
+        'node_modules/shared-config/configs/base.json': {
+          compilerOptions: { paths: { '@pkg/*': ['../../../src/*'] } },
+        },
+      },
+    ],
+    [
+      'the tsconfig.json of a package without a tsconfig field',
+      'shared-config',
+      {
+        'node_modules/shared-config/package.json': '"not a manifest object"',
+        'node_modules/shared-config/tsconfig.json': {
+          compilerOptions: { paths: { '@pkg/*': ['../../src/*'] } },
+        },
+      },
+    ],
+    [
+      'a file inside a scoped package, without .json',
+      '@scope/config/base',
+      {
+        'node_modules/@scope/config/package.json': {},
+        'node_modules/@scope/config/base.json': {
+          compilerOptions: { paths: { '@pkg/*': ['../../../src/*'] } },
+        },
+      },
+    ],
+    [
+      'a package installed above the config',
+      'shared-config/tsconfig.json',
+      {
+        'node_modules/shared-config/package.json': {},
+        'node_modules/shared-config/tsconfig.json': {
+          compilerOptions: { paths: { '@pkg/*': ['../../app/src/*'] } },
+        },
+      },
+      'app/tsconfig.json',
+    ],
+  ])('extends %s', (_name, entry, files, tsconfig = 'tsconfig.json') => {
+    write({ ...sources, ...files, [tsconfig]: { extends: entry } })
+    expect(resolveAlias('@pkg/value', tsconfig)).toBe(
+      tsconfig === 'tsconfig.json' ? 'src/value.ts' : 'app/src/value.ts',
+    )
+  })
+
+  it('skips a package that does not hold the named config', () => {
+    write({
+      ...sources,
+      'node_modules/shared-config/package.json': {},
+      'tsconfig.json': {
+        extends: ['shared-config', 'shared-config/missing'],
+        compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } },
+      },
+    })
+    expect(resolveAlias('@/value')).toBe('src/value.ts')
+  })
+
+  it('reads no aliases when an extended config is malformed', () => {
+    write({
+      ...sources,
+      'base.json': '{ not json',
+      'tsconfig.json': {
+        extends: './base.json',
+        compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } },
+      },
+    })
+    expect(resolveAlias('@/value')).toBeUndefined()
   })
 })
