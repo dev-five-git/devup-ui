@@ -4,7 +4,7 @@ import { describe, expect, it } from 'bun:test'
 
 import { cssUtilsLiteralOnly } from '../../rules/css-utils-literal-only'
 import { noUselessResponsive } from '../../rules/no-useless-responsive'
-import { ImportStorage, importConfig, SETTINGS_KEY } from '../import-storage'
+import { importConfig, ImportStorage, SETTINGS_KEY } from '../import-storage'
 
 const ruleTester = new RuleTester({
   languageOptions: {
