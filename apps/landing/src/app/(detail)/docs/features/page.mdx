@@ -68,7 +68,9 @@ A value imported from another module stays static when that module declares it w
 // tokens.ts
 export const PRIMARY = 'red'
 export const colors = { brand: '#123456' } as const
+```
 
+```tsx
 // App.tsx
 import { colors, PRIMARY } from './tokens'
 const example = <Box bg={colors.brand} color={PRIMARY} />
