@@ -828,13 +828,6 @@ impl<'a> DevupVisitor<'a> {
             return;
         }
         self.style_values.read_in(&self.ast, expression);
-        if matches!(
-            unwrap_syntax_only(expression),
-            Expression::ArrayExpression(_)
-        ) {
-            self.global_component_styles(name, expression);
-            return;
-        }
         let offset = expression.span().start;
         let GlobalExtractResult { styles, .. } = extract_global_style_from_expression(
             &self.ast,
