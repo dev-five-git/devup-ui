@@ -33,6 +33,8 @@ export interface DevupUILoaderOptions {
   classMapFile: string
   fileMapFile: string
   themeFile: string
+  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  themeFiles?: string[]
   watch: boolean
   singleCss: boolean
   coordinatorPortFile?: string
@@ -156,6 +158,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       singleCss,
       coordinatorPortFile,
       theme,
+      themeFiles = [],
       defaultClassMap,
       defaultFileMap,
       defaultSheet,
@@ -165,6 +168,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     // Coordinator mode: delegate to HTTP server
     if (coordinatorPortFile) {
       this.addDependency(coordinatorPortFile)
+      // Extraction reads theme tokens: re-run when the theme changes (the
+      // coordinator registers the new theme before it answers).
+      for (const file of themeFiles) this.addDependency(file)
       const callback = this.async()
       const tryCoordinator = (retries: number) => {
         if (!existsSync(coordinatorPortFile)) {

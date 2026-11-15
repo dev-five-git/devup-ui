@@ -25,6 +25,8 @@ export interface DevupUICssLoaderOptions {
   classMapFile: string
   fileMapFile: string
   themeFile: string
+  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  themeFiles?: string[]
   theme?: object
   defaultSheet: object
   defaultClassMap: object
@@ -86,6 +88,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       classMapFile,
       fileMapFile,
       themeFile,
+      themeFiles = [],
       theme,
       defaultClassMap,
       defaultFileMap,
@@ -94,6 +97,8 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
 
     // Coordinator mode: fetch live CSS from coordinator (disk content is stale)
     if (coordinatorPortFile) {
+      // The sheet holds the theme's variables: re-run when the theme changes.
+      for (const file of themeFiles) this.addDependency(file)
       const callback = this.async()
       // Check both resourcePath and resourceQuery for ?fileNum=N
       // Turbopack may embed query in resourcePath or provide it via resourceQuery

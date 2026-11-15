@@ -708,6 +708,7 @@ describe('DevupUINextPlugin', () => {
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
                   themeFile: 'devup.json',
+                  themeFiles: [resolve('devup.json')],
                   theme: {},
                   defaultClassMap: {},
                   defaultFileMap: {},
@@ -735,6 +736,7 @@ describe('DevupUINextPlugin', () => {
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
                     themeFile: 'devup.json',
+                    themeFiles: [resolve('devup.json')],
                     watch: false,
                     singleCss: false,
                     theme: {},
@@ -796,6 +798,7 @@ describe('DevupUINextPlugin', () => {
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
                   themeFile: 'devup.json',
+                  themeFiles: [resolve('devup.json')],
                   theme: {},
                   defaultClassMap: {},
                   defaultFileMap: {},
@@ -855,6 +858,7 @@ describe('DevupUINextPlugin', () => {
                       properties: {},
                     },
                     themeFile: 'devup.json',
+                    themeFiles: [resolve('devup.json')],
                   },
                 },
               ],
@@ -892,6 +896,7 @@ describe('DevupUINextPlugin', () => {
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
                   themeFile: 'devup.json',
+                  themeFiles: [resolve('devup.json')],
                   theme: 'theme',
                   defaultClassMap: {},
                   defaultFileMap: {},
@@ -951,6 +956,7 @@ describe('DevupUINextPlugin', () => {
                       properties: {},
                     },
                     themeFile: 'devup.json',
+                    themeFiles: [resolve('devup.json')],
                   },
                 },
               ],
@@ -1288,7 +1294,18 @@ export const box = style({ color: 'red' })`
           prewarmedFiles: [],
           prewarmedOutputs: expect.any(Map),
           sourceMap: true,
+          theme: {
+            files: [resolve('devup.json')],
+            reload: expect.any(Function),
+          },
         })
+        // The coordinator registers an edited theme through the same path.
+        const { theme } = startCoordinatorSpy.mock.calls[0]![0] as {
+          theme: { reload: () => string[] }
+        }
+        registerThemeSpy.mockClear()
+        expect(theme.reload()).toEqual([resolve('devup.json')])
+        expect(registerThemeSpy).toHaveBeenCalledWith({})
         expect(codeExtractSpy).not.toHaveBeenCalled()
         expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
 
@@ -1308,6 +1325,35 @@ export const box = style({ color: 'red' })`
         expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
       } finally {
         processOnSpy.mockRestore()
+      }
+    })
+
+    it('registers the Tailwind CSS theme and watches its files', () => {
+      process.env.TURBOPACK = '1'
+      const tailwindSpy = spyOn(
+        importGraphModule,
+        'findTailwindCss',
+      ).mockReturnValue({
+        file: resolve('app.css'),
+        files: [resolve('app.css'), resolve('tokens.css')],
+        css: '@import "tailwindcss";',
+      })
+      try {
+        const config = DevupUI({})
+
+        expect(registerThemeSpy).toHaveBeenCalledWith({
+          tailwindCss: '@import "tailwindcss";',
+        })
+        const rule = config.turbopack?.rules?.['*.{tsx,ts,jsx,js,mjs}'] as {
+          loaders: { options: { themeFiles: string[] } }[]
+        }
+        expect(rule.loaders[0].options.themeFiles).toEqual([
+          resolve('devup.json'),
+          resolve('app.css'),
+          resolve('tokens.css'),
+        ])
+      } finally {
+        tailwindSpy.mockRestore()
       }
     })
 
