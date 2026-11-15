@@ -236,3 +236,39 @@ fn css_utils_left_unaliased_stays_as_written() {
     .map_or_default(|error| error.to_string());
     assert!(message.contains("without a module resolver"), "{message}");
 }
+
+/// The analysis `calc` is compiled with is the one the rest of the alias pass
+/// reads the program by: a module naming the package with no import of it,
+/// whose calls the pass then reads for Emotion's `css` prop, once panicked
+/// resolving their IDs against an empty table (`bun test`, on the sources of
+/// the lint plugin, under the bun plugin)
+#[rstest]
+#[case("export const f = (node) => node.read({ css: '@vanilla-extract/css-utils' });")]
+#[case(
+    "import { calc } from '@vanilla-extract/css-utils';\nexport const f = (node) => node.read({ css: calc.add('1px', '2px') });"
+)]
+#[serial]
+fn calc_shares_its_analysis_with_the_alias_pass(#[case] source: &str) {
+    reset_class_map();
+    reset_file_map();
+    let mut option = aliases(true);
+    option
+        .import_aliases
+        .insert("@emotion/react".to_string(), ImportAlias::NamedToNamed);
+    let output = extract("src/rule.ts", source, option).map_err(|error| error.to_string());
+    assert!(output.is_ok(), "{output:?}");
+}
+
+/// A module the visit reads with no analysis, which once panicked once the
+/// `undefined` proof analysed the program itself: its IDs met the visit's
+/// empty table
+#[test]
+#[serial]
+fn undefined_proof_leaves_an_unanalysed_program_without_ids() {
+    reset_class_map();
+    reset_file_map();
+    let source = "const name = '@devup-ui/react';\nconst value = node.member;\nexport const absent = undefined;";
+    let output =
+        extract("src/rule.ts", source, ExtractOption::default()).map_err(|error| error.to_string());
+    assert!(output.is_ok(), "{output:?}");
+}
