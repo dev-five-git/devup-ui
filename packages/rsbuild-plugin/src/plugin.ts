@@ -139,6 +139,7 @@ export const DevupUI = ({
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
   const importAliases = mergeImportAliases(
@@ -463,8 +464,7 @@ export const DevupUI = ({
           test: /\.(tsx|ts|js|mjs|jsx)$/,
         },
         async ({ code, resourcePath, addDependency }) => {
-          if (createNodeModulesExcludeRegex(include).test(resourcePath))
-            return code
+          if (excludeRegex.test(resourcePath)) return code
           for (const file of tailwindFiles) addDependency(file)
           // The stylesheet import is emitted relative to the importing file, as
           // in the next/webpack/vite loaders. An absolute cssDir would bake this

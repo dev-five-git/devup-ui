@@ -327,6 +327,7 @@ export function DevupUI({
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
@@ -748,7 +749,7 @@ export function DevupUI({
 
       const fileName = id.split('?')[0]
       if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
-      if (createNodeModulesExcludeRegex(include).test(fileName)) {
+      if (excludeRegex.test(fileName)) {
         return
       }
       await reservation.reserve()

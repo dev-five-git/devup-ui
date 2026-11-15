@@ -99,6 +99,38 @@ describe('createNodeModulesExcludeRegex', () => {
     expect(regex.test('node_modules/@devup-ui/react/index.js')).toBe(false)
   })
 
+  it('should match included names as whole package directories', () => {
+    const regex = createNodeModulesExcludeRegex(['foo.bar', 'pkg', 'foo+bar'])
+    expect(regex.test('node_modules/foo.bar/index.js')).toBe(false)
+    expect(regex.test('node_modules/fooXbar/index.js')).toBe(true)
+    expect(regex.test('node_modules/pkg/index.js')).toBe(false)
+    expect(regex.test('node_modules/pkg')).toBe(false)
+    expect(regex.test('node_modules/@scope/pkg/index.js')).toBe(true)
+    expect(regex.test('node_modules/pkg-extra/index.js')).toBe(true)
+    expect(regex.test('node_modules/foo+bar/index.js')).toBe(false)
+    expect(regex.test('node_modules/foooobar/index.js')).toBe(true)
+  })
+
+  it('should match included packages in Windows and store paths', () => {
+    const regex = createNodeModulesExcludeRegex(['@scope/pkg', 'pkg'])
+    expect(regex.test('C:\\app\\node_modules\\@scope\\pkg\\index.js')).toBe(
+      false,
+    )
+    expect(regex.test('C:\\app\\node_modules\\@other\\pkg\\index.js')).toBe(
+      true,
+    )
+    expect(
+      regex.test(
+        '/app/node_modules/.pnpm/pkg@1.0.0/node_modules/pkg/dist/index.js',
+      ),
+    ).toBe(false)
+    expect(
+      regex.test(
+        '/app/node_modules/.bun/@scope+pkg@1.0.0/node_modules/@scope/pkg/index.js',
+      ),
+    ).toBe(false)
+  })
+
   it('should handle empty include array', () => {
     const regex = createNodeModulesExcludeRegex([])
     expect(regex.test('node_modules/some-package/index.js')).toBe(true)
