@@ -11,15 +11,14 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import * as wasm from '@devup-ui/wasm'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
 import { withModuleResolver } from '../wasm'
 import { assertImportedStyledRendering } from './imported-styled-render'
 
-const originalCwd = process.cwd()
-
 describe('styled components another module defines', () => {
   let root: string
+  let cwd: ReturnType<typeof spyOn>
 
   const write = (path: string, code: string) => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
@@ -58,12 +57,14 @@ describe('styled components another module defines', () => {
       'node_modules/@acme/ui/src/index.js',
       "import styled from '@emotion/styled'\nexport const Card = styled.section`border: 13px solid;`\n",
     )
-    process.chdir(root)
+    // The Next resolver names files relative to the project cwd; point it at
+    // the fixture without changing the directory of the whole test process.
+    cwd = spyOn(process, 'cwd').mockReturnValue(root)
     withModuleResolver(wasm)
   })
 
   afterEach(() => {
-    process.chdir(originalCwd)
+    cwd.mockRestore()
     rmSync(root, { recursive: true, force: true })
   })
 
