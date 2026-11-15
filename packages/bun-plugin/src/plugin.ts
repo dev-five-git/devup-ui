@@ -212,9 +212,10 @@ async function loadSourceFile(
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
   const compiler = loadCompiler(options.engine)
-  let project = locateProject(process.cwd())
-  const watchTailwindCss = createTailwindWatcher(() =>
-    writeDataFiles(compiler, project),
+  // Each setup locates the project again; the watcher reads it then
+  const project = locateProject(process.cwd())
+  const watchTailwindCss = createTailwindWatcher(
+    writeDataFiles.bind(undefined, compiler, project),
   )
   return {
     name: 'devup-ui',
@@ -224,8 +225,11 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       const bundling = build.config !== undefined
       // The relative paths belong to the `root` of `Bun.build` when it sets
       // one, not to the directory a monorepo tool starts the build from
-      project = locateProject(
-        resolve((bundling && build.config.root) || process.cwd()),
+      Object.assign(
+        project,
+        locateProject(
+          resolve((bundling && build.config.root) || process.cwd()),
+        ),
       )
       const { root, importAliases, cssDir } = project
       // A build starts from its own options, not from what an earlier build in
