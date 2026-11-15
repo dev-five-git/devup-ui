@@ -1679,7 +1679,7 @@ describe('tsconfig extends', () => {
     expect(resolveAlias('@b/value', 'a.json')).toBeUndefined()
   })
 
-  it.each([
+  it.each<[string, string, Record<string, unknown>, string?]>([
     [
       'the tsconfig field of a package',
       'shared-config',
