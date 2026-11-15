@@ -107,7 +107,8 @@ export async function openAdapter({ adapter, worktree, root, files }) {
         assert.fail('must observe one real coordinator')
       }
       const rules = config.turbopack.rules
-      const jsOptions = rules['*.{tsx,ts,jsx,js,mjs}'].loaders[0].options
+      const jsOptions =
+        rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'].loaders[0].options
       const cssOptions = rules['./df/devup-ui/*.css'][0].options
       const invoke = (fn, opts, input) =>
         new Promise((resolve, reject) => {

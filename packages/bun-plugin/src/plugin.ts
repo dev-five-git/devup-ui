@@ -54,6 +54,51 @@ export interface DevupUIBunPluginOptions {
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
+/**
+ * The `exports` conditions Bun resolves an import with: those of its target
+ * (`browser` by default for `Bun.build`, `bun` under the runtime) and the
+ * configured `conditions`
+ */
+export function bunConditions(
+  config: Pick<Bun.BuildConfig, 'target' | 'conditions'> | undefined,
+): string[] {
+  const target = config ? (config.target ?? 'browser') : 'bun'
+  return [
+    'import',
+    'module',
+    ...{ browser: ['browser'], node: ['node'], bun: ['bun', 'node'] }[target],
+    ...[config?.conditions ?? []].flat(),
+  ]
+}
+
+/**
+ * `code` followed by a bare import of each build-time dependency, so that
+ * Bun's module graph, and with it its watcher, keeps the modules whose values
+ * the extractor inlined. Appended, the imports move no line or column of the
+ * extracted code.
+ */
+export function withDependencyImports(
+  code: string,
+  filePath: string,
+  dependencies: readonly string[],
+): string {
+  return [
+    code,
+    ...[...new Set(dependencies)].map((dependency) => {
+      const path = relative(dirname(filePath), dependency).replaceAll('\\', '/')
+      return `import ${JSON.stringify(path.startsWith('.') ? path : `./${path}`)};`
+    }),
+  ].join('\n')
+}
+
+/** Bun's loader for a source file */
+function sourceLoader(filePath: string): SourceLoader {
+  if (filePath.endsWith('.tsx')) return 'tsx'
+  if (/\.[mc]?ts$/.test(filePath)) return 'ts'
+  if (filePath.endsWith('.jsx')) return 'jsx'
+  return 'js'
+}
+
 async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
   let theme = {}
   let tailwindFiles: string[] = []
@@ -88,10 +133,11 @@ async function initialize(
   compiler: DevupCompiler,
   shorthands: Record<string, readonly string[]>,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
+  conditions: readonly string[],
 ) {
   compiler.registerShorthands(shorthands)
   compiler.setPrefix(null)
-  compiler.setModuleResolver(createModuleResolver())
+  compiler.setModuleResolver(createModuleResolver({ conditions }))
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -130,13 +176,7 @@ async function loadSourceFile(
   filePath: string,
   bundling: boolean,
 ) {
-  const loader: SourceLoader = filePath.endsWith('.tsx')
-    ? 'tsx'
-    : filePath.endsWith('.ts')
-      ? 'ts'
-      : filePath.endsWith('.jsx')
-        ? 'jsx'
-        : 'js'
+  const loader = sourceLoader(filePath)
   const contents = await Bun.file(filePath).text()
 
   if (
@@ -163,7 +203,10 @@ async function loadSourceFile(
         compiler.getCss(null, false),
         'utf-8',
       )
-    return { contents: code.code, loader }
+    return {
+      contents: withDependencyImports(code.code, filePath, code.dependencies),
+      loader,
+    }
   }
   return { contents, loader }
 }
@@ -188,7 +231,12 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
-      await initialize(compiler, shorthands, watchTailwindCss)
+      await initialize(
+        compiler,
+        shorthands,
+        watchTailwindCss,
+        bunConditions(build.config),
+      )
       const debug = options.debug ?? !bundling
       compiler.setDebug(debug)
       const slots = createSharedSlotReservation(compiler)
@@ -260,19 +308,29 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         },
       )
 
+      const loadSource = ({ path }: { readonly path: string }) => {
+        if (reservationPending) {
+          reserveFiles()
+          reservationPending = false
+        }
+        return loadSourceFile(compiler, path, bundling)
+      }
       // Load source files from packages directory (file namespace)
       build.onLoad(
         {
-          filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
+          filter: /\.(?:[mc]?ts|tsx|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
         },
-        ({ path }) => {
-          if (reservationPending) {
-            reserveFiles()
-            reservationPending = false
-          }
-          return loadSourceFile(compiler, path, bundling)
-        },
+        loadSource,
       )
+      // A bundle also takes the project's own `.js` and `.cjs` modules. Bun
+      // loads one itself when the hook returns nothing, which the runtime
+      // does not allow, so dependencies are left to Bun here.
+      if (bundling)
+        build.onLoad({ filter: /\.c?js$/ }, (args) =>
+          !/[\\/]node_modules[\\/]/.test(args.path)
+            ? loadSource(args)
+            : undefined,
+        )
     },
   } satisfies BunPlugin
 }

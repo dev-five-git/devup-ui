@@ -23,7 +23,9 @@ import {
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
+  viteImportConditions,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import type {
@@ -501,6 +503,7 @@ export function DevupUI({
       compiler.setModuleResolver(
         createModuleResolver({
           cwd: projectRoot,
+          conditions: viteImportConditions(config),
           toId: (path) => path.replaceAll('\\', '/'),
         }),
       )
@@ -747,7 +750,7 @@ export function DevupUI({
       if (!extractCss) return
 
       const fileName = id.split('?')[0]
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
+      if (!SOURCE_FILE_REGEX.test(fileName.toLowerCase())) return
       if (createNodeModulesExcludeRegex(include).test(fileName)) {
         return
       }

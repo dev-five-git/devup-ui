@@ -5,8 +5,10 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
   computeFileReach,
   computeReachableFiles,
+  conventionalSourceRoots,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -15,6 +17,7 @@ import {
   type CustomShorthands,
   type DevupCompiler,
   type DevupUIBasePluginOptions,
+  esmImportConditions,
   getFileNumByFilename,
   type ImportAliases,
   loadCompiler,
@@ -23,6 +26,7 @@ import {
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -233,28 +237,41 @@ export const DevupUI = ({
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
       const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
-      compiler.setModuleResolver(
+      const moduleResolver = (conditions?: readonly string[]) =>
         createModuleResolver({
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
-        }),
-      )
+          conditions,
+        })
+      compiler.setModuleResolver(moduleResolver())
+      // Each environment resolves imports with its own `exports` conditions
+      const environmentResolvers = new Map<
+        string,
+        ReturnType<typeof moduleResolver>
+      >()
+      // The `src` and `app` directories of the working directory and of the
+      // Rsbuild root, scanned once for the canonical map and the routes
+      const sourceGraph = (srcDir: string) =>
+        buildStaticImportGraph(
+          srcDir,
+          resolve(srcDir, 'tsconfig.json'),
+          conventionalSourceRoots(process.cwd(), api.context.rootPath),
+        )
       if (atomMode) {
         try {
           const root = process.cwd()
-          const srcDir = resolve(root, 'src')
-          const tsconfigPath = resolve(root, 'tsconfig.json')
+          const graph = sourceGraph(root)
           const canonicalMap = buildCanonicalMap({
-            srcDir,
-            tsconfigPath,
+            srcDir: root,
             cwd: root,
             keyBy: 'absolute',
+            graph,
           })
           compiler.importCanonicalMap(canonicalMap)
           const fileReach = computeFileReach({
-            srcDir,
-            tsconfigPath,
+            srcDir: root,
             cwd: root,
             keyBy: 'absolute',
+            graph,
           })
           const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
           if (plan) {
@@ -283,17 +300,18 @@ export const DevupUI = ({
         compiler,
       )
       const entryFiles = new Set<string>()
-      // Extract the source files under `src` that the entries reach, in path
-      // order, the same way the transform does, so that a stylesheet built on
-      // its first import already holds the styles of every one. Best-effort:
-      // a stylesheet still missing styles is rebuilt by another pass.
+      // Extract the source files under `src` and `app` that the entries
+      // reach, in path order, the same way the transform does, so that a
+      // stylesheet built on its first import already holds the styles of every
+      // one. Best-effort: a stylesheet still missing styles is rebuilt by
+      // another pass.
       const prewarm = () => {
         try {
           const root = api.context.rootPath
           for (const file of computeReachableFiles({
-            srcDir: resolve(root, 'src'),
-            tsconfigPath: resolve(root, 'tsconfig.json'),
+            srcDir: root,
             entries: [...entryFiles],
+            graph: sourceGraph(root),
           })) {
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
@@ -351,6 +369,10 @@ export const DevupUI = ({
       api.modifyRspackConfig((config, { environment }) => {
         for (const request of staticEntries(environment.entry))
           entryFiles.add(resolve(api.context.rootPath, request))
+        environmentResolvers.set(
+          environment.name,
+          moduleResolver(esmImportConditions(config.resolve)),
+        )
         config.plugins ??= []
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
@@ -460,9 +482,9 @@ export const DevupUI = ({
 
       api.transform(
         {
-          test: /\.(tsx|ts|js|mjs|jsx)$/,
+          test: SOURCE_FILE_REGEX,
         },
-        async ({ code, resourcePath, addDependency }) => {
+        async ({ code, resourcePath, addDependency, environment }) => {
           if (createNodeModulesExcludeRegex(include).test(resourcePath))
             return code
           for (const file of tailwindFiles) addDependency(file)
@@ -488,6 +510,9 @@ export const DevupUI = ({
           const extractName = atomMode
             ? resourcePath.replaceAll('\\', '/')
             : resourcePath
+          const environmentResolver = environmentResolvers.get(environment.name)
+          if (environmentResolver)
+            compiler.setModuleResolver(environmentResolver)
           const {
             code: retCode,
             map,

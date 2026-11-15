@@ -7,6 +7,7 @@ import {
   type DevupCompiler,
   type DevupCompilerOutput,
   type DevupEngine,
+  esmImportConditions,
   loadCompiler,
 } from '@devup-ui/plugin-utils'
 import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
@@ -41,16 +42,31 @@ function parseSourceMap(sourceMap: string | undefined): LoaderSourceMap {
 const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
 )
-let moduleResolver: ReturnType<typeof createModuleResolver> | undefined
+let moduleResolver:
+  | {
+      readonly conditions: string
+      readonly resolve: ReturnType<typeof createModuleResolver>
+    }
+  | undefined
 
-/** Resolve imports to the cwd-relative ids this loader extracts files under */
+/**
+ * Resolve imports to the cwd-relative ids this loader extracts files under,
+ * with the `exports` conditions the bundler resolves the same imports with
+ */
 function setCwdModuleResolver(
   compiler: Pick<DevupCompiler, 'setModuleResolver'>,
+  conditions: readonly string[] | undefined,
 ): void {
-  moduleResolver ??= createModuleResolver({
-    toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
-  })
-  compiler.setModuleResolver(moduleResolver)
+  const key = JSON.stringify(conditions ?? null)
+  if (moduleResolver?.conditions !== key)
+    moduleResolver = {
+      conditions: key,
+      resolve: createModuleResolver({
+        conditions,
+        toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
+      }),
+    }
+  compiler.setModuleResolver(moduleResolver.resolve)
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -86,7 +102,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver(compiler)
+      setCwdModuleResolver(
+        compiler,
+        esmImportConditions(this._compiler?.options.resolve),
+      )
       const output: DevupCompilerOutput = compiler.codeExtract(
         relativePath,
         source.toString(),

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import type { Stats } from 'node:fs'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
@@ -19,6 +20,7 @@ import type { Compiler } from 'webpack'
 import { DevupUIWebpackPlugin } from '../plugin'
 import { servedCss } from '../served-css'
 
+const realExistsSync = fs.existsSync
 const native = pluginUtils.loadCompiler('native')
 const wasm = pluginUtils.loadCompiler('wasm')
 
@@ -859,6 +861,40 @@ describe('devupUIWebpackPlugin', () => {
       computeReachableFilesSpy.mockRestore()
     })
 
+    it('plans collapse and hoisting over one graph of every src and app root', async () => {
+      const project = fs.mkdtempSync(join(tmpdir(), 'devup-ui-webpack-roots-'))
+      try {
+        for (const path of ['app/page.tsx', 'src/a.tsx', 'web/src/b.tsx'])
+          await Bun.write(join(project, path), 'export {}')
+        existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
+        const plugin = new DevupUIWebpackPlugin({
+          engine: 'wasm',
+          atomHoist: 2,
+        })
+        const compiler = createCompiler()
+        compiler.options.context = join(project, 'web')
+        const cwd = spyOn(process, 'cwd').mockReturnValue(project)
+        try {
+          plugin.apply(asCompiler(compiler))
+        } finally {
+          cwd.mockRestore()
+        }
+        const [{ graph }] = buildCanonicalMapSpy.mock.calls.at(-1) as [
+          { graph: { files: string[] } },
+        ]
+        expect(graph.files).toEqual(
+          ['app/page.tsx', 'src/a.tsx', 'web/src/b.tsx'].map((path) =>
+            join(project, path),
+          ),
+        )
+        expect(computeFileReachSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ graph, srcDir: project }),
+        )
+      } finally {
+        fs.rmSync(project, { recursive: true, force: true })
+      }
+    })
+
     it('runs single-importer collapse when atomHoist is explicitly zero, without hoisting', () => {
       // Constraint: single-importer collapse must ALWAYS be on. The canonical
       // map is built + imported unconditionally; only atom HOISTING is gated.
@@ -1031,12 +1067,12 @@ describe('devupUIWebpackPlugin', () => {
         plugin.apply(asCompiler(compiler))
         compiler.hooks.run.tap.mock.calls[0][1]()
         expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-          srcDir: resolve(process.cwd(), 'src'),
-          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          srcDir: process.cwd(),
           entries: [
             resolve('/project', './src/parent'),
             resolve('/project', './src/other'),
           ],
+          graph: expect.objectContaining({ files: expect.any(Array) }),
         })
         // The loader's resolver is registered before the first extraction, so
         // imported constants inline as they do in the loader
