@@ -77,6 +77,14 @@ export default defineConfig({
 })
 ```
 
+In library mode the published code still holds the Devup UI components and is compiled by the application that uses it. Packages in `node_modules` are skipped unless they are listed in `include`, so the application must list your library there, or its components stay uncompiled:
+
+```ts
+DevupUI({
+  include: ['your-ui-library'],
+})
+```
+
 ### Using Devup UI with Rsbuild
 
 If you are using rsbuild, you can install the rsbuild plugin.
