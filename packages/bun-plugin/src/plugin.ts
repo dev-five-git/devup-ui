@@ -155,14 +155,13 @@ async function loadSourceFile(
       importAliases,
     )
     // Under the runtime the stylesheet is read from disk. singleCss stores
-    // every extracted style in the base sheet; synchronous writes keep
-    // concurrent source loads from overwriting a newer sheet with an older one.
-    if (!bundling)
-      writeFileSync(
-        join(cssDir, 'devup-ui.css'),
-        compiler.getCss(null, false),
-        'utf-8',
-      )
+    // every extracted style in the base sheet, which the output carries only
+    // when this module changed it, so a module that adds no style writes
+    // nothing. Synchronous writes keep concurrent source loads from
+    // overwriting a newer sheet with an older one.
+    const sheet = code.css
+    if (!bundling && sheet !== undefined)
+      writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
     return { contents: code.code, loader }
   }
   return { contents, loader }
