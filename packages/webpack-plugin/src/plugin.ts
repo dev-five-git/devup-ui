@@ -141,9 +141,16 @@ export class DevupUIWebpackPlugin {
   /** The files the project's Tailwind CSS is read from */
   tailwindFiles: string[] = []
 
+  /**
+   * devup.json and every config it `extends`, read or not: editing, adding
+   * or deleting one reloads the theme
+   */
+  configFiles: string[] = []
+
   writeDataFiles() {
+    const inputs = new Set<string>()
     try {
-      const config = loadDevupConfigSync(this.options.devupFile)
+      const config = loadDevupConfigSync(this.options.devupFile, inputs)
       const theme = config.theme ?? {}
 
       this.compiler.registerTheme(withTailwindCss(theme, config))
@@ -160,6 +167,10 @@ export class DevupUIWebpackPlugin {
     } catch (error) {
       console.error(error)
       this.compiler.registerTheme({})
+    } finally {
+      this.configFiles = [
+        ...new Set([resolve(this.options.devupFile), ...inputs]),
+      ]
     }
     if (!existsSync(this.options.cssDir))
       mkdirSync(this.options.cssDir, { recursive: true })
@@ -246,8 +257,6 @@ export class DevupUIWebpackPlugin {
     this.compiler.setDebug(this.options.debug)
     this.compiler.setPrefix(this.options.prefix ?? null)
     this.compiler.registerShorthands(this.normalizedShorthands)
-    const existsDevup = existsSync(this.options.devupFile)
-    // read devup.json
     if (!existsSync(this.options.distDir))
       mkdirSync(this.options.distDir, { recursive: true })
     writeFileSync(join(this.options.distDir, '.gitignore'), '*', 'utf-8')
@@ -408,9 +417,7 @@ export class DevupUIWebpackPlugin {
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
         const stamps: number[] = []
-        if (existsDevup)
-          stamps.push((await stat(this.options.devupFile)).mtimeMs)
-        for (const file of this.tailwindFiles) {
+        for (const file of [...this.configFiles, ...this.tailwindFiles]) {
           stamps.push(
             await stat(file).then(
               (stats) => stats.mtimeMs,
@@ -418,23 +425,21 @@ export class DevupUIWebpackPlugin {
             ),
           )
         }
-        if (stamps.length > 0) {
-          const modifiedTime = stamps.join()
-          if (lastModifiedTime && lastModifiedTime !== modifiedTime)
-            this.writeDataFiles()
-
-          lastModifiedTime = modifiedTime
-        }
+        const modifiedTime = stamps.join()
+        if (lastModifiedTime && lastModifiedTime !== modifiedTime)
+          this.writeDataFiles()
+        lastModifiedTime = modifiedTime
         reserve(compiler.options)
       })
     }
-    if (existsDevup || this.tailwindFiles.length > 0)
-      compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
-        if (existsDevup)
-          compilation.fileDependencies.add(resolve(this.options.devupFile))
-        for (const file of this.tailwindFiles)
-          compilation.fileDependencies.add(resolve(file))
-      })
+    compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
+      // A config that does not exist yet is watched for being added
+      for (const file of this.configFiles)
+        if (existsSync(file)) compilation.fileDependencies.add(file)
+        else compilation.missingDependencies.add(file)
+      for (const file of this.tailwindFiles)
+        compilation.fileDependencies.add(resolve(file))
+    })
     compiler.options.plugins.push(
       new compiler.webpack.DefinePlugin({
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(

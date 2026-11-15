@@ -486,7 +486,10 @@ describe('devupUIWebpackPlugin', () => {
       const plugin = new DevupUIWebpackPlugin({ ...options, engine: 'wasm' })
       await plugin.writeDataFiles()
 
-      expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(options.devupFile)
+      expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(
+        options.devupFile,
+        expect.any(Set),
+      )
       expect(registerThemeSpy).toHaveBeenCalledWith(
         _options.readFile?.theme ?? {},
       )
@@ -585,7 +588,7 @@ describe('devupUIWebpackPlugin', () => {
     readFileSyncSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    statSpy.mockReturnValue(createStats(1))
+    statSpy.mockResolvedValue(createStats(1))
     existsSyncSpy.mockReturnValue(true)
     plugin.apply(asCompiler(compiler))
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
@@ -594,12 +597,63 @@ describe('devupUIWebpackPlugin', () => {
     expect(importFileMapSpy).toHaveBeenCalledWith({})
   })
 
+  it('watches the configs devup.json extends and reloads when one changes', async () => {
+    const base = resolve('themes/base.json')
+    loadDevupConfigSyncSpy.mockImplementation(
+      (path: string, inputs?: Set<string>) => {
+        inputs?.add(resolve(path))
+        inputs?.add(base)
+        return {}
+      },
+    )
+    existsSyncSpy.mockImplementation(
+      (path: string) => path === resolve('devup.json') || path === base,
+    )
+    const stamps = new Map([
+      [resolve('devup.json'), 1],
+      [base, 1],
+    ])
+    statSpy.mockImplementation(async (path: string) =>
+      createStats(stamps.get(path) ?? 0),
+    )
+    const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
+    const compiler = createCompiler()
+    plugin.apply(asCompiler(compiler))
+    expect(plugin.configFiles).toEqual([resolve('devup.json'), base])
+
+    const add = mock()
+    compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+      fileDependencies: { add },
+      missingDependencies: { add: mock() },
+    })
+    expect(add).toHaveBeenCalledWith(base)
+
+    const watchRun = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+      ([name]) => name === 'DevupUIWebpackPlugin',
+    )?.[1] as () => Promise<void>
+    await watchRun()
+    loadDevupConfigSyncSpy.mockClear()
+    await watchRun()
+    expect(loadDevupConfigSyncSpy).not.toHaveBeenCalled()
+
+    // Editing the base theme reloads; so does deleting it
+    stamps.set(base, 2)
+    await watchRun()
+    expect(loadDevupConfigSyncSpy).toHaveBeenCalledTimes(1)
+    stamps.delete(base)
+    await watchRun()
+    expect(loadDevupConfigSyncSpy).toHaveBeenCalledTimes(2)
+  })
+
   describe('Tailwind CSS definitions', () => {
     const tailwindFile = resolve('styles/tailwind.css')
 
     function mockTailwindCss() {
       existsSyncSpy.mockImplementation(
-        (path: string) => path === 'devup.json' || path === tailwindFile,
+        (path: string) =>
+          path === 'devup.json' ||
+          path === resolve('devup.json') ||
+          path === tailwindFile,
       )
       loadDevupConfigSyncSpy.mockReturnValue({
         tailwind: { css: 'styles/tailwind.css' },
@@ -686,7 +740,8 @@ describe('devupUIWebpackPlugin', () => {
     const compiler = createCompiler()
 
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === plugin.options.devupFile) return options.existsDevupFile
+      if (path === resolve(plugin.options.devupFile))
+        return options.existsDevupFile
       if (path === plugin.options.distDir) return options.existsDistDir
       if (path === plugin.options.cssDir) return options.existsCssDir
       if (path === join(plugin.options.distDir, 'sheet.json'))
@@ -750,23 +805,20 @@ describe('devupUIWebpackPlugin', () => {
       expect(compiler.hooks.watchRun.tapPromise).toHaveBeenCalled()
 
       await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
-      if (options.existsDevupFile) {
-        expect(statSpy).toHaveBeenCalledWith(plugin.options.devupFile)
-        await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
-      } else {
-        expect(statSpy).not.toHaveBeenCalled()
-      }
+      // A devup.json that does not exist yet is watched for being added
+      expect(statSpy).toHaveBeenCalledWith(resolve(plugin.options.devupFile))
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
     } else expect(compiler.hooks.watchRun.tapPromise).toHaveBeenCalledTimes(1)
-    if (options.existsDevupFile) {
-      expect(compiler.hooks.afterCompile.tap).toHaveBeenCalled()
-      const add = mock()
-      compiler.hooks.afterCompile.tap.mock.calls[0][1]({
-        fileDependencies: {
-          add,
-        },
-      })
-      expect(add).toHaveBeenCalledWith(resolve(plugin.options.devupFile))
-    } else expect(compiler.hooks.afterCompile.tap).not.toHaveBeenCalled()
+    expect(compiler.hooks.afterCompile.tap).toHaveBeenCalled()
+    const add = mock()
+    const addMissing = mock()
+    compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+      fileDependencies: { add },
+      missingDependencies: { add: addMissing },
+    })
+    expect(options.existsDevupFile ? add : addMissing).toHaveBeenCalledWith(
+      resolve(plugin.options.devupFile),
+    )
     if (options.existsCssDir) {
       expect(mkdirSpy).not.toHaveBeenCalledWith(plugin.options.cssDir, {
         recursive: true,
