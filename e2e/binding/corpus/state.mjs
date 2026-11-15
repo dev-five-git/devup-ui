@@ -42,6 +42,15 @@ add('reservation-malformed-second-row-arity-nonmutation', (h) => {
     h.call('reserveClassSlots', value, pkg, false, false, false, {})
   h.call('reserveClassSlots', rows, pkg, false, false, false, { bad: 7 })
 })
+add('remove-file-drops-its-own-styles', (h) => {
+  h.call('importCanonicalMap', { 'src/child.tsx': 'src/root.tsx' })
+  h.extract(source, { single: false })
+  h.extract(box('color="blue"'), { filename: 'src/root.tsx', single: false })
+  h.extract(box('color="teal"'), { filename: 'src/child.tsx', single: false })
+  for (const filename of ['src/root.tsx', file, file, 'src/child.tsx'])
+    h.call('removeFile', filename)
+  h.call('removeFile', 'src/root.tsx')
+})
 add('four-raw-states-explicit-import-roundtrip', (h) => {
   h.call('registerTheme', theme)
   h.call('importCanonicalMap', { [file]: 'src/root.tsx' })
