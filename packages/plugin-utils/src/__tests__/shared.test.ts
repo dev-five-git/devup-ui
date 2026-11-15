@@ -131,6 +131,16 @@ describe('createNodeModulesExcludeRegex', () => {
     ).toBe(false)
   })
 
+  it('should take the package from the innermost node_modules', () => {
+    const regex = createNodeModulesExcludeRegex(['pkg'])
+    expect(
+      regex.test('node_modules/@devup-ui/react/node_modules/lodash/index.js'),
+    ).toBe(true)
+    expect(regex.test('node_modules/pkg/node_modules/dep/index.js')).toBe(true)
+    expect(regex.test('node_modules/dep/node_modules/pkg/index.js')).toBe(false)
+    expect(regex.test('src/my_node_modules/lodash/index.js')).toBe(false)
+  })
+
   it('should handle empty include array', () => {
     const regex = createNodeModulesExcludeRegex([])
     expect(regex.test('node_modules/some-package/index.js')).toBe(true)

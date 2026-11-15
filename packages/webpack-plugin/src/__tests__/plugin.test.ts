@@ -526,19 +526,19 @@ describe('devupUIWebpackPlugin', () => {
         {
           input: ['lib'],
           output: new RegExp(
-            '(^(?!.*node_modules[\\/\\\\](?:@devup-ui|@devup-editor|lib)(?:[\\/\\\\]|$)).*node_modules)|(.mdx.[tj]sx?$)',
+            '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor|lib)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
         {
           input: [],
           output: new RegExp(
-            '(^(?!.*node_modules[\\/\\\\](?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)).*node_modules)|(.mdx.[tj]sx?$)',
+            '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
         {
           input: ['lib', 'lib2'],
           output: new RegExp(
-            '(^(?!.*node_modules[\\/\\\\](?:@devup-ui|@devup-editor|lib|lib2)(?:[\\/\\\\]|$)).*node_modules)|(.mdx.[tj]sx?$)',
+            '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor|lib|lib2)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
       ],

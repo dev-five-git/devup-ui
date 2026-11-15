@@ -4,6 +4,6 @@
     "packages/vite-plugin/package.json": "Patch",
     "packages/rsbuild-plugin/package.json": "Patch"
   },
-  "note": "`include` package names match only the whole package directory under `node_modules`: `foo.bar` no longer compiles `fooXbar`, `pkg` no longer compiles `@scope/pkg` or `pkg-extra`, and names with regex characters such as `foo+bar` are compiled. Vite and Rsbuild build the matcher once instead of on every transformed module. No new build errors",
+  "note": "`include` package names match only the whole package directory under the innermost `node_modules`: `foo.bar` no longer compiles `fooXbar`, `pkg` no longer compiles `@scope/pkg` or `pkg-extra`, names with regex characters such as `foo+bar` are compiled, and dependencies nested in an included package's own `node_modules` are no longer compiled with it. Vite and Rsbuild build the matcher once instead of on every transformed module. No new build errors",
   "date": "2026-11-15T00:00:00.000Z"
 }
