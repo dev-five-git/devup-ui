@@ -5,6 +5,7 @@ module.exports = function createBoundary() {
   const descriptors = {
     codeExtract: extraction,
     codeExtractWithoutSourceMap: extraction,
+    dropSession: 'id:u',
     getCss: 'file_num:n import_main_css:b',
     getThemeInterface:
       'package_name:s color_interface_name:s typography_interface_name:s length_interface_name:s shadows_interface_name:s theme_interface_name:s',
@@ -19,6 +20,7 @@ module.exports = function createBoundary() {
     reserveClassSlots:
       'rows:rows _package:s single_css:b import_main_css_in_code:b _import_main_css_in_css:b import_aliases:aliases',
     seedFileMap: 'files:a',
+    selectSession: 'id:u',
     setAtomHoist: 'threshold:n',
     setDebug: 'debug:b',
     setModuleResolver: 'resolver:f',
@@ -31,6 +33,7 @@ module.exports = function createBoundary() {
     p: 'a string, null or undefined',
     f: 'a function, null or undefined',
     a: 'an array of strings',
+    u: 'a session id',
     aliases: 'an alias mapping',
     canonical: 'a canonical mapping',
     class: 'a nested class-index mapping',
@@ -50,6 +53,7 @@ module.exports = function createBoundary() {
     p: (value) => value == null || typeof value === 'string',
     f: (value) => value == null || typeof value === 'function',
     a: Array.isArray,
+    u: (value) => Number.isInteger(value) && value >= 0 && value <= 0xffffffff,
   }
   let frame
   const fail = (slot) => {

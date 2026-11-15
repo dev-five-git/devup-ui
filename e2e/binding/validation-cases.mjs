@@ -20,6 +20,7 @@ const extractSlots =
 export const positions = [
   ['codeExtract', extractSlots, extraction],
   ['codeExtractWithoutSourceMap', extractSlots, extraction],
+  ['dropSession', 'id:session', () => [1]],
   ['getCss', 'file_num:n import_main_css:b', () => [null, false]],
   [
     'getThemeInterface',
@@ -44,6 +45,7 @@ export const positions = [
     () => [[row], pkg, false, false, false, {}],
   ],
   ['seedFileMap', 'files:seed', () => [['src/new.tsx']]],
+  ['selectSession', 'id:session', () => [0]],
   ['setAtomHoist', 'threshold:n', () => [2]],
   ['setDebug', 'debug:b', () => [true]],
   ['setModuleResolver', 'resolver:resolver', () => [null]],
@@ -61,6 +63,7 @@ const labels = {
   prefix: 'a string, null or undefined',
   resolver: 'a function, null or undefined',
   seed: 'an array of strings',
+  session: 'a session id',
   aliases: 'an alias mapping',
   canonical: 'a canonical mapping',
   class: 'a nested class-index mapping',
@@ -80,6 +83,7 @@ const invalid = {
   b: [7, 'false', null, undefined],
   n: ['2', false, 1n, Symbol('number'), {}],
   prefix: [false, true, 7, {}],
+  session: ['1', false, -1, 1.5, 2 ** 32, null, undefined, {}],
   resolver: [false, true, 7, 'callback', {}],
   seed: [
     ...roots,
@@ -153,6 +157,6 @@ export const cases = positions.flatMap((position) =>
         .map((good, index) => (index === position.index ? value : good)),
   })),
 )
-assert.equal(positions.length, 45)
-assert.equal(new Set(positions.map((p) => p.fn)).size, 18)
+assert.equal(positions.length, 47)
+assert.equal(new Set(positions.map((p) => p.fn)).size, 20)
 assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)

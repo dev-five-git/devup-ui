@@ -39,9 +39,9 @@ for (const operation of ['begin', 'end', 'error', 'fail'])
   )
 assert.equal([...source.matchAll(/__devupBoundary/g)].length, 4)
 const names = [...source.matchAll(/^exports\.(\w+) = \1;/gm)]
-assert.equal(names.length, 29)
-assert.equal(new Set(names.map((match) => match[1])).size, 29)
-assert.equal([...source.matchAll(/^exports\./gm)].length, 29)
+assert.equal(names.length, 32)
+assert.equal(new Set(names.map((match) => match[1])).size, 32)
+assert.equal([...source.matchAll(/^exports\./gm)].length, 32)
 assert.equal(source.includes('module.exports'), false)
 for (const name of ['codeExtract', 'codeExtractWithoutSourceMap']) {
   const signatures = [

@@ -51,6 +51,25 @@ pub fn reset(env: Env, full: bool) -> Result<()> {
     }
     Ok(())
 }
+/// Create an engine session with a clean state and return its id.
+#[napi]
+pub fn create_session() -> u32 {
+    core::create_session()
+}
+/// Make session `id` live until another is selected.
+#[napi]
+pub fn select_session(env: Env, id: u32) -> Result<()> {
+    core::select_session(id)
+        .map(drop)
+        .map_err(|error| binding_error(env, error))
+}
+/// Drop session `id` with its state and this environment's resolver for it.
+#[napi]
+pub fn drop_session(env: Env, id: u32) -> Result<bool> {
+    let dropped = core::drop_session(id).map_err(|error| binding_error(env, error))?;
+    state(&env)?.0.remove(id);
+    Ok(dropped)
+}
 fn with_resolver<T>(
     env: Env,
     diagnostics: core::ResolverState,

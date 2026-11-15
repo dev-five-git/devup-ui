@@ -44,6 +44,8 @@ describe('@devup-ui/wasm exports', () => {
       'Output',
       'codeExtract',
       'codeExtractWithoutSourceMap',
+      'createSession',
+      'dropSession',
       'exportCanonicalMap',
       'exportClassMap',
       'exportFileMap',
@@ -66,6 +68,7 @@ describe('@devup-ui/wasm exports', () => {
       'resetBuildState',
       'resetStateForTesting',
       'seedFileMap',
+      'selectSession',
       'setAtomHoist',
       'setDebug',
       'setModuleResolver',
@@ -391,5 +394,31 @@ describe('@devup-ui/wasm reservation', () => {
     expect(wasm.getUnreservedClassSlotCount()).toBe(2)
     wasm.resetBuildState()
     expect(wasm.getUnreservedClassSlotCount()).toBe(0)
+  })
+})
+
+describe('@devup-ui/wasm sessions', () => {
+  it('keeps each session apart until it is dropped', () => {
+    const prefix = wasm.getPrefix()
+    const session = wasm.createSession()
+    wasm.selectSession(session)
+    expect(wasm.getPrefix()).toBeUndefined()
+    wasm.setPrefix('app-')
+    wasm.selectSession(0)
+    expect(wasm.getPrefix()).toBe(prefix)
+    expect(() => wasm.selectSession(session + 1)).toThrow(
+      `engine session ${session + 1} does not exist`,
+    )
+    expect(() => wasm.selectSession(-1)).toThrow(
+      'selectSession(): argument id must be a session id',
+    )
+    wasm.selectSession(session)
+    expect(wasm.getPrefix()).toBe('app-')
+    expect(wasm.dropSession(session)).toBe(true)
+    expect(wasm.getPrefix()).toBe(prefix)
+    expect(wasm.dropSession(session)).toBe(false)
+    expect(() => wasm.dropSession(0)).toThrow(
+      'engine session 0 cannot be dropped',
+    )
   })
 })
