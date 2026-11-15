@@ -288,7 +288,10 @@ When your project builds, Devup UI automatically generates TypeScript types from
 - Type errors for invalid tokens
 - Consistent usage across your codebase
 
-The types are generated at `df/theme.d.ts`.
+The types are generated at `<distDir>/theme.d.ts`. `distDir` is a build-plugin
+option (not a `devup.json` field) and defaults to `df`, so the default path is
+`df/theme.d.ts` (the Bun plugin always uses `df`). If your `tsconfig.json` limits `include`, add `df/*.d.ts` (or
+the matching custom `distDir`).
 
 ## Hot Reload
 

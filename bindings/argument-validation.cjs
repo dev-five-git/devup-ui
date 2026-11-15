@@ -17,6 +17,7 @@ module.exports = function createBoundary() {
     importSheet: 'sheet_object:sheet',
     registerShorthands: 'shorthands:shorthands',
     registerTheme: 'theme_object:theme',
+    removeFile: 'filename:s',
     reserveClassSlots:
       'rows:rows _package:s single_css:b import_main_css_in_code:b _import_main_css_in_css:b import_aliases:aliases',
     seedFileMap: 'files:a',

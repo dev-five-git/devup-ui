@@ -1,5 +1,5 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 
@@ -91,12 +91,64 @@ describe('loadDevupConfigSync', () => {
     })
   })
 
-  it('should return empty object for invalid JSON', () => {
+  it('should report invalid JSON with its path', () => {
     const configPath = join(testDir, 'invalid.json')
     writeFileSync(configPath, 'not valid json {{{')
 
-    const result = loadDevupConfigSync(configPath)
-    expect(result).toEqual({})
+    expect(() => loadDevupConfigSync(configPath)).toThrow(
+      `${resolve(configPath)} is not valid JSON: `,
+    )
+  })
+
+  it.each([
+    ['null', 'null'],
+    ['[]', 'an array'],
+    ['"theme"', 'a string'],
+  ])('should report a %s config that is not an object', (content, kind) => {
+    const configPath = join(testDir, 'not-object.json')
+    writeFileSync(configPath, content)
+
+    expect(() => loadDevupConfigSync(configPath)).toThrow(
+      `${resolve(configPath)} must hold a JSON object such as { "theme": {} }, not ${kind}.`,
+    )
+  })
+
+  it('should report extends that form a cycle', () => {
+    const baseDir = join(testDir, 'cycle')
+    mkdirSync(baseDir, { recursive: true })
+    const a = join(baseDir, 'a.json')
+    const b = join(baseDir, 'b.json')
+    writeFileSync(a, JSON.stringify({ extends: ['./b.json'] }))
+    writeFileSync(b, JSON.stringify({ extends: ['./a.json'] }))
+
+    expect(() => loadDevupConfigSync(a)).toThrow(
+      `devup.json \`extends\` form a cycle: ${resolve(a)} -> ${resolve(b)} -> ${resolve(a)}.`,
+    )
+  })
+
+  it('should load a file that two extended files both extend', () => {
+    const baseDir = join(testDir, 'diamond')
+    mkdirSync(baseDir, { recursive: true })
+    writeFileSync(
+      join(baseDir, 'root.json'),
+      JSON.stringify({ theme: { colors: { default: { text: 'red' } } } }),
+    )
+    writeFileSync(
+      join(baseDir, 'left.json'),
+      JSON.stringify({ extends: ['./root.json'] }),
+    )
+    writeFileSync(
+      join(baseDir, 'right.json'),
+      JSON.stringify({ extends: ['./root.json'] }),
+    )
+    writeFileSync(
+      join(baseDir, 'top.json'),
+      JSON.stringify({ extends: ['./left.json', './right.json'] }),
+    )
+
+    expect(loadDevupConfigSync(join(baseDir, 'top.json'))).toEqual({
+      theme: { colors: { default: { text: 'red' } } },
+    })
   })
 
   it('should resolve extends', () => {
@@ -212,6 +264,28 @@ describe('loadDevupConfig', () => {
   it('should return empty object for non-existent file', async () => {
     const result = await loadDevupConfig(join(testDir, 'non-existent.json'))
     expect(result).toEqual({})
+  })
+
+  it('should report invalid JSON with its path', async () => {
+    const configPath = join(testDir, 'async-invalid.json')
+    writeFileSync(configPath, '{ "theme": ')
+
+    await expect(loadDevupConfig(configPath)).rejects.toThrow(
+      `${resolve(configPath)} is not valid JSON: `,
+    )
+  })
+
+  it('should report extends that form a cycle', async () => {
+    const baseDir = join(testDir, 'async-cycle')
+    mkdirSync(baseDir, { recursive: true })
+    const self = join(baseDir, 'self.json')
+    writeFileSync(self, JSON.stringify({ extends: ['./self.json'] }))
+    const inputs = new Set<string>()
+
+    await expect(loadDevupConfig(self, inputs)).rejects.toThrow(
+      `devup.json \`extends\` form a cycle: ${resolve(self)} -> ${resolve(self)}.`,
+    )
+    expect([...inputs]).toEqual([resolve(self)])
   })
 
   it('should load and resolve extends asynchronously', async () => {

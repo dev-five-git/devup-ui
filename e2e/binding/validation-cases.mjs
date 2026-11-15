@@ -39,6 +39,7 @@ export const positions = [
   ['importSheet', 'sheet_object:sheet', () => [{}]],
   ['registerShorthands', 'shorthands:shorthands', () => [{}]],
   ['registerTheme', 'theme_object:theme', () => [{}]],
+  ['removeFile', 'filename:s', () => ['src/new.tsx']],
   [
     'reserveClassSlots',
     'rows:rows _package:s single_css:b import_main_css_in_code:b _import_main_css_in_css:b import_aliases:aliases',
@@ -157,6 +158,6 @@ export const cases = positions.flatMap((position) =>
         .map((good, index) => (index === position.index ? value : good)),
   })),
 )
-assert.equal(positions.length, 47)
-assert.equal(new Set(positions.map((p) => p.fn)).size, 20)
+assert.equal(positions.length, 48)
+assert.equal(new Set(positions.map((p) => p.fn)).size, 21)
 assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)
