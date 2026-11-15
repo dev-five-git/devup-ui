@@ -21,6 +21,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
   tailwindCssFiles,
@@ -34,7 +35,7 @@ const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
 export interface DevupUIRsbuildPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -134,13 +135,16 @@ export const DevupUI = ({
   singleCss = false,
   prefix,
   shorthands,
+  stylex,
   engine,
   atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const styleResolution = normalizeStylexOptions(stylex)
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
+  compiler.setStylexStyleResolution(styleResolution)
   const importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),

@@ -8,6 +8,7 @@ pub use css::atom_hoist::set_atom_hoist;
 pub use css::debug::{is_debug, set_debug};
 pub use css::file_routes::set_file_routes as import_file_routes_internal;
 pub use css::slot_reservation::unreserved_slot_count as get_unreserved_class_slot_count;
+pub use css::style_resolution::set_style_resolution_option as set_stylex_style_resolution;
 pub use css::{get_prefix, set_custom_shorthands as register_shorthands_internal, set_prefix};
 pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};

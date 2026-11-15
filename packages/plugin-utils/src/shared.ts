@@ -1,4 +1,5 @@
 import type { DevupEngine } from './compiler-types'
+import type { StylexOptions } from './stylex-options'
 import type { CustomShorthands, ImportAliases } from './types'
 
 /**
@@ -107,4 +108,6 @@ export interface DevupUIBasePluginOptions {
   importAliases?: ImportAliases
   /** Build-time aliases that expand one style prop into multiple CSS properties. */
   shorthands?: CustomShorthands
+  /** How code written against StyleX's API is read. */
+  stylex?: StylexOptions
 }

@@ -23,6 +23,7 @@ module.exports = function createBoundary() {
     setDebug: 'debug:b',
     setModuleResolver: 'resolver:f',
     setPrefix: 'prefix:p',
+    setStylexStyleResolution: 'resolution:p',
   }
   const labels = {
     s: 'a string',

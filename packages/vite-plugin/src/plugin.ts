@@ -21,6 +21,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   readJsxImportSource,
   seedFileNumbers,
   tailwindCssFiles,
@@ -246,7 +247,7 @@ function createCssChunkBuildOptions(
 
 export interface DevupUIPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -322,11 +323,13 @@ export function DevupUI({
   singleCss = false,
   prefix,
   shorthands,
+  stylex,
   engine,
   atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const styleResolution = normalizeStylexOptions(stylex)
   const compiler = loadCompiler(engine)
   // A build starts from its own options: whatever an earlier build in this
   // process left in the engine (prefix, hoisting, routes, buckets, numbers,
@@ -364,6 +367,7 @@ export function DevupUI({
   }
   function configureEngine() {
     compiler.registerShorthands(normalizedShorthands)
+    compiler.setStylexStyleResolution(styleResolution)
     compiler.setDebug(debug)
     compiler.setPrefix(prefix ?? null)
   }

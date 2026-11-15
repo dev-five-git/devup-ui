@@ -23,9 +23,11 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
   seedFileNumbers,
+  type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -38,7 +40,7 @@ import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -79,6 +81,7 @@ export class DevupUIWebpackPlugin {
   fileMapFile: string
   private importAliases: WasmImportAliases
   private readonly normalizedShorthands: Record<string, readonly string[]>
+  private readonly styleResolution: StylexStyleResolution
   private readonly compiler: DevupCompiler
 
   constructor({
@@ -93,13 +96,16 @@ export class DevupUIWebpackPlugin {
     engine = 'native',
     prefix,
     shorthands,
+    stylex,
     atomHoist = 2,
     productionPrewarmFiles,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
+    this.styleResolution = normalizeStylexOptions(stylex)
     this.compiler = loadCompiler(engine)
     this.compiler.registerShorthands(this.normalizedShorthands)
+    this.compiler.setStylexStyleResolution(this.styleResolution)
     this.importAliases = mergeImportAliases(
       userImportAliases,
       readJsxImportSource(),
@@ -246,6 +252,7 @@ export class DevupUIWebpackPlugin {
     this.compiler.setDebug(this.options.debug)
     this.compiler.setPrefix(this.options.prefix ?? null)
     this.compiler.registerShorthands(this.normalizedShorthands)
+    this.compiler.setStylexStyleResolution(this.styleResolution)
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))

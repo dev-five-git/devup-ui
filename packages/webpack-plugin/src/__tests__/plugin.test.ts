@@ -135,6 +135,38 @@ describe('shorthand creation boundary', () => {
       registration.mockRestore()
     }
   })
+
+  it('reads StyleX under the styleResolution it is given, again when the compiler initializes', () => {
+    using resolution = spyOn(wasm, 'setStylexStyleResolution')
+    const compiler = createCompiler()
+    try {
+      const plugin = new DevupUIWebpackPlugin({
+        engine: 'wasm',
+        stylex: { styleResolution: 'application-order' },
+      })
+      new DevupUIWebpackPlugin({ engine: 'wasm' })
+      plugin.apply(asCompiler(compiler))
+      expect(resolution.mock.calls).toEqual([
+        ['application-order'],
+        ['property-specificity'],
+        ['application-order'],
+      ])
+    } finally {
+      for (const [, endBuild] of compiler.hooks.shutdown.tap.mock.calls)
+        endBuild()
+      wasm.setStylexStyleResolution(null)
+    }
+  })
+
+  it('rejects an unknown styleResolution before selecting a compiler', () => {
+    using selection = spyOn(pluginUtils, 'loadCompiler')
+    expect(() =>
+      Reflect.construct(DevupUIWebpackPlugin, [
+        { stylex: 'application-order' },
+      ]),
+    ).toThrow(pluginUtils.StylexConfigError)
+    expect(selection).not.toHaveBeenCalled()
+  })
 })
 
 type CodeExtractResult = pluginUtils.DevupCompilerOutput

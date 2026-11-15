@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 use crate::{
-    atom_hoist, class_map, debug, file_map, file_routes, slot_reservation, tailwind_definitions,
-    theme_tokens,
+    atom_hoist, class_map, debug, file_map, file_routes, slot_reservation, style_resolution,
+    tailwind_definitions, theme_tokens,
 };
 
 pub(crate) fn replace_shorthands(
@@ -29,6 +29,7 @@ pub(crate) fn replace_shorthands(
 pub fn reset_state_for_testing() {
     crate::set_prefix(None);
     debug::set_debug(false);
+    style_resolution::set_style_resolution(Default::default());
     atom_hoist::set_atom_hoist(None);
     atom_hoist::restore_atom_plan(None);
     slot_reservation::reset();
@@ -47,6 +48,7 @@ pub fn reset_state_for_testing() {
 pub struct TestStateGuard {
     prefix: Option<String>,
     debug: bool,
+    resolution: style_resolution::StyleResolution,
     hoist: Option<usize>,
     plan: Option<BTreeSet<String>>,
     reservation: slot_reservation::State,
@@ -66,6 +68,7 @@ impl TestStateGuard {
         let guard = Self {
             prefix: crate::get_prefix(),
             debug: debug::is_debug(),
+            resolution: style_resolution::style_resolution(),
             hoist: atom_hoist::atom_hoist_threshold(),
             plan: atom_hoist::atom_plan(),
             reservation: slot_reservation::replace_state(Default::default()),
@@ -93,6 +96,7 @@ impl Drop for TestStateGuard {
     fn drop(&mut self) {
         crate::set_prefix(self.prefix.take());
         debug::set_debug(self.debug);
+        style_resolution::set_style_resolution(self.resolution);
         atom_hoist::set_atom_hoist(self.hoist);
         atom_hoist::restore_atom_plan(self.plan.take());
         slot_reservation::replace_state(std::mem::take(&mut self.reservation));

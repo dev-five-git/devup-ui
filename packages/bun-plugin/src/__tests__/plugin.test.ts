@@ -76,6 +76,35 @@ describe('shorthand creation boundary', () => {
       selection.mockImplementation(selectCompiler)
     }
   })
+
+  it('reads StyleX under the styleResolution it is given when registered', async () => {
+    const resolution = spyOn(wasm, 'setStylexStyleResolution')
+    try {
+      await register({
+        engine: 'wasm',
+        stylex: { styleResolution: 'application-order' },
+      })
+      expect(resolution.mock.calls).toEqual([['application-order']])
+    } finally {
+      resolution.mockRestore()
+      wasm.setStylexStyleResolution(null)
+    }
+  })
+
+  it('rejects an unknown styleResolution before selecting a compiler', () => {
+    const selection = spyOn(pluginUtils, 'loadCompiler')
+    try {
+      expect(() =>
+        Reflect.apply(register, undefined, [
+          { stylex: { styleResolution: 'last-wins' } },
+        ]),
+      ).toThrow(pluginUtils.StylexConfigError)
+      expect(selection).not.toHaveBeenCalled()
+    } finally {
+      selection.mockRestore()
+      selection.mockImplementation(selectCompiler)
+    }
+  })
 })
 
 const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-bun-hooks-'))

@@ -17,8 +17,11 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   readJsxImportSource,
   seedFileNumbers,
+  type StylexOptions,
+  type StylexStyleResolution,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -45,6 +48,8 @@ export interface DevupUIBunPluginOptions {
   /** Native by default. Select WASM explicitly without automatic fallback. */
   engine?: DevupEngine
   shorthands?: CustomShorthands
+  /** How code written against StyleX's API is read. */
+  stylex?: StylexOptions
   /**
    * Readable class names. Defaults to `true` under the Bun runtime (tests) and
    * `false` in `Bun.build`.
@@ -87,9 +92,11 @@ async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
 async function initialize(
   compiler: DevupCompiler,
   shorthands: Record<string, readonly string[]>,
+  styleResolution: StylexStyleResolution,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
 ) {
   compiler.registerShorthands(shorthands)
+  compiler.setStylexStyleResolution(styleResolution)
   compiler.setPrefix(null)
   compiler.setModuleResolver(createModuleResolver())
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
@@ -174,6 +181,7 @@ async function loadSourceFile(
  */
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
+  const styleResolution = normalizeStylexOptions(options.stylex)
   const compiler = loadCompiler(options.engine)
   const watchTailwindCss = createTailwindWatcher(
     writeDataFiles.bind(undefined, compiler),
@@ -188,7 +196,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
-      await initialize(compiler, shorthands, watchTailwindCss)
+      await initialize(compiler, shorthands, styleResolution, watchTailwindCss)
       const debug = options.debug ?? !bundling
       compiler.setDebug(debug)
       const slots = createSharedSlotReservation(compiler)

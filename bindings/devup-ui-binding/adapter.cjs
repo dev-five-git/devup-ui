@@ -111,5 +111,7 @@ exports.createBinding = function createBinding(raw) {
     setDebug: (value) => raw.setDebug(value),
     setModuleResolver,
     setPrefix: (value) => raw.setPrefix(value == null ? undefined : value),
+    setStylexStyleResolution: (value) =>
+      raw.setStylexStyleResolution(value == null ? undefined : value),
   })
 }

@@ -190,6 +190,11 @@ pub fn get_prefix() -> Either<String, Undefined> {
 pub fn set_prefix(value: Option<String>) {
     core::set_prefix(value);
 }
+/// Install the named `StyleX` `styleResolution`, the default when nullish; an unknown name fails.
+#[napi]
+pub fn set_stylex_style_resolution(env: Env, value: Option<String>) -> Result<()> {
+    core::set_stylex_style_resolution(value.as_deref()).map_err(|error| binding_error(env, error))
+}
 /// Return the default theme as a string or undefined.
 #[napi]
 pub fn get_default_theme() -> Either<String, Undefined> {

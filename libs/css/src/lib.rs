@@ -20,6 +20,7 @@ pub mod selector_params;
 mod selector_separator;
 pub mod shorthand;
 pub mod slot_reservation;
+pub mod style_resolution;
 pub mod style_selector;
 pub mod tailwind_definitions;
 #[doc(hidden)]

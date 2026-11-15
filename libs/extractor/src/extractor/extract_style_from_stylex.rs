@@ -7,8 +7,10 @@ use crate::stylex::{
     dynamic_number_suffix, is_first_that_works_call, is_include_call_static, is_types_call,
     normalize_stylex_property, stylex_value,
 };
+use crate::stylex_resolution::{self, Expansion};
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
+use css::style_resolution::{StyleResolution, style_resolution};
 use css::style_selector::StyleSelector;
 use oxc_ast::ast::{
     Argument, ArrowFunctionExpression, BindingPattern, Expression, ObjectExpression,
@@ -241,9 +243,8 @@ fn extract_stylex_namespace<'a>(
     Vec<StylexIncludeRef>,
     Vec<(String, usize)>,
 ) {
-    let mut styles = vec![];
+    let mut keys = Keys::default();
     let mut include_refs = vec![];
-    let mut groups = vec![];
     for style_prop in &namespace.properties {
         let style_prop = match style_prop {
             ObjectPropertyKind::ObjectProperty(style_prop) => style_prop,
@@ -275,7 +276,7 @@ fn extract_stylex_namespace<'a>(
                 continue;
             };
             let parent_selectors = [SelectorPart::Pseudo(prop_name.to_string())];
-            let before = styles.len();
+            let mut inner = Keys::default();
             for inner_prop in &inner_obj.properties {
                 let inner_prop = match inner_prop {
                     ObjectPropertyKind::ObjectProperty(inner_prop) => inner_prop,
@@ -296,19 +297,20 @@ fn extract_stylex_namespace<'a>(
                     ));
                     continue;
                 }
-                push_decomposed(
-                    &mut styles,
-                    decompose_value_conditions(
-                        &property,
-                        &inner_prop.value,
-                        &parent_selectors,
-                        leaf,
-                        errors,
-                        resolver,
-                    ),
-                );
+                let written = Written {
+                    key: inner_name.as_ref(),
+                    property: &property,
+                    value: &inner_prop.value,
+                };
+                inner.extend(resolved_keys(
+                    &written,
+                    &parent_selectors,
+                    leaf,
+                    errors,
+                    resolver,
+                ));
             }
-            groups.push((prop_name.to_string(), styles.len() - before));
+            keys.set(prop_name.to_string(), inner.into_styles());
             continue;
         }
 
@@ -320,34 +322,143 @@ fn extract_stylex_namespace<'a>(
             ));
             continue;
         }
-        if SHORTHAND_PROPERTIES.contains(css_property.as_str()) {
+        if style_resolution() == StyleResolution::PropertySpecificity
+            && SHORTHAND_PROPERTIES.contains(css_property.as_str())
+        {
             eprintln!(
                 "[stylex] WARNING: Shorthand property '{css_property}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft')."
             );
         }
-        let before = styles.len();
-        push_decomposed(
-            &mut styles,
-            decompose_value_conditions(
-                &css_property,
-                &style_prop.value,
-                &[],
-                leaf,
-                errors,
-                resolver,
-            ),
-        );
-        groups.push((prop_name.to_string(), styles.len() - before));
+        let written = Written {
+            key: prop_name.as_ref(),
+            property: &css_property,
+            value: &style_prop.value,
+        };
+        keys.extend(resolved_keys(&written, &[], leaf, errors, resolver));
     }
+    let (styles, groups) = keys.into_groups();
     (styles, include_refs, groups)
 }
 
-fn push_decomposed(styles: &mut Vec<ExtractStyleProp<'_>>, decomposed: Vec<DecomposedStyle>) {
-    for style in decomposed {
-        if let Some(value) = style.value {
-            styles.push(raw_static_style(style.property, &value, style.selector));
+/// The styles of a namespace by key: a later key replaces an earlier one
+/// where that one stands, as an object literal keeps it
+#[derive(Default)]
+struct Keys<'a>(Vec<(String, Vec<ExtractStyleProp<'a>>)>);
+
+impl<'a> Keys<'a> {
+    fn set(&mut self, key: String, styles: Vec<ExtractStyleProp<'a>>) {
+        match self.0.iter_mut().find(|(written, _)| *written == key) {
+            Some(entry) => entry.1 = styles,
+            None => self.0.push((key, styles)),
         }
     }
+
+    fn extend(&mut self, keys: Vec<(String, Vec<DecomposedStyle>)>) {
+        for (key, decomposed) in keys {
+            self.set(key, decomposed_styles(decomposed));
+        }
+    }
+
+    fn into_styles(self) -> Vec<ExtractStyleProp<'a>> {
+        self.0.into_iter().flat_map(|(_, styles)| styles).collect()
+    }
+
+    /// The styles, with each key and how many of them it gives
+    fn into_groups(self) -> (Vec<ExtractStyleProp<'a>>, Vec<(String, usize)>) {
+        let groups = self
+            .0
+            .iter()
+            .map(|(key, styles)| (key.clone(), styles.len()))
+            .collect();
+        (self.into_styles(), groups)
+    }
+}
+
+fn decomposed_styles<'a>(decomposed: Vec<DecomposedStyle>) -> Vec<ExtractStyleProp<'a>> {
+    decomposed
+        .into_iter()
+        .filter_map(|style| {
+            let value = style.value?;
+            Some(raw_static_style(style.property, &value, style.selector))
+        })
+        .collect()
+}
+
+/// A `stylex.create()` key as written, with the CSS property it names
+struct Written<'w, 'a> {
+    key: &'w str,
+    property: &'w str,
+    value: &'w Expression<'a>,
+}
+
+/// The keys `written` gives under the build's `styleResolution`, each with
+/// its decomposed styles; a key the policy rejects gives none
+fn resolved_keys(
+    written: &Written<'_, '_>,
+    parent_selectors: &[SelectorPart],
+    leaf: &Leaf<'_>,
+    errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
+) -> Vec<(String, Vec<DecomposedStyle>)> {
+    let decomposed = decompose_value_conditions(
+        written.property,
+        written.value,
+        parent_selectors,
+        leaf,
+        errors,
+        resolver,
+    );
+    let policy = style_resolution();
+    let Some(expansion) = stylex_resolution::expansion(policy, written.key) else {
+        return vec![(written.key.to_string(), decomposed)];
+    };
+    expand(expansion, decomposed).unwrap_or_else(|message| {
+        errors.push((
+            written.value.span().start,
+            build_time_error(
+                "stylex.create",
+                written.key,
+                &format!("{message} (styleResolution: '{}')", policy.name()),
+            ),
+        ));
+        vec![]
+    })
+}
+
+/// The keys `expansion` spreads the leaves of one key over, in the order
+/// `StyleX` gives them
+fn expand(
+    expansion: &Expansion,
+    leaves: Vec<DecomposedStyle>,
+) -> Result<Vec<(String, Vec<DecomposedStyle>)>, String> {
+    if has_fallbacks(&leaves) {
+        return Err("Cannot use fallbacks for shorthands. Use the expansion instead.".to_string());
+    }
+    let mut keys: Vec<(String, Vec<DecomposedStyle>)> = vec![];
+    for leaf in leaves {
+        for (key, value) in expansion.apply(leaf.value.as_deref())? {
+            let style = DecomposedStyle {
+                property: normalize_stylex_property(key),
+                value,
+                selector: leaf.selector.clone(),
+            };
+            match keys.iter_mut().find(|(written, _)| written == key) {
+                Some((_, styles)) => styles.push(style),
+                None => keys.push((key.to_string(), vec![style])),
+            }
+        }
+    }
+    Ok(keys)
+}
+
+/// Whether two leaves apply under the same conditions: the fallbacks of
+/// `firstThatWorks()`
+fn has_fallbacks(leaves: &[DecomposedStyle]) -> bool {
+    leaves.iter().enumerate().any(|(index, style)| {
+        leaves[..index]
+            .iter()
+            .any(|earlier| earlier.selector == style.selector)
+    })
 }
 
 /// `...stylex.include(base.member)`: `None` when the spread is not an

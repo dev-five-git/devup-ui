@@ -68,7 +68,7 @@ save('provenance.json', {
   scenarios: corpus.map((c) => c.name),
 })
 const names =
-  'Output codeExtract codeExtractWithoutSourceMap exportCanonicalMap exportClassMap exportFileMap exportSheet getCss getDefaultTheme getPrefix getThemeInterface getUnreservedClassSlotCount hasDevupUI importCanonicalMap importClassMap importFileMap importFileRoutes importSheet isDebug registerShorthands registerTheme reserveClassSlots resetBuildState resetStateForTesting seedFileMap setAtomHoist setDebug setModuleResolver setPrefix'.split(
+  'Output codeExtract codeExtractWithoutSourceMap exportCanonicalMap exportClassMap exportFileMap exportSheet getCss getDefaultTheme getPrefix getThemeInterface getUnreservedClassSlotCount hasDevupUI importCanonicalMap importClassMap importFileMap importFileRoutes importSheet isDebug registerShorthands registerTheme reserveClassSlots resetBuildState resetStateForTesting seedFileMap setAtomHoist setDebug setModuleResolver setPrefix setStylexStyleResolution'.split(
     ' ',
   )
 const abi = {
@@ -199,8 +199,8 @@ const h = {
     )
   },
 }
-assert.equal(corpus.length, 25)
-assert.equal(new Set(corpus.map((c) => c.name)).size, 25)
+assert.equal(corpus.length, 26)
+assert.equal(new Set(corpus.map((c) => c.name)).size, 26)
 h.note('public-error-inventory', runDiagnostics(w))
 for (const test of corpus) {
   scenario = test.name

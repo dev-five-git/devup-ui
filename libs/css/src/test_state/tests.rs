@@ -4,6 +4,7 @@ use serial_test::serial;
 fn seed() {
     crate::set_prefix(Some("outer".into()));
     debug::set_debug(true);
+    style_resolution::set_style_resolution(style_resolution::StyleResolution::ApplicationOrder);
     atom_hoist::set_atom_hoist(Some(3));
     class_map::set_class_map(HashMap::from([(
         "x".into(),
@@ -34,6 +35,10 @@ fn seed() {
 fn assert_seed() {
     assert_eq!(crate::get_prefix().as_deref(), Some("outer"));
     assert!(debug::is_debug());
+    assert_eq!(
+        style_resolution::style_resolution(),
+        style_resolution::StyleResolution::ApplicationOrder
+    );
     assert_eq!(atom_hoist::atom_hoist_threshold(), Some(3));
     assert_eq!(class_map::get_class_map()["x"]["y"], 7);
     assert_eq!(file_map::get_file_map().len(), 1);
@@ -77,6 +82,10 @@ fn assert_seed() {
 fn assert_clean() {
     assert_eq!(crate::get_prefix(), None);
     assert!(!debug::is_debug());
+    assert_eq!(
+        style_resolution::style_resolution(),
+        style_resolution::StyleResolution::PropertySpecificity
+    );
     assert_eq!(atom_hoist::atom_hoist_threshold(), None);
     assert_eq!(class_map::get_class_map(), HashMap::new());
     assert_eq!(file_map::get_file_map().len(), 0);
