@@ -27,6 +27,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "exports": {
@@ -61,6 +64,6 @@
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",
-    "next": "*"
+    "next": ">=13.0.0"
   }
 }

@@ -83,6 +83,13 @@ Add the `data-group` attribute to a parent element, then use `_groupHover`, `_gr
   </TableBody>
 </Table>
 
+These are the common ones, not the full list. Every pseudo-class prop on the
+[Selector](/docs/api/selector) page has a group form: `_group` followed by the
+same name in PascalCase, such as `_groupChecked`, `_groupDisabled` or
+`_groupFocusVisible`. The pseudo-class is put on the `data-group` parent, and
+the styles apply to the element inside it. Group props also work as keys inside
+`selectors` (`groupHover`).
+
 ## Interactive Card Example
 
 ```tsx
