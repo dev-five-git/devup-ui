@@ -18,8 +18,11 @@ import {
   mergeImportAliases,
   normalizeShorthands,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   seedFileNumbers,
   tailwindCssFiles,
+  type WasmImportAliases,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
@@ -28,18 +31,42 @@ import { cssDirName, cssNamespace, resolveCssId } from './css-id'
 import { createTailwindWatcher } from './tailwind-watch'
 
 const libPackage = '@devup-ui/react'
-const devupFile = 'devup.json'
-const distDir = 'df'
-const cssDir = resolve(distDir, cssDirName)
+const distDirName = 'df'
 const singleCss = true
-const importAliases = mergeImportAliases(undefined, readJsxImportSource())
-// The packages whose imports the extractor compiles: Devup UI, the packages it
-// takes the place of, and StyleX
-const compiledPackages = [
-  libPackage,
-  '@stylexjs/stylex',
-  ...Object.keys(importAliases),
-]
+
+/** Where a project keeps its files, and what its tsconfig compiles */
+interface BunProject {
+  readonly root: string
+  readonly devupFile: string
+  readonly distDir: string
+  readonly cssDir: string
+  readonly importAliases: WasmImportAliases
+  /**
+   * The packages whose imports the extractor compiles: Devup UI, the packages
+   * it takes the place of, and StyleX
+   */
+  readonly compiledPackages: string[]
+}
+
+/**
+ * The project at `root`: the `root` of `Bun.build`, or the working directory
+ * of the runtime and of a build without one
+ */
+function locateProject(root: string): BunProject {
+  const importAliases = mergeImportAliases(undefined, readJsxImportSource(root))
+  return {
+    root,
+    devupFile: resolveDevupFile(root, undefined),
+    distDir: resolveProjectPath(root, distDirName),
+    cssDir: resolve(root, distDirName, cssDirName),
+    importAliases,
+    compiledPackages: [
+      libPackage,
+      '@stylexjs/stylex',
+      ...Object.keys(importAliases),
+    ],
+  }
+}
 
 export interface DevupUIBunPluginOptions {
   /** Native by default. Select WASM explicitly without automatic fallback. */
@@ -54,7 +81,10 @@ export interface DevupUIBunPluginOptions {
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
-async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
+async function writeDataFiles(
+  compiler: DevupCompiler,
+  { devupFile, distDir, cssDir }: BunProject,
+): Promise<string[]> {
   let theme = {}
   let tailwindFiles: string[] = []
   try {
@@ -88,7 +118,9 @@ async function initialize(
   compiler: DevupCompiler,
   shorthands: Record<string, readonly string[]>,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
+  project: BunProject,
 ) {
+  const { distDir } = project
   compiler.registerShorthands(shorthands)
   compiler.setPrefix(null)
   compiler.setModuleResolver(createModuleResolver())
@@ -96,16 +128,20 @@ async function initialize(
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
     join(distDir, 'compat.d.ts'),
-    createCompatTypes(importAliases),
+    createCompatTypes(project.importAliases),
     'utf-8',
   )
-  watchTailwindCss(await writeDataFiles(compiler))
+  watchTailwindCss(await writeDataFiles(compiler, project))
 }
 
 const scanners = new Map<SourceLoader, Bun.Transpiler>()
 
 /** Whether `contents` imports a package the extractor compiles */
-function importsCompiledPackage(contents: string, loader: SourceLoader) {
+function importsCompiledPackage(
+  contents: string,
+  loader: SourceLoader,
+  compiledPackages: readonly string[],
+) {
   let scanner = scanners.get(loader)
   if (!scanner) {
     scanner = new Bun.Transpiler({ loader })
@@ -129,6 +165,7 @@ async function loadSourceFile(
   compiler: DevupCompiler,
   filePath: string,
   bundling: boolean,
+  { cssDir, importAliases, compiledPackages }: BunProject,
 ) {
   const loader: SourceLoader = filePath.endsWith('.tsx')
     ? 'tsx'
@@ -141,7 +178,7 @@ async function loadSourceFile(
 
   if (
     isProjectJsx(filePath, importAliases) ||
-    importsCompiledPackage(contents, loader) ||
+    importsCompiledPackage(contents, loader, compiledPackages) ||
     compiler.hasDevupUI(filePath, contents, libPackage, importAliases)
   ) {
     using code = compiler.codeExtract(
@@ -175,8 +212,9 @@ async function loadSourceFile(
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
   const compiler = loadCompiler(options.engine)
-  const watchTailwindCss = createTailwindWatcher(
-    writeDataFiles.bind(undefined, compiler),
+  let project = locateProject(process.cwd())
+  const watchTailwindCss = createTailwindWatcher(() =>
+    writeDataFiles(compiler, project),
   )
   return {
     name: 'devup-ui',
@@ -184,11 +222,17 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
     async setup(build: PluginBuilder) {
       // `Bun.build` hands its config to plugins; the runtime has none
       const bundling = build.config !== undefined
+      // The relative paths belong to the `root` of `Bun.build` when it sets
+      // one, not to the directory a monorepo tool starts the build from
+      project = locateProject(
+        resolve((bundling && build.config.root) || process.cwd()),
+      )
+      const { root, importAliases, cssDir } = project
       // A build starts from its own options, not from what an earlier build in
       // this process left in the engine
       const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
-      await initialize(compiler, shorthands, watchTailwindCss)
+      await initialize(compiler, shorthands, watchTailwindCss, project)
       const debug = options.debug ?? !bundling
       compiler.setDebug(debug)
       const slots = createSharedSlotReservation(compiler)
@@ -197,14 +241,14 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         slots.invalidate()
         slots.reserve(
           {
-            roots: [resolve('src'), resolve('app')],
+            roots: [resolve(root, 'src'), resolve(root, 'app')],
             entries: bundling
               ? build.config.entrypoints.map((entry) => ({
                   request: resolve(entry),
-                  context: process.cwd(),
+                  context: root,
                 }))
               : [],
-            cwd: process.cwd(),
+            cwd: root,
             package: libPackage,
             importAliases,
             toId: (path) => path,
@@ -228,8 +272,9 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
           seedFileNumbers(
             compiler,
             collectNumberedFiles({
-              roots: [resolve('src')],
-              needles: compiledPackages,
+              roots: [resolve(root, 'src')],
+              cwd: root,
+              needles: project.compiledPackages,
               importAliases,
               toId: (path) => path,
             }),
@@ -244,7 +289,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // content-keyed transpiler cache. See ./css-id.
       build.onResolve(
         { filter: /devup-ui(-\d+)?\.css$/ },
-        ({ path, importer }) => resolveCssId(path, importer, distDir),
+        ({ path, importer }) => resolveCssId(path, importer, distDirName),
       )
 
       // The bundler takes the stylesheet once every other module is loaded,
@@ -270,7 +315,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
             reserveFiles()
             reservationPending = false
           }
-          return loadSourceFile(compiler, path, bundling)
+          return loadSourceFile(compiler, path, bundling, project)
         },
       )
     },

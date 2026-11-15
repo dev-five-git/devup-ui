@@ -201,7 +201,9 @@ describe('registered Bun hooks', () => {
     )
     exists.mockImplementation(realExists)
     const resolve = spyOn(nodePath, 'resolve').mockImplementation((...paths) =>
-      paths.length === 1 && paths[0] === 'src' ? root : realResolve(...paths),
+      paths.length === 2 && paths[0] === process.cwd() && paths[1] === 'src'
+        ? root
+        : realResolve(...paths),
     )
     try {
       await register({ engine: 'wasm' })
@@ -368,5 +370,64 @@ describe('registered Bun hooks', () => {
     )
     await register({ engine: 'wasm' })
     await expect(load(path)).rejects.toThrow(/invalid\.ts:\d+:\d+:/)
+  })
+})
+
+describe('project root', () => {
+  /** Run setup as `Bun.build` does, with `root` in its config */
+  async function setupBuild(buildRoot: string | undefined) {
+    const ends: (() => void)[] = []
+    const builder = {
+      config: { entrypoints: [], root: buildRoot },
+      onStart: () => builder,
+      onEnd: (end: () => void) => {
+        ends.push(end)
+        return builder
+      },
+      onResolve: () => builder,
+      onLoad: () => builder,
+    }
+    try {
+      await DevupUI({ engine: 'wasm' }).setup(
+        builder as unknown as Parameters<
+          ReturnType<typeof DevupUI>['setup']
+        >[0],
+      )
+    } finally {
+      // End the build session setup began
+      for (const end of ends) end()
+    }
+    return write.mock.calls.map(([path]) => String(path))
+  }
+
+  it('writes df under the root of Bun.build', async () => {
+    const buildRoot = nodePath.resolve('apps', 'web')
+    const written = await setupBuild(buildRoot)
+    expect(written).toContain(join(buildRoot, 'df', '.gitignore'))
+    expect(written).toContain(join(buildRoot, 'df', 'devup-ui', 'devup-ui.css'))
+  })
+
+  it('keeps writing df in the cwd without a root', async () => {
+    const written = await setupBuild(undefined)
+    expect(written).toContain(join('df', '.gitignore'))
+    expect(written).toContain(
+      nodePath.resolve('df', 'devup-ui', 'devup-ui.css'),
+    )
+  })
+
+  it('falls back to the devup.json of the cwd with a warning', async () => {
+    const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+    const cwdFile = nodePath.resolve('devup.json')
+    exists.mockImplementation((path) => String(path) === cwdFile)
+    try {
+      const buildRoot = nodePath.resolve('apps', 'bun-fallback')
+      const written = await setupBuild(buildRoot)
+      expect(readConfig).toHaveBeenCalledWith(cwdFile, 'utf-8')
+      expect(written).toContain(join(buildRoot, 'df', '.gitignore'))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('devupFile')
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

@@ -23,6 +23,8 @@ import {
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -127,9 +129,9 @@ export const DevupUI = ({
   include = [],
   package: libPackage = '@devup-ui/react',
   extractCss = true,
-  distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
-  devupFile = 'devup.json',
+  distDir: distDirOption = 'df',
+  cssDir: cssDirOption,
+  devupFile: devupFileOption,
   debug = false,
   singleCss = false,
   prefix,
@@ -141,10 +143,6 @@ export const DevupUI = ({
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
-  const importAliases = mergeImportAliases(
-    userImportAliases,
-    readJsxImportSource(),
-  )
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
@@ -158,6 +156,19 @@ export const DevupUI = ({
       api.onCloseBuild?.(endBuild)
       compiler.setDebug(debug)
       compiler.setPrefix(prefix ?? null)
+      // The relative options and the tsconfig belong to the Rsbuild root, not
+      // to the directory a monorepo tool starts the build from
+      const projectRoot = api.context.rootPath
+      const distDir = resolveProjectPath(projectRoot, distDirOption)
+      const cssDir =
+        cssDirOption === undefined
+          ? resolve(projectRoot, distDirOption, 'devup-ui')
+          : resolveProjectPath(projectRoot, cssDirOption)
+      const devupFile = resolveDevupFile(projectRoot, devupFileOption)
+      const importAliases = mergeImportAliases(
+        userImportAliases,
+        readJsxImportSource(projectRoot),
+      )
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -240,7 +251,7 @@ export const DevupUI = ({
       )
       if (atomMode) {
         try {
-          const root = process.cwd()
+          const root = projectRoot
           const srcDir = resolve(root, 'src')
           const tsconfigPath = resolve(root, 'tsconfig.json')
           const canonicalMap = buildCanonicalMap({

@@ -177,6 +177,23 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Project root
+
+With webpack (`next build --webpack`), relative `devupFile`, `distDir` and
+`cssDir` paths, the `tsconfig.json` the plugin reads and the file ids class names
+are derived from resolve against the Next project directory, not against the
+directory the build is started from. A build that a monorepo tool (turbo, nx,
+...) runs from a parent directory (`next build apps/web`) reads
+`apps/web/devup.json` and writes `apps/web/df`. Builds run from the project
+directory are unchanged; builds run from a parent directory may get different
+class names once. Turbopack does not tell its config the project directory, so
+there the paths stay relative to the working directory.
+
+When `devupFile` is not set and the project directory has no `devup.json` but
+the working directory does, that file is still read and a one-time warning is
+printed. Move `devup.json` into the project directory, or set `devupFile` to the
+file you want, to resolve it.
+
 ## Custom Shorthands
 
 Custom shorthands belong to the plugin options rather than `devup.json` because

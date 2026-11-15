@@ -461,6 +461,47 @@ describe('DevupUINextPlugin', () => {
       }
     })
 
+    it('reads routes and places the CSS under the Next project directory', () => {
+      // Given: `next build apps/web` started from the workspace root.
+      const dir = resolve('apps', 'web')
+      existsSyncSpy.mockImplementation(
+        (path: fs.PathLike) => String(path) === join(dir, 'app'),
+      )
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(join(dir, 'app', 'page.tsx')))
+      try {
+        // When
+        DevupUI({}).webpack!(
+          createWebpackConfig(),
+          createWebpackContext({ dir }),
+        )
+        // Then
+        expect(graphSpy).toHaveBeenCalledWith(dir, join(dir, 'tsconfig.json'))
+        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cssDir: join(dir, '.next', 'cache', 'devup-ui'),
+          }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+      }
+    })
+
+    it('places the dev CSS under the Next project directory', () => {
+      const dir = resolve('apps', 'web')
+      DevupUI({}).webpack!(
+        createWebpackConfig(),
+        createWebpackContext({ dev: true, dir }),
+      )
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
+        cssDir: join(dir, 'df', 'devup-ui_tmpBuildId'),
+        engine: 'native',
+        watch: true,
+      })
+    })
+
     it('should apply webpack plugin with dev', async () => {
       const ret = DevupUI({})
 

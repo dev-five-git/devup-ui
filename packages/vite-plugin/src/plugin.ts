@@ -22,6 +22,8 @@ import {
   mergeImportAliases,
   normalizeShorthands,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   seedFileNumbers,
   tailwindCssFiles,
   withTailwindCss,
@@ -313,9 +315,9 @@ async function writeDataFiles(
 
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
-  devupFile = 'devup.json',
-  distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
+  devupFile: devupFileOption,
+  distDir: distDirOption = 'df',
+  cssDir: cssDirOption,
   extractCss = true,
   debug = false,
   include = [],
@@ -368,18 +370,41 @@ export function DevupUI({
     compiler.setPrefix(prefix ?? null)
   }
   if (ownsEngine) configureEngine()
-  const importAliases = mergeImportAliases(
+  // The relative options and the tsconfig belong to the project root, which
+  // is known once the config resolves; until then the working directory
+  let distDir = distDirOption
+  let cssDir = cssDirOption ?? resolve(distDirOption, 'devup-ui')
+  let devupFile = devupFileOption ?? 'devup.json'
+  let importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
   )
+  function locate(root: string) {
+    distDir = resolveProjectPath(root, distDirOption)
+    cssDir =
+      cssDirOption === undefined
+        ? resolve(root, distDirOption, 'devup-ui')
+        : resolveProjectPath(root, cssDirOption)
+    devupFile = resolveDevupFile(root, devupFileOption)
+    importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(root),
+    )
+  }
   const reservation = createViteReservation(compiler, {
     package: libPackage,
     include,
-    importAliases,
+    get importAliases() {
+      return importAliases
+    },
     singleCss,
     atomHoist,
-    cssDir,
-    distDir,
+    get cssDir() {
+      return cssDir
+    },
+    get distDir() {
+      return distDir
+    },
     relevant: (file) =>
       isConfigFile(file) ||
       isTailwindFile(file) ||
@@ -497,6 +522,7 @@ export function DevupUI({
       resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
+      locate(projectRoot)
       // Vite ids are POSIX absolute paths
       compiler.setModuleResolver(
         createModuleResolver({

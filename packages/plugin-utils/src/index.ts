@@ -40,6 +40,7 @@ export {
   isProjectJsx,
   seedFileNumbers,
 } from './numbering'
+export { resolveDevupFile, resolveProjectPath } from './project-root'
 export {
   collectReservationInputs,
   PreparedInputConflictError,

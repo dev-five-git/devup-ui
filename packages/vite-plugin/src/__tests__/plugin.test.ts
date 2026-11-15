@@ -310,6 +310,64 @@ afterEach(() => {
   consoleErrorSpy.mockRestore()
 })
 
+describe('project root', () => {
+  const written = () => writeFileSpy.mock.calls.map(([path]) => String(path))
+
+  it("resolves the relative options against Vite's root", async () => {
+    const root = resolve('apps', 'web')
+    const plugin = createPlugin()
+    await plugin.configResolved({ command: 'build', root })
+
+    expect(written()).toContain(join(root, 'df', '.gitignore'))
+    expect(written()).toContain(join(root, 'df', 'theme.d.ts'))
+    expect(written()).toContain(join(root, 'df', 'devup-ui', 'devup-ui.css'))
+    expect(
+      plugin.resolveId('./df/devup-ui/devup-ui.css', join(root, 'main.tsx')),
+    ).toBe(join(root, 'df', 'devup-ui', 'devup-ui.css'))
+  })
+
+  it('resolves relative user paths against the root', async () => {
+    const root = resolve('apps', 'web')
+    const devupFile = join(root, 'theme', 'devup.json')
+    existsSyncSpy.mockImplementation((path: string) => path === devupFile)
+    const plugin = createPlugin({
+      devupFile: 'theme/devup.json',
+      distDir: 'out',
+      cssDir: 'out/css',
+    })
+    await plugin.configResolved({ command: 'build', root })
+
+    expect(readFileSpy).toHaveBeenCalledWith(devupFile, 'utf-8')
+    expect(written()).toContain(join(root, 'out', '.gitignore'))
+    expect(written()).toContain(join(root, 'out', 'css', 'devup-ui.css'))
+  })
+
+  it('keeps the paths as given when the root is the cwd', async () => {
+    const plugin = createPlugin()
+    await plugin.configResolved({ command: 'build', root: process.cwd() })
+
+    expect(written()).toContain(join('df', '.gitignore'))
+    expect(written()).toContain(resolve('df', 'devup-ui', 'devup-ui.css'))
+  })
+
+  it('falls back to the devup.json of the cwd with a warning', async () => {
+    const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+    const cwdFile = resolve('devup.json')
+    existsSyncSpy.mockImplementation((path: string) => path === cwdFile)
+    try {
+      const root = resolve('apps', 'vite-fallback')
+      await createPlugin().configResolved({ command: 'build', root })
+
+      expect(readFileSpy).toHaveBeenCalledWith(cwdFile, 'utf-8')
+      expect(written()).toContain(join(root, 'df', '.gitignore'))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('devupFile')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
 describe('devupUIVitePlugin', () => {
   it('releases extracted Output before publishing CSS while retaining its result', async () => {
     // Given

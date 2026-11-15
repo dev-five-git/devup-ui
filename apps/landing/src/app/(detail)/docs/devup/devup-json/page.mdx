@@ -254,7 +254,15 @@ your-project/
 
 ## Plugin Configuration
 
-By default, plugins look for `devup.json` in the project root. You can customize this:
+By default, plugins look for `devup.json` in the project root: Vite's `root`,
+webpack's `context`, Rsbuild's root, the Next.js project directory (webpack
+builds) or the `root` of `Bun.build`. Relative `devupFile`, `distDir` and
+`cssDir` paths resolve against it, not against the directory a monorepo tool
+(turbo, nx, ...) starts the build from. If `devupFile` is not set and only the
+working directory holds a `devup.json`, that file is still used and a one-time
+warning asks you to move it into the project root or set `devupFile`.
+
+You can customize the path:
 
 ### Vite
 

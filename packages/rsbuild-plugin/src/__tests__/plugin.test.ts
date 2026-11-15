@@ -222,6 +222,78 @@ describe('DevupUIRsbuildPlugin', () => {
     }
   })
 
+  describe('project root', () => {
+    async function setupAt(
+      rootPath: string,
+      options: Parameters<typeof DevupUI>[0] = {},
+    ) {
+      const transform = mock()
+      writeFileSpy.mockClear()
+      readFileSpy.mockClear()
+      const { context } = createSetupContext()
+      await DevupUI({ engine: 'wasm', atomHoist: 0, ...options }).setup(
+        createSetupContext({ transform, context: { ...context, rootPath } }),
+      )
+      return {
+        cssTest: transform.mock.calls[0]?.[0].test as string,
+        written: writeFileSpy.mock.calls.map(([path]) => path),
+      }
+    }
+
+    it('resolves the relative options against the Rsbuild root', async () => {
+      const root = resolve('apps', 'web')
+      const { cssTest, written } = await setupAt(root)
+
+      expect(cssTest).toBe(join(root, 'df', 'devup-ui'))
+      expect(written).toContain(join(root, 'df', '.gitignore'))
+      expect(written).toContain(join(root, 'df', 'compat.d.ts'))
+    })
+
+    it('resolves relative user paths against the root', async () => {
+      const root = resolve('apps', 'web')
+      const devupFile = join(root, 'theme', 'devup.json')
+      existsSyncSpy.mockImplementation((path: string) => path === devupFile)
+      try {
+        const { cssTest, written } = await setupAt(root, {
+          devupFile: 'theme/devup.json',
+          distDir: 'out',
+          cssDir: 'out/css',
+        })
+
+        expect(cssTest).toBe(join(root, 'out', 'css'))
+        expect(written).toContain(join(root, 'out', '.gitignore'))
+        expect(readFileSpy).toHaveBeenCalledWith(devupFile, 'utf-8')
+      } finally {
+        existsSyncSpy.mockReturnValue(false)
+      }
+    })
+
+    it('keeps the paths as given when the root is the cwd', async () => {
+      const { cssTest, written } = await setupAt(process.cwd())
+
+      expect(cssTest).toBe(resolve('df', 'devup-ui'))
+      expect(written).toContain(join('df', '.gitignore'))
+    })
+
+    it('falls back to the devup.json of the cwd with a warning', async () => {
+      const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+      const cwdFile = resolve('devup.json')
+      existsSyncSpy.mockImplementation((path: string) => path === cwdFile)
+      try {
+        const root = resolve('apps', 'rsbuild-fallback')
+        const { written } = await setupAt(root)
+
+        expect(readFileSpy).toHaveBeenCalledWith(cwdFile, 'utf-8')
+        expect(written).toContain(join(root, 'df', '.gitignore'))
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0]?.[0]).toContain('devupFile')
+      } finally {
+        existsSyncSpy.mockReturnValue(false)
+        warn.mockRestore()
+      }
+    })
+  })
+
   it('should return a plugin object with correct name', async () => {
     const plugin = DevupUI()
     expect(plugin).toBeDefined()

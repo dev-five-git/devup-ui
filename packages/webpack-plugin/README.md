@@ -200,6 +200,21 @@ Selection applies to the plugin, source loader, CSS loader and delayed build
 callbacks as one unit. Native state, like WASM state, does not support
 concurrent independent builds in the same process.
 
+## Project root
+
+Relative `devupFile`, `distDir` and `cssDir` paths, the `tsconfig.json` the
+plugin reads and the file ids class names are derived from resolve against
+webpack's `context`, not against the directory the build is started from. A
+build that a monorepo tool (turbo, nx, ...) runs from a parent directory reads
+`<context>/devup.json` and writes `<context>/df`, as a build run from the project
+itself does. Builds run from the project root are unchanged; builds run from a
+parent directory may get different class names once.
+
+When `devupFile` is not set and the project root has no `devup.json` but the
+working directory does, that file is still read and a one-time warning is
+printed. Move `devup.json` into the project root, or set `devupFile` to the file
+you want, to resolve it.
+
 ## Custom Shorthands
 
 ```ts

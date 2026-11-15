@@ -642,12 +642,16 @@ export function DevupUI(
   let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
+    // Next's project directory, which it also hands webpack as `context`: the
+    // webpack plugin resolves the relative options against it, not the cwd
+    const root = _options.dir ?? process.cwd()
     options.cssDir ??= resolve(
+      root,
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
     if (!_options.dev && productionPrewarmFiles === undefined) {
-      const cwd = process.cwd()
+      const cwd = root
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
