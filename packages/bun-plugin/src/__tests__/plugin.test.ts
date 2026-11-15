@@ -223,6 +223,33 @@ describe('registered Bun hooks', () => {
     expect(loads.length).toBe(2)
   })
 
+  it('warns when runtime file numbering fails, and stays quiet without src', async () => {
+    const collect = spyOn(pluginUtils, 'collectNumberedFiles')
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      collect.mockImplementation(() => {
+        throw new Error('scan boom')
+      })
+      await register({ engine: 'wasm' })
+      expect(warn).toHaveBeenCalledWith(
+        '[devup-ui] Bun file numbering failed: scan boom. Stylesheet file numbers follow the order Bun loads files in, so they can differ between runs of the same source.',
+      )
+
+      warn.mockClear()
+      collect.mockImplementation(() => {
+        throw Object.assign(new Error('ENOENT'), {
+          code: 'ENOENT',
+          path: nodePath.resolve('src'),
+        })
+      })
+      await register({ engine: 'wasm' })
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+      collect.mockRestore()
+    }
+  })
+
   it('leaves invalid JavaScript to the native loader after scanning fails', async () => {
     const path = join(root, 'malformed.ts')
     const source = 'import {'
@@ -419,6 +446,29 @@ describe('registered Bun hooks', () => {
       loader: 'ts',
     })
     expect(writeSync).not.toHaveBeenCalled()
+  })
+
+  it('writes the runtime sheet only when a module changes it', async () => {
+    const first = join(root, 'sheet-first.ts')
+    const same = join(root, 'sheet-same.ts')
+    const style =
+      "import { css } from '@devup-ui/react'; export const className = css({ color: 'olive' })"
+    await Bun.write(first, style)
+    await Bun.write(same, style)
+    await register({ engine: 'wasm' })
+
+    await load(first)
+    expect(writeSync).toHaveBeenCalledTimes(1)
+    expect(writeSync).toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui.css'),
+      wasm.getCss(null, false),
+      'utf-8',
+    )
+
+    // The same file again, and another file with only styles the sheet holds
+    await load(first)
+    await load(same)
+    expect(writeSync).toHaveBeenCalledTimes(1)
   })
 
   it('propagates source read errors instead of returning partial output', async () => {

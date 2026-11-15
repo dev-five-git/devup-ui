@@ -1186,10 +1186,20 @@ const App = () => <Box></Box>`,
       expect(
         rspackCfg.optimization.splitChunks.cacheGroups?.devupUiShared.type,
       ).toBe('css/mini-extract')
-      // splitChunks missing/false -> no cacheGroup added, no throw
-      const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
+      // no optimization or splitChunks yet -> the group is still added
+      const rspackCfg2 = {} as {
+        optimization?: {
+          splitChunks?: { cacheGroups?: Record<string, { type?: string }> }
+        }
+      }
       inject(rspackCfg2)
-      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+      expect(
+        rspackCfg2.optimization?.splitChunks?.cacheGroups?.devupUiShared.type,
+      ).toBe('css/mini-extract')
+      // splitChunks false (chunk splitting off on purpose) -> left as it is
+      const rspackCfg3 = { optimization: { splitChunks: false } }
+      inject(rspackCfg3)
+      expect(rspackCfg3.optimization.splitChunks).toBe(false)
     })
 
     it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {
@@ -1375,6 +1385,28 @@ const App = () => <Box></Box>`,
         resolve('src', 'App.tsx').replaceAll('\\', '/'),
       )
     })
+
+    it.each([
+      [2, resolve('src', 'Gone.tsx').replaceAll('\\', '/')],
+      [0, resolve('src', 'Gone.tsx')],
+    ])(
+      'forgets deleted sources at watchRun with atomHoist=%s',
+      async (atomHoist, name) => {
+        // Given: a watch revision that deleted a source
+        using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+        const { compiler, taps } = await setup({ atomHoist })
+        assert(taps.watchRun)
+        taps.watchRun()
+        expect(removeFile).not.toHaveBeenCalled()
+        Object.assign(compiler, {
+          removedFiles: new Set([resolve('src', 'Gone.tsx')]),
+        })
+        // When
+        taps.watchRun()
+        // Then: the engine forgets it under the name the transform used
+        expect(removeFile.mock.calls).toEqual([[name]])
+      },
+    )
 
     it('reserves public compiler revisions without adding watch prewarm', async () => {
       const reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
