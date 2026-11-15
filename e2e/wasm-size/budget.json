@@ -1,0 +1,13 @@
+{
+  "file": "bindings/devup-ui-wasm/pkg/index_bg.wasm",
+  "baseline": {
+    "raw": 7060664,
+    "gzip": 2548140,
+    "brotli": 1783230
+  },
+  "budget": {
+    "raw": 7450000,
+    "gzip": 2690000,
+    "brotli": 1885000
+  }
+}

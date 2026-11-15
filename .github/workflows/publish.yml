@@ -764,6 +764,21 @@ jobs:
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
+      # Fails when the freshly built WASM grows past e2e/wasm-size/budget.json.
+      # The sizes also land in the step summary and an artifact, so growth is
+      # visible on every run even while it stays within the budget.
+      - name: Check the WASM size budget
+        env:
+          WASM_SIZE_OUTPUT: ${{ runner.temp }}/wasm-size.json
+        run: node e2e/wasm-size/check.mjs
+      - name: Upload the WASM size
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: wasm-size
+          path: ${{ runner.temp }}/wasm-size.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Verify the README benchmark tables
         run: bun render-benchmark-readme.js --check
       - name: Verify publish tarballs
