@@ -3,6 +3,44 @@ use rstest::rstest;
 use serial_test::serial;
 use std::collections::HashSet;
 
+#[test]
+#[serial]
+fn current_global_plan_survives_checkpoint_when_extraction_fails_after_freeze() {
+    let _scope = TestStateGuard::new();
+    // Given: no published sheet plan, but actual extraction freezes before rejecting css().
+    reset_build_state_internal();
+    set_atom_hoist(Some(2));
+    import_file_routes_internal(HashMap::from([(
+        "shared.tsx".into(),
+        HashSet::from([0, 1]),
+    )]));
+    let failed = code_extract_internal(
+        "shared.tsx",
+        "import {css} from '@devup-ui/react'; export const x=css({color:window.name});",
+        "@devup-ui/react",
+        "df".into(),
+        false,
+        false,
+        false,
+        HashMap::new(),
+        None,
+    );
+    assert!(failed.is_err());
+    assert_eq!(
+        css::atom_hoist::atom_plan(),
+        Some(std::collections::BTreeSet::from(["shared.tsx".into()]))
+    );
+    assert_eq!(with_style_sheet(|sheet| sheet.atom_plan.clone()), None);
+    let checkpoint = export_sheet_internal().unwrap_or_else(|error| panic!("{error}"));
+    // When: takeover and restore, then replay changed reach after the frozen boundary.
+    reset_build_state_internal();
+    import_sheet_json_internal(&checkpoint).unwrap_or_else(|error| panic!("{error}"));
+    set_atom_hoist(Some(2));
+    import_file_routes_internal(HashMap::new());
+    // Then: restored authority is the original frozen plan, not a newly empty plan.
+    assert!(css::atom_hoist::is_hoisted_bucket("shared.tsx"));
+}
+
 #[rstest]
 #[case(false, false)]
 #[case(false, true)]

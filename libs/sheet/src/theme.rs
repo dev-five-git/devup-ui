@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 /// `ColorEntry` stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ColorEntry {
     /// Original key with dots for TypeScript interface (e.g., "gray.100")
     pub interface_key: String,
@@ -22,7 +22,7 @@ pub struct ColorEntry {
 /// - Dot notation: `"primary.100": "#000"` -> `interface_key`: "primary.100", `css_key`: "primary-100"
 /// - Nested object: `hello: { 100: "#000" }` -> `interface_key`: "hello.100", `css_key`: "hello-100"
 /// - Deep nested: `gray: { light: { 100: "#000" } }` -> `interface_key`: "gray.light.100", `css_key`: "gray-light-100"
-#[derive(Default, Serialize, Debug)]
+#[derive(Default, Serialize, Debug, PartialEq, Eq)]
 pub struct ColorTheme {
     /// Map from `css_key` to `ColorEntry`, ordered so the CSS is the same on every run
     entries: BTreeMap<String, ColorEntry>,
@@ -200,7 +200,7 @@ where
         StringOrNumber::Float(n) => Ok(Some(n.to_string())),
     }
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Typography {
     pub font_family: Option<String>,
@@ -250,7 +250,7 @@ impl Typography {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct Typographies(pub Vec<Option<Typography>>);
 
 impl From<Vec<Option<Typography>>> for Typographies {
@@ -412,7 +412,7 @@ impl<'de> Deserialize<'de> for Typographies {
 /// - Single string: `"8px"` -> vec![Some("8px")]
 /// - Single number: `4` -> vec![Some("4")]
 /// - Responsive array: `["2px", null, "4px"]` -> vec![Some("2px"), None, Some("4px")]
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct TokenValues(pub Vec<Option<String>>);
 
 impl<'de> Deserialize<'de> for TokenValues {
@@ -632,7 +632,7 @@ impl ColorScheme {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Theme {
     #[serde(default, deserialize_with = "deserialize_color_themes")]

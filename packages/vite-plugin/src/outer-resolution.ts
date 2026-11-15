@@ -1,11 +1,9 @@
 import type { Plugin } from 'vite'
 
-type Observation = {
-  readonly id: string | undefined
-  readonly supported: boolean
-}
+import { ResolutionObservations } from './resolution-observations'
+
 type Installation = {
-  readonly edges: Map<string, Observation[]>
+  readonly resolutions: ResolutionObservations
   readonly pipeline: Set<string>
   readonly owner: Plugin
   readonly terminal: object
@@ -38,53 +36,21 @@ export class OuterResolution {
           !candidate ||
           typeof candidate !== 'object' ||
           !('transform' in candidate) ||
-          typeof candidate.transform !== 'function'
+          !candidate.transform ||
+          typeof candidate.transform !== 'object' ||
+          !('handler' in candidate.transform) ||
+          typeof candidate.transform.handler !== 'function'
         )
           return
         const terminal = {
           ...candidate,
-          transform: { order: 'post' as const, handler: candidate.transform },
+          transform: { ...candidate.transform, order: 'post' as const },
         }
         const others = plugins.filter((plugin) => plugin !== candidate)
-        const edges = new Map<string, Observation[]>()
-        const owner: Plugin = {
-          name: 'devup-ui:outer-resolution',
-          resolveId: {
-            order: 'pre',
-            async handler(request, importer, observed) {
-              const result = await this.resolve(request, importer, {
-                ...observed,
-                skipSelf: true,
-              })
-              if (importer !== undefined) {
-                const ordinaryCustom =
-                  !observed.custom || Object.keys(observed.custom).length === 0
-                const key = JSON.stringify([
-                  importer,
-                  request,
-                  observed.kind,
-                  observed.isEntry,
-                  ordinaryCustom,
-                ])
-                const records = edges.get(key) ?? []
-                records.push({
-                  id: result && !result.external ? result.id : undefined,
-                  supported:
-                    observed.kind === 'import-statement' &&
-                    !observed.isEntry &&
-                    ordinaryCustom &&
-                    Object.keys(observed).every((key) =>
-                      ['kind', 'isEntry', 'custom', 'ssr'].includes(key),
-                    ),
-                })
-                edges.set(key, records)
-              }
-              return result
-            },
-          },
-        }
+        const resolutions = new ResolutionObservations()
+        const owner = resolutions.plugin
         installations.set(environment, {
-          edges,
+          resolutions,
           owner,
           terminal,
           others,
@@ -96,7 +62,7 @@ export class OuterResolution {
       buildStart(options) {
         const state = installations.get(this.environment)
         if (!state) return
-        state.edges.clear()
+        state.resolutions.clear()
         state.pipeline.clear()
         const others = options.plugins.filter(
           (plugin) => plugin !== state.owner && plugin !== state.terminal,
@@ -116,24 +82,15 @@ export class OuterResolution {
 
   edge(
     environment: object,
-    edge: { readonly importer: string; readonly request: string },
+    edge: {
+      readonly importer: string
+      readonly request: string
+      readonly kind?: 'require-call'
+    },
   ): string | undefined {
     const state = this.installations.get(environment)
     if (!state?.valid) return
-    const records = state.edges.get(
-      JSON.stringify([
-        edge.importer,
-        edge.request,
-        'import-statement',
-        false,
-        true,
-      ]),
-    )
-    const first = records?.[0]
-    return first?.id &&
-      records?.every((record) => record.supported && record.id === first.id)
-      ? first.id
-      : undefined
+    return state.resolutions.edge(edge)
   }
 
   succeeded(environment: object, id: string): void {

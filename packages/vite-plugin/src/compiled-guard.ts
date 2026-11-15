@@ -1,7 +1,5 @@
 import {
   createCompileTimeClassifier,
-  type GuardFacts,
-  type GuardObservation,
   isCompileTimeAlias,
   isSelectedSource,
   UntransformedSourceError,
@@ -9,8 +7,9 @@ import {
 } from '@devup-ui/plugin-utils'
 import type { Plugin } from 'vite'
 
-import { sourceFacts } from './compiled-facts'
 import type { DeferredDefaults } from './deferred-defaults'
+import { FinalModules } from './final-modules'
+import { ResolutionObservations } from './resolution-observations'
 
 export function createCompiledGuard(options: {
   readonly package: string
@@ -19,82 +18,55 @@ export function createCompiledGuard(options: {
   readonly extractCss: boolean
   readonly deferred?: DeferredDefaults
 }): Plugin {
-  type Module = {
-    readonly facts: GuardFacts
-    readonly code: string
-    readonly targets: ReadonlyMap<string, string>
-  }
-  const environments = new Map<object, Map<string, Module>>()
+  const environments = new WeakMap<
+    object,
+    { readonly resolutions: ResolutionObservations; valid: boolean }
+  >()
   const classify = createCompileTimeClassifier(options.package)
-  const targetKey = (ref: {
-    readonly request: string
-    readonly kind?: 'require-call'
-  }) => JSON.stringify([ref.request, ref.kind])
-  function environmentModules(environment: object) {
-    let modules = environments.get(environment)
-    if (!modules) {
-      modules = new Map<string, Module>()
-      environments.set(environment, modules)
-    }
-    return modules
-  }
   const plugin: Plugin = {
     name: 'devup-ui:compiled-source-guard',
     sharedDuringBuild: true,
     apply: 'build',
-    buildStart() {
-      environmentModules(this.environment ?? plugin).clear()
-      options.deferred?.start(this.environment ?? options.deferred.fallback)
+    options(input) {
+      if (
+        options.deferred ||
+        !this.environment ||
+        !Array.isArray(input.plugins)
+      )
+        return
+      const resolutions = new ResolutionObservations()
+      environments.set(this.environment, { resolutions, valid: false })
+      return { ...input, plugins: [resolutions.plugin, ...input.plugins] }
     },
-    async moduleParsed(info) {
-      if (!options.extractCss || !info.code) return
-      let observation: GuardObservation | undefined
-      const facts = sourceFacts(
-        info.code,
-        options.deferred
-          ? (value) => {
-              observation = value
-            }
-          : undefined,
-      )
-      if (options.deferred && observation)
-        options.deferred.observe(
-          this.environment ?? options.deferred.fallback,
-          { id: info.id, importedIds: info.importedIds, facts, observation },
-        )
-      const requests = new Map<
-        string,
-        { readonly request: string; readonly kind?: 'require-call' }
-      >(
-        [
-          ...(!info.id.startsWith('\0') &&
-          !isSelectedSource(info.id.split('?')[0], options.mdxExtensions)
-            ? facts.references
-            : []),
-          ...[...facts.exports.values()].flatMap((ref) => (ref ? [ref] : [])),
-          ...facts.stars.map((request) => ({ request })),
-        ].map((ref) => [targetKey(ref), ref]),
-      )
-      const targets = new Map<string, string>()
-      for (const [key, ref] of requests) {
-        const target = await this.resolve(ref.request, info.id, {
-          kind: ref.kind ?? 'import-statement',
-          ...(options.deferred
-            ? { custom: { 'devup-ui:compiled-guard': true } }
-            : {}),
-        })
-        if (target && info.importedIds.includes(target.id))
-          targets.set(key, target.id)
-      }
-      environmentModules(this.environment ?? plugin).set(info.id, {
-        facts,
-        code: info.code,
-        targets,
-      })
+    buildStart(input) {
+      const state = environments.get(this.environment ?? plugin)
+      if (!state) return
+      state.resolutions.clear()
+      state.valid = input.plugins[0] === state.resolutions.plugin
     },
     buildEnd(error) {
       if (error || !options.extractCss) return
-      const modules = environmentModules(this.environment ?? plugin)
+      const environment =
+        this.environment ?? options.deferred?.fallback ?? plugin
+      const modules = new FinalModules(this)
+      const state = environments.get(environment)
+      function target(
+        importer: string,
+        ref: {
+          readonly request: string
+          readonly kind?: 'require-call'
+        },
+      ) {
+        const edge = { importer, ...ref }
+        const resolved = options.deferred
+          ? options.deferred.resolution.edge(environment, edge)
+          : state?.valid
+            ? state.resolutions.edge(edge)
+            : undefined
+        return resolved && modules.get(importer)?.importedIds.includes(resolved)
+          ? resolved
+          : undefined
+      }
       function origins(
         id: string,
         ids: readonly string[],
@@ -108,30 +80,32 @@ export function createCompiledGuard(options: {
         const next = new Set([...seen, key])
         const direct = module.facts.exports.get(ids[0])
         if (module.facts.exports.has(ids[0])) {
-          const target = direct && module.targets.get(targetKey(direct))
-          return target && direct
-            ? origins(target, [...direct.ids, ...ids.slice(1)], next)
+          const resolved = direct && target(id, direct)
+          return resolved && direct
+            ? origins(resolved, [...direct.ids, ...ids.slice(1)], next)
             : new Map([[key, false]])
         }
         return new Map(
           (ids[0] === 'default' ? [] : module.facts.stars).flatMap(
             (request) => {
-              const target = module.targets.get(targetKey({ request }))
-              return target ? [...origins(target, ids, next)] : []
+              const resolved = target(id, { request })
+              return resolved ? [...origins(resolved, ids, next)] : []
             },
           ),
         )
       }
-      for (const [id, module] of modules) {
+      for (const id of this.getModuleIds()) {
         if (
           id.startsWith('\0') ||
           isSelectedSource(id.split('?')[0], options.mdxExtensions)
         )
           continue
+        const module = modules.get(id)
+        if (!module) continue
         for (const ref of module.facts.references) {
-          const target = module.targets.get(targetKey(ref))
-          const targets = target
-            ? origins(target, ref.ids)
+          const resolved = target(id, ref)
+          const targets = resolved
+            ? origins(resolved, ref.ids)
             : new Map<string, boolean>()
           if (
             !isCompileTimeAlias(

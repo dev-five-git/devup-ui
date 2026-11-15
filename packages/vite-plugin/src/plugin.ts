@@ -8,6 +8,7 @@ import {
   ConfigLoadError,
   createCompatTypes,
   createModuleResolver,
+  createNodeModulesExcludeRegex,
   createStateWriter,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -18,6 +19,7 @@ import {
   isMdxSource,
   isSelectedSource,
   loadDevupConfig,
+  mdxSourceFilter,
   mergeImportAliases,
   normalizeMdxExtensions,
   readJsxImportSource,
@@ -73,6 +75,14 @@ import { createServerWatch } from './server-watch'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
+const DEVUP_CSS_ID_RE = /(?:^|\/)devup-ui(-\d+)?\.css(?:\?[^/]*)?\/*$/
+
+function querySourceFilter(filter: RegExp): RegExp {
+  return new RegExp(
+    `^[^?]*(?:${filter.source.replace(/\$$/, '(?:\\?[\\s\\S]*)?$')})`,
+    filter.flags,
+  )
+}
 
 type SourceInput = { readonly code: string }
 type ExtractionCapture = {
@@ -398,8 +408,14 @@ export function DevupUI({
     },
     endBuild,
   )
-  const getCss = (file: number | null | undefined, main: boolean) =>
-    production.active ? production.css(file, main) : getEngineCss(file, main)
+  const getCss = (
+    file: number | null | undefined,
+    main: boolean,
+    resource: string,
+  ) =>
+    production.active
+      ? production.css(file, main, resource)
+      : getEngineCss(file, main)
   const extractionGate = createExtractionGate({
     package: libPackage,
     include,
@@ -709,7 +725,7 @@ export function DevupUI({
             )
           if (!production.active) return extract()
           const key = context ?? production.context
-          return production.run(key, () =>
+          return production.extract(key, id, () =>
             production.modules(key).extract(
               {
                 nativeId: id,
@@ -769,7 +785,7 @@ export function DevupUI({
       for (const dependency of dependencies) this.addWatchFile(dependency)
       const promises: Promise<void>[] = []
       if (updatedBaseStyle)
-        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
+        promises.push(writeCssFile('devup-ui.css', getCss(null, false, id)))
       if (cssFile) {
         const fileNum = getFileNumByFilename(cssFile)
         const prevCss = cssMap.get(fileNum)
@@ -1260,43 +1276,61 @@ export function DevupUI({
       server.ws.send({ type: 'full-reload' })
       return []
     },
-    resolveId(id, importer) {
-      resolveFallbackPaths()
-      const fileName = basename(id).split('?')[0]
-      if (
-        DEVUP_CSS_FILE_RE.test(fileName) &&
-        resolve(importer ? join(dirname(importer), id) : id) ===
-          resolve(join(cssDir, fileName))
-      ) {
-        if (!isServe) return join(cssDir, fileName)
-        // Only changed writes mint a module; `v` survives Vite's timestamp stripping.
-        return join(
-          cssDir,
-          `${fileName}?v=${sheetRevisions.get(fileName) ?? 0}`,
-        )
-      }
-    },
-    load(id) {
-      const fileName = basename(id).split('?')[0]
-      if (DEVUP_CSS_FILE_RE.test(fileName)) {
-        const snapshot = (): string | Promise<string> => {
-          if (configState.refreshing) return configState.ready().then(snapshot)
-          configState.assertReady()
-          const fileNum = getFileNumByFilename(fileName)
-          const css = getCss(fileNum, false)
-          cssMap.set(fileNum, css)
-          return css
+    resolveId: {
+      filter: { id: DEVUP_CSS_ID_RE },
+      handler(id, importer) {
+        resolveFallbackPaths()
+        const fileName = basename(id).split('?')[0]
+        if (
+          DEVUP_CSS_FILE_RE.test(fileName) &&
+          resolve(importer ? join(dirname(importer), id) : id) ===
+            resolve(join(cssDir, fileName))
+        ) {
+          if (!isServe) return join(cssDir, fileName)
+          // Only changed writes mint a module; `v` survives Vite's timestamp stripping.
+          return join(
+            cssDir,
+            `${fileName}?v=${sheetRevisions.get(fileName) ?? 0}`,
+          )
         }
-        const preparation = aggregateCss.prepare(
-          this.environment ?? plugin,
-          this,
-          id,
-        )
-        return preparation ? preparation.then(snapshot) : snapshot()
-      }
+      },
+    },
+    load: {
+      filter: { id: DEVUP_CSS_ID_RE },
+      handler(id) {
+        const fileName = basename(id).split('?')[0]
+        if (DEVUP_CSS_FILE_RE.test(fileName)) {
+          const snapshot = (): string | Promise<string> => {
+            if (configState.refreshing)
+              return configState.ready().then(snapshot)
+            configState.assertReady()
+            const fileNum = getFileNumByFilename(fileName)
+            const css = getCss(fileNum, false, id)
+            cssMap.set(fileNum, css)
+            return css
+          }
+          const preparation = aggregateCss.prepare(
+            this.environment ?? plugin,
+            this,
+            id,
+          )
+          return preparation ? preparation.then(snapshot) : snapshot()
+        }
+      },
     },
     enforce: 'pre',
     transform: {
+      filter: {
+        id: {
+          include: querySourceFilter(SOURCE_FILE_RE),
+          // Match the same innermost package as the query-stripped handler ID.
+          exclude: new RegExp(
+            `^[^?]*${createNodeModulesExcludeRegex(include)
+              .source.replaceAll('.*', '[^?\\r\\n]*')
+              .replace(/(?<!\\)\$/g, '(?=\\?|$)')}`,
+          ),
+        },
+      },
       async handler(code, id) {
         if (!SOURCE_FILE_RE.test(id.split('?')[0])) return
         return sourceTransform.transform.call(this, code, id)
@@ -1318,7 +1352,11 @@ export function DevupUI({
         const cssName = getDevupCssChunkName(asset.name)
         if (!cssName) continue
         if (!('source' in asset)) continue
-        const source = getCss(getFileNumByFilename(cssName), false)
+        const source = getCss(
+          getFileNumByFilename(cssName),
+          false,
+          join(cssDir, cssName),
+        )
         asset.source = source
         cssFiles.add(file)
       }
@@ -1347,6 +1385,11 @@ export function DevupUI({
       handler(_options, bundle) {
         restoreForwardedCss?.(bundle as unknown as ForwardableBundle)
         restoreForwardedCss = undefined
+        for (const asset of Object.values(bundle)) {
+          if (asset.type === 'asset') {
+            aggregateCss.checkAsset(this.environment ?? plugin, asset)
+          }
+        }
       },
     },
   }
@@ -1355,27 +1398,18 @@ export function DevupUI({
     enforce: 'post',
     sharedDuringBuild: true,
     ...deferred.resolution.companion(),
-    async transform(code, id) {
-      if (!isMdxSource(id, mdxExtensions)) return
-      if (production.active) validateMdxDefault(this.parse(code), code, id)
-      const result = await sourceTransform.transform.call(this, code, id)
-      if (production.active && extractCss && result)
-        deferred.resolution.succeeded(this.environment ?? deferred.fallback, id)
-      return result
-    },
-  } satisfies Plugin
-  const aggregateGuard = {
-    name: 'devup-ui:aggregate-css-guard',
-    sharedDuringBuild: true,
-    apply: 'build',
-    generateBundle: {
-      order: 'post',
-      handler(_options, bundle) {
-        for (const asset of Object.values(bundle)) {
-          if (asset.type === 'asset') {
-            aggregateCss.checkAsset(this.environment ?? plugin, asset)
-          }
-        }
+    transform: {
+      filter: { id: querySourceFilter(mdxSourceFilter(mdxExtensions)) },
+      async handler(code, id) {
+        if (!isMdxSource(id, mdxExtensions)) return
+        if (production.active) validateMdxDefault(this.parse(code), code, id)
+        const result = await sourceTransform.transform.call(this, code, id)
+        if (production.active && extractCss && result)
+          deferred.resolution.succeeded(
+            this.environment ?? deferred.fallback,
+            id,
+          )
+        return result
       },
     },
   } satisfies Plugin
@@ -1390,12 +1424,11 @@ export function DevupUI({
     typeof plugin,
     typeof restorePlugin,
     typeof mdxPlugin,
-    typeof aggregateGuard,
     typeof compiledGuard,
-  ] = [plugin, restorePlugin, mdxPlugin, aggregateGuard, compiledGuard]
+  ] = [plugin, restorePlugin, mdxPlugin, compiledGuard]
   plugin.configResolved = own(plugin.configResolved, false)
   plugin.buildStart = own(plugin.buildStart)
   plugin.transform.handler = own(plugin.transform.handler)
-  mdxPlugin.transform = own(mdxPlugin.transform)
+  mdxPlugin.transform.handler = own(mdxPlugin.transform.handler)
   return plugins
 }

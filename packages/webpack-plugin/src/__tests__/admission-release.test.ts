@@ -62,7 +62,13 @@ it('releases admission and keeps cleanup closed when a disposed scope is called'
   scope.start()
   scope.close()
   scope.close()
-  expect(() => scope.run(() => undefined)).toThrow('already closed')
+  let entered = false
+  expect(() =>
+    scope.run(() => {
+      entered = true
+    }),
+  ).toThrow('ClosedOwner')
+  expect(entered).toBe(false)
   let resets = 0
   beginBuild({
     resetBuildState() {

@@ -36,7 +36,7 @@ function extract(code: string, filename = 'abi.tsx') {
 }
 
 describe('@devup-ui/wasm exports', () => {
-  it('exposes exactly the compiled engine functions', () => {
+  it('exposes exactly the compiled engine functions and ownership port', () => {
     // default is the CommonJS module object a Node-style import adds
     expect(
       Object.keys(wasm)
@@ -72,6 +72,7 @@ describe('@devup-ui/wasm exports', () => {
       'importSheetJson',
       'install_panic_hook',
       'isDebug',
+      'ownership',
       'registerShorthands',
       'registerTheme',
       'reserveClassSlots',
@@ -82,6 +83,13 @@ describe('@devup-ui/wasm exports', () => {
       'setDebug',
       'setModuleResolver',
       'setPrefix',
+    ])
+    expect(Object.isFrozen(wasm.ownership)).toBe(true)
+    expect(Object.keys(wasm.ownership).sort()).toEqual([
+      'clear',
+      'create',
+      'dispose',
+      'run',
     ])
   })
 })

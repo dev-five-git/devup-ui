@@ -1,7 +1,8 @@
 import {
   BuildGeneration,
   type BuildIntegration,
-  resetOwnedBuildState,
+  buildOperationSite,
+  type GenerationSite,
   runBuildOperation,
 } from '@devup-ui/plugin-utils'
 import {
@@ -10,12 +11,7 @@ import {
   exportFileMap,
   exportReservationState,
   exportSheet,
-  importCanonicalMap,
-  importClassMap,
-  importFileMap,
-  importReservationState,
-  importSheet,
-  resetBuildState,
+  ownership,
 } from '@devup-ui/wasm'
 
 /** @internal The public WASM exports own these JSON schemas. */
@@ -34,19 +30,7 @@ export interface WebpackGenerationBinding {
 }
 
 const engine = {
-  reset: resetBuildState,
-  restore(state: SerializedBuildState) {
-    const sheet: unknown = JSON.parse(state.sheet)
-    const classes: unknown = JSON.parse(state.classes)
-    const files: unknown = JSON.parse(state.files)
-    const canonical: unknown = JSON.parse(state.canonical)
-    const reservation: unknown = JSON.parse(state.reservation)
-    importSheet(sheet)
-    importClassMap(classes)
-    importFileMap(files)
-    importCanonicalMap(canonical)
-    importReservationState(reservation)
-  },
+  ownership,
   capture(): SerializedBuildState {
     return {
       sheet: exportSheet(),
@@ -64,6 +48,7 @@ export function createWebpackGeneration(): BuildGeneration<SerializedBuildState>
 }
 
 export class WebpackBuildScope {
+  private readonly site = buildOperationSite('configure Webpack')
   private configure: () => void = () => undefined
   private release: (() => void) | undefined
   private closed = false
@@ -81,13 +66,23 @@ export class WebpackBuildScope {
     this.configure = configure
   }
 
-  run<T>(action: () => T): T {
+  run<T>(action: () => T, site = this.site): T {
     return runBuildOperation(this.context, () =>
-      this.binding.owner.run(engine, () => {
-        this.configure()
-        return action()
+      this.binding.owner.run(engine, {
+        site,
+        configure: this.configure,
+        action,
       }),
     )
+  }
+
+  stylesheet<T>(file: string, action: () => T): T {
+    return this.run(action, {
+      file,
+      line: 1,
+      column: 1,
+      operation: 'stylesheet',
+    })
   }
 
   start(): void {
@@ -100,7 +95,7 @@ export class WebpackBuildScope {
     this.release?.()
     this.release = undefined
     if (this.standalone) this.binding.owner.dispose()
-    resetOwnedBuildState({ resetBuildState: engine.reset })
+    else if (!this.binding.owner.disposed) this.binding.owner.clear()
   }
 
   abort(): void {
@@ -146,7 +141,8 @@ export function compilerScope(
 export function withCompilerScope<T>(
   compiler: CompilerIdentity | undefined,
   action: () => T,
+  site?: GenerationSite,
 ): T {
   const scope = compilerScope(compiler)
-  return scope ? scope.run(action) : action()
+  return scope ? scope.run(action, site) : action()
 }

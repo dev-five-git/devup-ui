@@ -11,12 +11,7 @@ import {
   exportFileMap,
   exportReservationState,
   exportSheet,
-  importCanonicalMapJson,
-  importClassMapJson,
-  importFileMapJson,
-  importReservationStateJson,
-  importSheetJson,
-  resetBuildState,
+  ownership,
 } from '@devup-ui/wasm'
 
 import type { NativePresence, NonphysicalModules } from './nonphysical-modules'
@@ -125,6 +120,10 @@ export class ProductionLifecycle {
   input(): boolean {
     switch (this.generation.status) {
       case 'open':
+        if (this.generation.owner.disposed) {
+          this.replace()
+          return true
+        }
         return false
       case 'failed':
         this.replace()
@@ -145,15 +144,7 @@ export interface ProductionState {
 }
 
 export const productionEngine: GenerationEngine<ProductionState> = {
-  reset: resetBuildState,
-  restore(state) {
-    // Private BuildGeneration handoffs contain matching Rust exports, not user JSON.
-    importSheetJson(state.sheet)
-    importClassMapJson(state.classes)
-    importFileMapJson(state.files)
-    importCanonicalMapJson(state.canonical)
-    importReservationStateJson(state.reservation)
-  },
+  ownership,
   capture() {
     return {
       sheet: exportSheet(),

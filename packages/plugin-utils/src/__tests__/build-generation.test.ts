@@ -4,10 +4,11 @@ import {
   BuildGeneration,
   ClosedBuildGenerationError,
 } from '../build-generation'
+import { operation, snapshotEngine } from './generation-fixture'
 
 function memoryEngine() {
   let value = ''
-  return {
+  return snapshotEngine({
     reset() {
       value = ''
     },
@@ -20,7 +21,7 @@ function memoryEngine() {
     append(part: string) {
       value += part
     },
-  }
+  })
 }
 
 it('roundtrips the in-memory engine when reset and restore are used', () => {
@@ -39,10 +40,16 @@ it('retains a contribution when related sequential participants run', () => {
   // Given
   const owner = new BuildGeneration<string>()
   const engine = memoryEngine()
-  owner.run(engine, () => engine.append('red'))
+  owner.run(
+    engine,
+    operation(() => engine.append('red')),
+  )
   owner.acquire(false)()
   // When
-  const cssOnlyConsumer = owner.run(engine, () => engine.capture())
+  const cssOnlyConsumer = owner.run(
+    engine,
+    operation(() => engine.capture()),
+  )
   // Then
   expect(cssOnlyConsumer).toBe('red')
 })
@@ -52,10 +59,19 @@ it('isolates live siblings when their operations interleave', () => {
   const first = new BuildGeneration<string>()
   const second = new BuildGeneration<string>()
   const engine = memoryEngine()
-  first.run(engine, () => engine.append('red'))
-  second.run(engine, () => engine.append('blue'))
+  first.run(
+    engine,
+    operation(() => engine.append('red')),
+  )
+  second.run(
+    engine,
+    operation(() => engine.append('blue')),
+  )
   // When
-  const resumed = first.run(engine, () => engine.capture())
+  const resumed = first.run(
+    engine,
+    operation(() => engine.capture()),
+  )
   // Then
   expect(resumed).toBe('red')
 })
@@ -63,10 +79,14 @@ it('isolates live siblings when their operations interleave', () => {
 it('starts empty when an independent owner uses the same engine', () => {
   // Given
   const engine = memoryEngine()
-  new BuildGeneration<string>().run(engine, () => engine.append('red'))
+  new BuildGeneration<string>().run(
+    engine,
+    operation(() => engine.append('red')),
+  )
   // When
-  const fresh = new BuildGeneration<string>().run(engine, () =>
-    engine.capture(),
+  const fresh = new BuildGeneration<string>().run(
+    engine,
+    operation(() => engine.capture()),
   )
   // Then
   expect(fresh).toBe('')
@@ -116,13 +136,21 @@ it('retains allocated state when an extraction fails before sheet publication', 
   const cause = new TypeError('extraction fault')
   // When
   expect(() =>
-    owner.run(engine, () => {
-      engine.append('allocation')
-      throw cause
-    }),
+    owner.run(
+      engine,
+      operation(() => {
+        engine.append('allocation')
+        throw cause
+      }),
+    ),
   ).toThrow(cause)
   // Then
-  expect(owner.run(engine, () => engine.capture())).toBe('allocation')
+  expect(
+    owner.run(
+      engine,
+      operation(() => engine.capture()),
+    ),
+  ).toBe('allocation')
 })
 
 it('clears rather than republishes a handoff when setup aborts inside an operation', () => {
@@ -130,11 +158,17 @@ it('clears rather than republishes a handoff when setup aborts inside an operati
   const owner = new BuildGeneration<string>()
   const engine = memoryEngine()
   // When
-  owner.run(engine, () => owner.dispose())
-  // Then
-  expect(() => owner.run(engine, () => engine.capture())).toThrow(
-    ClosedBuildGenerationError,
+  owner.run(
+    engine,
+    operation(() => owner.dispose()),
   )
+  // Then
+  expect(() =>
+    owner.run(
+      engine,
+      operation(() => engine.capture()),
+    ),
+  ).toThrow(ClosedBuildGenerationError)
 })
 
 it('rejects a new participant when an integration has disposed', () => {

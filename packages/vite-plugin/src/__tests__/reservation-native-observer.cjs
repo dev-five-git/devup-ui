@@ -19,13 +19,30 @@ function observe() {
   const reserve = wasm.reserveClassSlots
   /** @param {ReserveArgs} args */
   wasm.reserveClassSlots = (...args) => {
-    const sheet = wasm.exportSheet()
+    const before = JSON.parse(wasm.exportSheet())
     reserve(...args)
-    assert.equal(
-      wasm.exportSheet(),
-      sheet,
+    const after = JSON.parse(wasm.exportSheet())
+    assert(Object.hasOwn(before, 'currentAtomPlan'))
+    assert(Object.hasOwn(after, 'currentAtomPlan'))
+    const { currentAtomPlan: beforePlan, ...beforeSheet } = before
+    const { currentAtomPlan: afterPlan, ...afterSheet } = after
+    assert.deepEqual(
+      afterSheet,
+      beforeSheet,
       'reservation publishes no scratch CSS',
     )
+    if (beforePlan !== null || args[2]) {
+      assert.deepEqual(
+        afterPlan,
+        beforePlan,
+        'reservation preserves frozen authority',
+      )
+    } else {
+      assert(
+        afterPlan === null || Array.isArray(afterPlan),
+        'first reservation retains or freezes extraction authority',
+      )
+    }
     reservations.push({
       rows: args[0],
       flags: args.slice(1),

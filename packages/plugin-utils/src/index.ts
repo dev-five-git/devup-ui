@@ -1,4 +1,12 @@
-export { BuildGeneration, type GenerationEngine } from './build-generation'
+export {
+  BuildGeneration,
+  type GenerationEngine,
+  type GenerationHandle,
+  type GenerationOwnership,
+  type GenerationRun,
+  type GenerationSite,
+} from './build-generation'
+export { buildOperationSite } from './build-operation-site'
 export {
   beginBuild,
   type BuildIntegration,
@@ -24,6 +32,7 @@ export {
   type GuardFacts,
   type GuardObservation,
 } from './guard-facts'
+export { decodeGuardFacts } from './guard-facts-json'
 export {
   type AtomHoistPlan,
   buildCanonicalMap,

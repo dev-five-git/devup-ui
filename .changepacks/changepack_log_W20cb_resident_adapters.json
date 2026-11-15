@@ -1,0 +1,10 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Use the required Rust-owned resident generation port in Vite and Webpack without eager per-operation snapshots. Replay semantic configuration, invalidate imported evaluation only at real state boundaries, preserve sheet emission and current frozen atom plans independently, and clear only the closing owner behind legacy admission. Existing located ownership/reentry errors are retained; no styling runtime is added.",
+  "date": "2026-10-30T00:00:00.000Z"
+}

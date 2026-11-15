@@ -8,8 +8,10 @@ import { servedCss } from './served-css'
 const devupUICssLoader: RawLoaderDefinitionFunction = function (_, map, meta) {
   // The stylesheet comes from every extracted module, not from this file
   this.cacheable(false)
-  const css = withCompilerScope(this._compiler, () =>
-    getCss(getFileNumByFilename(this.resourcePath), true),
+  const css = withCompilerScope(
+    this._compiler,
+    () => getCss(getFileNumByFilename(this.resourcePath), true),
+    { file: this.resourcePath, line: 1, column: 1, operation: 'stylesheet' },
   )
   if (this._compilation)
     servedCss(this._compilation).set(this.resourcePath, css)

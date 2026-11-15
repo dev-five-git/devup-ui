@@ -1,0 +1,63 @@
+export const mutators = Object.freeze([
+  'codeExtract',
+  'codeExtractWithoutSourceMap',
+  'reserveClassSlots',
+  'seedFileMap',
+  'importSheet',
+  'importClassMap',
+  'importFileMap',
+  'importCanonicalMap',
+  'importReservationState',
+  'importSheetJson',
+  'importClassMapJson',
+  'importFileMapJson',
+  'importCanonicalMapJson',
+  'importReservationStateJson',
+  'registerTheme',
+  'registerShorthands',
+  'importFileRoutes',
+  'setAtomHoist',
+  'setPrefix',
+  'setDebug',
+  'setModuleResolver',
+  'resetBuildState',
+  'resetStateForTesting',
+])
+export const snapshots = Object.freeze([
+  'exportSheet',
+  'exportClassMap',
+  'exportFileMap',
+  'exportCanonicalMap',
+  'exportReservationState',
+])
+export const reads = Object.freeze([
+  'getCss',
+  'getDefaultTheme',
+  'getThemeInterface',
+  'getPrefix',
+  'isDebug',
+  'getUnreservedClassSlotCount',
+  'getSuppressedReservationRowCount',
+  'hasDevupUI',
+])
+export const independent = Object.freeze([
+  'Output',
+  'compiledGuardFacts',
+  'install_panic_hook',
+])
+export const controls = Object.freeze([
+  '_ownerCreate',
+  '_ownerReject',
+  '_ownerBegin',
+  '_ownerConfigured',
+  '_ownerFinish',
+  '_ownerEnterExport',
+  '_ownerLeaveExport',
+  '_ownerDispose',
+  '_ownerClear',
+  '_ownerDrain',
+  '_ownerDisposed',
+  '_ownerImporter',
+  '_ownerFault',
+])
+export const guarded = Object.freeze([...mutators, ...snapshots, ...reads])

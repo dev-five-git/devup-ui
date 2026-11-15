@@ -7,10 +7,10 @@ import { DeferredMetadataError } from '../deferred-metadata'
 import { OuterResolution } from '../outer-resolution'
 import { fixture } from './deferred-erasure-fixture'
 
-it('retains final facts when observation arrives before explicit start', async () => {
-  // Given: current owned edges and final facts, but no explicit module-map start.
-  const value = await fixture(false)
-  // When: verification needs both lazily observed root and target facts.
+it('reads final native facts without an explicit observation phase', async () => {
+  // Given: current owned edges and final native root/target source.
+  const value = await fixture()
+  // When: verification lazily reads both sources without a moduleParsed observer.
   // Then: the owned import-only cut succeeds rather than losing those facts.
   expect(() =>
     value.deferred.verify(value.environment, value.graph()),
@@ -31,7 +31,11 @@ it.each([
         yield '/entry.js'
       },
       getModuleInfo() {
-        return { meta: { devupDeferredDefaults: metadata } }
+        return {
+          code: null,
+          importedIds: [],
+          meta: { devupDeferredDefaults: metadata },
+        }
       },
     }
     // When: verification reads the actual metadata text boundary.
@@ -49,17 +53,21 @@ it.each([
   },
 )
 
-it.each(['missing', 'object-hook', 'duplicate'] as const)(
+it.each(['missing', 'invalid-object-hook', 'duplicate'] as const)(
   'does not install resolution authority when the terminal is %s',
   (kind) => {
     // Given: actual installer input without exactly one callable terminal.
     const resolution = new OuterResolution()
     const companion = resolution.companion()
     const environment = {}
-    const terminal = { name: 'terminal', api: companion.api, transform() {} }
+    const terminal = {
+      name: 'terminal',
+      api: companion.api,
+      transform: { handler() {} },
+    }
     const candidates = {
       missing: [{ name: 'other' }],
-      'object-hook': [{ ...terminal, transform: { handler() {} } }],
+      'invalid-object-hook': [{ ...terminal, transform: {} }],
       duplicate: [terminal, terminal],
     }
     assert(typeof companion.options === 'function')

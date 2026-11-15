@@ -84,7 +84,16 @@ it('restores an owned Vite sheet after a sibling operates when only its own lega
   function run<T>(owner: BuildGeneration<ProductionState>, action: () => T): T {
     return runBuildOperation(context, () => {
       admitted = true
-      return owner.run(productionEngine, action)
+      return owner.run(productionEngine, {
+        site: {
+          file: import.meta.url,
+          line: 1,
+          column: 1,
+          operation: 'test owner',
+        },
+        configure: () => undefined,
+        action,
+      })
     })
   }
   try {

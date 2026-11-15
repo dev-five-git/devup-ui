@@ -3,7 +3,7 @@ use std::fmt;
 use super::ReservationInput;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum RowError {
+pub(crate) enum RowError {
     Arity { row: usize, fields: usize },
     SourceType { filename: String, reason: String },
 }
@@ -22,7 +22,7 @@ impl fmt::Display for RowError {
 
 impl std::error::Error for RowError {}
 
-pub(super) fn parse_rows(rows: Vec<Vec<String>>) -> Result<Vec<ReservationInput>, RowError> {
+pub(crate) fn parse_rows(rows: Vec<Vec<String>>) -> Result<Vec<ReservationInput>, RowError> {
     rows.into_iter()
         .enumerate()
         .map(|(index, mut row)| {

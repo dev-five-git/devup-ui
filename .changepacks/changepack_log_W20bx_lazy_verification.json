@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Inspect final compiled sources only when native provenance verification needs them, share Rust guard-fact decoding, and preserve native compiler errors without changing build-error categories.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

@@ -6,6 +6,11 @@ pub fn reset_caches_for_testing() {
     crate::vanilla_extract::test_state::reset();
 }
 
+/// Inspect calling-thread cache occupancy without changing evaluation state.
+pub fn cache_sizes_for_testing() -> (usize, usize) {
+    crate::vanilla_extract::test_state::sizes()
+}
+
 /// Clean CSS state and extraction caches, restoring both on scope exit/unwind.
 #[must_use]
 pub struct TestStateGuard {

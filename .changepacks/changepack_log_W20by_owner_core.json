@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Add an engine-agnostic shared Rust resident-owner coordinator with explicit preservation, activation, export and targeted-clear tickets. Binding and adapter integration remain separate work; this addition does not change existing engine behavior or ship a new build-error category.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

@@ -1,4 +1,4 @@
-import type { GuardFacts, GuardObservation } from '@devup-ui/plugin-utils'
+import type { GuardFacts } from '@devup-ui/plugin-utils'
 
 import {
   type DeferredDefault,
@@ -6,26 +6,21 @@ import {
   deferredDefaults,
   DeferredMetadataError,
 } from './deferred-metadata'
+import { type FinalModuleGraph, FinalModules } from './final-modules'
 import { OuterResolution } from './outer-resolution'
 
-export interface FinalModule {
-  readonly id: string
-  readonly facts: GuardFacts
-  readonly observation: GuardObservation
-  readonly importedIds: readonly string[]
-}
-
-interface DeferredGraph {
+interface DeferredGraph extends FinalModuleGraph {
   getModuleIds(): IterableIterator<string>
-  getModuleInfo(
-    id: string,
-  ): { readonly meta?: Readonly<Record<string, unknown>> } | null
+  getModuleInfo(id: string):
+    | (NonNullable<ReturnType<FinalModuleGraph['getModuleInfo']>> & {
+        readonly meta?: Readonly<Record<string, unknown>>
+      })
+    | null
 }
 
 export class DeferredDefaults {
   readonly resolution = new OuterResolution()
   readonly fallback = {}
-  private readonly modules = new WeakMap<object, Map<string, FinalModule>>()
   private readonly contracts = new WeakMap<
     object,
     Map<
@@ -65,20 +60,8 @@ export class DeferredDefaults {
     })
   }
 
-  start(environment: object): void {
-    this.modules.set(environment, new Map())
-  }
-
-  observe(environment: object, module: FinalModule): void {
-    let modules = this.modules.get(environment)
-    if (!modules) {
-      modules = new Map()
-      this.modules.set(environment, modules)
-    }
-    modules.set(module.id, module)
-  }
-
   verify(environment: object, graph: DeferredGraph): void {
+    const modules = new FinalModules(graph)
     for (const id of graph.getModuleIds()) {
       const metadata = graph.getModuleInfo(id)?.meta?.['devupDeferredDefaults']
       const contract = this.contracts.get(environment)?.get(id)
@@ -122,10 +105,11 @@ export class DeferredDefaults {
             'outer-result-unproven',
             prefix,
           )
-        const target = this.edge(environment, {
-          importer: id,
-          request: obligation.request,
-        })
+        const target = this.edge(
+          environment,
+          { importer: id, request: obligation.request },
+          modules,
+        )
         if (!target)
           throw new DeferredDefaultError(
             obligation,
@@ -141,27 +125,30 @@ export class DeferredDefaults {
             'forwarding-unproven',
             prefix,
           )
-        const modules = this.modules.get(environment)
         if (
           cut &&
           obligation.cutExport === 'default' &&
           obligation.exports.length === 1 &&
           obligation.exports[0] === 'default' &&
           modules
-            ?.get(id)
-            ?.observation.importOnlyRequests?.has(obligation.request) &&
-          modules.has(target) &&
+            .get(id)
+            ?.observation?.importOnlyRequests?.has(obligation.request) &&
+          modules.get(target) !== undefined &&
           this.resolution.owns(environment, target)
         )
           continue
         if (
-          !this.discharge(environment, {
-            id: target,
-            exports: obligation.exports,
-            cut,
-            obligation,
-            seen: new Set(),
-          })
+          !this.discharge(
+            environment,
+            {
+              id: target,
+              exports: obligation.exports,
+              cut,
+              obligation,
+              seen: new Set(),
+            },
+            modules,
+          )
         )
           throw new DeferredDefaultError(
             obligation,
@@ -175,11 +162,13 @@ export class DeferredDefaults {
   private edge(
     environment: object,
     edge: { readonly importer: string; readonly request: string },
+    modules: FinalModules,
   ): string | undefined {
-    const module = this.modules.get(environment)?.get(edge.importer)
+    const module = modules.get(edge.importer)
     const target = this.resolution.edge(environment, edge)
     return target &&
       module?.importedIds.includes(target) &&
+      module.observation !== undefined &&
       !module.observation.unsupportedRequests.has(edge.request)
       ? target
       : undefined
@@ -194,10 +183,11 @@ export class DeferredDefaults {
       readonly obligation: DeferredDefault
       readonly seen: ReadonlySet<string>
     },
+    modules: FinalModules,
   ): boolean {
     const key = JSON.stringify([path.id, path.exports])
     if (path.seen.has(key)) return false
-    const module = this.modules.get(environment)?.get(path.id)
+    const module = modules.get(path.id)
     const name = path.exports[0]
     if (!module || !name) return false
     if (
@@ -205,7 +195,7 @@ export class DeferredDefaults {
       path.exports.length === 1 &&
       name === 'default' &&
       this.resolution.owns(environment, path.id) &&
-      module.observation.defaultCallable
+      module.observation?.defaultCallable
     )
       return true
     const refs: readonly NonNullable<
@@ -218,22 +208,27 @@ export class DeferredDefaults {
     if (refs.length !== 1) return false
     const ref = refs[0]
     if (!ref || ref.kind === 'require-call') return false
-    const target = this.edge(environment, {
-      importer: path.id,
-      request: ref.request,
-    })
+    const target = this.edge(
+      environment,
+      { importer: path.id, request: ref.request },
+      modules,
+    )
     if (!target) return false
     const cut =
       path.cut ||
       (path.id === path.obligation.cutImporter &&
         ref.request === path.obligation.cutRequest &&
         ref.ids[0] === path.obligation.cutExport)
-    return this.discharge(environment, {
-      ...path,
-      id: target,
-      exports: [...ref.ids, ...path.exports.slice(1)],
-      cut,
-      seen: new Set([...path.seen, key]),
-    })
+    return this.discharge(
+      environment,
+      {
+        ...path,
+        id: target,
+        exports: [...ref.ids, ...path.exports.slice(1)],
+        cut,
+        seen: new Set([...path.seen, key]),
+      },
+      modules,
+    )
   }
 }

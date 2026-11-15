@@ -193,6 +193,11 @@ export class NonphysicalModules {
   ): Promise<Completion> {
     const reachable = new Set<string>()
     const present = new Set<string>()
+    const candidates = new Set([
+      ...this.pending.keys(),
+      ...this.completed.keys(),
+      ...learned,
+    ])
     const queue = [...graph.getModuleIds()].filter(
       (id) => graph.getModuleInfo(id)?.isEntry,
     )
@@ -202,7 +207,7 @@ export class NonphysicalModules {
       reachable.add(id)
       const info = graph.getModuleInfo(id)
       if (info === null) continue
-      if (typeof info.code === 'string') present.add(id)
+      if (candidates.has(id) && typeof info.code === 'string') present.add(id)
       queue.push(...info.importedIds, ...info.dynamicallyImportedIds)
     }
     const attachments = new Map<string, ReadonlyMap<string, ReadySource>>()

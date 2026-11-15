@@ -214,8 +214,10 @@ with JSX under the actual filename. Graph discovery and numbering use the same
 selection as extraction.
 
 With extraction enabled, the guard runs after loaders in build, development
-compilations and watch rebuilds. Public parser facts, used dependency export IDs
-and actual module targets identify definitely used compile-time exports in
+compilations and watch rebuilds. Used native dependency export IDs and actual
+module targets are checked first; shared Rust facts are read lazily from post-loader
+source for unsupported roots and required forwarding modules. These facts identify
+definitely used compile-time exports in
 modules outside the supported JS/TS and selected MDX extensions. Named bindings,
 static namespace/require-result members and destructuring with known export IDs
 produce a located module/import error and an `mdxExtensions` remedy. Runtime

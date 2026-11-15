@@ -11,7 +11,11 @@ it.each([undefined, '[]', 0])(
     value.begin()
     const graph = {
       ...value.graph(),
-      getModuleInfo: () => ({ meta: { devupDeferredDefaults: metadata } }),
+      getModuleInfo: () => ({
+        code: null,
+        importedIds: [],
+        meta: { devupDeferredDefaults: metadata },
+      }),
     }
     // When native transport is missing or replaced, Then prior debt still refuses located.
     expect(() => value.deferred.verify(value.environment, graph)).toThrow(
@@ -29,7 +33,11 @@ it('keeps absent module debt dormant until a genuine own empty extraction replac
   })
   const graph = {
     ...value.graph(),
-    getModuleInfo: () => ({ meta: { devupDeferredDefaults: '[]' } }),
+    getModuleInfo: () => ({
+      code: null,
+      importedIds: [],
+      meta: { devupDeferredDefaults: '[]' },
+    }),
   }
   expect(() => value.deferred.verify(value.environment, graph)).toThrow(
     /metadata-unproven/,
@@ -50,7 +58,11 @@ it.each([JSON.stringify([obligation]), '[]', 0, '{', '[null]'])(
       *getModuleIds() {
         yield root
       },
-      getModuleInfo: () => ({ meta: { devupDeferredDefaults: metadata } }),
+      getModuleInfo: () => ({
+        code: null,
+        importedIds: [],
+        meta: { devupDeferredDefaults: metadata },
+      }),
     }
     expect(() => deferred.verify({}, graph)).toThrow(
       /page\.tsx:\d+:\d+: deferred default/,

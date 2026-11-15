@@ -32,6 +32,7 @@ try {
       )
       rmSync(`${root}/df`, { recursive: true, force: true })
       const {
+        independentId,
         observed,
         externalCalls,
         stages,
@@ -54,6 +55,7 @@ try {
         repeat,
         singleCss,
         request,
+        independentId,
         optionsSeen,
         stages,
         graph,
@@ -119,6 +121,8 @@ try {
             externalCalls.some(
               (call) =>
                 call.selected &&
+                call.id ===
+                  (kind === 'external-resolved' ? description : request) &&
                 call.isResolved === (kind === 'external-resolved'),
             ),
           )
@@ -131,6 +135,17 @@ try {
           assert(target)
           assert(pageGraph.importedIds.includes(target.id))
           assert.equal(stages.description, kind === 'external-resolved' ? 0 : 1)
+          if (kind === 'external-unresolved') {
+            assert.equal(independentId, fixture.independentDescription)
+            assert.notEqual(independentId, target.id)
+            const independent = graph.find((info) => info.id === independentId)
+            assert(independent?.parsed && !independent.codeNull)
+            const other = graph.find(
+              (info) => info.id === `${root}/src/other.js`,
+            )
+            assert(other?.importedIds.includes(independentId))
+            assert(!pageGraph.importedIds.includes(independentId))
+          }
         }
         const signature = {
           graph,

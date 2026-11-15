@@ -1,5 +1,12 @@
 use super::{FxHashMap, IMPORTED_RUNS, STRIPPED};
 
+pub(crate) fn sizes() -> (usize, usize) {
+    (
+        IMPORTED_RUNS.with_borrow(FxHashMap::len),
+        STRIPPED.with_borrow(FxHashMap::len),
+    )
+}
+
 pub(crate) fn reset() {
     IMPORTED_RUNS.with_borrow_mut(FxHashMap::clear);
     STRIPPED.with_borrow_mut(FxHashMap::clear);

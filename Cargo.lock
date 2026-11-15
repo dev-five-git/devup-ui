@@ -593,6 +593,7 @@ dependencies = [
  "js-sys",
  "rstest",
  "rustc-hash",
+ "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "serial_test",

@@ -19,7 +19,7 @@ const transform = async (file, code) => {
   const result = await plugin.transform.handler.call(context, code, join(root, file).replaceAll('\\\\', '/'));
   return result.code;
 };
-const loadCss = name => plugin.load(join(cssDir, name));
+const loadCss = name => plugin.load.handler(join(cssDir, name));
 const finish = async () => {
   const asset = { type: 'asset', name: 'devup-ui.css', source: 'stale', fileName: 'shared.css' };
   await plugin.generateBundle.call({}, {}, { 'shared.css': asset });

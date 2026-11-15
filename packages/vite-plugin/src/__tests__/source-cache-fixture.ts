@@ -6,7 +6,7 @@ import * as utils from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import { spyOn } from 'bun:test'
 
-import { lifecycle } from './plugin-lifecycle-fixture'
+import { lifecycle, lifecycleHook } from './plugin-lifecycle-fixture'
 
 export const SOURCE =
   'import {Box} from "@devup-ui/react"; import {tone} from "./tone"; export const A=()=> <Box color={tone}/>'
@@ -114,8 +114,9 @@ export function transformedCode(value: unknown): string {
 
 export function cssLoader(value: unknown): (id: string) => string | undefined {
   assert(typeof value === 'object' && value !== null)
-  assert('load' in value && typeof value.load === 'function')
-  const load = value.load
+  assert('load' in value)
+  const load = lifecycleHook(value.load)
+  assert(typeof load === 'function')
   return (id) => {
     const result: unknown = load.call(value, id)
     assert(result === undefined || typeof result === 'string')

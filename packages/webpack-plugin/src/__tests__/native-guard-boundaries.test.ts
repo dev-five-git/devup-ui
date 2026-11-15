@@ -116,6 +116,14 @@ it('allows a runtime-owned require when a public parser plugin handles it', asyn
   expect(errors).toEqual([])
 })
 
+it('retains native non-JavaScript module facts without reparsing their source', async () => {
+  const errors = await compile({
+    source: 'import value from "./data.json"; console.log(value);',
+    files: { 'data.json': '{"color":"red"}' },
+  })
+  expect(errors).toEqual([])
+})
+
 it.each([
   ['renamed', 'export {Box as Widget} from "@devup-ui/react"', 'Widget'],
   ['namespace', 'export * as DU from "@devup-ui/react"', 'DU.Box'],

@@ -4,6 +4,7 @@ import { expect, it } from 'bun:test'
 
 import admission from '../build-admission.cts'
 import { BuildGeneration } from '../build-generation'
+import { operation, snapshotEngine } from './generation-fixture'
 
 const owner = { integration: 'Webpack', root: 'owner-root' }
 const legacy = { integration: 'Bun', root: 'legacy-root' }
@@ -17,7 +18,7 @@ it.each(['reset', 'restore', 'configure', 'action', 'capture'] as const)(
     const fault = (current: string) => {
       if (enabled && current === stage) throw cause
     }
-    const engine = {
+    const engine = snapshotEngine({
       reset() {
         fault('reset')
       },
@@ -28,15 +29,22 @@ it.each(['reset', 'restore', 'configure', 'action', 'capture'] as const)(
         fault('capture')
         return 'sheet'
       },
-    }
-    if (stage === 'restore') generation.run(engine, () => undefined)
+    })
+    if (stage === 'restore')
+      generation.run(
+        engine,
+        operation(() => undefined),
+      )
     enabled = true
     expect(() =>
       admission.runBuildOperation(owner, () =>
-        generation.run(engine, () => {
-          fault('configure')
-          fault('action')
-        }),
+        generation.run(
+          engine,
+          operation(() => {
+            fault('configure')
+            fault('action')
+          }),
+        ),
       ),
     ).toThrow(cause)
     let resets = 0

@@ -1,7 +1,33 @@
-/** @internal An adapter to the existing synchronous engine snapshot API. */
+import { resetOwnedBuildState } from './build-session'
+
+export interface GenerationSite {
+  readonly file: string
+  readonly line: number
+  readonly column: number
+  readonly operation: string
+}
+
+export interface GenerationRun<T> {
+  readonly site: GenerationSite
+  readonly configure: () => void
+  readonly action: () => T
+}
+
+/** @internal The binding owns identity and every state transition. */
+export interface GenerationHandle {
+  readonly disposed: boolean
+}
+
+export interface GenerationOwnership<State> {
+  create(capture: () => State): GenerationHandle
+  run<T>(handle: GenerationHandle, request: GenerationRun<T>): T
+  dispose(handle: GenerationHandle): void
+  clear(handle: GenerationHandle): void
+}
+
+/** @internal A required public ownership port, never a snapshot fallback. */
 export interface GenerationEngine<State> {
-  reset(): void
-  restore(state: State): void
+  readonly ownership: GenerationOwnership<State>
   capture(): State
 }
 
@@ -14,12 +40,17 @@ export class ClosedBuildGenerationError extends Error {
 }
 
 /**
- * @internal One integration-owned immutable handoff, never an engine lease.
+ * @internal One integration's opaque Rust-owned generation, never an engine lease.
  * Construction/configuration does not count as a running compiler. Only actual
  * run/watch participants count; an unused configuration cannot pin the owner.
  */
 export class BuildGeneration<State> {
-  private state: State | undefined
+  private binding:
+    | {
+        readonly port: GenerationOwnership<State>
+        readonly handle: GenerationHandle
+      }
+    | undefined
   private participants: number
   private finishing: boolean
   private closed: boolean
@@ -31,22 +62,20 @@ export class BuildGeneration<State> {
   }
 
   get disposed(): boolean {
-    return this.closed
+    return this.closed || (this.binding?.handle.disposed ?? false)
   }
 
-  run<T>(engine: GenerationEngine<State>, action: () => T): T {
-    if (this.closed) throw new ClosedBuildGenerationError()
-    engine.reset()
-    if (this.state !== undefined) engine.restore(this.state)
-    try {
-      return action()
-    } finally {
-      if (!this.closed) this.state = engine.capture()
+  run<T>(engine: GenerationEngine<State>, request: GenerationRun<T>): T {
+    if (this.binding === undefined) {
+      const handle = engine.ownership.create(() => engine.capture())
+      this.binding = { port: engine.ownership, handle }
+      if (this.closed) engine.ownership.dispose(handle)
     }
+    return engine.ownership.run(this.binding.handle, request)
   }
 
   acquire(complete: boolean): () => void {
-    if (this.closed) throw new ClosedBuildGenerationError()
+    if (this.disposed) throw new ClosedBuildGenerationError()
     this.participants += 1
     let released = false
     return () => {
@@ -59,7 +88,18 @@ export class BuildGeneration<State> {
   }
 
   dispose(): void {
+    if (this.closed) return
     this.closed = true
-    this.state = undefined
+    if (this.binding !== undefined)
+      this.binding.port.dispose(this.binding.handle)
+    this.clear()
+  }
+
+  clear(): void {
+    const binding = this.binding
+    if (binding !== undefined)
+      resetOwnedBuildState({
+        resetBuildState: () => binding.port.clear(binding.handle),
+      })
   }
 }

@@ -2,9 +2,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
+  buildOperationSite,
   createCompatTypes,
-  createModuleResolver,
   createThemeInterfaceArgs,
+  type GenerationSite,
   loadDevupConfig,
   ProductionNumbering,
   ProductionNumberingError,
@@ -13,23 +14,11 @@ import {
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import {
-  getCss,
-  getThemeInterface,
-  importCanonicalMap,
-  importFileRoutes,
-  registerShorthands,
-  registerTheme,
-  reserveClassSlots,
-  seedFileMap,
-  setAtomHoist,
-  setDebug,
-  setModuleResolver,
-  setPrefix,
-} from '@devup-ui/wasm'
+import { getCss, getThemeInterface } from '@devup-ui/wasm'
 import type { BuildEnvironment, ResolvedConfig } from 'vite'
 
 import { type NativePresence, NonphysicalModules } from './nonphysical-modules'
+import { configureProduction } from './production-configuration'
 import {
   productionEngine,
   type ProductionGeneration,
@@ -41,6 +30,7 @@ import {
 } from './production-manifest'
 
 export class ProductionActivation {
+  private readonly setupSite = buildOperationSite('configure Vite')
   private readonly lifecycle = new ProductionLifecycle()
   private configs = new WeakSet<ResolvedConfig>()
   private config: ResolvedConfig | undefined
@@ -223,45 +213,33 @@ export class ProductionActivation {
   }
 
   run<T>(key: string, action: () => T, generation = this.generation): T {
+    const site: GenerationSite = this.config?.configFile
+      ? {
+          file: this.config.configFile,
+          line: 1,
+          column: 1,
+          operation: 'configure Vite',
+        }
+      : this.setupSite
+    return this.runAt(key, { action, site }, generation)
+  }
+
+  private runAt<T>(
+    key: string,
+    request: { readonly action: () => T; readonly site: GenerationSite },
+    generation = this.generation,
+  ): T {
     const manifest = generation.manifest
     if (manifest === undefined)
       throw new ProductionNumberingError('unseeded', { context: key })
-    const runtime = generation.runtime(key)
+    generation.runtime(key)
     try {
       return runBuildOperation(
         { integration: 'Vite', root: this.config?.root ?? process.cwd() },
         () =>
-          generation.owner.run(productionEngine, () => {
-            registerTheme(manifest.theme)
-            registerShorthands(this.options.shorthands ?? {})
-            setDebug(this.options.debug)
-            setPrefix(this.options.prefix ?? null)
-            importCanonicalMap(runtime.plan.canonical)
-            importFileRoutes(runtime.plan.routes)
-            setAtomHoist(runtime.plan.threshold ?? null)
-            setModuleResolver(undefined)
-            generation.numbering?.seed({ seedFileMap, importCanonicalMap }, key)
-            if (generation.numbering !== undefined && !runtime.reserved) {
-              setModuleResolver(
-                createModuleResolver({
-                  cwd: manifest.root,
-                  conditions: runtime.plan.conditions,
-                  toId: (path) => path.replaceAll('\\', '/'),
-                }),
-              )
-              reserveClassSlots(
-                runtime.plan.slots,
-                this.options.package,
-                this.options.singleCss,
-                true,
-                false,
-                this.options.importAliases,
-              )
-              runtime.reserved = true
-              setModuleResolver(undefined)
-            }
-            generation.current = key
-            return action()
+          generation.owner.run(productionEngine, {
+            ...request,
+            configure: () => configureProduction(generation, this.options, key),
           }),
       )
     } catch (error) {
@@ -289,8 +267,22 @@ export class ProductionActivation {
     await this.generation.finish(key, graph, error)
   }
 
-  css(file: number | null | undefined, main: boolean): string {
-    return this.run(this.context, () => getCss(file, main))
+  extract<T>(key: string, file: string, action: () => T): T {
+    return this.runAt(key, {
+      action,
+      site: { file, line: 1, column: 1, operation: 'transform' },
+    })
+  }
+
+  css(
+    file: number | null | undefined,
+    main: boolean,
+    resource: string,
+  ): string {
+    return this.runAt(this.context, {
+      action: () => getCss(file, main),
+      site: { file: resource, line: 1, column: 1, operation: 'stylesheet' },
+    })
   }
 
   invalidate(id: string): void {

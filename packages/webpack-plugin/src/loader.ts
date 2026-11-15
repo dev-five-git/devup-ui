@@ -105,98 +105,102 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     }
 
     try {
-      withCompilerScope(this._compiler, () => {
-        let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
+      withCompilerScope(
+        this._compiler,
+        () => {
+          let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
-        // POSIX-normalize so the engine's bucket key matches the canonical map /
-        // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
-        // this, single-importer collapse and atom hoisting silently no-op on
-        // Windows. No-op on POSIX.
-        const relativePath = relative(rootDir, id).replaceAll('\\', '/')
+          // POSIX-normalize so the engine's bucket key matches the canonical map /
+          // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
+          // this, single-importer collapse and atom hoisting silently no-op on
+          // Windows. No-op on POSIX.
+          const relativePath = relative(rootDir, id).replaceAll('\\', '/')
 
-        if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-        setCwdModuleResolver({
-          rootDir,
-          conditions,
-          mdxExtensions,
-          alias,
-          onResolutionInputs: (inputs) => {
-            for (const file of inputs.fileDependencies)
-              this.addDependency(resolutionWatchPath(file, !symlinks))
-            for (const path of inputs.missingDependencies)
-              this.addMissingDependency(resolutionWatchPath(path, !symlinks))
-          },
-        })
-        const output = codeExtract(
-          relativePath,
-          source.toString(),
-          libPackage,
-          relCssDir,
-          singleCss,
-          false,
-          true,
-          importAliases,
-          ...(isMdxSource(id, mdxExtensions)
-            ? (['compiled-mdx'] as const)
-            : ([] as const)),
-        )
-        const {
-          code,
-          css = '',
-          map,
-          cssFile,
-          updatedBaseStyle,
-          dependencies = [],
-        } = (() => {
-          try {
-            return {
-              code: output.code,
-              css: output.css,
-              map: output.map,
-              cssFile: output.cssFile,
-              updatedBaseStyle: output.updatedBaseStyle,
-              dependencies: output.dependencies,
+          if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+          setCwdModuleResolver({
+            rootDir,
+            conditions,
+            mdxExtensions,
+            alias,
+            onResolutionInputs: (inputs) => {
+              for (const file of inputs.fileDependencies)
+                this.addDependency(resolutionWatchPath(file, !symlinks))
+              for (const path of inputs.missingDependencies)
+                this.addMissingDependency(resolutionWatchPath(path, !symlinks))
+            },
+          })
+          const output = codeExtract(
+            relativePath,
+            source.toString(),
+            libPackage,
+            relCssDir,
+            singleCss,
+            false,
+            true,
+            importAliases,
+            ...(isMdxSource(id, mdxExtensions)
+              ? (['compiled-mdx'] as const)
+              : ([] as const)),
+          )
+          const {
+            code,
+            css = '',
+            map,
+            cssFile,
+            updatedBaseStyle,
+            dependencies = [],
+          } = (() => {
+            try {
+              return {
+                code: output.code,
+                css: output.css,
+                map: output.map,
+                cssFile: output.cssFile,
+                updatedBaseStyle: output.updatedBaseStyle,
+                dependencies: output.dependencies,
+              }
+            } finally {
+              output.free()
             }
-          } finally {
-            output.free()
+          })()
+          for (const dependency of dependencies) {
+            this.addDependency(resolve(rootDir, dependency))
           }
-        })()
-        for (const dependency of dependencies) {
-          this.addDependency(resolve(rootDir, dependency))
-        }
-        const sourceMap = parseSourceMap(map)
-        const promises: Promise<void>[] = []
-        if (updatedBaseStyle) {
-          // update base style
-          promises.push(
-            stateWriter.write(
-              join(cssDir, 'devup-ui.css'),
-              getCss(null, false),
-              'utf-8',
-            ),
-          )
-        }
-        if (cssFile) {
-          const targetPath = join(cssDir, basename(cssFile))
-          promises.push(
-            stateWriter.write(
-              targetPath,
-              watch ? getCss(getFileNumByFilename(targetPath), true) : css,
-            ),
-          )
-          if (watch) {
+          const sourceMap = parseSourceMap(map)
+          const promises: Promise<void>[] = []
+          if (updatedBaseStyle) {
+            // update base style
             promises.push(
-              stateWriter.write(sheetFile, normalizeSheet(exportSheet())),
-              stateWriter.write(classMapFile, exportClassMap()),
-              stateWriter.write(fileMapFile, exportFileMap()),
+              stateWriter.write(
+                join(cssDir, 'devup-ui.css'),
+                getCss(null, false),
+                'utf-8',
+              ),
             )
           }
-        }
-        Promise.all(promises).then(
-          () => callback(null, code, sourceMap),
-          (error) => callback(toLoaderError(error)),
-        )
-      })
+          if (cssFile) {
+            const targetPath = join(cssDir, basename(cssFile))
+            promises.push(
+              stateWriter.write(
+                targetPath,
+                watch ? getCss(getFileNumByFilename(targetPath), true) : css,
+              ),
+            )
+            if (watch) {
+              promises.push(
+                stateWriter.write(sheetFile, normalizeSheet(exportSheet())),
+                stateWriter.write(classMapFile, exportClassMap()),
+                stateWriter.write(fileMapFile, exportFileMap()),
+              )
+            }
+          }
+          Promise.all(promises).then(
+            () => callback(null, code, sourceMap),
+            (error) => callback(toLoaderError(error)),
+          )
+        },
+        { file: id, line: 1, column: 1, operation: 'transform' },
+      )
     } catch (error) {
       callback(
         isMdxSource(id, mdxExtensions)

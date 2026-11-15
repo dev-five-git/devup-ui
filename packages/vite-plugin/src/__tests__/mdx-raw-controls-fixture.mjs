@@ -17,6 +17,7 @@ export function createRawControlFixture() {
     .replaceAll('\\', '/')
   const page = `${root}/src/page.tsx`
   const description = `${root}/src/Description.mdx`
+  const independentDescription = `${description}?raw-control-independent`
   const widget = `${root}/src/widget.js`
   const unrelated = `${root}/src/Unrelated.mdx`
   mkdirSync(`${root}/src`)
@@ -28,5 +29,14 @@ export function createRawControlFixture() {
     `${root}/src/other.js`,
     `import ${JSON.stringify(description)}; import ${JSON.stringify(unrelated)}; console.info('other');`,
   )
-  return { root, page, description, widget, unrelated, landing, mdx }
+  return {
+    root,
+    page,
+    description,
+    independentDescription,
+    widget,
+    unrelated,
+    landing,
+    mdx,
+  }
 }

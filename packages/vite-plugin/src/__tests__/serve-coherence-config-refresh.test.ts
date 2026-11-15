@@ -10,6 +10,7 @@ import {
   environment,
   graph,
   lifecycle,
+  lifecycleHook,
   watcher,
 } from './plugin-lifecycle-fixture'
 
@@ -139,7 +140,7 @@ it('retains malformed extended JSON failure until the actual input is repaired',
   )
   // Then
   await expect(extract()).rejects.toThrow(`${file}:1:1:`)
-  const load = Reflect.get(state.plugin, 'load')
+  const load = lifecycleHook(Reflect.get(state.plugin, 'load'))
   if (typeof load !== 'function') throw new TypeError('Expected load hook')
   expect(() =>
     Reflect.apply(load, {}, [join(state.project.root, 'df/css/devup-ui.css')]),
@@ -191,9 +192,16 @@ it('waits for queued refresh before extracting unchanged consumer bytes', async 
   await entered.promise
   // When
   const pending = extract()
+  const load = lifecycleHook(Reflect.get(state.plugin, 'load'))
+  if (typeof load !== 'function') throw new TypeError('Expected load hook')
+  const pendingCss: unknown = Reflect.apply(load, {}, [
+    join(state.project.root, 'df/css/devup-ui.css'),
+  ])
+  expect(pendingCss).toBeInstanceOf(Promise)
   release.resolve()
   await refresh
   // Then
   expect(await pending).not.toEqual(before)
+  expect(await pendingCss).toContain('29px')
   expect(getCss(null, false)).toContain('29px')
 })

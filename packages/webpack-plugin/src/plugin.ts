@@ -375,7 +375,6 @@ export class DevupUIWebpackPlugin {
       paths.cssDir,
       resolve(cwd, compiler.options.output?.path ?? 'dist'),
     ]
-    const endBuild = () => scope.abort()
     let moduleResolver: ReturnType<typeof createModuleResolver>
     try {
       moduleResolver = createModuleResolver({
@@ -388,7 +387,6 @@ export class DevupUIWebpackPlugin {
       })
       setModuleResolver(moduleResolver)
     } catch (cause) {
-      endBuild()
       throw new Error(
         `[devup-ui] resolver setup failed at ${cwd}: ${cause instanceof Error ? cause.message : String(cause)}`,
         { cause },
@@ -414,7 +412,6 @@ export class DevupUIWebpackPlugin {
       theme = this.writeDataFiles(options, cwd)
       tailwindFiles = this.tailwindFiles
     } catch (cause) {
-      endBuild()
       throw new Error(
         `[devup-ui] theme setup failed at ${cwd}: ${cause instanceof Error ? cause.message : String(cause)}`,
         { cause },
@@ -439,6 +436,7 @@ export class DevupUIWebpackPlugin {
     // The canonical map is built + imported unconditionally; only atom HOISTING
     // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
     let graph: StaticImportGraph
+    let canonical: Record<string, string> = {}
     let routes: Record<string, number[]> = {}
     let threshold: number | undefined
     try {
@@ -461,6 +459,7 @@ export class DevupUIWebpackPlugin {
         keyBy: 'cwd-relative',
         graph,
       })
+      canonical = canonicalMap
       importCanonicalMap(canonicalMap)
 
       if (atomMode) {
@@ -485,7 +484,6 @@ export class DevupUIWebpackPlugin {
         }
       }
     } catch (cause) {
-      endBuild()
       throw new Error(
         `[devup-ui] graph setup failed at ${cwd}: ${cause instanceof Error ? cause.message : String(cause)}`,
         { cause },
@@ -565,7 +563,9 @@ export class DevupUIWebpackPlugin {
       compiler.hooks.thisCompilation.tap(
         'DevupUIWebpackPluginWatchCss',
         (compilation) =>
-          reconcileWatchCss(compilation, (callback) => scope.run(callback)),
+          reconcileWatchCss(compilation, (callback, resource) =>
+            scope.stylesheet(resource, callback),
+          ),
       )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
@@ -625,7 +625,7 @@ export class DevupUIWebpackPlugin {
         'DevupUIWebpackPlugin',
         (compilation) => {
           const basePath = join(options.cssDir, 'devup-ui.css')
-          const base = scope.run(() => getCss(null, true))
+          const base = scope.stylesheet(basePath, () => getCss(null, true))
           // A file's stylesheet `@import`s the shared base, which the CSS
           // loaders read from disk without passing through this plugin, so it
           // must hold every style extracted so far
@@ -633,7 +633,7 @@ export class DevupUIWebpackPlugin {
             writeFileSync(basePath, base, 'utf-8')
           let stale: string[] = []
           compilation.hooks.finishModules.tap('DevupUIWebpackPlugin', () =>
-            scope.run(() => {
+            scope.stylesheet(basePath, () => {
               if (compiler.watchMode) return
               const changed = new Set(
                 [...servedCss(compilation)]
@@ -664,7 +664,7 @@ export class DevupUIWebpackPlugin {
             () => {
               if (stale.length === 0 || passes > 0) return undefined
               passes += 1
-              scope.run(() => {
+              scope.stylesheet(basePath, () => {
                 for (const path of stale)
                   writeFileSync(
                     path,
@@ -682,7 +682,9 @@ export class DevupUIWebpackPlugin {
           // write css file
           await writeFile(
             join(options.cssDir, 'devup-ui.css'),
-            scope.run(() => getCss(null, false)),
+            scope.stylesheet(join(options.cssDir, 'devup-ui.css'), () =>
+              getCss(null, false),
+            ),
             'utf-8',
           )
         } else if (!compiler.watchMode) scope.abort()
@@ -751,6 +753,7 @@ export class DevupUIWebpackPlugin {
       setPrefix(options.prefix ?? null)
       registerShorthands(options.shorthands ?? {})
       registerTheme(theme)
+      importCanonicalMap(canonical)
       importFileRoutes(routes)
       setAtomHoist(threshold)
       setModuleResolver(moduleResolver)

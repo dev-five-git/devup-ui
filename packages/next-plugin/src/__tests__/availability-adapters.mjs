@@ -45,7 +45,7 @@ export async function openAdapter({ adapter, worktree, root, files }) {
           assert.equal(typeof result?.code, 'string')
           return { code: result.code, map: result.map ?? null }
         },
-        loadCss: (name) => plugin.load(join(cssDir, name)),
+        loadCss: (name) => plugin.load.handler(join(cssDir, name)),
         finish: async (names) => {
           const bundle = Object.fromEntries(
             names.map((name) => [

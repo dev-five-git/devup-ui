@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 /// Internal test boundary: clear the engine, including calling-thread caches.
 /// Never call during extraction or a resolver callback, or between build environments.
 pub fn reset_state_internal() {
+    crate::configuration_state::replaced();
     super::with_style_sheet_mut(|sheet| *sheet = sheet::StyleSheet::default());
     super::MODULE_RESOLVER.with_borrow_mut(|resolver| *resolver = None);
     css::test_state::reset_state_for_testing();
@@ -20,6 +21,7 @@ pub(crate) struct TestStateGuard {
     sheet: sheet::StyleSheet,
     resolver: Option<js_sys::Function>,
     _engine: extractor::test_state::TestStateGuard,
+    _configuration: crate::configuration_state::TestStateGuard,
 }
 
 #[cfg(test)]
@@ -29,6 +31,7 @@ impl TestStateGuard {
             sheet: super::with_style_sheet_mut(std::mem::take),
             resolver: super::MODULE_RESOLVER.with_borrow_mut(Option::take),
             _engine: extractor::test_state::TestStateGuard::new(),
+            _configuration: crate::configuration_state::TestStateGuard::new(),
         }
     }
 }

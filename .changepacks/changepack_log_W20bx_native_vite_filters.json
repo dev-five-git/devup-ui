@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Filter Vite source and generated CSS hooks natively while preserving query and package selection, terminal MDX provenance, and late aggregate CSS validation. No new build errors.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Add the synchronous resident-owner WASM binding port, instance-origin opaque handles, parsed immutable checkpoint transport, targeted cleanup and a fixed generated-export pre-marshalling barrier. Binding reentry is refused with actual operation/importer/callsite diagnostics. Adapter integration and frozen-global-plan, theme/configuration replay and cache checkpoint completeness remain separate downstream work.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

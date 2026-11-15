@@ -69,7 +69,7 @@ it('retains parsing-phase forwarding authority after an earlier buildEnd clears 
       `${entry}:2:22: (in compiled output) untransformed module cannot use import './barrel.js' (Widget) at build time under extension '.custom'; add '.custom' to mdxExtensions`,
     )
     expect(available).toBe(false)
-    expect(captured).toBeGreaterThan(1)
+    expect(captured).toBe(1)
   } finally {
     await fixture.close()
   }

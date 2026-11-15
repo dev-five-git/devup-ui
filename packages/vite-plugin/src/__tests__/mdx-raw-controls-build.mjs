@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs'
+
 import { build } from 'vite'
 
 import { DevupUI } from '../../dist/index.mjs'
@@ -5,6 +7,15 @@ import { DevupUI } from '../../dist/index.mjs'
 export async function observeRawControlBuild(fixture, policy) {
   const { root, page, description, widget, unrelated, landing, mdx } = fixture
   const { kind, request, singleCss } = policy
+  // Only the unresolved control needs a distinct compiled ID on every platform.
+  const independentId =
+    kind === 'external-unresolved'
+      ? fixture.independentDescription
+      : description
+  writeFileSync(
+    `${root}/src/other.js`,
+    `import ${JSON.stringify(independentId)}; import ${JSON.stringify(unrelated)}; console.info('other');`,
+  )
   const observed = []
   const externalCalls = []
   const parsed = new Set()
@@ -65,7 +76,7 @@ export async function observeRawControlBuild(fixture, policy) {
             },
           },
           transform(_code, id) {
-            if (id === description) stages.description++
+            if (id === independentId) stages.description++
             if (id === unrelated) stages.unrelated++
           },
           moduleParsed(info) {
@@ -128,6 +139,7 @@ export async function observeRawControlBuild(fixture, policy) {
     failure = cause
   }
   return {
+    independentId,
     observed,
     externalCalls,
     stages,

@@ -188,8 +188,9 @@ it('replays changed theme state when an already-prepared production generation u
     // When the same prepared generation executes its real theme-update boundary.
     await activation.updateTheme()
     // Then the resumed native sheet contains the replacement theme, not the prior snapshot.
-    expect(activation.css(null, false)).toContain('--primary:blue')
-    expect(activation.css(null, false)).not.toContain('--primary:red')
+    const resource = `${fixture.root}/df/devup-ui/devup-ui.css`
+    expect(activation.css(null, false, resource)).toContain('--primary:blue')
+    expect(activation.css(null, false, resource)).not.toContain('--primary:red')
   } finally {
     activation.dispose()
     await fixture.close()

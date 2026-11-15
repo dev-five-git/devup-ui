@@ -15,7 +15,7 @@ type NativeLoad = Extract<
   (...args: never[]) => unknown
 >
 type TestPlugin = Omit<Plugin, 'load'> & {
-  load(this: ThisParameterType<NativeLoad>, id: string): ReturnType<NativeLoad>
+  load: { handler: NativeLoad }
 }
 
 const landing = createRequire(
@@ -75,8 +75,8 @@ for (const singleCss of [false, true]) {
         const transformed = new Set<string>()
         const snapshots: string[] = []
         const plugins = DevupUI({ singleCss }) as unknown as [TestPlugin]
-        const originalLoad = plugins[0].load
-        plugins[0].load = async function (id) {
+        const originalLoad = plugins[0].load.handler
+        plugins[0].load.handler = async function (id) {
           const result = await originalLoad.call(this, id)
           if (/devup-ui(?:-\d+)?\.css$/.test(id)) {
             snapshots.push(String(result))

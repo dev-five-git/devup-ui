@@ -2,6 +2,7 @@ import { BuildGeneration } from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 
+import { operation } from '../../../plugin-utils/src/__tests__/generation-fixture'
 import { productionEngine } from '../production-engine'
 import { extractOwned, productionFixture } from './production-fixture'
 
@@ -16,7 +17,7 @@ function capturedError(action: () => void): Error {
 }
 
 it.each([false, true])(
-  'disposes activation when capture fails and starts fresh at next input (action fault=%s)',
+  'disposes activation after a real owner fault and starts fresh at next input (action fault=%s)',
   async (actionFault) => {
     // Given an actual prepared activation and its successful private handoff.
     const fixture = await productionFixture()
@@ -32,9 +33,12 @@ it.each([false, true])(
       >()
       closed.dispose()
       const expectedClosed = capturedError(() =>
-        closed.run(productionEngine, () => undefined),
+        closed.run(
+          productionEngine,
+          operation(() => undefined),
+        ),
       )
-      expect(expectedClosed.name).toBe('ClosedBuildGenerationError')
+      expect(expectedClosed.name).toBe('ResidentOwnerError')
       activation.run(key, () => extractOwned('red'))
       const capture = spyOn(productionEngine, 'capture').mockImplementation(
         () => {
@@ -42,23 +46,47 @@ it.each([false, true])(
         },
       )
       try {
-        // When real action allocations are followed by a broken final capture.
-        expect(() =>
-          activation.run(key, () => {
-            const output = wasm.codeExtract(
-              'fault.tsx',
-              "import {Box} from '@devup-ui/react'; export const x=<Box bg='blue'/>;",
-              '@devup-ui/react',
-              'df',
-              false,
-              false,
-              false,
-              {},
-            )
-            output.free()
-            if (actionFault) throw new RangeError('action fault')
-          }),
-        ).toThrow(cause)
+        const action = () => {
+          const output = wasm.codeExtract(
+            'fault.tsx',
+            "import {Box} from '@devup-ui/react'; export const x=<Box bg='blue'/>;",
+            '@devup-ui/react',
+            'df',
+            false,
+            false,
+            false,
+            {},
+          )
+          output.free()
+        }
+        // When action failure or genuine unmanaged takeover terminates the owner.
+        if (actionFault) {
+          const primary = new RangeError('action fault')
+          expect(() =>
+            activation.run(key, () => {
+              action()
+              throw primary
+            }),
+          ).toThrow(primary)
+          expect(capture).toHaveBeenCalledTimes(0)
+        } else {
+          activation.run(key, action)
+          expect(capture).toHaveBeenCalledTimes(0)
+          const failure = capturedError(() =>
+            wasm.setPrefix('unmanaged takeover'),
+          )
+          expect(failure.name).toBe('ResidentOwnerError')
+          expect(failure.cause).toBe(cause)
+          expect(capture).toHaveBeenCalledTimes(1)
+          let entered = false
+          const refused = capturedError(() =>
+            activation.run(key, () => {
+              entered = true
+            }),
+          )
+          expect(refused.name).toBe('ResidentOwnerError')
+          expect(entered).toBe(false)
+        }
       } finally {
         capture.mockRestore()
       }

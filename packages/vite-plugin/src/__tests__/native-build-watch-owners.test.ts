@@ -42,7 +42,7 @@ it('keeps native output when a plugin no longer resolves a previously loaded for
       ],
     })
     // Then absent forwarding authority is not mistaken for a compile-time export.
-    expect(resolutions).toBeGreaterThan(1)
+    expect(resolutions).toBe(1)
     const outputs = (Array.isArray(result) ? result : [result]).flatMap(
       (bundle) => {
         if (!('output' in bundle))

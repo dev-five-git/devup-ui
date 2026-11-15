@@ -30,6 +30,8 @@ mod css_prop;
 mod css_prop_contract_tests;
 mod css_utils;
 mod emotion_namespace;
+mod evaluation_cache;
+pub use evaluation_cache::invalidate_evaluation_cache;
 pub mod extract_style;
 mod extractor;
 mod gen_class_name;

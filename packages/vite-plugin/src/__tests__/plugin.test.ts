@@ -94,14 +94,21 @@ it.each([
 )
 function DevupUI(options?: Parameters<typeof createDevupUI>[0]) {
   const plugin = createDevupUI(options) as unknown as [
-    ViteTestPlugin,
+    Omit<ViteTestPlugin, 'load' | 'resolveId'> & {
+      load: { handler: ViteTestPlugin['load'] }
+      resolveId: { handler: ViteTestPlugin['resolveId'] }
+    },
     ViteTestRestorePlugin,
     unknown,
     unknown,
-    unknown,
   ]
-  pluginInstances.add(plugin[0])
-  return plugin
+  const main = {
+    ...plugin[0],
+    load: plugin[0].load.handler,
+    resolveId: plugin[0].resolveId.handler,
+  }
+  pluginInstances.add(main)
+  return [main, plugin[1], plugin[2], plugin[3]] as const
 }
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
@@ -487,10 +494,12 @@ describe('devupUIVitePlugin', () => {
     codeExtractSpy.mockImplementation(() => {
       throw new Error('page.mdx:1:1: cannot extract')
     })
-    const plugin = DevupUI()[2] as unknown as Pick<ViteTestPlugin, 'transform'>
+    const plugin = DevupUI()[2] as unknown as {
+      transform: { handler: ViteTestPlugin['transform'] }
+    }
 
     await expect(
-      plugin.transform.call(
+      plugin.transform.handler.call(
         {
           getCombinedSourcemap: () => ({
             version: 3,

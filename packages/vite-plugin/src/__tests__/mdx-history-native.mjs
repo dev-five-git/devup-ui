@@ -87,7 +87,11 @@ for (const singleCss of [false, true]) {
     const owned = DevupUI({ singleCss })
     const mainFailure = Promise.withResolvers()
     const trace = []
-    owned[4].buildEnd = function (error) {
+    const guard = owned.find(
+      (plugin) => plugin.name === 'devup-ui:compiled-source-guard',
+    )
+    assert(guard)
+    guard.buildEnd = function (error) {
       trace.push({ hook: 'guard-validation-bypassed', error: error?.message })
     }
     const mainTransform = owned[0].transform.handler

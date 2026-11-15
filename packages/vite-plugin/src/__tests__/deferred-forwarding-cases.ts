@@ -9,6 +9,7 @@ it.each([
   'absent-export',
   'missing-edge',
   'ambiguous-stars',
+  'star-default',
 ] as const)('verifies exact forwarding cuts when %s', async (kind) => {
   // Given current public resolver observations and final forwarding facts.
   const value = await fixture()
@@ -18,33 +19,25 @@ it.each([
   const read = {
     ...obligation,
     request: './forward.js',
-    exports: ['Doc'],
+    exports: [kind === 'star-default' ? 'default' : 'Doc'],
     cutImporter: forward,
     cutRequest: leaf,
   }
   value.deferred.extracted(value.environment, root, JSON.stringify([read]))
   await value.edge({ specifier: read.request, resolved: forward })
-  value.observeRoot({
-    importedIds: [forward],
-    observation: { defaultCallable: false, unsupportedRequests: new Set() },
-  })
-  const ref = {
-    request: leaf,
-    ids: [kind === 'cycle' ? 'Doc' : 'default'],
-    ...(kind === 'require' ? { kind: 'require-call' as const } : {}),
-  }
-  value.deferred.observe(value.environment, {
-    id: forward,
+  value.observeRoot('export {};', [forward])
+  const code = {
+    current: `export {default as Doc} from ${JSON.stringify(leaf)};`,
+    require: `const Doc = require(${JSON.stringify(leaf)}).default; export {Doc};`,
+    cycle: `export {Doc} from ${JSON.stringify(leaf)};`,
+    'absent-export': 'export const Doc = 42;',
+    'missing-edge': `export {default as Doc} from ${JSON.stringify(leaf)};`,
+    'ambiguous-stars': 'export * from "./a.js"; export * from "./b.js";',
+    'star-default': `export * from ${JSON.stringify(leaf)};`,
+  }[kind]
+  value.modules.set(forward, {
+    code,
     importedIds: [kind === 'cycle' ? forward : target],
-    facts: {
-      references: [],
-      exports:
-        kind === 'ambiguous-stars'
-          ? new Map()
-          : new Map([['Doc', kind === 'absent-export' ? undefined : ref]]),
-      stars: kind === 'ambiguous-stars' ? ['./a.js', './b.js'] : [],
-    },
-    observation: { defaultCallable: false, unsupportedRequests: new Set() },
   })
   if (kind !== 'missing-edge')
     await value.edge({

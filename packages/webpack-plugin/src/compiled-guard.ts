@@ -1,41 +1,15 @@
 import {
-  compiledFacts,
   createCompileTimeClassifier,
   createDependencyGuard,
+  decodeGuardFacts,
   type DependencyGuardOptions,
   type GuardFacts,
   isCompileTimeAlias,
   isSelectedSource,
   UntransformedSourceError,
 } from '@devup-ui/plugin-utils'
+import { compiledGuardFacts } from '@devup-ui/wasm'
 import type { Compiler, Dependency, Module } from 'webpack'
-
-interface ScriptParser {
-  readonly state: { readonly module: Module }
-  readonly hooks: {
-    readonly program: {
-      tap(
-        options: { readonly name: string; readonly stage: number },
-        callback: (ast: unknown) => void,
-      ): void
-    }
-  }
-}
-
-function isScriptParser(value: object): value is ScriptParser {
-  const hooks = 'hooks' in value ? value.hooks : undefined
-  const program =
-    hooks && typeof hooks === 'object' && 'program' in hooks
-      ? hooks.program
-      : undefined
-  return (
-    !!program &&
-    typeof program === 'object' &&
-    'tap' in program &&
-    typeof program.tap === 'function' &&
-    'state' in value
-  )
-}
 
 export function registerCompiledGuard(
   compiler: Compiler,
@@ -45,32 +19,47 @@ export function registerCompiledGuard(
   const classify = createCompileTimeClassifier(options.package)
   compiler.hooks.thisCompilation.tap(
     'DevupUICompiledSourceGuard',
-    (compilation, { normalModuleFactory }) => {
-      const facts = new Map<Module, GuardFacts>()
-      for (const type of [
-        'javascript/auto',
-        'javascript/esm',
-        'javascript/dynamic',
-      ])
-        normalModuleFactory.hooks.parser
-          .for(type)
-          .tap('DevupUICompiledSourceGuard', (parser) => {
-            if (!isScriptParser(parser)) return
-            parser.hooks.program.tap(
-              { name: 'DevupUICompiledSourceGuard', stage: -10000 },
-              (ast) => {
-                facts.set(parser.state.module, compiledFacts(ast))
-              },
-            )
-          })
+    (compilation) => {
       compilation.hooks.finishModules.tap(
         'DevupUICompiledSourceGuard',
         (modules) => {
+          const roots = [...modules].filter(
+            (module) =>
+              module.type.startsWith('javascript') &&
+              module.getNumberOfErrors() === 0 &&
+              'resource' in module &&
+              typeof module.resource === 'string' &&
+              !isSelectedSource(
+                module.resource.split('?')[0],
+                options.mdxExtensions,
+              ),
+          )
+          const facts = new Map<
+            Module,
+            { readonly code: string; readonly facts: GuardFacts } | undefined
+          >()
+          function source(module: Module) {
+            if (facts.has(module)) return facts.get(module)
+            const code =
+              module.type.startsWith('javascript') &&
+              module.getNumberOfErrors() === 0
+                ? module.originalSource()?.source().toString()
+                : undefined
+            const value =
+              code === undefined
+                ? undefined
+                : {
+                    code,
+                    facts: decodeGuardFacts(compiledGuardFacts(code, false)),
+                  }
+            facts.set(module, value)
+            return value
+          }
           const dependencies = new Map<unknown, Dependency>()
-          for (const module of modules)
+          for (const module of roots)
             for (const dependency of module.dependencies)
               dependencies.set(dependency, dependency)
-          const errors = check(modules, {
+          const errors = check(roots, {
             graph: compilation.moduleGraph,
             target(dependency) {
               const actual = dependencies.get(dependency)
@@ -127,7 +116,7 @@ export function registerCompiledGuard(
               classify(module.resource, ids)
             )
               return new Map([[key, true]])
-            const symbols = facts.get(module)
+            const symbols = source(module)?.facts
             if (!symbols || !ids.length) return new Map()
             const next = new Set([...seen, module])
             const direct = symbols.exports.get(ids[0])
@@ -145,22 +134,21 @@ export function registerCompiledGuard(
               }),
             )
           }
-          for (const module of modules) {
+          for (const module of roots) {
             if (
               !('resource' in module) ||
               typeof module.resource !== 'string' ||
-              isSelectedSource(module.resource, options.mdxExtensions) ||
               errors.some((error) => error.filename === module.resource)
             )
               continue
-            for (const ref of facts.get(module)?.references ?? []) {
+            const observed = source(module)
+            if (!observed) continue
+            for (const ref of observed.facts.references) {
               const target = resolved(module, ref.request)
               const targets = target
                 ? origins(target, ref.ids)
                 : new Map<string, boolean>()
-              const prefix = (
-                module.originalSource()?.source().toString() ?? ''
-              ).slice(0, ref.pos)
+              const prefix = observed.code.slice(0, ref.pos)
               const reference = {
                 ...ref,
                 line: prefix.split('\n').length,

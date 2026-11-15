@@ -46,7 +46,11 @@ function provenanceFixture(root, options = {}) {
     ...options,
   })
   assert(Array.isArray(plugins))
-  const plugin = { ...plugins[0], transform: plugins[0].transform.handler }
+  const plugin = {
+    ...plugins[0],
+    transform: plugins[0].transform.handler,
+    load: plugins[0].load.handler,
+  }
   assert(ProvenanceHooks(plugin))
   const id = resolve(root, 'src/A.tsx').replaceAll('\\', '/')
   const context = {

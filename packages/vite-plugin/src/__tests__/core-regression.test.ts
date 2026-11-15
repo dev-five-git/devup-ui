@@ -17,6 +17,7 @@ import { afterEach, beforeEach, expect, it } from 'bun:test'
 import { createServer, type Plugin, type ViteDevServer } from 'vite'
 
 import { DevupUI } from '../plugin'
+import { lifecycleHook } from './plugin-lifecycle-fixture'
 
 type TestPlugin = Omit<Plugin, 'watchChange'> & {
   watchChange(id: string): Promise<void>
@@ -125,7 +126,7 @@ it('preserves the prior theme on a malformed watched config', async () => {
   expect(await readFile(join(root, 'df/theme.d.ts'), 'utf-8')).toBe(prior)
   expect(wasm.getCss(null, false)).toBe(priorCss)
   expect(priorCss).toContain('--preserved')
-  const load = Reflect.get(plugin, 'load')
+  const load = lifecycleHook(Reflect.get(plugin, 'load'))
   if (typeof load !== 'function') throw new TypeError('Expected load hook')
   expect(() => Reflect.apply(load, {}, ['devup-ui.css'])).toThrow(error)
   await writeFile(

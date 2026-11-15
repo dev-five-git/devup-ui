@@ -234,14 +234,16 @@ Compiled output is JavaScript with JSX under its real filename, never renamed
 to a JavaScript extension. Configure the MDX compiler separately; Devup runs
 after it. Ordinary JavaScript/TypeScript extensions keep their existing handling.
 
-`DevupUI()` returns the main `devup-ui` plugin, the unchanged
-`devup-ui:restore-forwarded-css` plugin, and three independent companions:
-`devup-ui:mdx`, `devup-ui:aggregate-css-guard`, and
-`devup-ui:compiled-source-guard`. The main plugin remains `enforce: 'pre'`;
+`DevupUI()` returns the main `devup-ui` plugin, the
+`devup-ui:restore-forwarded-css` plugin, and two independent companions:
+`devup-ui:mdx` and `devup-ui:compiled-source-guard`. The late restoration hook
+also checks aggregate CSS output. The main plugin remains `enforce: 'pre'`;
 the MDX companion is `enforce: 'post'` and only transforms source.
 
-During builds with extraction enabled, the compiled-source guard inspects final
-code through Vite's public parser and resolved module graph. An extension outside
+During builds with extraction enabled, the compiled-source guard reads final
+code only for unsupported-source roots and required forwarding or deferred-default
+verification, using the shared Rust parser and actual native resolution observations.
+An extension outside
 the JavaScript/TypeScript and MDX lists fails with its module, used import and
 `mdxExtensions` remedy when a compile-time export is definitely referenced by
 name, static namespace/member access or destructuring. Runtime helpers such as

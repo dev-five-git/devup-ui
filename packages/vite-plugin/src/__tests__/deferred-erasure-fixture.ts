@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { DeferredDefaults, type FinalModule } from '../deferred-defaults'
+import { DeferredDefaults } from '../deferred-defaults'
 
 export const root = '/app/page.tsx'
 export const target = '/app/Description.mdx'
@@ -17,23 +17,19 @@ export const obligation = {
   cutRequest: request,
   cutExport: 'default',
 }
-const facts: FinalModule['facts'] = {
-  references: [],
-  exports: new Map(),
-  stars: [],
-}
-
-export async function fixture(startModules = true) {
+export async function fixture() {
   const deferred = new DeferredDefaults()
   const environment = { name: 'same-name' }
   const companion = deferred.resolution.companion()
   const terminal = {
     name: 'owned',
     api: companion.api,
-    transform: deferred.resolution.succeeded.bind(
-      deferred.resolution,
-      environment,
-    ),
+    transform: {
+      handler: deferred.resolution.succeeded.bind(
+        deferred.resolution,
+        environment,
+      ),
+    },
   }
   assert(
     typeof companion.options === 'function' &&
@@ -60,9 +56,13 @@ export async function fixture(startModules = true) {
   )
   const resolve = owner.resolveId.handler
   const start = companion.buildStart
-  function begin(resetModules = true) {
+  const modules = new Map<
+    string,
+    { readonly code: string; readonly importedIds: readonly string[] }
+  >()
+  function begin() {
     Reflect.apply(start, { environment }, [installed])
-    if (resetModules) deferred.start(environment)
+    modules.clear()
   }
   async function edge({
     importer = root,
@@ -75,25 +75,18 @@ export async function fixture(startModules = true) {
       { kind: 'import-statement', isEntry: false },
     ])
   }
-  function observeRoot(overrides: Partial<FinalModule> = {}) {
-    deferred.observe(environment, {
-      id: root,
-      importedIds: [target],
-      facts,
-      observation: {
-        defaultCallable: false,
-        unsupportedRequests: new Set(),
-        importOnlyRequests: new Set([request]),
-      },
-      ...overrides,
-    })
+  function observeRoot(
+    code = `import ${JSON.stringify(request)};`,
+    importedIds = [target],
+  ) {
+    modules.set(root, { code, importedIds })
   }
   function observeTarget(defaultCallable = false) {
-    deferred.observe(environment, {
-      id: target,
+    modules.set(target, {
+      code: defaultCallable
+        ? 'export default function Description(){}'
+        : 'export default 42;',
       importedIds: [],
-      facts,
-      observation: { defaultCallable, unsupportedRequests: new Set() },
     })
   }
   function graph(value = obligation) {
@@ -101,17 +94,28 @@ export async function fixture(startModules = true) {
       *getModuleIds() {
         yield root
       },
-      getModuleInfo() {
-        return { meta: { devupDeferredDefaults: JSON.stringify([value]) } }
+      getModuleInfo(id: string) {
+        const module =
+          modules.get(id) ??
+          (id === root ? { code: null, importedIds: [] } : undefined)
+        return module
+          ? {
+              ...module,
+              meta:
+                id === root
+                  ? { devupDeferredDefaults: JSON.stringify([value]) }
+                  : {},
+            }
+          : null
       },
     }
   }
-  begin(startModules)
+  begin()
   deferred.extracted(environment, root, JSON.stringify([obligation]))
   await edge()
   observeRoot()
   observeTarget()
-  terminal.transform(target)
+  terminal.transform.handler(target)
   return {
     deferred,
     environment,
@@ -120,5 +124,6 @@ export async function fixture(startModules = true) {
     observeRoot,
     observeTarget,
     graph,
+    modules,
   }
 }

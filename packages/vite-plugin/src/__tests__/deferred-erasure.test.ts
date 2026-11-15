@@ -99,18 +99,12 @@ it.each([
   'missing-imported-id',
 ] as const)('retains authority checks for %s', async (kind) => {
   const value = await fixture()
-  value.observeRoot({
-    importedIds: kind === 'missing-imported-id' ? [] : [target],
-    observation: {
-      defaultCallable: false,
-      unsupportedRequests: new Set(
-        kind === 'unsupported-request' ? [request] : [],
-      ),
-      importOnlyRequests: new Set(
-        kind === 'absent-request' ? ['./other.mdx'] : [request],
-      ),
-    },
-  })
+  value.observeRoot(
+    kind === 'unsupported-request'
+      ? `import ${JSON.stringify(request)} with {type: 'opaque'};`
+      : `import ${JSON.stringify(kind === 'absent-request' ? './other.mdx' : request)};`,
+    kind === 'missing-imported-id' ? [] : [target],
+  )
   expect(() => value.deferred.verify(value.environment, value.graph())).toThrow(
     /page\.tsx:1:8: deferred default cannot use/,
   )

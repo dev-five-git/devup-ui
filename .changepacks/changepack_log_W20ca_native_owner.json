@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Move binding ownership, resolver and export-driver policy into shared native-tested Rust while retaining thin wasm-bindgen forwards, the existing guarded export surface and exact error/cause behavior. Preserve extraction, source-map and scratch reservation semantics without changing the JavaScript runtime or adapter integration.",
+  "date": "2026-10-28T00:00:00.000Z"
+}

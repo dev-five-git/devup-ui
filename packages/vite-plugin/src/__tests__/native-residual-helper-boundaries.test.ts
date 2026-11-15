@@ -13,14 +13,12 @@ it('unwraps actual function object and absent hooks from the unchanged public fa
   const plugins = DevupUI()
   assert(Array.isArray(plugins))
   const main: unknown = plugins[0]
-  const mdx: unknown = plugins[2]
-  const aggregate: unknown = plugins[3]
+  const restore: unknown = plugins[1]
   assert(typeof main === 'object' && main !== null)
-  assert(typeof mdx === 'object' && mdx !== null)
-  assert(typeof aggregate === 'object' && aggregate !== null)
+  assert(typeof restore === 'object' && restore !== null)
   const wrapped: unknown = Reflect.get(main, 'transform')
-  const direct: unknown = Reflect.get(mdx, 'transform')
-  const absent: unknown = Reflect.get(aggregate, 'transform')
+  const direct: unknown = Reflect.get(main, 'buildStart')
+  const absent: unknown = Reflect.get(restore, 'transform')
   assert(typeof wrapped === 'object' && wrapped !== null)
   assert(typeof direct === 'function')
   // When both fixture adapters consume real public factory output.

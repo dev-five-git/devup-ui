@@ -11,9 +11,7 @@ use sheet::StyleSheet;
 use wasm_bindgen::prelude::*;
 
 use crate::with_style_sheet_mut;
-mod rows;
-#[cfg(not(tarpaulin_include))]
-use crate::{MODULE_RESOLVER, call_module_resolver, import_aliases_from_js, js_error};
+pub(crate) mod rows;
 
 /// Prepared physical input, keyed exactly as its later real transform.
 pub struct ReservationInput {
@@ -68,7 +66,7 @@ pub fn reserve_class_slots_internal(
     });
 }
 
-fn reserve_class_slots_with<E>(
+pub(crate) fn reserve_class_slots_with<E>(
     inputs: &[ReservationInput],
     option: ExtractOption,
     mut extract_row: impl FnMut(&ReservationInput, ExtractOption) -> Result<extractor::ExtractOutput, E>,
@@ -88,7 +86,13 @@ fn reserve_class_slots_with<E>(
             ..option.clone()
         };
         let row = RowSlots::default();
-        if let Ok(output) = extract_row(input, file_option) {
+        let extracted = extract_row(input, file_option);
+        if crate::resident_owner::check_fault().is_err() {
+            drop(row);
+            extraction.discard_failed_row();
+            return;
+        }
+        if let Ok(output) = extracted {
             let bucket = file_map::canonical(&input.filename);
             let global = option.single_css || file_map::is_global(&input.filename);
             with_style_sheet_mut(|sheet| {
@@ -109,32 +113,19 @@ type FallibleResolver<'a> =
     dyn Fn(&str, &str) -> Result<Option<extractor::ModuleResolution>, String> + 'a;
 
 /// Consume the first host fault before the common driver can accept a row's output.
-fn extract_scratch_row(
+pub(crate) fn extract_scratch_row(
     input: &ReservationInput,
     option: ExtractOption,
     resolve: &FallibleResolver<'_>,
 ) -> Result<extractor::ExtractOutput, String> {
     let fault = std::cell::RefCell::new(None);
-    let resolver = |specifier: &str, importer: &str| {
-        if fault.borrow().is_some() {
-            return None;
-        }
-        match resolve(specifier, importer) {
-            Ok(module) => module,
-            Err(cause) => {
-                *fault.borrow_mut() = Some(format!(
-                    "{importer}:1:1: module resolver cannot use `{specifier}` at build time: {cause}"
-                ));
-                None
-            }
-        }
-    };
+    let resolver = crate::driver::fallible_resolver(&fault, resolve);
     let extracted = extract_with_source_type(
         &input.filename,
         &input.code,
         option,
         false,
-        Some(&resolver),
+        Some(&*resolver),
         input.source_type,
     );
     crate::checked_extraction(extracted, Some(&fault))
@@ -151,25 +142,15 @@ pub fn reserve_class_slots(
     _import_main_css_in_css: bool,
     import_aliases: JsValue,
 ) -> Result<(), JsValue> {
-    let rows: Vec<Vec<String>> = serde_wasm_bindgen::from_value(rows).map_err(js_error)?;
-    let inputs = rows::parse_rows(rows).map_err(js_error)?;
-    let option = ExtractOption {
-        package: package.to_string(),
-        single_css,
-        import_main_css: import_main_css_in_code,
-        import_aliases: import_aliases_from_js(import_aliases)?,
-        ..ExtractOption::default()
-    };
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        move |specifier: &str, importer: &str| call_module_resolver(&resolver, specifier, importer)
-    });
-    match resolver {
-        Some(resolver) => reserve_class_slots_with(&inputs, option, |input, option| {
-            extract_scratch_row(input, option, &resolver)
-        }),
-        None => reserve_class_slots_internal(&inputs, option, None),
-    }
-    Ok(())
+    crate::driver::DRIVER.reserve(
+        rows,
+        crate::driver::ReservationOptions {
+            package,
+            single_css,
+            import_main_css: import_main_css_in_code,
+            aliases: import_aliases,
+        },
+    )
 }
 
 /// New live class and file slots since this build's first reservation; repeats do not count.
@@ -193,6 +174,7 @@ pub fn export_reservation_state_internal() -> Result<String, String> {
 
 /// Restore already parsed reservation bookkeeping without altering allocator maps.
 pub fn import_reservation_state_internal(state: css::slot_reservation::Snapshot) {
+    crate::configuration_state::replaced();
     css::slot_reservation::restore(state);
 }
 
@@ -200,14 +182,15 @@ pub fn import_reservation_state_internal(state: css::slot_reservation::Snapshot)
 #[wasm_bindgen(js_name = "exportReservationState")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_reservation_state() -> Result<String, JsValue> {
-    export_reservation_state_internal().map_err(js_error)
+    export_reservation_state_internal().map_err(|error| crate::driver::DRIVER.errors.message(error))
 }
 
 /// Restore an owner's opaque reservation bookkeeping after resetting the engine.
 #[wasm_bindgen(js_name = "importReservationState")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_reservation_state(state: JsValue) -> Result<(), JsValue> {
-    let state = serde_wasm_bindgen::from_value(state).map_err(js_error)?;
+    let state = serde_wasm_bindgen::from_value(state)
+        .map_err(|error| crate::driver::DRIVER.errors.message(error))?;
     import_reservation_state_internal(state);
     Ok(())
 }

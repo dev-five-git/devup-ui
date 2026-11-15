@@ -1,9 +1,53 @@
+import assert from 'node:assert/strict'
+
 import * as wasm from '@devup-ui/wasm'
 import { expect, it, spyOn } from 'bun:test'
 import type { Plugin } from 'vite'
 
 import { createCompiledGuard } from '../compiled-guard'
 import { productionFixture } from './production-fixture'
+
+it('leaves forwarding unproven when the standalone guard has no valid observer', () => {
+  // Given final imported IDs, but no installed native resolution observer.
+  const guard = createCompiledGuard({
+    package: '@devup-ui/react',
+    mdxExtensions: [],
+    importAliases: {},
+    extractCss: true,
+  })
+  const modules = new Map([
+    [
+      '/entry.custom',
+      {
+        code: 'import {Widget} from "./barrel.js"; export const value=Widget;',
+        importedIds: ['/barrel.js'],
+      },
+    ],
+    [
+      '/barrel.js',
+      {
+        code: 'export {Box as Widget} from "@devup-ui/react";',
+        importedIds: ['@devup-ui/react'],
+      },
+    ],
+  ])
+  const hook = guard.buildEnd
+  assert(typeof hook === 'function')
+  // When the real guard verifies final facts without actual edge observations.
+  // Then it neither fabricates forwarding authority nor performs a late resolve.
+  expect(() =>
+    Reflect.apply(
+      hook,
+      {
+        getModuleIds: () => modules.keys(),
+        getModuleInfo: (id: string) => modules.get(id) ?? null,
+        resolve: () => assert.fail('Final verification must not resolve edges'),
+        error: () => assert.fail('Unobserved forwarding must remain unproven'),
+      },
+      [],
+    ),
+  ).not.toThrow()
+})
 
 it.each([false, true])(
   'omits unused guard resolutions with identical native output when virtual=%s',
@@ -12,7 +56,7 @@ it.each([false, true])(
     const fixture = await productionFixture()
     const code =
       'import {read} from "./ordinary.js"; export const result=read()'
-    const entry = await fixture.file(
+    await fixture.file(
       'app/src/main.js',
       virtual ? 'export {result} from "virtual-executable"' : code,
     )
@@ -26,25 +70,24 @@ it.each([false, true])(
       importAliases: {},
       extractCss: true,
     })
-    const hook = guard.moduleParsed
+    const hook = guard.buildEnd
     if (typeof hook !== 'function')
-      throw new TypeError('Expected callable guard moduleParsed')
+      throw new TypeError('Expected callable guard buildEnd')
     const resolutions: string[] = []
     const parses = spyOn(wasm, 'compiledGuardFacts')
-    guard.moduleParsed = function (info) {
+    guard.buildEnd = function (error) {
       return hook.call(
         new Proxy(this, {
           get(context, key) {
             if (key === 'resolve')
               return (...args: Parameters<typeof context.resolve>) => {
-                if (info.id === (virtual ? '\0virtual-executable' : entry))
-                  resolutions.push(args[0])
+                resolutions.push(args[0])
                 return context.resolve(...args)
               }
             return Reflect.get(context, key)
           },
         }),
-        info,
+        error,
       )
     }
     const provider: Plugin = {
@@ -64,9 +107,9 @@ it.each([false, true])(
       const actual = await fixture.run(false, [], {
         plugins: [provider, guard],
       })
-      // Then output stays byte-identical and parsing stays active, without lookups.
+      // Then output stays byte-identical without source parsing or late lookups.
       expect(actual).toEqual(expected)
-      expect(parses.mock.calls.some(([source]) => source === code)).toBe(true)
+      expect(parses.mock.calls.some(([source]) => source === code)).toBe(false)
       expect(resolutions).toEqual([])
     } finally {
       parses.mockRestore()

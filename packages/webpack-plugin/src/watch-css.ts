@@ -17,7 +17,7 @@ interface WatchCssCompilation<Module extends object> {
 
 export function reconcileWatchCss<Module extends object>(
   compilation: WatchCssCompilation<Module>,
-  run: <T>(callback: () => T) => T = (callback) => callback(),
+  run: <T>(callback: () => T, resource: string) => T = (callback) => callback(),
 ): void {
   compilation.hooks.finishModules.tapPromise(
     { name: 'DevupUIWebpackPluginWatchCss', stage: Number.MAX_SAFE_INTEGER },
@@ -31,7 +31,8 @@ export function reconcileWatchCss<Module extends object>(
           const css = served.get(resource)
           if (
             css === undefined ||
-            css === run(() => getCss(getFileNumByFilename(resource), true))
+            css ===
+              run(() => getCss(getFileNumByFilename(resource), true), resource)
           )
             return
           await new Promise<void>((resolve, reject) => {

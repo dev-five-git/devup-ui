@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Repair native MDX test-control portability with a fixture-owned independent compiled ID, retaining exact transform counts and strengthening external-target refusal proofs. No production behavior change or new build-error category.",
+  "date": "2026-10-27T16:06:03.349Z"
+}

@@ -20,27 +20,22 @@ import {
   ProductionNumbering,
   ProductionNumberingError,
 } from '../production-numbering'
+import { operation } from './generation-fixture'
 
 const capture = () => ({
   sheet: wasm.exportSheet(),
   classes: wasm.exportClassMap(),
   files: wasm.exportFileMap(),
   canonical: wasm.exportCanonicalMap(),
+  reservation: wasm.exportReservationState(),
 })
 type State = Readonly<ReturnType<typeof capture>>
-const readMap = (serialized: string): unknown => JSON.parse(serialized)
 const canonicalFor = (context: string) => ({
   'a.tsx': `${context}/a`,
   'b.tsx': `${context}/b`,
 })
 const engine = {
-  reset: wasm.resetBuildState,
-  restore(state: State) {
-    wasm.importSheet(readMap(state.sheet))
-    wasm.importClassMap(readMap(state.classes))
-    wasm.importFileMap(readMap(state.files))
-    wasm.importCanonicalMap(readMap(state.canonical))
-  },
+  ownership: wasm.ownership,
   capture,
 }
 let root: string
@@ -122,13 +117,15 @@ function run<T>(
   action: () => T,
 ): T {
   return runBuildOperation({ integration: 'Webpack P3 test', root }, () =>
-    owner.run(engine, () => {
-      wasm.setDebug(false)
-      wasm.setModuleResolver(undefined)
-      wasm.registerTheme({})
-      wasm.registerShorthands({})
-      wasm.importCanonicalMap(canonicalFor(context))
-      return action()
+    owner.run(engine, {
+      ...operation(action),
+      configure: () => {
+        wasm.setDebug(false)
+        wasm.setModuleResolver(undefined)
+        wasm.registerTheme({})
+        wasm.registerShorthands({})
+        wasm.importCanonicalMap(canonicalFor(context))
+      },
     }),
   )
 }
@@ -189,26 +186,33 @@ it.each(['action', 'capture'] as const)(
             },
           }
         : engine
+    let failure: unknown
     // When the admitted operation fails and the integration aborts its owner.
     expect(() => {
       try {
         runBuildOperation({ integration: 'Webpack P3 test', root }, () =>
-          owner.run(selected, () => {
-            numbering.seed(wasm, 'A')
-            extract(numbering, 'A')
-            if (mode === 'action') throw fault
-          }),
+          owner.run(
+            selected,
+            operation(() => {
+              numbering.seed(wasm, 'A')
+              extract(numbering, 'A')
+              if (mode === 'action') throw fault
+            }),
+          ),
         )
+        if (mode === 'capture') wasm.setPrefix('unmanaged takeover')
       } catch (error) {
+        failure = error
         owner.dispose()
         throw error
       }
-    }).toThrow(fault)
+    }).toThrow(mode === 'capture' ? 'CaptureFailed' : fault)
+    if (mode === 'capture') expect(failure).toMatchObject({ cause: fault })
     // Then no retained primitive or owner can reuse a successful-but-uncommitted seed.
     expect(owner.disposed).toBe(true)
     expect(() => numbering.seed(wasm, 'A')).toThrow(ClosedBuildGenerationError)
     expect(() => run(owner, 'A', () => extract(numbering, 'A'))).toThrow(
-      ClosedBuildGenerationError,
+      'ClosedOwner',
     )
   },
 )

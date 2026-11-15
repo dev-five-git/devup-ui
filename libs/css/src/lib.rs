@@ -13,6 +13,7 @@ mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod quoted;
+pub mod resident_owner;
 pub mod rm_css_comment;
 mod selector_separator;
 pub mod slot_reservation;
@@ -269,6 +270,11 @@ pub fn reset_custom_shorthands() {
 
 /// Replace the custom shorthand registry used by style extraction.
 pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
+    replace_custom_shorthands(shorthands);
+}
+
+/// Replace normalized aliases, returning whether targets or alias presence changed.
+pub fn replace_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) -> bool {
     if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
         let shorthands: BTreeMap<String, Vec<String>> = shorthands
             .into_iter()
@@ -286,8 +292,11 @@ pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
             })
             .collect();
         HAS_CUSTOM_SHORTHANDS.store(!shorthands.is_empty(), Ordering::Relaxed);
+        let changed = *registry != shorthands;
         *registry = shorthands;
+        return changed;
     }
+    false
 }
 
 #[must_use]

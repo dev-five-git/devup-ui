@@ -31,9 +31,26 @@ const originalReserve = wasm.reserveClassSlots
 wasm.reserveClassSlots = (...args) => {
   assert(!compiling, 'reservation must precede compilation')
   events.push('reserve')
-  const beforeCss = wasm.exportSheet()
+  const before = JSON.parse(wasm.exportSheet())
   originalReserve(...args)
-  assert.equal(wasm.exportSheet(), beforeCss, 'scratch sheet restored exactly')
+  const after = JSON.parse(wasm.exportSheet())
+  assert(Object.hasOwn(before, 'currentAtomPlan'))
+  assert(Object.hasOwn(after, 'currentAtomPlan'))
+  const { currentAtomPlan: beforePlan, ...beforeSheet } = before
+  const { currentAtomPlan: afterPlan, ...afterSheet } = after
+  assert.deepEqual(afterSheet, beforeSheet, 'scratch sheet restored exactly')
+  if (beforePlan !== null || singleCss || !(atomThresholds.at(-1) > 0)) {
+    assert.deepEqual(
+      afterPlan,
+      beforePlan,
+      'reservation preserves existing frozen authority',
+    )
+  } else {
+    assert(
+      afterPlan === null || Array.isArray(afterPlan),
+      'first reservation retains or freezes extraction authority',
+    )
+  }
   reservations.push({
     revision,
     rows: args[0].map(([id]) => id),
