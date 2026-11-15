@@ -29,8 +29,9 @@ use crate::{
     styled_reads::{Forward, Reads, withheld as props_withheld},
     utils::{
         STYLE_OBJECT, build_time_error, call_with_values, expression_to_code,
-        merge_object_expressions, readable_code, unreadable_styles, unwrap_syntax_only,
-        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
+        get_string_by_literal_expression, merge_object_expressions, readable_code,
+        unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
+        wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -38,7 +39,8 @@ use oxc_ast::{
     ast::{
         Argument, BindingPattern, BindingProperty, BindingRestElement, CallExpression, Expression,
         FormalParameter, FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
-        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectPropertyKind, PropertyKey, Str,
+        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectProperty, ObjectPropertyKind,
+        PropertyKey, Str,
     },
     builder::AstBuilder,
 };
@@ -1327,36 +1329,75 @@ pub fn take_styled_modifiers<'a>(
 /// the earlier, with the offset and code of one the build cannot evaluate
 pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u32, String)>) {
     let mut forward = None;
-    for options in options {
-        let Expression::ObjectExpression(object) = unwrap_syntax_only(options) else {
-            continue;
-        };
-        for property in &object.properties {
-            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                continue;
-            };
-            if property.computed || !property.key.is_specific_static_name("shouldForwardProp") {
-                continue;
-            }
-            match Forward::read(&property.value) {
-                Some(own) => forward = combine_forward(forward.as_ref(), Some(own)),
-                None => {
-                    return (
-                        forward,
-                        Some((
-                            property.value.span().start,
-                            build_time_error(
-                                "styled",
-                                &readable_code(&property.value),
-                                SHOULD_FORWARD_PROP,
-                            ),
-                        )),
-                    );
-                }
+    for property in option_properties(options, &["shouldForwardProp"]) {
+        match Forward::read(&property.value) {
+            Some(own) => forward = combine_forward(forward.as_ref(), Some(own)),
+            None => {
+                return (
+                    forward,
+                    Some((
+                        property.value.span().start,
+                        build_time_error(
+                            "styled",
+                            &readable_code(&property.value),
+                            SHOULD_FORWARD_PROP,
+                        ),
+                    )),
+                );
             }
         }
     }
     (forward, None)
+}
+
+/// The written-out properties named one of `names` the options objects give,
+/// in the order they apply
+fn option_properties<'b, 'a>(
+    options: &'b [&'b Expression<'a>],
+    names: &'b [&str],
+) -> impl Iterator<Item = &'b ObjectProperty<'a>> {
+    options
+        .iter()
+        .filter_map(|options| match unwrap_syntax_only(options) {
+            Expression::ObjectExpression(object) => Some(&object.properties),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(move |property| match property {
+            ObjectPropertyKind::ObjectProperty(property)
+                if !property.computed
+                    && names
+                        .iter()
+                        .any(|name| property.key.is_specific_static_name(name)) =>
+            {
+                Some(&**property)
+            }
+            _ => None,
+        })
+}
+
+/// The stable classes Emotion's `target` and styled-components' `componentId`
+/// options give a component, which other CSS selects it by, with the errors
+/// of those the build cannot read
+pub fn read_identity(options: &[&Expression<'_>]) -> (Vec<String>, Vec<(u32, String)>) {
+    let mut classes = Vec::new();
+    let mut errors = Vec::new();
+    for property in option_properties(options, &["target", "componentId"]) {
+        match get_string_by_literal_expression(&property.value)
+            .filter(|class| !class.is_empty() && !class.contains(char::is_whitespace))
+        {
+            Some(class) => classes.push(class.into_owned()),
+            None => errors.push((
+                property.value.span().start,
+                build_time_error(
+                    "styled",
+                    &readable_code(&property.value),
+                    "`target` and `componentId` name the stable class the component gives; write one class name as a string",
+                ),
+            )),
+        }
+    }
+    (classes, errors)
 }
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";

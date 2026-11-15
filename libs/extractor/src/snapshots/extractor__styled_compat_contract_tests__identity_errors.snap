@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+compat.tsx:2:42: `styled()` cannot use `make()` at build time: `target` and `componentId` name the stable class the component gives; write one class name as a string
+compat.tsx:3:42: `styled()` cannot use `"two words"` at build time: `target` and `componentId` name the stable class the component gives; write one class name as a string
+compat.tsx:4:55: `styled()` cannot use `""` at build time: `target` and `componentId` name the stable class the component gives; write one class name as a string

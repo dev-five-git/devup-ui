@@ -40,6 +40,7 @@ mod extractor;
 mod fresh_name;
 mod gen_class_name;
 mod gen_style;
+mod global_component;
 mod import_alias_visit;
 mod imported_constants;
 mod imported_styled;
@@ -86,6 +87,8 @@ mod scope;
 mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
+#[cfg(test)]
+mod styled_compat_contract_tests;
 
 mod peephole;
 mod source_map;

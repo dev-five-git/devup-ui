@@ -1,0 +1,12 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import { Global } from "@devup-ui/react/compat";
+export const App = () => <Global />;
+export const Plain = () => <Global />;
+
+Static(ExtractStaticStyle { property: "color", value: "var(--colors-text)", level: 0, selector: Some(Global("body", "compat.tsx")), style_order: Some(0), layer: None })
+Static(ExtractStaticStyle { property: "color", value: "var(--link)", level: 0, selector: Some(Global("a", "compat.tsx")), style_order: Some(0), layer: None })
+Static(ExtractStaticStyle { property: "padding", value: "var(--space-2)", level: 0, selector: Some(Global("body", "compat.tsx")), style_order: Some(0), layer: None })

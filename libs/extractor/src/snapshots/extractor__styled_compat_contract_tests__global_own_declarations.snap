@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+compat.tsx:6:44: `<Global>` cannot use `red` at build time: a `css()` class given to `<Global>` must hold only rules under selectors, as `css({ body: { margin: 0 } })`
+compat.tsx:6:67: `<Global>` cannot use `hover` at build time: a `css()` class given to `<Global>` must hold only rules under selectors, as `css({ body: { margin: 0 } })`
+compat.tsx:6:92: `<Global>` cannot use `print` at build time: a `css()` class given to `<Global>` must hold only rules under selectors, as `css({ body: { margin: 0 } })`
+compat.tsx:6:117: `<Global>` cannot use `text` at build time: a `css()` class given to `<Global>` must hold only rules under selectors, as `css({ body: { margin: 0 } })`
