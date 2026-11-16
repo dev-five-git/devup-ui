@@ -19,6 +19,7 @@ import {
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
+  isMissingDirectory,
   loadCompiler,
   loadDevupConfigSync,
   mergeImportAliases,
@@ -27,6 +28,7 @@ import {
   planAtomHoist,
   readJsxImportSource,
   seedFileNumbers,
+  setupWarning,
   type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
@@ -154,15 +156,15 @@ export class DevupUIWebpackPlugin {
 
       this.compiler.registerTheme(withTailwindCss(theme, config))
       this.tailwindFiles = tailwindCssFiles(config)
-      const interfaceCode = this.compiler.getThemeInterface(
-        ...createThemeInterfaceArgs(this.options.package),
+      // Written even when empty, so tokens removed from the theme leave no
+      // stale declarations behind.
+      writeFileSync(
+        join(this.options.distDir, 'theme.d.ts'),
+        this.compiler.getThemeInterface(
+          ...createThemeInterfaceArgs(this.options.package),
+        ),
+        { encoding: 'utf-8' },
       )
-
-      if (interfaceCode) {
-        writeFileSync(join(this.options.distDir, 'theme.d.ts'), interfaceCode, {
-          encoding: 'utf-8',
-        })
-      }
     } catch (error) {
       console.error(error)
       this.compiler.registerTheme({})
@@ -231,7 +233,32 @@ export class DevupUIWebpackPlugin {
       if (this.options.productionPrewarmFiles !== undefined) throw error
       // Best-effort warm-up; on failure the css-loader still serves whatever
       // atoms were extracted, matching pre-fix behavior.
+      console.warn(
+        setupWarning(
+          'webpack stylesheet warm-up',
+          error,
+          'A stylesheet webpack builds before every file it holds is extracted can miss their styles.',
+        ),
+      )
     }
+  }
+
+  /**
+   * Forget the source files deleted since the last compilation: they are never
+   * loaded again, so their styles would otherwise stay in the sheet. The
+   * stylesheet modules are built from the sheet on every compilation.
+   */
+  removeFiles(files: ReadonlySet<string> | undefined) {
+    const cwd = process.cwd()
+    let removed = false
+    for (const file of files ?? [])
+      if (this.compiler.removeFile(relative(cwd, file).replaceAll('\\', '/')))
+        removed = true
+    if (!removed || !this.options.watch) return
+    // The next start restores the sheet without the deleted files
+    writeFileSync(this.sheetFile, this.compiler.exportSheet())
+    writeFileSync(this.classMapFile, this.compiler.exportClassMap())
+    writeFileSync(this.fileMapFile, this.compiler.exportFileMap())
   }
 
   apply(compiler: Compiler) {
@@ -342,6 +369,16 @@ export class DevupUIWebpackPlugin {
         throw error
       // Best-effort; on failure canonical() is the identity (no merge) and atom
       // hoisting stays off.
+      if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+        console.warn(
+          setupWarning(
+            'webpack import graph',
+            error,
+            atomMode
+              ? 'Classes are not merged across files only one module imports, and atom hoisting is off.'
+              : 'Classes are not merged across files only one module imports.',
+          ),
+        )
     }
 
     // Number every file the build can extract in path order, so class
@@ -368,6 +405,13 @@ export class DevupUIWebpackPlugin {
         )
           throw error
         // Best-effort; numbering falls back to arrival order.
+        console.warn(
+          setupWarning(
+            'webpack file numbering',
+            error,
+            'Stylesheet file numbers follow the order webpack compiles files in, so they can differ between builds of the same source.',
+          ),
+        )
       }
     // Pre-warm the extractor so the css-loader serves COMPLETE CSS.
     //
@@ -403,6 +447,7 @@ export class DevupUIWebpackPlugin {
       compiler.hooks.watchRun.tapPromise(
         'DevupUIWebpackPluginReservation',
         async () => {
+          this.removeFiles(compiler.removedFiles)
           reserveBeforeCompile()
         },
       )
@@ -414,6 +459,7 @@ export class DevupUIWebpackPlugin {
       )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
+        this.removeFiles(compiler.removedFiles)
         const stamps: number[] = []
         if (existsDevup)
           stamps.push((await stat(this.options.devupFile)).mtimeMs)

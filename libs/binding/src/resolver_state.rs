@@ -139,9 +139,40 @@ impl ResolverState {
     }
 }
 
+/// Accept a resolver result only when it names a module, the rule every host enforces.
+pub fn resolved_module(path: String, code: String) -> Result<ResolvedModule, String> {
+    check_resolved_path(&path)?;
+    Ok(ResolvedModule { path, code })
+}
+
+/// Reject a resolver result whose `path` names no module.
+pub fn check_resolved_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err(
+            "malformed module resolver result: `path` must be a non-empty string".to_string(),
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolved_module_rejects_an_empty_path() {
+        assert_eq!(
+            resolved_module(String::new(), "code".to_string())
+                .err()
+                .as_deref(),
+            Some("malformed module resolver result: `path` must be a non-empty string")
+        );
+        let module = resolved_module("a.ts".to_string(), "code".to_string());
+        assert_eq!(
+            module.map(|module| (module.path, module.code)),
+            Ok(("a.ts".to_string(), "code".to_string()))
+        );
+    }
 
     #[test]
     fn reservation_root_storage_cardinality() {

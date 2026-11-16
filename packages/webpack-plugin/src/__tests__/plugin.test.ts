@@ -434,9 +434,17 @@ describe('devupUIWebpackPlugin', () => {
         collectSpy.mockImplementation(() => {
           throw new Error('scan boom')
         })
-        new DevupUIWebpackPlugin({ engine: 'wasm', debug: true }).apply(
-          asCompiler(createCompiler()),
-        )
+        const warn = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          new DevupUIWebpackPlugin({ engine: 'wasm', debug: true }).apply(
+            asCompiler(createCompiler()),
+          )
+          expect(warn).toHaveBeenCalledWith(
+            '[devup-ui] webpack file numbering failed: scan boom. Stylesheet file numbers follow the order webpack compiles files in, so they can differ between builds of the same source.',
+          )
+        } finally {
+          warn.mockRestore()
+        }
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
@@ -464,6 +472,51 @@ describe('devupUIWebpackPlugin', () => {
       })
     },
   )
+
+  it.each([false, true])(
+    'forgets deleted sources at watchRun with watch=%s',
+    async (watch) => {
+      // Given: a compilation that deleted two sources, one with styles left
+      const compiler = createCompiler()
+      new DevupUIWebpackPlugin({ engine: 'wasm', watch }).apply(
+        asCompiler(compiler),
+      )
+      using removeFile = spyOn(wasm, 'removeFile').mockImplementation(
+        (file) => file === 'src/styled.tsx',
+      )
+      using exportSheet = spyOn(wasm, 'exportSheet').mockReturnValue('sheet')
+      const watchRun = compiler.hooks.watchRun.tapPromise.mock.calls[0][1]
+      // When: nothing was removed, then two files were
+      await watchRun()
+      Object.assign(compiler, {
+        removedFiles: new Set([
+          resolve('src', 'plain.tsx'),
+          resolve('src', 'styled.tsx'),
+        ]),
+      })
+      writeFileSyncSpy.mockClear()
+      await watchRun()
+      // Then: each is forgotten under its cwd-relative name, and only watch
+      // persistence writes the pruned state
+      expect(removeFile.mock.calls).toEqual([
+        ['src/plain.tsx'],
+        ['src/styled.tsx'],
+      ])
+      expect(
+        writeFileSyncSpy.mock.calls.some(([, content]) => content === 'sheet'),
+      ).toBe(watch)
+      expect(exportSheet).toHaveBeenCalledTimes(watch ? 1 : 0)
+    },
+  )
+
+  it('keeps the persisted state when no deleted source had styles', () => {
+    const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
+    using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(false)
+    using exportSheet = spyOn(wasm, 'exportSheet').mockReturnValue('sheet')
+    plugin.removeFiles(new Set([resolve('src', 'plain.tsx')]))
+    expect(removeFile).toHaveBeenCalledTimes(1)
+    expect(exportSheet).not.toHaveBeenCalled()
+  })
 
   it('also reserves at native watchRun when watch persistence is disabled', async () => {
     const manager = {
@@ -530,25 +583,21 @@ describe('devupUIWebpackPlugin', () => {
         'CustomShadows',
         'DevupTheme',
       )
-      if (_options.getThemeInterface)
-        expect(writeFileSyncSpy).toHaveBeenCalledWith(
-          join(options.distDir, 'theme.d.ts'),
-          _options.getThemeInterface,
-          {
-            encoding: 'utf-8',
-          },
-        )
-      else expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 1 : 0)
+      // Written even when empty, so removed tokens leave no stale declarations.
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join(options.distDir, 'theme.d.ts'),
+        _options.getThemeInterface,
+        {
+          encoding: 'utf-8',
+        },
+      )
 
       if (options.watch)
         expect(writeFileSyncSpy).toHaveBeenCalledWith(
           join(options.cssDir, 'devup-ui.css'),
           _options.getCss,
         )
-      else
-        expect(writeFileSyncSpy).toHaveBeenCalledTimes(
-          _options.getThemeInterface ? 1 : 0,
-        )
+      expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 2 : 1)
     })
   })
 
@@ -558,19 +607,19 @@ describe('devupUIWebpackPlugin', () => {
         {
           input: ['lib'],
           output: new RegExp(
-            '(node_modules(?!.*(@devup-ui|@devup-editor|lib)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+            '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor|lib)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
         {
           input: [],
           output: new RegExp(
-            '(node_modules(?!.*(@devup-ui|@devup-editor)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+            '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
         {
           input: ['lib', 'lib2'],
           output: new RegExp(
-            '(node_modules(?!.*(@devup-ui|@devup-editor|lib|lib2)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+            '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor|lib|lib2)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
       ],
@@ -1320,9 +1369,52 @@ describe('devupUIWebpackPlugin', () => {
         throw new Error('boom')
       })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
-      // apply must still complete without throwing
-      plugin.apply(asCompiler(createCompiler()))
-      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        // apply must still complete without throwing
+        plugin.apply(asCompiler(createCompiler()))
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack import graph failed: boom. Classes are not merged across files only one module imports, and atom hoisting is off.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('warns without atom hoisting when a pre-pass outside atom mode fails', () => {
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw new Error('boom')
+      })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 }).apply(
+          asCompiler(createCompiler()),
+        )
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack import graph failed: boom. Classes are not merged across files only one module imports.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('stays quiet when the project has no src directory to scan', () => {
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw Object.assign(new Error('ENOENT'), {
+          code: 'ENOENT',
+          path: resolve(process.cwd(), 'src'),
+        })
+      })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
+          asCompiler(createCompiler()),
+        )
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+      }
     })
 
     it('configures atom hoisting BEFORE registering loader rules', () => {

@@ -1,0 +1,1 @@
+{"changes":{"packages/vite-plugin/package.json":"Patch"},"note":"Qualify the physical-order matrix against the bundle devup-ui writes, not Vite's load-time sheet snapshot","date":"2026-11-15T00:00:00.000Z"}

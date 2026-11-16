@@ -1,4 +1,6 @@
 mod boundary;
+mod panic;
+pub use panic::panic_message;
 mod reservation;
 pub use reservation::{
     ReservationInput, get_unreserved_class_slot_count, reserve_class_slots_internal,
@@ -308,6 +310,16 @@ pub fn seed_file_map(files: Vec<String>) {
     binding_core::seed_file_map(&files);
 }
 
+/// Forget a source file that was deleted or renamed away.
+///
+/// Its global CSS, its own bucket and the class names handed out in it go,
+/// and it no longer collapses into another bucket. Returns whether the sheet
+/// changed, so the caller knows to serve its CSS again.
+#[wasm_bindgen(js_name = "removeFile")]
+pub fn remove_file(filename: &str) -> bool {
+    binding_core::remove_file_internal(filename)
+}
+
 /// Forget everything one build left in the engine.
 ///
 /// That is names, numbers, styles, buckets, routes, the prefix, atom hoisting
@@ -516,11 +528,7 @@ fn call_module_resolver(
                 })
         };
         let path = field("path")?;
-        if path.is_empty() {
-            return Err(
-                "malformed module resolver result: `path` must be a non-empty string".to_string(),
-            );
-        }
+        binding_core::check_resolved_path(&path)?;
         Ok(Some(ResolvedModule {
             path,
             code: field("code")?,
@@ -1730,6 +1738,28 @@ mod tests {
         // The result should be valid JSON (empty map)
         let json_str = result.unwrap();
         assert!(json_str.starts_with('{') || json_str.starts_with("[]"));
+    }
+
+    #[test]
+    #[serial]
+    fn remove_file_reports_whether_the_sheet_changed() {
+        let _state = TestStateGuard::new();
+        // Given: a file with its own bucket.
+        let output = code_extract_internal(
+            "removed.tsx",
+            "import { Box } from '@devup-ui/react'; export const view = <Box bg=\"red\" />;",
+            "@devup-ui/react",
+            "df".to_string(),
+            false,
+            false,
+            false,
+            HashMap::new(),
+        )
+        .unwrap();
+        assert!(output.css.is_some());
+        // When / Then: the first removal drops it, a second finds nothing.
+        assert!(remove_file("removed.tsx"));
+        assert!(!remove_file("removed.tsx"));
     }
 
     #[test]

@@ -38,10 +38,21 @@ for (const operation of ['begin', 'end', 'error', 'fail'])
     1,
   )
 assert.equal([...source.matchAll(/__devupBoundary/g)].length, 4)
+// The panic hook runs once at instantiation (`#[wasm_bindgen(start)]`); it is
+// not part of the API, so its export and declaration are dropped.
+assert.equal([...source.matchAll(/^wasm\.__wbindgen_start\(\);$/gm)].length, 1)
+rewrite(/^exports\.install_panic_hook = install_panic_hook;\r?\n/gm, 1, '')
+let types = readFileSync('pkg/index.d.ts', 'utf8')
+const hookType =
+  /\/\*\*\r?\n \* Install the hook once, when the module is instantiated\.\r?\n \*\/\r?\nexport function install_panic_hook\(\): void;\r?\n\r?\n/g
+assert.equal([...types.matchAll(hookType)].length, 1)
+types = types.replace(hookType, '')
+assert.equal(types.includes('install_panic_hook'), false)
+writeFileSync('pkg/index.d.ts', types, 'utf8')
 const names = [...source.matchAll(/^exports\.(\w+) = \1;/gm)]
-assert.equal(names.length, 30)
-assert.equal(new Set(names.map((match) => match[1])).size, 30)
-assert.equal([...source.matchAll(/^exports\./gm)].length, 30)
+assert.equal(names.length, 31)
+assert.equal(new Set(names.map((match) => match[1])).size, 31)
+assert.equal([...source.matchAll(/^exports\./gm)].length, 31)
 assert.equal(source.includes('module.exports'), false)
 for (const name of ['codeExtract', 'codeExtractWithoutSourceMap']) {
   const signatures = [
