@@ -1,6 +1,7 @@
 //! Host-neutral binding orchestration; JavaScript values belong to the host adapter.
 
 mod css_cache;
+mod lazy_css;
 mod output;
 mod reservation;
 mod resolver_state;
@@ -11,6 +12,7 @@ pub use css::slot_reservation::unreserved_slot_count as get_unreserved_class_slo
 pub use css::{get_prefix, set_custom_shorthands as register_shorthands_internal, set_prefix};
 pub use css_cache::{SheetCell, SheetGuard};
 pub use extractor::{has_devup_ui, has_devup_ui_with};
+pub use lazy_css::LazyCss;
 pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};
 pub use reservation::{ReservationInput, reserve_class_slots_internal};
 pub use resolver_state::{ResolverRequest, ResolverState, check_resolved_path, resolved_module};
@@ -51,8 +53,8 @@ where
     f(&mut guard)
 }
 
-/// Mutably borrow the live stylesheet for a change that forgets the
-/// serializations itself, and only when it changed the sheet.
+/// Mutably borrow the live stylesheet for a change that settles the unread CSS
+/// and forgets the serializations itself, and only when it changed the sheet.
 fn with_style_sheet_untracked<F, R>(f: F) -> R
 where
     F: FnOnce(&mut StyleSheet) -> R,
@@ -65,13 +67,19 @@ where
 
 /// Hoist atoms shared by `threshold` routes, or stop hoisting with `None`.
 pub fn set_atom_hoist(threshold: Option<usize>) {
-    css::atom_hoist::set_atom_hoist(threshold);
-    invalidate_css();
+    change_setting(|| css::atom_hoist::set_atom_hoist(threshold));
 }
 
 /// Restore the routes each file reaches, which plan atom hoisting.
 pub fn import_file_routes_internal(map: HashMap<String, HashSet<u32>>) {
-    css::file_routes::set_file_routes(map);
+    change_setting(|| css::file_routes::set_file_routes(map));
+}
+
+/// Change a setting that serializations read: the unread CSS of the latest
+/// transform is serialized before, and every serialization forgotten after.
+fn change_setting(change: impl FnOnce()) {
+    lazy_css::settle_live();
+    change();
     invalidate_css();
 }
 
@@ -82,7 +90,7 @@ fn error_text(error: impl std::fmt::Display) -> String {
 
 /// Restore the sheet and its frozen atom plan together.
 pub fn import_sheet_internal(sheet: StyleSheet) {
-    css::atom_hoist::restore_atom_plan(sheet.atom_plan.clone());
+    change_setting(|| css::atom_hoist::restore_atom_plan(sheet.atom_plan.clone()));
     with_style_sheet_mut(|global_sheet| *global_sheet = sheet);
 }
 
@@ -124,8 +132,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
 
 /// Restore canonical bucket identities decoded by a host adapter.
 pub fn import_canonical_map_internal(map: HashMap<String, String>) {
-    set_canonical_map(map);
-    invalidate_css();
+    change_setting(|| set_canonical_map(map));
 }
 
 /// Export canonical bucket identities in path order.
@@ -158,14 +165,16 @@ pub fn remove_file_internal(filename: &str) -> bool {
 /// Clear production build state, retaining theme registries, shorthands and debug.
 /// The host adapter separately clears its resolver handle.
 pub fn reset_build_state_internal() {
-    css::slot_reservation::reset();
-    css::class_map::reset_class_map();
-    css::file_map::reset_file_map();
-    css::file_map::reset_canonical_map();
-    css::file_routes::set_file_routes(HashMap::new());
-    css::atom_hoist::set_atom_hoist(None);
-    css::atom_hoist::restore_atom_plan(None);
-    css::set_prefix(None);
+    change_setting(|| {
+        css::slot_reservation::reset();
+        css::class_map::reset_class_map();
+        css::file_map::reset_file_map();
+        css::file_map::reset_canonical_map();
+        css::file_routes::set_file_routes(HashMap::new());
+        css::atom_hoist::set_atom_hoist(None);
+        css::atom_hoist::restore_atom_plan(None);
+        css::set_prefix(None);
+    });
     with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
 }
 

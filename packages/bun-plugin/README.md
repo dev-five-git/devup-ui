@@ -183,6 +183,12 @@ Create a `devup.json` file in your project root:
 
 The plugin will generate `df/theme.d.ts` with TypeScript types for your theme.
 
+The project root is the `root` of `Bun.build` when it sets one, and the working
+directory otherwise: `devup.json`, `df` and `tsconfig.json` are read and written
+there. When the root has no `devup.json` but the working directory does, that
+file is still read and a one-time warning is printed; move `devup.json` into the
+root to resolve it.
+
 ## How It Works
 
 The plugin transforms your JSX/TSX code at build time:

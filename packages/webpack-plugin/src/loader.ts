@@ -14,6 +14,8 @@ import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
 
 export interface DevupUILoaderOptions {
   readonly engine?: DevupEngine
+  /** The project root extraction ids are relative to; the cwd when absent */
+  readonly root?: string
   package: string
   cssDir: string
   sheetFile: string
@@ -42,31 +44,30 @@ function parseSourceMap(sourceMap: string | undefined): LoaderSourceMap {
 const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
 )
-let moduleResolver:
-  | {
-      readonly conditions: string
-      readonly resolve: ReturnType<typeof createModuleResolver>
-    }
-  | undefined
+const moduleResolvers = new Map<
+  string,
+  ReturnType<typeof createModuleResolver>
+>()
 
 /**
- * Resolve imports to the cwd-relative ids this loader extracts files under,
+ * Resolve imports to the root-relative ids this loader extracts files under,
  * with the `exports` conditions the bundler resolves the same imports with
  */
-function setCwdModuleResolver(
+function setRootModuleResolver(
   compiler: Pick<DevupCompiler, 'setModuleResolver'>,
+  root: string,
   conditions: readonly string[] | undefined,
 ): void {
-  const key = JSON.stringify(conditions ?? null)
-  if (moduleResolver?.conditions !== key)
-    moduleResolver = {
-      conditions: key,
-      resolve: createModuleResolver({
-        conditions,
-        toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
-      }),
-    }
-  compiler.setModuleResolver(moduleResolver.resolve)
+  const key = JSON.stringify([root, conditions ?? null])
+  let moduleResolver = moduleResolvers.get(key)
+  if (!moduleResolver) {
+    moduleResolver = createModuleResolver({
+      conditions,
+      toId: (path) => relative(root, path).replaceAll('\\', '/'),
+    })
+    moduleResolvers.set(key, moduleResolver)
+  }
+  compiler.setModuleResolver(moduleResolver)
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -80,6 +81,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       fileMapFile,
       singleCss,
       engine,
+      root = process.cwd(),
       importAliases = {},
     } = this.getOptions()
     const callback = this.async()
@@ -99,11 +101,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
       // this, single-importer collapse and atom hoisting silently no-op on
       // Windows. No-op on POSIX.
-      const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
+      const relativePath = relative(root, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver(
+      setRootModuleResolver(
         compiler,
+        root,
         esmImportConditions(this._compiler?.options.resolve),
       )
       const output: DevupCompilerOutput = compiler.codeExtract(
@@ -121,11 +124,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         'code' | 'css' | 'map' | 'cssFile' | 'updatedBaseStyle' | 'dependencies'
       >
       try {
+        const cssFile = output.cssFile
         snapshot = {
           code: output.code,
-          css: output.css,
+          // The engine serializes the CSS only when it is read; watch mode
+          // never writes it
+          css: cssFile && !watch ? output.css : undefined,
           map: output.map,
-          cssFile: output.cssFile,
+          cssFile,
           updatedBaseStyle: output.updatedBaseStyle,
           dependencies: output.dependencies,
         }
@@ -141,7 +147,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         dependencies,
       } = snapshot
       for (const dependency of dependencies) {
-        this.addDependency(resolve(dependency))
+        this.addDependency(resolve(root, dependency))
       }
       const sourceMap = parseSourceMap(map)
       const promises: Promise<void>[] = []

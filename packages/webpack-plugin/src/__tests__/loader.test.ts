@@ -267,6 +267,50 @@ describe('devupUILoader', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('extracts under ids relative to the project root, not the cwd', async () => {
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      const root = nodePath.resolve('apps', 'web')
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
+      )
+      const callback = mock()
+      const t = createLoaderContext(
+        {
+          package: 'package',
+          root,
+          cssDir: join(root, 'df', 'devup-ui'),
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          watch: false,
+          singleCss: true,
+        },
+        callback,
+        join(root, 'src', 'Card.tsx'),
+      )
+      devupUILoader.bind(t)(Buffer.from('code'), 'Card.tsx')
+      await waitFor(() => expect(callback).toHaveBeenCalled())
+      expect(codeExtractSpy.mock.calls[0]?.[0]).toBe('src/Card.tsx')
+      expect(t.addDependency).toHaveBeenCalledWith(
+        join(root, 'src', 'tokens.ts'),
+      )
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
+        nodePath.relative(root, import.meta.path).replaceAll('\\', '/'),
+      )
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
+  })
+
   it.each(
     createTestMatrix({
       updatedBaseStyle: [true, false],

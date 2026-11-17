@@ -466,6 +466,47 @@ describe('DevupUINextPlugin', () => {
       }
     })
 
+    it('reads routes and places the CSS under the Next project directory', () => {
+      // Given: `next build apps/web` started from the workspace root.
+      const dir = resolve('apps', 'web')
+      existsSyncSpy.mockImplementation(
+        (path: fs.PathLike) => String(path) === join(dir, 'app'),
+      )
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(join(dir, 'app', 'page.tsx')))
+      try {
+        // When
+        DevupUI({}).webpack!(
+          createWebpackConfig(),
+          createWebpackContext({ dir }),
+        )
+        // Then
+        expect(graphSpy).toHaveBeenCalledWith(dir, join(dir, 'tsconfig.json'))
+        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cssDir: join(dir, '.next', 'cache', 'devup-ui'),
+          }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+      }
+    })
+
+    it('places the dev CSS under the Next project directory', () => {
+      const dir = resolve('apps', 'web')
+      DevupUI({}).webpack!(
+        createWebpackConfig(),
+        createWebpackContext({ dev: true, dir }),
+      )
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
+        cssDir: join(dir, 'df', 'devup-ui_tmpBuildId'),
+        engine: 'native',
+        watch: true,
+      })
+    })
+
     it('should apply webpack plugin with dev', async () => {
       const ret = DevupUI({})
 
@@ -1213,6 +1254,70 @@ export const box = style({ color: 'red' })`
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
+      }
+    })
+    it('reserves shared class slots in path order before next dev extracts', () => {
+      process.env.TURBOPACK = '1'
+      const reserve = mock()
+      const reservationSpy = spyOn(
+        importGraphModule,
+        'createSharedSlotReservation',
+      ).mockReturnValue({
+        dependencies: [],
+        packageManifests: [],
+        invalidate: mock(),
+        reserve,
+      })
+      try {
+        // One-shot builds take their order from the sorted prewarm instead.
+        DevupUI({})
+        expect(reservationSpy).not.toHaveBeenCalled()
+
+        setNodeEnv('development')
+        DevupUI({}, { include: ['@acme/ui'], singleCss: true })
+        expect(reservationSpy).toHaveBeenCalledWith(wasm)
+        const [discovery, options] = reserve.mock.calls[0] as Parameters<
+          ReturnType<
+            typeof importGraphModule.createSharedSlotReservation
+          >['reserve']
+        >
+        expect(discovery).toMatchObject({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          include: ['@acme/ui'],
+          cwd: process.cwd(),
+          tsconfigPath: resolve('tsconfig.json'),
+          package: '@devup-ui/react',
+        })
+        // The coordinator's own filename and CSS directory for each file.
+        expect(discovery.toId?.(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+        expect(options).toMatchObject({
+          singleCss: true,
+          importMainCssInCode: false,
+          importMainCssInCss: true,
+        })
+        expect(
+          options.cssDir({
+            filename: 'src/app/page.tsx',
+            physicalPath: resolve('src', 'app', 'page.tsx'),
+            code: '',
+          }),
+        ).toBe('./../../df/devup-ui')
+
+        // A failing reservation leaves extraction in arrival order.
+        reserve.mockImplementation(() => {
+          throw new Error('reserve boom')
+        })
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          expect(() => DevupUI({})).not.toThrow()
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack shared class-slot reservation failed: reserve boom. Classes several files share take their names in the order `next dev` extracts them, so they can differ between dev sessions.',
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
+      } finally {
+        reservationSpy.mockRestore()
       }
     })
     describe('restoreSessionState', () => {
