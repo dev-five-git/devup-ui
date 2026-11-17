@@ -4,8 +4,11 @@ expression: compile(code)
 ---
 import "@devup-ui/react/devup-ui-0.css";
 import { forwardRef as __devupForwardRef } from "react";
+function __devupOmit0(__devupOmitted) {
+	return Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k[0] !== "$" && k !== "theme"));
+}
 const __devupStyled = (c) => (c.styledComponentId = "devup", c);
 const undefined = "x";
-export const A = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== "$" && k !== "theme"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a x a-a ${className}` : "a--a x a-a"} style={style} />));
+export const A = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a x a-a ${className}` : "a--a x a-a"} style={style} />)), { __devupBase: __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a ${className}` : "a--a a-a"} style={style} />)) });
 
 Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })

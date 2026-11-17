@@ -15902,8 +15902,8 @@ const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
                 "\"div\"",
                 Some("margin-0-4px--255 color-0-blue--255 padding-0-8px--255"),
             ),
-            ("FromRuntime", "Runtime", None),
-            ("FromChanging", "Changing", None),
+            ("FromRuntime", "Runtime.__devupBase || Runtime", None),
+            ("FromChanging", "Changing.__devupBase || Changing", None),
             ("Ordered", "\"div\"", Some("color-0-red--3")),
         ] {
             let body = styled_renderer(&code, name);

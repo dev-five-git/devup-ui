@@ -40,7 +40,7 @@ use crate::extractor::{
     extract_style_from_styled::{
         FORWARD_REF, Naming, STYLED_MARKING, StyledBindings, StyledDefinition, StyledExtraction,
         extended, extract_style_from_styled, read_forward, read_identity, take_styled_modifiers,
-        with_component, with_component_id,
+        with_component, with_statics,
     },
     rule_array_evaluation::{self, composes_array_under_condition},
     styled_capability::StyledCapability,
@@ -3815,6 +3815,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .take_if(|(at, _)| *at == start)
                 .map_or_default(|(_, markers)| self.marker_classes(&markers));
             markers.extend(identity.classes);
+            // Emotion renders a component extending one with a `target` on its
+            // base, without the target: the component holds itself without them
+            let untargeted = (!identity.targets.is_empty()).then(|| {
+                (
+                    markers.clone(),
+                    it.clone_in_with_semantic_ids(self.ast.allocator()),
+                    forward.clone(),
+                )
+            });
+            markers.extend(identity.targets.iter().cloned());
             let inherited = extended(it).and_then(|base| {
                 self.definition_of(base)
                     .filter(|definition| definition.extendable())
@@ -3857,11 +3867,43 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if definition.is_some() {
                 self.forwards_refs = true;
             }
-            *it = match identity.component_id {
-                Some(id) if definition.is_some() => with_component_id(&self.ast, expression, &id),
-                _ => expression,
+            let base = untargeted.filter(|_| definition.is_some()).map(
+                |(markers, mut source, forward)| {
+                    extract_style_from_styled(
+                        StyleInputs::with_values(&self.ast, &self.style_values),
+                        &mut source,
+                        Naming {
+                            split_filename: self.split_filename.as_deref(),
+                            markers: &markers,
+                        },
+                        StyledBindings {
+                            imports: &|expression| self.bindings.kind(expression),
+                            values: &self.style_values,
+                            inline_css: &self.inline_css_styles,
+                        },
+                        (&attrs, forward, &refused_array_controllers),
+                        inherited.as_ref(),
+                        StyledContext {
+                            filename: &self.filename,
+                            jsx: &mut self.styled_jsx,
+                            capability: self.styled_capability.as_ref(),
+                            shared: !self.private_styled.contains(&start),
+                        },
+                    )
+                    .expression
+                },
+            );
+            *it = match definition {
+                Some(_) => with_statics(
+                    &self.ast,
+                    expression,
+                    identity.component_id.as_deref(),
+                    base,
+                ),
+                None => expression,
             };
-            self.pending_styled = definition.map(|mut definition| {
+            self.pending_styled = definition.map(|definition| {
+                let mut definition = definition.with_targets(identity.targets);
                 definition.takes_styles = takes_styles;
                 (start, definition, takes_styles)
             });

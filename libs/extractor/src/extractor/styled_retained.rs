@@ -1,3 +1,4 @@
+use super::identity::base_of;
 use super::{
     STYLED_BASE, StyledCapability, StyledDefinition, call_with_values, fixed, identifier, jsx_name,
     marker_class, merge_expression_for_class_name, renders_tag,
@@ -135,6 +136,7 @@ impl<'a> StyledDefinition<'a> {
 
     pub(crate) fn used_as(&self, ast: &AstBuilder<'a>, target: &Expression<'a>) -> Self {
         let mut definition = self.clone_in(ast.allocator());
+        let target = &self.rendered_by_extension(ast, target);
         match &self.execution {
             Execution::RetainedFixed { native, capability } => {
                 let name = jsx_name(target);
@@ -147,12 +149,7 @@ impl<'a> StyledDefinition<'a> {
                     bound: name.is_none().then(|| target.clone_in(ast.allocator())),
                     capability: capability.clone(),
                     native: *native,
-                    identities: self
-                        .markers
-                        .iter()
-                        .chain(&self.inherited_markers)
-                        .cloned()
-                        .collect(),
+                    identities: self.rendered_identities(),
                 });
                 definition.target = Some(identifier(ast, "undefined"));
             }
@@ -168,12 +165,7 @@ impl<'a> StyledDefinition<'a> {
                         bound: None,
                         capability: capability.clone(),
                         native: *native,
-                        identities: self
-                            .markers
-                            .iter()
-                            .chain(&self.inherited_markers)
-                            .cloned()
-                            .collect(),
+                        identities: self.rendered_identities(),
                     },
                     shape: shape.clone(),
                     retarget: None,
@@ -183,6 +175,32 @@ impl<'a> StyledDefinition<'a> {
             Execution::Replay | Execution::Delegated(_) | Execution::Staged { .. } => {}
         }
         definition
+    }
+
+    /// What a component extending this one renders when it runs it: it
+    /// without its Emotion targets, `target.__devupBase`, when it has them
+    fn rendered_by_extension(
+        &self,
+        ast: &AstBuilder<'a>,
+        target: &Expression<'a>,
+    ) -> Expression<'a> {
+        let target = target.clone_in(ast.allocator());
+        if self.has_targets() {
+            base_of(ast, target)
+        } else {
+            target
+        }
+    }
+
+    /// The markers the component renders itself when another runs it: all
+    /// but its Emotion targets, which it renders without there
+    fn rendered_identities(&self) -> Vec<String> {
+        self.markers
+            .iter()
+            .chain(&self.inherited_markers)
+            .filter(|marker| !self.targets.contains(marker))
+            .cloned()
+            .collect()
     }
 
     pub(super) fn fixed_summary(&self) -> bool {

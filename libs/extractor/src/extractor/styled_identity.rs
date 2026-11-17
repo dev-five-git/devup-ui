@@ -6,21 +6,36 @@ use crate::utils::{
     build_time_error, get_string_by_literal_expression, readable_code, unwrap_syntax_only,
     wrap_direct_call,
 };
+use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
-    ast::{ArrayExpressionElement, Expression, IdentifierReference, ObjectPropertyKind},
+    ast::{
+        ArrayExpressionElement, BindingPattern, Expression, FormalParameter, FormalParameterKind,
+        FormalParameterRest, FormalParameters, IdentifierName, IdentifierReference,
+        ObjectPropertyKind, StaticMemberExpression, TSTypeAnnotation, TSTypeParameterDeclaration,
+    },
     builder::AstBuilder,
 };
 use oxc_span::{GetSpan, SPAN};
+use oxc_syntax::operator::LogicalOperator;
 
 /// What the identity options of a component give it
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Identity {
-    /// The classes it renders, as the `class` attribute splits them
+    /// The classes `componentId` gives it, as the `class` attribute splits
+    /// them, which a component extending it renders too
     pub classes: Vec<String>,
+    /// The classes Emotion's `target` gives it alone: a component extending
+    /// it renders its base without them
+    pub targets: Vec<String>,
     /// The `styledComponentId` styled-components gives it, when `componentId`
     /// names it
     pub component_id: Option<String>,
 }
+
+/// The property a component with Emotion targets holds itself without them
+/// in, which a component extending it renders, as Emotion renders the base
+/// an `__emotion_real` component holds
+pub const BASE: &str = "__devupBase";
 
 /// Whether an identifier reads the global of its name, not a binding
 pub type Global<'g> = &'g dyn Fn(&IdentifierReference<'_>) -> bool;
@@ -51,7 +66,7 @@ pub fn read_identity(
     let mut errors = Vec::new();
     if let Some(target) = last_option(options, &["target"]) {
         match literal(target, global) {
-            Some(value) => identity.classes.extend(classes(&target_text(value))),
+            Some(value) => identity.targets.extend(classes(&target_text(value))),
             None => errors.push(error(target, DYNAMIC)),
         }
     }
@@ -69,28 +84,113 @@ pub fn read_identity(
     (identity, errors)
 }
 
-/// `component` with the `styledComponentId` styled-components gives it:
-/// `Object.assign(component, { styledComponentId: id })`
-pub fn with_component_id<'a>(
+/// `component` with the statics its identity gives it:
+/// `Object.assign(component, { styledComponentId: id, __devupBase: base })`
+pub fn with_statics<'a>(
     ast_builder: &AstBuilder<'a>,
     component: Expression<'a>,
-    id: &str,
+    id: Option<&str>,
+    base: Option<Expression<'a>>,
 ) -> Expression<'a> {
-    let object = Expression::new_object_expression(
+    if id.is_none() && base.is_none() {
+        return component;
+    }
+    let mut statics = Expression::new_object_expression(
         SPAN,
         oxc_allocator::Vec::new_in(ast_builder),
         ast_builder,
     );
-    let id = with_property(
-        ast_builder,
-        object,
-        "styledComponentId",
-        marker_class(ast_builder, id),
-    );
+    if let Some(id) = id {
+        statics = with_property(
+            ast_builder,
+            statics,
+            "styledComponentId",
+            marker_class(ast_builder, id),
+        );
+    }
+    if let Some(base) = base {
+        statics = with_property(ast_builder, statics, BASE, base);
+    }
     wrap_direct_call(
         ast_builder,
         &member(ast_builder, "Object", "assign"),
-        &[component, id],
+        &[component, statics],
+    )
+}
+
+/// `component.__devupBase`: a component with Emotion targets, without them
+pub fn base_of<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
+    Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+        SPAN,
+        component,
+        IdentifierName::new(SPAN, BASE, ast_builder),
+        false,
+        ast_builder,
+    ))
+}
+
+/// What a component extending `component` renders when only the runtime
+/// knows whether Emotion's `target` gives it classes, as Emotion checks
+/// `__emotion_real` at runtime: `component.__devupBase || component`, read
+/// once through `((c) => c.__devupBase || c)(component)` unless it is a binding
+pub fn runtime_base<'a>(
+    ast_builder: &AstBuilder<'a>,
+    component: &Expression<'a>,
+) -> Expression<'a> {
+    match component {
+        Expression::Identifier(_) => base_or_self(ast_builder, component),
+        component => read_once(ast_builder, component),
+    }
+}
+
+fn base_or_self<'a>(ast_builder: &AstBuilder<'a>, component: &Expression<'a>) -> Expression<'a> {
+    let allocator = ast_builder.allocator();
+    Expression::new_logical_expression(
+        SPAN,
+        base_of(ast_builder, component.clone_in(allocator)),
+        LogicalOperator::Or,
+        component.clone_in(allocator),
+        ast_builder,
+    )
+}
+
+fn read_once<'a>(ast_builder: &AstBuilder<'a>, component: &Expression<'a>) -> Expression<'a> {
+    let parameter = FormalParameter::new(
+        SPAN,
+        oxc_allocator::Vec::new_in(ast_builder),
+        BindingPattern::new_binding_identifier(SPAN, "c", ast_builder),
+        None::<oxc_allocator::Box<TSTypeAnnotation<'a>>>,
+        None::<oxc_allocator::Box<Expression<'a>>>,
+        false,
+        None,
+        false,
+        false,
+        ast_builder,
+    );
+    let params = FormalParameters::boxed(
+        SPAN,
+        FormalParameterKind::ArrowFormalParameters,
+        oxc_allocator::Vec::from_array_in([parameter], ast_builder),
+        None::<oxc_allocator::Box<FormalParameterRest<'a>>>,
+        ast_builder,
+    );
+    let body = base_or_self(
+        ast_builder,
+        &Expression::new_identifier(SPAN, "c", ast_builder),
+    );
+    let read = Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<TSTypeParameterDeclaration<'a>>>,
+        params,
+        None::<oxc_allocator::Box<TSTypeAnnotation<'a>>>,
+        body.into(),
+        ast_builder,
+    );
+    wrap_direct_call(
+        ast_builder,
+        &read,
+        &[component.clone_in(ast_builder.allocator())],
     )
 }
 
