@@ -48,7 +48,14 @@ function fetchCssFromCoordinator(
         return
       }
       if (reply.statusCode !== 200) {
-        callback(new Error(`Coordinator CSS error: ${reply.statusCode}`))
+        // The coordinator says why (e.g. which files never extracted).
+        callback(
+          new Error(
+            reply.body
+              ? `Coordinator CSS error: ${reply.statusCode}: ${reply.body}`
+              : `Coordinator CSS error: ${reply.statusCode}`,
+          ),
+        )
         return
       }
       callback(null, reply.body)
