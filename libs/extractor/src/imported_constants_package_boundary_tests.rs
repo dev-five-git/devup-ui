@@ -39,6 +39,7 @@ fn package_boundary_css_styles_only_reads_api_exports(
         option: &option,
         exports: Default::default(),
         loading: vec![],
+        read: Default::default(),
     };
     // When
     let styles = scope.css_styles(&mut modules, call);

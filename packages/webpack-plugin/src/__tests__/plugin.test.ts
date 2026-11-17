@@ -707,7 +707,7 @@ describe('devupUIWebpackPlugin', () => {
 
     const compiler = createCompiler()
     await plugin.apply(asCompiler(compiler))
-    expect(compiler.options.module.rules.length).toBe(2)
+    expect(compiler.options.module.rules.length).toBe(3)
 
     const sourceRule = compiler.options.module.rules[0]
     assert(
@@ -716,6 +716,28 @@ describe('devupUIWebpackPlugin', () => {
         'exclude' in sourceRule,
     )
     expect(sourceRule.exclude).toEqual(options.include.output)
+  })
+
+  it('extracts MDX in a post loader, after the MDX loader compiled it', async () => {
+    const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
+      include: ['lib'],
+    })
+    existsSyncSpy.mockReturnValue(false)
+
+    const compiler = createCompiler()
+    await plugin.apply(asCompiler(compiler))
+
+    const [sourceRule, , mdxRule] = compiler.options.module.rules
+    assert(typeof sourceRule === 'object' && sourceRule !== null)
+    expect(mdxRule).toEqual({
+      test: /\.mdx$/i,
+      exclude: new RegExp(
+        '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor|lib)(?:[\\/\\\\]|$))',
+      ),
+      enforce: 'post',
+      use: 'use' in sourceRule ? sourceRule.use : undefined,
+    })
   })
 
   it.each(

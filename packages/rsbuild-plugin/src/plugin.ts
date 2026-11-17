@@ -30,7 +30,7 @@ import {
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
+import type { RsbuildPlugin, Rspack, TransformHandler } from '@rsbuild/core'
 
 import { createReservation, staticEntries } from './reservation'
 
@@ -506,80 +506,83 @@ export const DevupUI = ({
         return config
       })
 
-      api.transform(
-        {
-          test: /\.(tsx|ts|js|mjs|jsx)$/,
-        },
-        async ({ code, resourcePath, addDependency }) => {
-          if (excludeRegex.test(resourcePath)) return code
-          for (const file of tailwindFiles) addDependency(file)
-          // The stylesheet import is emitted relative to the importing file, as
-          // in the next/webpack/vite loaders. An absolute cssDir would bake this
-          // checkout's path into the emitted module, so byte-identical sources
-          // in two checkouts (git worktrees, a CI matrix, sibling clones) would
-          // produce different output and any content-addressed or relocated
-          // build cache would serve the wrong checkout's stylesheet.
-          //
-          // Atom mode additionally mirrors vite: the entry CODE imports the
-          // shared base (import_main_css_in_code=true) so rspack emits
-          // devup-ui.css once and links it from every entry (hoisted atoms
-          // shared, not inlined), and the extraction filename is
-          // POSIX-normalized to match the absolute-keyed canonical map /
-          // FILE_ROUTES.
-          let extractCssDir = relative(
-            dirname(resourcePath),
-            cssDir,
-          ).replaceAll('\\', '/')
-          if (!extractCssDir.startsWith('./'))
-            extractCssDir = `./${extractCssDir}`
-          const extractName = atomMode
-            ? resourcePath.replaceAll('\\', '/')
-            : resourcePath
-          const {
-            code: retCode,
-            map,
-            cssFile,
-            updatedBaseStyle,
-            dependencies = [],
-          } = compiler.codeExtract(
-            extractName,
-            code,
-            libPackage,
-            extractCssDir,
-            singleCss,
-            atomMode,
-            !atomMode,
-            importAliases,
+      const extractModule: TransformHandler = async ({
+        code,
+        resourcePath,
+        addDependency,
+      }) => {
+        if (excludeRegex.test(resourcePath)) return code
+        for (const file of tailwindFiles) addDependency(file)
+        // The stylesheet import is emitted relative to the importing file, as
+        // in the next/webpack/vite loaders. An absolute cssDir would bake this
+        // checkout's path into the emitted module, so byte-identical sources
+        // in two checkouts (git worktrees, a CI matrix, sibling clones) would
+        // produce different output and any content-addressed or relocated
+        // build cache would serve the wrong checkout's stylesheet.
+        //
+        // Atom mode additionally mirrors vite: the entry CODE imports the
+        // shared base (import_main_css_in_code=true) so rspack emits
+        // devup-ui.css once and links it from every entry (hoisted atoms
+        // shared, not inlined), and the extraction filename is
+        // POSIX-normalized to match the absolute-keyed canonical map /
+        // FILE_ROUTES.
+        let extractCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
+          '\\',
+          '/',
+        )
+        if (!extractCssDir.startsWith('./'))
+          extractCssDir = `./${extractCssDir}`
+        const extractName = atomMode
+          ? resourcePath.replaceAll('\\', '/')
+          : resourcePath
+        const {
+          code: retCode,
+          map,
+          cssFile,
+          updatedBaseStyle,
+          dependencies = [],
+        } = compiler.codeExtract(
+          extractName,
+          code,
+          libPackage,
+          extractCssDir,
+          singleCss,
+          atomMode,
+          !atomMode,
+          importAliases,
+        )
+        for (const dependency of dependencies) addDependency(dependency)
+        const promises: Promise<void>[] = []
+        if (updatedBaseStyle) {
+          // update base style
+          promises.push(
+            stateWriter.write(
+              join(cssDir, 'devup-ui.css'),
+              compiler.getCss(null, false),
+              'utf-8',
+            ),
           )
-          for (const dependency of dependencies) addDependency(dependency)
-          const promises: Promise<void>[] = []
-          if (updatedBaseStyle) {
-            // update base style
-            promises.push(
-              stateWriter.write(
-                join(cssDir, 'devup-ui.css'),
-                compiler.getCss(null, false),
-                'utf-8',
-              ),
-            )
-          }
+        }
 
-          if (cssFile) {
-            promises.push(
-              stateWriter.write(
-                join(cssDir, basename(cssFile)),
-                stylesheet(cssFile),
-                'utf-8',
-              ),
-            )
-          }
-          await Promise.all(promises)
-          return {
-            code: retCode,
-            map,
-          }
-        },
-      )
+        if (cssFile) {
+          promises.push(
+            stateWriter.write(
+              join(cssDir, basename(cssFile)),
+              stylesheet(cssFile),
+              'utf-8',
+            ),
+          )
+        }
+        await Promise.all(promises)
+        return {
+          code: retCode,
+          map,
+        }
+      }
+      api.transform({ test: /\.(tsx|ts|js|mjs|jsx)$/ }, extractModule)
+      // MDX compiles to JavaScript in a normal-phase loader such as
+      // `@mdx-js/loader`: a `post` transform extracts what it compiled.
+      api.transform({ test: /\.mdx$/i, order: 'post' }, extractModule)
     },
   }
 }

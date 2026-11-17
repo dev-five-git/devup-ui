@@ -14,17 +14,21 @@ use crate::css_prop::{
 };
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
+    literal_member_name,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    Argument, ArrowFunctionBody, BindingIdentifier, CallExpression, Expression,
-    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, JSXAttributeItem,
-    JSXAttributeValue, JSXElement, JSXElementName, JSXOpeningElement, LogicalOperator,
-    ModuleExportName, ObjectPropertyKind, Statement,
+    Argument, ArrowFunctionBody, BindingIdentifier, CallExpression, ComputedMemberExpression,
+    Expression, IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier,
+    JSXAttributeItem, JSXAttributeValue, JSXElement, JSXElementName, JSXOpeningElement,
+    LogicalOperator, ModuleExportName, ObjectPropertyKind, Statement,
 };
 use oxc_ast_visit::{
     Visit,
-    walk::{walk_call_expression, walk_jsx_element, walk_jsx_opening_element},
+    walk::{
+        walk_call_expression, walk_computed_member_expression, walk_jsx_element,
+        walk_jsx_opening_element,
+    },
 };
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
@@ -94,6 +98,7 @@ impl LibraryNumbers {
             Expression::StaticMemberExpression(member) => {
                 matches!(&member.object, Expression::Identifier(root) if self.contains(&self.styled, root))
             }
+            Expression::ComputedMemberExpression(member) => self.styled_tag(member).is_some(),
             Expression::CallExpression(call) => match &call.callee {
                 Expression::Identifier(root) => self.contains(&self.styled, root),
                 Expression::StaticMemberExpression(member) => {
@@ -103,6 +108,16 @@ impl LibraryNumbers {
                 _ => false,
             },
             _ => false,
+        }
+    }
+
+    /// The tag `styled['div']` names, read as `styled.div`
+    fn styled_tag<'a>(&self, member: &ComputedMemberExpression<'a>) -> Option<Cow<'a, str>> {
+        match &member.object {
+            Expression::Identifier(root) if self.contains(&self.styled, root) => {
+                literal_member_name(member)
+            }
+            _ => None,
         }
     }
 
@@ -403,6 +418,18 @@ impl<'a> Visit<'a> for LibraryNumbers {
             }
         }
         walk_call_expression(self, call);
+    }
+
+    /// `styled['div']` builds what `styled.div` does, so it is written so
+    fn visit_computed_member_expression(&mut self, member: &ComputedMemberExpression<'a>) {
+        if let Some(tag) = self.styled_tag(member) {
+            self.replacements.push((
+                member.object.span().end as usize,
+                member.span.end as usize,
+                format!(".{tag}"),
+            ));
+        }
+        walk_computed_member_expression(self, member);
     }
 
     fn visit_jsx_opening_element(&mut self, element: &JSXOpeningElement<'a>) {

@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/object_selector_keys_tests.rs
+expression: rules(source)
+---
+{
+    "None 0 color: blue",
+    "None 0 color: red",
+}

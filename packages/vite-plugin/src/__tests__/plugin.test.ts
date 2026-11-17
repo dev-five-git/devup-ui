@@ -2084,6 +2084,38 @@ describe('devupUIVitePlugin', () => {
     )
   })
 
+  it('extracts MDX in a post transform, after the MDX plugin compiled it', async () => {
+    // Given
+    codeExtractSpy.mockReturnValue(createCodeExtractResult({ code: 'mdx' }))
+    const [plugin, , mdxPlugin] = DevupUI({
+      engine: 'wasm',
+    }) as unknown as [
+      ViteTestPlugin,
+      ViteTestRestorePlugin,
+      Pick<ViteTestPlugin, 'name' | 'transform'> & { enforce: 'post' },
+    ]
+    activePlugins.push(plugin)
+    expect(mdxPlugin).toEqual({
+      name: 'devup-ui:mdx',
+      sharedDuringBuild: true,
+      enforce: 'post',
+      transform: expect.any(Function),
+    })
+    // When / Then: only the post transform takes MDX, and it takes only MDX
+    expect(await plugin.transform('compiled', 'docs/page.mdx')).toBeUndefined()
+    expect(
+      await mdxPlugin.transform('compiled', 'docs/page.tsx'),
+    ).toBeUndefined()
+    expect(
+      await mdxPlugin.transform('compiled', 'docs/page.mdx?import'),
+    ).toEqual({ code: 'mdx' })
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+    expect(codeExtractSpy.mock.calls[0]?.slice(0, 2)).toEqual([
+      'docs/page.mdx',
+      'compiled',
+    ])
+  })
+
   it.each(
     createTestMatrix({
       extractCss: [true, false],

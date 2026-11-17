@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Reuse a serialized stylesheet until the sheet or the atom-hoisting settings it reads change: getCss and the CSS a transform returns no longer serialize the same unchanged sheet again. The output is byte-identical.",
+  "date": "2026-11-15T00:00:00.000Z"
+}
