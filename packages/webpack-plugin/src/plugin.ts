@@ -32,7 +32,7 @@ import {
   type WasmImportAliases,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import { type Compiler } from 'webpack'
+import { type Compiler, type RuleSetRule } from 'webpack'
 
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
@@ -601,33 +601,34 @@ export class DevupUIWebpackPlugin {
       })
     }
 
-    compiler.options.module.rules.push(
-      {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
-        exclude: createNodeModulesExcludeRegex(
-          this.options.include,
-          '.mdx.[tj]sx?$',
-        ),
-        enforce: 'pre',
-        use: [
-          {
-            loader: createRequire(import.meta.url).resolve(
-              '@devup-ui/webpack-plugin/loader',
-            ),
-            options: {
-              package: this.options.package,
-              engine: this.options.engine,
-              cssDir: this.options.cssDir,
-              sheetFile: this.sheetFile,
-              classMapFile: this.classMapFile,
-              fileMapFile: this.fileMapFile,
-              watch: this.options.watch,
-              singleCss: this.options.singleCss,
-              importAliases: this.importAliases,
-            },
+    const sourceRule = {
+      test: /\.(tsx|ts|js|mjs|jsx)$/,
+      exclude: createNodeModulesExcludeRegex(
+        this.options.include,
+        '.mdx.[tj]sx?$',
+      ),
+      enforce: 'pre',
+      use: [
+        {
+          loader: createRequire(import.meta.url).resolve(
+            '@devup-ui/webpack-plugin/loader',
+          ),
+          options: {
+            package: this.options.package,
+            engine: this.options.engine,
+            cssDir: this.options.cssDir,
+            sheetFile: this.sheetFile,
+            classMapFile: this.classMapFile,
+            fileMapFile: this.fileMapFile,
+            watch: this.options.watch,
+            singleCss: this.options.singleCss,
+            importAliases: this.importAliases,
           },
-        ],
-      },
+        },
+      ],
+    } satisfies RuleSetRule
+    compiler.options.module.rules.push(
+      sourceRule,
       {
         test: this.options.cssDir,
         enforce: 'pre',
@@ -642,6 +643,14 @@ export class DevupUIWebpackPlugin {
             },
           },
         ],
+      },
+      // MDX compiles to JavaScript in a normal-phase loader such as
+      // `@mdx-js/loader`: a `post` loader extracts what it compiled.
+      {
+        ...sourceRule,
+        test: /\.mdx$/i,
+        exclude: createNodeModulesExcludeRegex(this.options.include),
+        enforce: 'post',
       },
     )
   }

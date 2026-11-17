@@ -17,7 +17,7 @@ use oxc_ast::ast::{
 };
 use oxc_parser::{Parser, ParserReturn};
 use oxc_semantic::{Semantic, SemanticBuilder};
-use oxc_span::{GetSpan, SourceType};
+use oxc_span::GetSpan;
 use oxc_syntax::node::NodeId;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -90,7 +90,7 @@ fn analyze(module: &ResolvedModule, package: &str) -> Exports {
         return exports;
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(&module.path).unwrap_or_default();
+    let source_type = crate::parsing::path_source_type(&module.path).unwrap_or_default();
     let program = Parser::new(&allocator, &module.code, source_type)
         .parse()
         .program;
@@ -980,7 +980,7 @@ pub(crate) fn rewrite(
         return Barreled::Unchanged;
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_default();
+    let source_type = crate::parsing::path_source_type(filename).unwrap_or_default();
     let ParserReturn {
         program,
         fatal_error,

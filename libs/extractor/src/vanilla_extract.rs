@@ -944,19 +944,32 @@ fn register_vanilla_extract_apis(
         .map_err(registration_error)
 }
 
+/// `style(rule, debugId?)`
 fn style(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
-    let id = register_style(collector, args.get_or_undefined(0), context)?;
+    let debug_id = js_str(args.get_or_undefined(1));
+    let id = register_style(collector, args.get_or_undefined(0), debug_id, context)?;
     Ok(js_string!(id).into())
+}
+
+/// The class a style's `debugId` adds under the `debug` option, which names
+/// classes for reading: the `debugId` made an identifier unique like the
+/// names `createVar` and the other APIs give theirs. It styles nothing, and
+/// without the option the class list stays as short as it was.
+fn debug_class(collector: &StyleCollector, debug_id: Option<String>) -> Option<String> {
+    let debug_id = debug_id.filter(|id| css::debug::is_debug() && !id.is_empty())?;
+    Some(collector.borrow_mut().identifier(Some(debug_id), "style"))
 }
 
 fn register_style(
     collector: &StyleCollector,
     rule: &JsValue,
+    debug_id: Option<String>,
     context: &mut Context,
 ) -> JsResult<String> {
     let mut entry = StyleEntry::default();
     let mut rules = Vec::new();
     compose(rule, &mut entry, &mut rules, context)?;
+    entry.classes.extend(debug_class(collector, debug_id));
     entry.json = format!("{{{}}}", rules.join(","));
     check_declarations(
         collector,
@@ -1019,8 +1032,9 @@ fn global_style(
     Ok(JsValue::undefined())
 }
 
-/// `styleVariants(variants, map?)`: a style per key, of the value or of what
-/// `map(value, key)` returns
+/// `styleVariants(variants, debugId?)` / `styleVariants(data, map, debugId?)`:
+/// a style per key, of the value or of what `map(value, key)` returns, each
+/// with the `debugId` `debugId_key` as vanilla-extract gives it
 fn style_variants(
     collector: &StyleCollector,
     args: &[JsValue],
@@ -1028,6 +1042,8 @@ fn style_variants(
 ) -> JsResult<JsValue> {
     let variants = ObjectInitializer::new(context).build();
     let map = args.get_or_undefined(1).as_callable();
+    let debug_id = js_str(args.get_or_undefined(if map.is_some() { 2 } else { 1 }))
+        .filter(|id| !id.is_empty());
     if let Some(data) = args.get_or_undefined(0).as_object() {
         for (key, name) in own_keys(&data, context)? {
             let value = data.get(key, context)?;
@@ -1039,7 +1055,8 @@ fn style_variants(
                 )?,
                 None => value,
             };
-            let id = register_style(collector, &rule, context)?;
+            let variant_id = debug_id.as_ref().map(|id| format!("{id}_{name}"));
+            let id = register_style(collector, &rule, variant_id, context)?;
             variants.set(js_string!(name), js_string!(id), false, context)?;
         }
     }
@@ -2020,6 +2037,53 @@ export const tone = { "0": _ve0, "primary": _ve1 }
 export const space = { "sm": _ve2 }
 export const none = {}"#
         );
+    }
+
+    const DEBUG_IDS: &str = "export const root = style({ color: 'red' }, 'root debug')
+export const plain = style({ color: 'blue' })
+export const blank = style({ margin: 0 }, '')
+export const tone = styleVariants({ primary: { color: 'green' } }, 'tone')
+export const space = styleVariants({ sm: 4 }, (padding) => ({ padding }), 'space')
+export const bare = styleVariants({ lg: { margin: 2 } }, '')
+export const size = createVar('size')";
+
+    #[rstest::rstest]
+    #[case::debug(
+        true,
+        r#"import { css } from '@devup-ui/react'
+const _ve3 = css({"color":"green"}) + " tone_primary-0-1"
+const _ve4 = css({"padding":"4px"}) + " space_sm-0-2"
+const _ve5 = css({"margin":"2px"})
+export const blank = css({"margin":0})
+export const plain = css({"color":"blue"})
+export const root = css({"color":"red"}) + " root_debug-0-0"
+export const tone = { "primary": _ve3 }
+export const space = { "sm": _ve4 }
+export const bare = { "lg": _ve5 }
+export const size = "var(--size-0-3)""#
+    )]
+    #[case::release(
+        false,
+        r#"import { css } from '@devup-ui/react'
+const _ve3 = css({"color":"green"})
+const _ve4 = css({"padding":"4px"})
+const _ve5 = css({"margin":"2px"})
+export const blank = css({"margin":0})
+export const plain = css({"color":"blue"})
+export const root = css({"color":"red"})
+export const tone = { "primary": _ve3 }
+export const space = { "sm": _ve4 }
+export const bare = { "lg": _ve5 }
+export const size = "var(--size-0-0)""#
+    )]
+    #[serial]
+    fn test_style_debug_ids_name_a_class_under_the_debug_option(
+        #[case] debug: bool,
+        #[case] expected: &str,
+    ) {
+        let _state = crate::test_state::TestStateGuard::new();
+        css::debug::set_debug(debug);
+        assert_eq!(generate(DEBUG_IDS), expected);
     }
 
     // Each composed style is an argument of its own, so a later one's

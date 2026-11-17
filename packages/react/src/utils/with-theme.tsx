@@ -28,7 +28,55 @@ export function withTheme<P extends { theme?: StyledTheme }>(
     )
   })
   WithTheme.displayName = `WithTheme(${Component.displayName || Component.name || 'Component'})`
-  return WithTheme
+  return hoistStatics(WithTheme, Component)
+}
+
+/**
+ * Statics React or a function defines itself, which the wrapper must keep its
+ * own, as `hoist-non-react-statics` skips them
+ */
+const KNOWN_STATICS = new Set<PropertyKey>([
+  '$$typeof',
+  'arguments',
+  'arity',
+  'caller',
+  'childContextTypes',
+  'compare',
+  'contextType',
+  'contextTypes',
+  'defaultProps',
+  'displayName',
+  'getDefaultProps',
+  'getDerivedStateFromError',
+  'getDerivedStateFromProps',
+  'length',
+  'mixins',
+  'name',
+  'propTypes',
+  'prototype',
+  'render',
+  'type',
+])
+
+/**
+ * Copies the statics `source` carries that are not React's onto `target`,
+ * as styled-components' `withTheme` does, so `Themed.Item` keeps working
+ */
+export function hoistStatics<T extends object>(target: T, source: object): T {
+  for (const key of Reflect.ownKeys(source)) {
+    if (
+      KNOWN_STATICS.has(key) ||
+      Object.prototype.hasOwnProperty.call(target, key)
+    ) {
+      continue
+    }
+    Object.defineProperty(
+      target,
+      key,
+      Object.getOwnPropertyDescriptor(source, key) as PropertyDescriptor,
+    )
+  }
+  return target
 }
 
 /**
