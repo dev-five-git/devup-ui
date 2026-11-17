@@ -2515,4 +2515,51 @@ describe('module resolver', () => {
       setModuleResolverSpy.mockRestore()
     }
   })
+
+  it('resolves packages with the conditions Vite resolves them with', async () => {
+    const root = fs.mkdtempSync(join(os.tmpdir(), 'devup-vite-conditions-'))
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      await Bun.write(
+        join(root, 'node_modules/split/package.json'),
+        JSON.stringify({
+          exports: {
+            node: './node.js',
+            browser: './browser.js',
+            production: './production.js',
+          },
+        }),
+      )
+      await Bun.write(join(root, 'node_modules/split/browser.js'), 'browser')
+      await Bun.write(
+        join(root, 'node_modules/split/production.js'),
+        'production',
+      )
+      const resolved = async (config: object) => {
+        await createPlugin({}).configResolved({ root, ...config })
+        const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
+          specifier: string,
+          importer: string,
+        ) => { code: string } | undefined
+        return resolveModule('split', join(root, 'src/App.tsx'))?.code
+      }
+      expect(
+        await resolved({
+          resolve: { conditions: ['module', 'browser'] },
+        }),
+      ).toBe('browser')
+      expect(
+        await resolved({
+          isProduction: true,
+          resolve: { conditions: ['development|production'] },
+        }),
+      ).toBe('production')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

@@ -98,13 +98,14 @@ type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 const SEPARATOR = '[\\/\\\\]'
 
 /**
- * The files the plugin loads: TypeScript and JSX sources anywhere, `.js` under
- * Devup UI, and `.js` of the packages in `include`. An included package is the
- * directory right under the innermost `node_modules` (pnpm and Bun stores
- * included), matched the way `createNodeModulesExcludeRegex` matches it.
+ * The files the plugin loads: TypeScript (`.mts` and `.cts` included) and JSX
+ * sources anywhere, `.js` under Devup UI, and `.js` of the packages in
+ * `include`. An included package is the directory right under the innermost
+ * `node_modules` (pnpm and Bun stores included), matched the way
+ * `createNodeModulesExcludeRegex` matches it.
  */
 function createSourceFilter(include: readonly string[]): RegExp {
-  const sources = `\\.(?:tsx?|jsx|mjs)$|${SEPARATOR}@devup-ui${SEPARATOR}.*\\.js$`
+  const sources = `\\.(?:[mc]?ts|tsx|jsx|mjs)$|${SEPARATOR}@devup-ui${SEPARATOR}.*\\.js$`
   if (include.length === 0) return new RegExp(sources)
   const names = include
     .map((name) =>
@@ -114,6 +115,51 @@ function createSourceFilter(include: readonly string[]): RegExp {
   return new RegExp(
     `${sources}|${SEPARATOR}node_modules${SEPARATOR}(?!.*${SEPARATOR}node_modules${SEPARATOR})(?:${names})${SEPARATOR}.*\\.js$`,
   )
+}
+
+/**
+ * The `exports` conditions Bun resolves an import with: those of its target
+ * (`browser` by default for `Bun.build`, `bun` under the runtime) and the
+ * configured `conditions`
+ */
+export function bunConditions(
+  config: Pick<Bun.BuildConfig, 'target' | 'conditions'> | undefined,
+): string[] {
+  const target = config ? (config.target ?? 'browser') : 'bun'
+  return [
+    'import',
+    'module',
+    ...{ browser: ['browser'], node: ['node'], bun: ['bun', 'node'] }[target],
+    ...[config?.conditions ?? []].flat(),
+  ]
+}
+
+/**
+ * `code` followed by a bare import of each build-time dependency, so that
+ * Bun's module graph, and with it its watcher, keeps the modules whose values
+ * the extractor inlined. Appended, the imports move no line or column of the
+ * extracted code.
+ */
+export function withDependencyImports(
+  code: string,
+  filePath: string,
+  dependencies: readonly string[],
+): string {
+  return [
+    code,
+    ...[...new Set(dependencies)].map((dependency) => {
+      const path = relative(dirname(filePath), dependency).replaceAll('\\', '/')
+      return `import ${JSON.stringify(path.startsWith('.') ? path : `./${path}`)};`
+    }),
+  ].join('\n')
+}
+
+/** Bun's loader for a source file */
+function sourceLoader(filePath: string): SourceLoader {
+  if (filePath.endsWith('.tsx')) return 'tsx'
+  if (/\.[mc]?ts$/.test(filePath)) return 'ts'
+  if (filePath.endsWith('.jsx')) return 'jsx'
+  return 'js'
 }
 
 /**
@@ -162,12 +208,13 @@ async function initialize(
   styleResolution: StylexStyleResolution,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
   project: BunProject,
+  conditions: readonly string[],
 ) {
   const { distDir } = project
   compiler.registerShorthands(shorthands)
   compiler.setStylexStyleResolution(styleResolution)
   compiler.setPrefix(null)
-  compiler.setModuleResolver(createModuleResolver())
+  compiler.setModuleResolver(createModuleResolver({ conditions }))
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -211,13 +258,7 @@ async function loadSourceFile(
   bundling: boolean,
   { cssDir, importAliases, compiledPackages }: BunProject,
 ) {
-  const loader: SourceLoader = filePath.endsWith('.tsx')
-    ? 'tsx'
-    : filePath.endsWith('.ts')
-      ? 'ts'
-      : filePath.endsWith('.jsx')
-        ? 'jsx'
-        : 'js'
+  const loader = sourceLoader(filePath)
   const contents = await Bun.file(filePath).text()
 
   if (
@@ -243,7 +284,10 @@ async function loadSourceFile(
     const sheet = code.css
     if (!bundling && sheet !== undefined)
       writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
-    return { contents: code.code, loader }
+    return {
+      contents: withDependencyImports(code.code, filePath, code.dependencies),
+      loader,
+    }
   }
   return { contents, loader }
 }
@@ -286,6 +330,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         styleResolution,
         watchTailwindCss,
         project,
+        bunConditions(build.config),
       )
       const debug = options.debug ?? !bundling
       compiler.setDebug(debug)
@@ -367,17 +412,27 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         },
       )
 
+      const loadSource = ({ path }: { readonly path: string }) => {
+        if (reservationPending) {
+          reserveFiles()
+          reservationPending = false
+        }
+        return loadSourceFile(compiler, path, bundling, project)
+      }
       // Load source files from packages directory (file namespace)
       build.onLoad(
         { filter: createSourceFilter(options.include ?? []) },
-        ({ path }) => {
-          if (reservationPending) {
-            reserveFiles()
-            reservationPending = false
-          }
-          return loadSourceFile(compiler, path, bundling, project)
-        },
+        loadSource,
       )
+      // A bundle also takes the project's own `.js` and `.cjs` modules. Bun
+      // loads one itself when the hook returns nothing, which the runtime
+      // does not allow, so dependencies are left to Bun here.
+      if (bundling)
+        build.onLoad({ filter: /\.c?js$/ }, (args) =>
+          !/[\\/]node_modules[\\/]/.test(args.path)
+            ? loadSource(args)
+            : undefined,
+        )
     },
   } satisfies BunPlugin
 }

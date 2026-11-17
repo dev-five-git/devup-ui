@@ -205,7 +205,27 @@ for (const operation of ['create', 'delete', 'recreate']) {
   })
 }
 
-for (const suffix of ['json', 'css', 'cjs']) {
+for (const suffix of ['mts', 'cts', 'cjs']) {
+  it(`admits a changed ${suffix} module as a source`, () => {
+    // Given
+    using project = fixture()
+    const reservation = createViteReservation(wasm, {
+      package: '@devup-ui/react',
+      include: [],
+      importAliases: {},
+      singleCss: true,
+      cssDir: join(project.root, 'df/css'),
+      distDir: join(project.root, 'df'),
+    })
+    const revision = reservation.revision
+    // When
+    reservation.invalidate(join(project.root, `arbitrary.${suffix}`), 9)
+    // Then
+    expect(reservation.revision).toBe(revision + 1)
+  })
+}
+
+for (const suffix of ['json', 'css']) {
   it(`admits cross-environment compiled ${suffix} supplier without blanket suffix admission`, () => {
     // Given
     using project = fixture()
