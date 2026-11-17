@@ -21,7 +21,8 @@ const Card = styled.div`
 ```
 
 ```tsx
-// what ships — no styled-components, no runtime
+// what ships, simplified — no styled-components, no runtime
+// (the real output also forwards `ref`, takes `as` and drops `$` props)
 const Card = ({ style, className, ...rest }) => (
   <div
     {...rest}
@@ -57,7 +58,7 @@ import { DevupUI } from '@devup-ui/vite-plugin'
 export default DevupUI({})
 ```
 
-The defaults cover `styled-components`, `@emotion/styled`, `@emotion/react` and `@vanilla-extract/css`. StyleX needs no alias — `@stylexjs/stylex` is recognised directly.
+The defaults cover `styled-components`, `@emotion/styled`, `@emotion/react`, `@emotion/css` and `@vanilla-extract/css`. StyleX needs no alias — `@stylexjs/stylex` is recognised directly.
 
 Opt a package out when you want to keep using the real thing:
 
@@ -81,6 +82,14 @@ Once the imports are rewritten you can drop the dependency, as long as the build
 ```
 
 That file lands next to `theme.d.ts` inside your project, so `tsconfig.json` picks it up with no extra configuration. Disabled aliases are left out on purpose — an ambient declaration wins over an installed package, and a library you opted out of must keep its own types.
+
+## Which style wins
+
+Composition the build can see keeps the original library's rule that a later style wins for the same property: `css(a, b)` and Emotion's `cx(a, b)`, a `styled(Base)` extension of a component the file defines, `.attrs()`, vanilla-extract `style([a, b])` and StyleX `props(a, b)`. The build merges them into one set of classes, so `styled(Base)` overriding `color` ships only the new color.
+
+Composition that only happens at runtime cannot be merged, and there the CSS cascade decides instead of the order you wrote: a `className` passed in through props, a class from CSS Modules or another library, or a class string built at runtime, joined with Devup UI classes. Code that relied on the runtime library inserting the later style last can change result here. Pass the variation as a prop, a condition (`cond ? a : b`) or a `styled()` extension in the same file, so the build sees both sides.
+
+See [Style override rules](/docs/limitations) for the full list.
 
 ## Where the absorbed APIs live
 
