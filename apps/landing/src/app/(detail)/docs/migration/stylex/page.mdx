@@ -121,7 +121,9 @@ As StyleX requires, variables usually live in a `.stylex.ts` file and are import
 // tokens.stylex.ts
 export const colors = stylex.defineVars({ primary: 'blue' })
 export const spacing = stylex.defineConsts({ gap: '8px' })
+```
 
+```tsx
 // Button.tsx
 import { colors, spacing } from './tokens.stylex'
 
