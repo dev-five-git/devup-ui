@@ -3,6 +3,7 @@ use napi::{Env, Result};
 use napi_derive::napi;
 
 use crate::value::binding_error;
+use devup_ui_binding_core::LazyCss;
 
 /// Materialized native output with an explicitly consumable payload.
 #[napi(js_name = "Output")]
@@ -42,7 +43,7 @@ impl NativeOutput {
     /// Copy changed CSS, using undefined for absence.
     #[napi(getter)]
     pub fn css(&self, env: Env) -> Result<Either<String, Undefined>> {
-        Ok(self.live(env)?.css.clone().into())
+        Ok(self.live(env)?.css.as_ref().map(LazyCss::get).into())
     }
     /// Copy the optional stylesheet filename.
     #[napi(getter, js_name = "cssFile")]

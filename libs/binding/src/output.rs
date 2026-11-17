@@ -4,7 +4,8 @@ use extractor::{
     extract_without_source_map,
 };
 
-use crate::css_cache::{cached_css, invalidate_css};
+use crate::css_cache::invalidate_css;
+use crate::lazy_css::{LazyCss, settle};
 use crate::with_style_sheet_untracked;
 
 /// Whether extraction generates a source map.
@@ -47,14 +48,14 @@ pub struct Output {
     pub css_file: Option<String>,
     /// Whether shared base CSS changed.
     pub updated_base_style: bool,
-    /// Changed CSS, absent when the stylesheet is unchanged.
-    pub css: Option<String>,
+    /// Changed CSS, serialized on its first read; absent when the stylesheet is unchanged.
+    pub css: Option<LazyCss>,
     /// Files read through the module resolver.
     pub dependencies: Vec<String>,
 }
 
 impl Output {
-    /// Commit extracted styles to their existing bucket and materialize changed CSS.
+    /// Commit extracted styles to their existing bucket, deferring the changed CSS.
     pub fn new(output: ExtractOutput, filename: String, options: CssOptions) -> Self {
         // Use the bucket identity (single-importer collapse) so the sheet's CSS
         // naming + property bucket + emitted chunk match the canonical class names
@@ -65,6 +66,7 @@ impl Output {
         let canonical_filename = canonical(&filename);
         let global = options.single_css || is_global(&filename);
         with_style_sheet_untracked(|sheet| {
+            settle(sheet);
             let planned = sheet.atom_plan.is_some();
             // Global CSS belongs to the raw SOURCE file, never its collapsed bucket.
             let default_collected = sheet.rm_global_css(&filename, global);
@@ -91,8 +93,7 @@ impl Output {
                     if !collected && !default_collected {
                         None
                     } else {
-                        Some(cached_css(
-                            sheet,
+                        Some(LazyCss::defer(
                             if global {
                                 None
                             } else {
