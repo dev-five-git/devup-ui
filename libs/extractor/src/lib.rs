@@ -15860,7 +15860,7 @@ const Button = styled.button({ bg: 'red' })
             .unwrap_or(body.len());
         let body = &body[..end];
         assert!(
-            body.starts_with(&format!("{declaration}__devupForwardRef(")),
+            body.starts_with(&format!("{declaration}__devupStyled(__devupForwardRef(")),
             "{body}"
         );
         body

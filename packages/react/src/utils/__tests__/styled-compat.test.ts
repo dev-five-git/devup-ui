@@ -32,7 +32,23 @@ describe('CacheProvider', () => {
 })
 
 describe('isStyledComponent', () => {
-  it('always reports false', () => {
+  it('recognizes the components the build marks', () => {
+    expect(
+      isStyledComponent({
+        $$typeof: 'forward_ref',
+        styledComponentId: 'devup',
+      }),
+    ).toBe(true)
+    expect(
+      isStyledComponent(Object.assign(() => null, { styledComponentId: 'x' })),
+    ).toBe(true)
+  })
+
+  it('rejects anything else', () => {
     expect(isStyledComponent(() => null)).toBe(false)
+    expect(isStyledComponent({ $$typeof: 'forward_ref' })).toBe(false)
+    expect(isStyledComponent(null)).toBe(false)
+    expect(isStyledComponent('div')).toBe(false)
+    expect(isStyledComponent(undefined)).toBe(false)
   })
 })
