@@ -36,6 +36,7 @@ import type {
   UserConfig,
 } from 'vite'
 
+import { assetNames, hashSheetAssetNames } from './asset-names'
 import { createCompiledDependencies } from './compiled-dependencies'
 import { createViteReservation } from './reservation'
 import { createServerWatch } from './server-watch'
@@ -518,6 +519,15 @@ export function DevupUI({
     [...tailwindFiles, ...activeTailwindFiles].some(
       (tailwindFile) => resolve(tailwindFile) === resolve(file),
     )
+  /** The finished sheet of the first devup-ui CSS file among `names`. */
+  function getFinishedSheet(names: readonly string[]): string | undefined {
+    const cssName = names
+      .map(getDevupCssChunkName)
+      .find((name) => name !== undefined)
+    return cssName === undefined
+      ? undefined
+      : compiler.getCss(getFileNumByFilename(cssName), false)
+  }
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
@@ -782,6 +792,16 @@ export function DevupUI({
     },
     apply() {
       return true
+    },
+    // Build only: the dev server names no assets.
+    outputOptions(options) {
+      if (!extractCss) return
+      return {
+        ...options,
+        assetFileNames: hashSheetAssetNames(options.assetFileNames, (info) =>
+          getFinishedSheet(assetNames(info)),
+        ),
+      }
     },
     closeBundle() {
       rotateExtractionSession()

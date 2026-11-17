@@ -23,6 +23,7 @@ import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
+  restoreSessionState,
 } from '../plugin'
 import {
   loadWasm,
@@ -712,6 +713,7 @@ describe('DevupUINextPlugin', () => {
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
                   themeFile: 'devup.json',
+                  themeFiles: [resolve('devup.json')],
                   theme: {},
                   defaultClassMap: {},
                   defaultFileMap: {},
@@ -739,6 +741,7 @@ describe('DevupUINextPlugin', () => {
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
                     themeFile: 'devup.json',
+                    themeFiles: [resolve('devup.json')],
                     watch: false,
                     singleCss: false,
                     theme: {},
@@ -796,6 +799,7 @@ describe('DevupUINextPlugin', () => {
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
                   themeFile: 'devup.json',
+                  themeFiles: [resolve('devup.json')],
                   theme: {},
                   defaultClassMap: {},
                   defaultFileMap: {},
@@ -851,6 +855,7 @@ describe('DevupUINextPlugin', () => {
                       properties: {},
                     },
                     themeFile: 'devup.json',
+                    themeFiles: [resolve('devup.json')],
                   },
                 },
               ],
@@ -888,6 +893,7 @@ describe('DevupUINextPlugin', () => {
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
                   themeFile: 'devup.json',
+                  themeFiles: [resolve('devup.json')],
                   theme: 'theme',
                   defaultClassMap: {},
                   defaultFileMap: {},
@@ -943,6 +949,7 @@ describe('DevupUINextPlugin', () => {
                       properties: {},
                     },
                     themeFile: 'devup.json',
+                    themeFiles: [resolve('devup.json')],
                   },
                 },
               ],
@@ -1052,14 +1059,32 @@ export const box = style({ color: 'red' })`
         throw new Error('unreadable')
       })
       const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
       try {
         expect(DevupUI({}).turbopack?.rules).toBeDefined()
         expect(profileSpy).toHaveBeenCalledWith(
           expect.stringContaining('"failed":true'),
         )
+        expect(warnSpy).toHaveBeenCalledWith(
+          '[devup-ui] Turbopack import graph failed: unreadable. Classes are not merged across files only one module imports, and the production stylesheet waits for extraction to go quiet instead of for every compiled file.',
+        )
       } finally {
         profileSpy.mockRestore()
+        warnSpy.mockRestore()
         graphSpy.mockRestore()
+      }
+    })
+    it.each([
+      [{}, false],
+      [{ debug: true }, true],
+    ])('sets debug class names from %j', (options, debug) => {
+      process.env.TURBOPACK = '1'
+      const setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
+      try {
+        DevupUI({}, options)
+        expect(setDebugSpy).toHaveBeenCalledWith(debug)
+      } finally {
+        setDebugSpy.mockRestore()
       }
     })
     it('should create theme.d.ts file', async () => {
@@ -1167,13 +1192,67 @@ export const box = style({ color: 'red' })`
           include: ['@acme/ui'],
         })
         collectSpy.mockImplementation(() => {
-          throw new Error('scan boom')
+          throw 'scan boom'
         })
-        DevupUI({}, {})
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          DevupUI({}, {})
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack file numbering failed: scan boom. Stylesheet file numbers follow the order Turbopack compiles files in, so they can differ between builds of the same source.',
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
       }
+    })
+    describe('restoreSessionState', () => {
+      const files = ['sheet.json', 'classMap.json', 'fileMap.json'] as const
+      const engine = () => ({
+        importSheet: mock(),
+        importClassMap: mock(),
+        importFileMap: mock(),
+        resetBuildState: mock(),
+      })
+
+      it('imports nothing unless every file reads', () => {
+        readFileSyncSpy.mockImplementation((path: string) => {
+          if (path === 'fileMap.json') throw new Error('ENOENT')
+          return '{}'
+        })
+        const restored = engine()
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).not.toHaveBeenCalled()
+        expect(restored.importClassMap).not.toHaveBeenCalled()
+        expect(restored.importFileMap).not.toHaveBeenCalled()
+      })
+
+      it('imports nothing when one file is corrupt', () => {
+        readFileSyncSpy.mockImplementation((path: string) =>
+          path === 'classMap.json' ? '{"a":' : '{}',
+        )
+        const restored = engine()
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).not.toHaveBeenCalled()
+      })
+
+      it('drops a state that does not import', () => {
+        readFileSyncSpy.mockImplementation((path: string) =>
+          JSON.stringify({ path }),
+        )
+        const restored = engine()
+        restored.importClassMap.mockImplementation(() => {
+          throw new Error('older release')
+        })
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).toHaveBeenCalledWith({
+          path: 'sheet.json',
+        })
+        expect(restored.importFileMap).not.toHaveBeenCalled()
+        expect(restored.resetBuildState).toHaveBeenCalledTimes(1)
+      })
     })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'
@@ -1282,7 +1361,18 @@ export const box = style({ color: 'red' })`
           prewarmedFiles: [],
           prewarmedOutputs: expect.any(Map),
           sourceMap: true,
+          theme: {
+            files: [resolve('devup.json')],
+            reload: expect.any(Function),
+          },
         })
+        // The coordinator registers an edited theme through the same path.
+        const { theme } = startCoordinatorSpy.mock.calls[0]![0] as {
+          theme: { reload: () => string[] }
+        }
+        registerThemeSpy.mockClear()
+        expect(theme.reload()).toEqual([resolve('devup.json')])
+        expect(registerThemeSpy).toHaveBeenCalledWith({})
         expect(codeExtractSpy).not.toHaveBeenCalled()
         expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
 
@@ -1302,6 +1392,35 @@ export const box = style({ color: 'red' })`
         expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
       } finally {
         processOnSpy.mockRestore()
+      }
+    })
+
+    it('registers the Tailwind CSS theme and watches its files', () => {
+      process.env.TURBOPACK = '1'
+      const tailwindSpy = spyOn(
+        importGraphModule,
+        'findTailwindCss',
+      ).mockReturnValue({
+        file: resolve('app.css'),
+        files: [resolve('app.css'), resolve('tokens.css')],
+        css: '@import "tailwindcss";',
+      })
+      try {
+        const config = DevupUI({})
+
+        expect(registerThemeSpy).toHaveBeenCalledWith({
+          tailwindCss: '@import "tailwindcss";',
+        })
+        const rule = config.turbopack?.rules?.['*.{tsx,ts,jsx,js,mjs}'] as {
+          loaders: { options: { themeFiles: string[] } }[]
+        }
+        expect(rule.loaders[0].options.themeFiles).toEqual([
+          resolve('devup.json'),
+          resolve('app.css'),
+          resolve('tokens.css'),
+        ])
+      } finally {
+        tailwindSpy.mockRestore()
       }
     })
 
