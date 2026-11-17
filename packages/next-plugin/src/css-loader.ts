@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { Agent, request } from 'node:http'
 
 import {
   type DevupCompiler,
@@ -8,12 +7,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
-import {
-  isConnectionError,
-  missingPortFileError,
-  parsePortFile,
-  unreachableCoordinatorError,
-} from './coordinator-port'
+import { callCoordinator, resetCoordinatorClient } from './coordinator-client'
 import { loadWasm } from './wasm'
 
 export interface DevupUICssLoaderOptions {
@@ -25,6 +19,8 @@ export interface DevupUICssLoaderOptions {
   classMapFile: string
   fileMapFile: string
   themeFile: string
+  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  themeFiles?: string[]
   theme?: object
   defaultSheet: object
   defaultClassMap: object
@@ -32,17 +28,8 @@ export interface DevupUICssLoaderOptions {
 }
 
 let initializedCompilers = new WeakSet<DevupCompiler>()
-let cachedPort: number | null = null
-const keepAliveAgent = new Agent({ keepAlive: true })
-
-function readCoordinatorPort(portFile: string): number {
-  if (cachedPort !== null) return cachedPort
-  cachedPort = parsePortFile(readFileSync(portFile, 'utf-8')).port
-  return cachedPort
-}
-
 function fetchCssFromCoordinator(
-  port: number,
+  portFile: string,
   fileNum: number | null,
   importMainCss: boolean,
   waitForIdle: boolean,
@@ -52,28 +39,21 @@ function fetchCssFromCoordinator(
   if (fileNum != null) params.set('fileNum', String(fileNum))
   params.set('importMainCss', String(importMainCss))
   if (waitForIdle) params.set('waitForIdle', 'true')
-  const req = request(
-    {
-      hostname: '127.0.0.1',
-      port,
-      path: `/css?${params.toString()}`,
-      method: 'GET',
-      agent: keepAliveAgent,
-    },
-    (res) => {
-      const chunks: Buffer[] = []
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          callback(new Error(`Coordinator CSS error: ${res.statusCode}`))
-          return
-        }
-        callback(null, Buffer.concat(chunks).toString('utf-8'))
-      })
+  callCoordinator(
+    portFile,
+    { path: `/css?${params.toString()}`, method: 'GET' },
+    (error, reply) => {
+      if (reply === undefined) {
+        callback(error)
+        return
+      }
+      if (reply.statusCode !== 200) {
+        callback(new Error(`Coordinator CSS error: ${reply.statusCode}`))
+        return
+      }
+      callback(null, reply.body)
     },
   )
-  req.on('error', (err) => callback(err))
-  req.end()
 }
 
 const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
@@ -86,6 +66,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       classMapFile,
       fileMapFile,
       themeFile,
+      themeFiles = [],
       theme,
       defaultClassMap,
       defaultFileMap,
@@ -94,6 +75,8 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
 
     // Coordinator mode: fetch live CSS from coordinator (disk content is stale)
     if (coordinatorPortFile) {
+      // The sheet holds the theme's variables: re-run when the theme changes.
+      for (const file of themeFiles) this.addDependency(file)
       const callback = this.async()
       // Check both resourcePath and resourceQuery for ?fileNum=N
       // Turbopack may embed query in resourcePath or provide it via resourceQuery
@@ -102,42 +85,13 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       const pathWithQuery = this.resourcePath + resourceQuery
       const fileNum = getFileNumByFilename(pathWithQuery)
       const importMainCss = fileNum !== null
-      const tryFetch = (retries: number) => {
-        if (!existsSync(coordinatorPortFile)) {
-          if (retries > 0) {
-            setTimeout(() => tryFetch(retries - 1), 50)
-            return
-          }
-          callback(missingPortFileError(coordinatorPortFile))
-          return
-        }
-        try {
-          const port = readCoordinatorPort(coordinatorPortFile)
-          fetchCssFromCoordinator(
-            port,
-            fileNum,
-            importMainCss,
-            !watch,
-            (err, css) => {
-              if (err) {
-                if (isConnectionError(err)) {
-                  // The port may belong to a coordinator that has since been
-                  // replaced; forget it so the next call re-reads the file.
-                  cachedPort = null
-                  return callback(
-                    unreachableCoordinatorError(coordinatorPortFile, err),
-                  )
-                }
-                return callback(err)
-              }
-              callback(null, css)
-            },
-          )
-        } catch (error) {
-          callback(error as Error)
-        }
-      }
-      tryFetch(20)
+      fetchCssFromCoordinator(
+        coordinatorPortFile,
+        fileNum,
+        importMainCss,
+        !watch,
+        callback,
+      )
       return
     }
 
@@ -188,7 +142,7 @@ export default devupUICssLoader
 /** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
   initializedCompilers = new WeakSet<DevupCompiler>()
-  cachedPort = null
+  resetCoordinatorClient()
 }
 
 export { setWasmForTesting } from './wasm'

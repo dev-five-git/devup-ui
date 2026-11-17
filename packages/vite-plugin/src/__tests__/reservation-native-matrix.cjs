@@ -90,7 +90,10 @@ async function main() {
       if (id === '\0virtual-styled.js')
         return "import {css} from '@devup-ui/react'; console.log(css({color:'chartreuse',padding:'79px'}))"
     },
-    generateBundle(_options, bundle) {
+    // Vite snapshots a devup-ui sheet when it loads, which races the other
+    // members of its bucket; devup-ui's generateBundle replaces that snapshot
+    // with the finished sheet. Record the bundle as written, not before then.
+    writeBundle(_options, bundle) {
       for (const item of Object.values(bundle))
         assets[`${this.environment.name}/${item.fileName}`] =
           item.type === 'chunk' ? item.code : String(item.source)

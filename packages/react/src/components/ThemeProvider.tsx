@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useContext } from 'react'
+import { useContext, useMemo } from 'react'
 
 import { StyledThemeContext } from '../utils/theme-context'
 import type { StyledTheme } from '../utils/theme-vars'
@@ -29,11 +29,25 @@ export function resolveTheme(
   return outer ? { ...outer, ...theme } : theme
 }
 
+/**
+ * Gives `theme` to `useTheme`, `withTheme` and `ThemeConsumer` through
+ * context, and declares the CSS variables styles read on a `display:
+ * contents` element. CSS variables need an element to live on, so a
+ * provider given a `theme` renders one, declaring only the variables that
+ * differ from the outer provider's; a provider without one adds no element.
+ * Whether the element exists follows only the `theme` prop being given, so a
+ * changing theme never remounts the subtree.
+ */
 export function ThemeProvider({ theme, children }: ThemeProviderProps) {
-  const resolved = resolveTheme(theme, useContext(StyledThemeContext))
+  const outer = useContext(StyledThemeContext)
+  const resolved = useMemo(() => resolveTheme(theme, outer), [theme, outer])
+  const style = useMemo(
+    () => themeToCssVariables(resolved, outer),
+    [resolved, outer],
+  )
   return (
     <StyledThemeContext.Provider value={resolved}>
-      <div style={themeToCssVariables(resolved)}>{children}</div>
+      {theme === undefined ? children : <div style={style}>{children}</div>}
     </StyledThemeContext.Provider>
   )
 }

@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "Read a style object key that holds an object and names no style property as a nested selector, as Emotion and styled-components do, in css(), globalCss(), styled object styles, the css prop and the Emotion and styled-components imports: `span: {...}` and `'h1, h2': {...}` select descendants instead of styling the element itself or being dropped, a bare pseudo-class, pseudo-element or media shorthand name such as `hover` stays that selector as in the selectors prop, and `:`, `::`, `[` and `&` keys keep applying to the element. Style properties, Devup UI shorthands such as `p`, string values and JSX props keep their meaning.",
+  "date": "2026-11-15T00:00:00.000Z"
+}

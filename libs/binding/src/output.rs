@@ -4,7 +4,8 @@ use extractor::{
     extract_without_source_map,
 };
 
-use crate::with_style_sheet_mut;
+use crate::css_cache::{cached_css, invalidate_css};
+use crate::with_style_sheet_untracked;
 
 /// Whether extraction generates a source map.
 #[derive(Clone, Copy)]
@@ -63,11 +64,23 @@ impl Output {
         let _atom_mode = css::atom_hoist::AtomModeGuard::new(options.single_css);
         let canonical_filename = canonical(&filename);
         let global = options.single_css || is_global(&filename);
-        with_style_sheet_mut(|sheet| {
+        with_style_sheet_untracked(|sheet| {
+            let planned = sheet.atom_plan.is_some();
             // Global CSS belongs to the raw SOURCE file, never its collapsed bucket.
             let default_collected = sheet.rm_global_css(&filename, global);
             let (collected, updated_base_style) =
                 sheet.update_styles_in_bucket(&output.styles, &canonical_filename, global);
+            // The commit reports every style, global rule, import and font face it
+            // added or removed, but not the atom plan its first commit freezes into
+            // the sheet. A source extracted again changes neither: what was
+            // serialized before still holds.
+            if collected
+                || updated_base_style
+                || default_collected
+                || planned != sheet.atom_plan.is_some()
+            {
+                invalidate_css();
+            }
             Self {
                 code: output.code,
                 map: output.map,
@@ -78,7 +91,8 @@ impl Output {
                     if !collected && !default_collected {
                         None
                     } else {
-                        Some(sheet.create_css(
+                        Some(cached_css(
+                            sheet,
                             if global {
                                 None
                             } else {
