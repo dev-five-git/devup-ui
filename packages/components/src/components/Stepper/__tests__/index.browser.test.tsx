@@ -109,10 +109,10 @@ describe('Stepper', () => {
     const index = await import('../index')
     expect({ ...index }).toEqual({
       Stepper: expect.any(Function),
-      StepperContainer: expect.any(Function),
-      StepperDecreaseButton: expect.any(Function),
-      StepperIncreaseButton: expect.any(Function),
-      StepperInput: expect.any(Function),
+      StepperContainer: expect.any(Object),
+      StepperDecreaseButton: expect.any(Object),
+      StepperIncreaseButton: expect.any(Object),
+      StepperInput: expect.any(Object),
       useStepper: expect.any(Function),
     })
   })

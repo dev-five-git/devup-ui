@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "Options that styled-components' StyleSheetManager and Emotion's createCache() would apply at runtime, and the inert compat StyleSheetManager and CacheProvider silently dropped, are now located build errors (file:line:col, cause and fix): `stylisPlugins`, `shouldForwardProp` and `namespace` of StyleSheetManager from an aliased package, and spread props on it; `stylisPlugins` of createCache() from @emotion/cache while @emotion/react or @emotion/styled is aliased, and createCache() options that cannot be read at build time (not an object literal, spread options, a computed key, createCache used other than by calling it, or @emotion/cache loaded other than by an import of its default export). createCache() with literal options such as `key` stays accepted",
+  "date": "2026-11-15T00:00:00.000Z"
+}

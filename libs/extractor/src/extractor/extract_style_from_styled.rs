@@ -330,6 +330,13 @@ impl StyledDefinition<'_> {
         self.reads.whole || self.reads.names.iter().any(|read| read == name)
     }
 
+    /// Whether the styles and attrs of this component read the `theme` prop by
+    /// name, which reads become CSS variables of the page's theme
+    #[must_use]
+    pub fn reads_theme(&self) -> bool {
+        self.reads.names.iter().any(|read| read == "theme")
+    }
+
     /// Whether an element using this component keeps passing the prop `name`:
     /// what its styles read, what it passes on, and what React or the
     /// component itself takes
@@ -1702,9 +1709,20 @@ fn named_arrow<'a>(
 /// The binding the generated styled components forward refs through
 pub const FORWARD_REF: &str = "__devupForwardRef";
 
-/// `__devupForwardRef((p, ref) => component({ ...p, ref }))`: React 18 gives a
-/// function component no `ref` prop, so the component takes it as one and
-/// passes it to what it renders with the rest of its props
+/// The binding marking a generated styled component, so `isStyledComponent`
+/// recognizes it at runtime the way styled-components does: by its
+/// `styledComponentId` property
+pub const STYLED_MARK: &str = "__devupStyled";
+
+/// The declaration of [`STYLED_MARK`] a file with styled components starts
+/// with, once for every component it marks
+pub const STYLED_MARKING: &str =
+    "const __devupStyled = (c) => ((c.styledComponentId = 'devup'), c);";
+
+/// `__devupStyled(__devupForwardRef((p, ref) => component({ ...p, ref })))`:
+/// React 18 gives a function component no `ref` prop, so the component takes
+/// it as one and passes it to what it renders with the rest of its props, and
+/// the mark tells `isStyledComponent` it is a styled component
 pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) -> Expression<'a> {
     let parameter = |name: &'static str| {
         FormalParameter::new(
@@ -1745,10 +1763,15 @@ pub fn forward_ref<'a>(ast_builder: &AstBuilder<'a>, component: Expression<'a>) 
         body,
         ast_builder,
     );
-    wrap_direct_call(
+    let component = wrap_direct_call(
         ast_builder,
         &identifier(ast_builder, FORWARD_REF),
         &[render],
+    );
+    wrap_direct_call(
+        ast_builder,
+        &identifier(ast_builder, STYLED_MARK),
+        &[component],
     )
 }
 
