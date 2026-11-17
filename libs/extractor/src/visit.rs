@@ -282,9 +282,6 @@ pub struct DevupVisitor<'a> {
     /// Maps bindings to their keyframe animation names.
     /// e.g., `fadeIn` → "a-a"
     stylex_keyframe_names: FxHashMap<SymbolId, String>,
-    /// The binding of the compat `isStyledComponent`, which the build answers
-    /// for the styled components it knows
-    is_styled_component: Option<SymbolId>,
     /// What the element just visited becomes when it is not an element any
     /// more (a dynamic `as`, a spread evaluated once): set in
     /// `visit_jsx_element`, written where the element stands by the visit of
@@ -1382,7 +1379,6 @@ impl<'a> DevupVisitor<'a> {
             stylex_namespaces: FxHashMap::default(),
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
-            is_styled_component: None,
             pending_replacement: None,
             names: names::Names::default(),
             captured_class_styles: FxHashMap::default(),
@@ -3543,20 +3539,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if self.compile_own_rules(it) {
             return;
         }
-        // `isStyledComponent(Button)` on a styled component the build knows is
-        // `true`; the compiled component carries no mark the runtime could read
-        if let Expression::CallExpression(call) = &*it
-            && let Expression::Identifier(callee) = &call.callee
-            && self.is_styled_component.is_some()
-            && self.bindings.symbol(callee) == self.is_styled_component
-            && let [argument] = call.arguments.as_slice()
-            && argument
-                .as_expression()
-                .is_some_and(|argument| self.definition_of(argument).is_some())
-        {
-            *it = Expression::new_boolean_literal(SPAN, true, &self.ast);
-            return;
-        }
         if let Some(name) = self.bindings.stylex_member(it)
             && StylexFunction::from_export_name(name).is_none()
         {
@@ -5321,9 +5303,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if compat && imported_str == "jsx" {
                             self.bindings.jsx_import(&import.local, imported_str);
                             continue;
-                        }
-                        if compat && imported_str == "isStyledComponent" {
-                            self.is_styled_component = local;
                         }
                         if compat && imported_str == "ClassNames" {
                             self.bindings.class_names_component(local);

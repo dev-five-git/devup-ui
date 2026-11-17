@@ -64,10 +64,6 @@ fn compile(source: &str) -> String {
     "default_props",
     "import styled from 'styled-components';\nexport const Tone = styled.div`color: ${(p) => p.$tone};`;\nTone.defaultProps = { $tone: 'red' };\nexport const Plain = () => null;\nPlain.defaultProps = { tone: 'red' };\nTone.displayName = 'Tone';"
 )]
-#[case::is_styled_component(
-    "is_styled_component",
-    "import styled, { isStyledComponent } from 'styled-components';\nexport const Card = styled.div`color: red;`;\nconst Plain = () => null;\nexport const card = isStyledComponent(Card);\nexport const plain = isStyledComponent(Plain);\nexport const nothing = isStyledComponent();\nexport const other = String(Card);"
-)]
 #[case::global_class(
     "global_class",
     "import { Global, css } from '@emotion/react';\nconst reset = css`body { margin: 0; } @media print { html { color: black; } }`;\nexport const App = () => <Global styles={reset} />;"
