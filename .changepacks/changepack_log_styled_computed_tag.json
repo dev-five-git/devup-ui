@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "`styled['div']` and `` styled[`div`] `` compile as `styled.div` does, in tagged templates and calls and before `.attrs` / `.withConfig`, for Emotion, styled-components and Devup UI's own `styled`, keeping Emotion's numbers as pixels. A computed tag the build cannot read (`styled[tag]`) or that no `styled.` member could spell (`styled['my-element']`) stays a located build error",
+  "date": "2026-11-15T00:00:00.000Z"
+}

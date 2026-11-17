@@ -6,17 +6,76 @@ import {
 
 const DEVUP_PACKAGE = '@devup-ui/react'
 
-/** The packages whose default export, and the namespace they are imported as, the build reads as the named export `styled` of Devup UI, as `DEFAULT_IMPORT_ALIASES` in `plugin-utils` lists them */
-const DEFAULT_IS_STYLED = new Set(['@emotion/styled', 'styled-components'])
+/** The key of the shared ESLint settings that mirror the build plugin's options */
+export const SETTINGS_KEY = '@devup-ui'
 
-/** The packages whose named exports the build maps onto Devup UI's, as `DEFAULT_IMPORT_ALIASES` in `plugin-utils` lists them */
-const NAMED_ALIASES = new Set([
-  '@emotion/react',
-  '@emotion/css',
-  '@emotion/styled',
-  'styled-components',
-  '@vanilla-extract/css',
+/**
+ * The packages the build reads as Devup UI by default, as `DEFAULT_IMPORT_ALIASES` in `plugin-utils` lists them.
+ * A string names the Devup UI export that the default export and the namespace stand for; `null` maps the named exports only.
+ */
+const DEFAULT_IMPORT_ALIASES: ReadonlyMap<string, string | null> = new Map([
+  ['@emotion/react', null],
+  ['@emotion/styled', 'styled'],
+  ['@emotion/css', null],
+  ['styled-components', 'styled'],
+  ['@vanilla-extract/css', null],
 ])
+
+/** What the build is configured to read as Devup UI */
+export interface ImportConfig {
+  readonly package: string
+  readonly aliases: ReadonlyMap<string, string | null>
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function settingsError(path: string, expected: string): TypeError {
+  return new TypeError(
+    `@devup-ui/eslint-plugin: settings["${SETTINGS_KEY}"]${path} must be ${expected}, as the build plugin option of the same name`,
+  )
+}
+
+/** The package the build compiles away, from the `package` setting */
+function readPackage(value: unknown): string {
+  if (value === undefined) return DEVUP_PACKAGE
+  if (typeof value !== 'string' || value === '')
+    throw settingsError('.package', 'a package name')
+  return value
+}
+
+/** The default aliases merged with the `importAliases` setting, as `mergeImportAliases` in `plugin-utils` merges them */
+function readAliases(value: unknown): ReadonlyMap<string, string | null> {
+  if (value === undefined) return DEFAULT_IMPORT_ALIASES
+  if (!isRecord(value))
+    throw settingsError('.importAliases', 'an object of package names')
+  const aliases = new Map(DEFAULT_IMPORT_ALIASES)
+  for (const [source, alias] of Object.entries(value)) {
+    if (alias === false) aliases.delete(source)
+    else if (alias === true) aliases.set(source, null)
+    else if (typeof alias === 'string' && alias !== '')
+      aliases.set(source, alias)
+    else
+      throw settingsError(
+        `.importAliases[${JSON.stringify(source)}]`,
+        'an export name, true or false',
+      )
+  }
+  return aliases
+}
+
+/** What the shared `settings` configure the build to read as Devup UI */
+export function importConfig(settings: unknown): ImportConfig {
+  const devup = isRecord(settings) ? settings[SETTINGS_KEY] : undefined
+  if (devup === undefined)
+    return { package: DEVUP_PACKAGE, aliases: DEFAULT_IMPORT_ALIASES }
+  if (!isRecord(devup)) throw settingsError('', 'an object')
+  return {
+    package: readPackage(devup.package),
+    aliases: readAliases(devup.importAliases),
+  }
+}
 
 /** The names of another package the build reads as Devup UI's, as `devup_equivalent` in `libs/extractor/src/import_alias_visit.rs` maps them */
 function devupEquivalent(source: string, imported: string): string | undefined {
@@ -73,6 +132,8 @@ export function isVanillaExtractFile(filename: string): boolean {
 export interface StorageContext {
   readonly filename: string
   readonly sourceCode: Readonly<TSESLint.SourceCode>
+  /** The shared settings, whose `@devup-ui` entry mirrors the build plugin's `package` and `importAliases` options */
+  readonly settings?: unknown
 }
 
 /** What a file imports from Devup UI and from the packages the build reads as it */
@@ -80,9 +141,11 @@ export class ImportStorage {
   private imports = new Map<string, string>()
   private importObject = new Set<string>()
   readonly vanilla: boolean
+  private readonly config: ImportConfig
 
   constructor(private readonly context?: StorageContext) {
     this.vanilla = isVanillaExtractFile(context?.filename ?? '')
+    this.config = importConfig(context?.settings)
   }
 
   /** The variables `node` declares */
@@ -97,13 +160,10 @@ export class ImportStorage {
     // A vanilla-extract stylesheet runs as it is: no import is compiled away
     if (this.vanilla) return
     const isDevup =
-      source === DEVUP_PACKAGE || source === `${DEVUP_PACKAGE}/compat`
-    if (
-      !isDevup &&
-      !NAMED_ALIASES.has(source) &&
-      !DEFAULT_IS_STYLED.has(source)
-    )
-      return
+      source === this.config.package ||
+      source === `${this.config.package}/compat`
+    const alias = this.config.aliases.get(source)
+    if (!isDevup && alias === undefined) return
 
     for (const specifier of node.specifiers) {
       switch (specifier.type) {
@@ -117,11 +177,16 @@ export class ImportStorage {
           break
         }
         case AST_NODE_TYPES.ImportDefaultSpecifier:
-        case AST_NODE_TYPES.ImportNamespaceSpecifier:
-          if (isDevup) this.importObject.add(specifier.local.name)
-          else if (DEFAULT_IS_STYLED.has(source))
-            this.addImport(specifier.local.name, 'styled')
+        case AST_NODE_TYPES.ImportNamespaceSpecifier: {
+          if (isDevup) {
+            this.importObject.add(specifier.local.name)
+            break
+          }
+          // Both stand for the one export a string alias names, as `DefaultToNamed` in the build
+          const name = alias ? devupEquivalent(source, alias) : undefined
+          if (name !== undefined) this.addImport(specifier.local.name, name)
           break
+        }
       }
     }
   }

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "An ordinary module (not .css.ts / .css.js) can now read what a vanilla-extract stylesheet exports: the vars objects of createThemeContract, createTheme and createGlobalTheme, theme classes, createVar variables and style class names. The imported stylesheet is extracted the way the bundler extracts it, so `style({ margin: vars.space })` or `<Box p={vars.space} />` compiles to the custom property the stylesheet's own CSS declares and `style([base, ...])` keeps the stylesheet's class. The import of the stylesheet stays so its CSS loads, and the importer depends on the stylesheet and the files it reads. A stylesheet that fails to extract, or an export the build cannot read as a literal, is still a located error",
+  "date": "2026-11-15T00:00:00.000Z"
+}

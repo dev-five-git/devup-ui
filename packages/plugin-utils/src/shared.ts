@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+
 import type { DevupEngine } from './compiler-types'
 import type { CustomShorthands, ImportAliases } from './types'
 
@@ -47,17 +49,28 @@ export function getFileNumByFilename(filename: string): number | null {
  * Create a regex that excludes node_modules paths, except for @devup-ui
  * and any additional included packages.
  *
+ * The package a file belongs to is the directory right under its innermost
+ * `node_modules` directory (pnpm and Bun stores included), and a name matches
+ * only that whole directory: `foo.bar` does not match `fooXbar`, `pkg` does not
+ * match `@scope/pkg` or `pkg-extra`, a name with regex characters such as
+ * `foo+bar` matches itself, and a dependency nested in an included package's
+ * own `node_modules` is not included with it.
+ *
  * @param include - Additional package names to include (not exclude)
  * @param extraExcludes - Optional extra regex pattern to OR with the node_modules exclusion
  * @returns A RegExp for use in bundler exclude/condition rules
  */
 export function createNodeModulesExcludeRegex(
-  include: string[],
+  include: readonly string[],
   extraExcludes?: string,
 ): RegExp {
-  const base = `node_modules(?!.*(${['@devup-ui', '@devup-editor', ...include]
+  const separator = '[\\/\\\\]'
+  const names = ['@devup-ui', '@devup-editor', ...include]
+    .map((name) =>
+      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', '[\\/\\\\_]'),
+    )
     .join('|')
-    .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`
+  const base = `(?:^|${separator})node_modules${separator}(?!.*${separator}node_modules${separator})(?!(?:${names})(?:${separator}|$))`
   return new RegExp(extraExcludes ? `(${base})|(${extraExcludes})` : base)
 }
 
@@ -107,4 +120,32 @@ export interface DevupUIBasePluginOptions {
   importAliases?: ImportAliases
   /** Build-time aliases that expand one style prop into multiple CSS properties. */
   shorthands?: CustomShorthands
+}
+
+/**
+ * The warning a plugin prints when an optional setup step fails and the build
+ * goes on without it: the step, the root cause and what the build loses.
+ */
+export function setupWarning(
+  step: string,
+  error: unknown,
+  impact: string,
+): string {
+  const cause = error instanceof Error ? error.message : String(error)
+  return `[devup-ui] ${step} failed: ${cause}. ${impact}`
+}
+
+/**
+ * Whether `error` reports that `dir` itself does not exist. A project without
+ * that source root has nothing there to scan, so the step loses nothing.
+ */
+export function isMissingDirectory(error: unknown, dir: string): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === 'ENOENT' &&
+    'path' in error &&
+    typeof error.path === 'string' &&
+    resolve(error.path) === resolve(dir)
+  )
 }

@@ -39,7 +39,7 @@ import {
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import { loadWasm, loadWebpackPlugin } from './wasm'
+import { type DevupWasm, loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
@@ -135,6 +135,43 @@ function sourceDir(cwd: string): string {
     : resolve(cwd, 'src')
 }
 
+/** A setup step that failed but leaves a working, less exact build. */
+function setupWarning(step: string, error: unknown, impact: string): string {
+  const cause = error instanceof Error ? error.message : String(error)
+  return `[devup-ui] Turbopack ${step} failed: ${cause}. ${impact}`
+}
+
+/**
+ * Restore the sheet, class map and file map an earlier dev session left in
+ * `distDir`, all together or none: a mix of one session's sheet with another
+ * session's (or no) class names would give new styles names that clash with
+ * restored ones. A missing or unreadable file starts fresh (first run); state
+ * that does not import (another release wrote it) is dropped and starts fresh.
+ */
+export function restoreSessionState(
+  wasm: Pick<
+    DevupWasm,
+    'importSheet' | 'importClassMap' | 'importFileMap' | 'resetBuildState'
+  >,
+  [sheetFile, classMapFile, fileMapFile]: readonly [string, string, string],
+): void {
+  let state: unknown[]
+  try {
+    state = [sheetFile, classMapFile, fileMapFile].map((file) =>
+      JSON.parse(readFileSync(file, 'utf-8')),
+    )
+  } catch {
+    return
+  }
+  try {
+    wasm.importSheet(state[0])
+    wasm.importClassMap(state[1])
+    wasm.importFileMap(state[2])
+  } catch {
+    wasm.resetBuildState()
+  }
+}
+
 /**
  * Devup UI Next Plugin
  * @param config
@@ -163,6 +200,7 @@ export function DevupUI(
       devupFile = 'devup.json',
       include = [],
       prefix,
+      debug = false,
       atomHoist,
       importAliases: userImportAliases,
     } = options
@@ -194,6 +232,7 @@ export function DevupUI(
       atomHoist: requestedAtomHoist ? atomHoist : 0,
       cwd: process.cwd(),
       cssDir,
+      debug,
       devupFile,
       distDir,
       engine,
@@ -254,17 +293,13 @@ export function DevupUI(
       getDefaultTheme,
       getThemeInterface,
       importCanonicalMap,
-      importClassMap,
-      importFileMap,
-      importSheet,
       registerShorthands,
       registerTheme,
+      setDebug,
       setPrefix,
     } = wasm
 
     registerShorthands(normalizedShorthands)
-
-    setPrefix(prefix ?? null)
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),
@@ -274,13 +309,10 @@ export function DevupUI(
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM
     // starts empty and CSS for cached files would be missing.
-    try {
-      importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
-      importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
-      importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
-    } catch {
-      // No previous session state (first run) or corrupt files, start fresh
-    }
+    restoreSessionState(wasm, [sheetFile, classMapFile, fileMapFile])
+    // After the restore: dropping a state that does not import resets these.
+    setPrefix(prefix ?? null)
+    setDebug(debug)
 
     const devupConfig = loadDevupConfigSync(devupFile)
 
@@ -291,9 +323,9 @@ export function DevupUI(
     const themeInterface = getThemeInterface(
       ...createThemeInterfaceArgs(libPackage),
     )
-    if (themeInterface) {
-      writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
-    }
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
@@ -348,9 +380,17 @@ export function DevupUI(
         files: staticGraph.files.length,
         expectedBaseFiles: expectedBaseFiles.length,
       })
-    } catch {
+    } catch (error) {
       // Pre-pass is best-effort; on failure canonical() is the identity (no
-      // merge) and atom hoisting stays off.
+      // merge) and atom hoisting stays off. Say so: the build still works,
+      // but its output differs from what the graph would have given.
+      console.warn(
+        setupWarning(
+          'import graph',
+          error,
+          'Classes are not merged across files only one module imports, and the production stylesheet waits for extraction to go quiet instead of for every compiled file.',
+        ),
+      )
       reportProfile('next.graph', {
         durationMs: elapsedMs(graphStartedAt),
         failed: true,
@@ -373,8 +413,15 @@ export function DevupUI(
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
         }),
       )
-    } catch {
+    } catch (error) {
       // Best-effort; numbering falls back to arrival order.
+      console.warn(
+        setupWarning(
+          'file numbering',
+          error,
+          'Stylesheet file numbers follow the order Turbopack compiles files in, so they can differ between builds of the same source.',
+        ),
+      )
     }
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:

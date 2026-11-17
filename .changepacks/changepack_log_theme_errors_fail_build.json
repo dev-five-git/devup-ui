@@ -1,0 +1,11 @@
+{
+  "changes": {
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "A theme that cannot be loaded or registered (a broken `devup.json`, an invalid token name, or two token kinds that become the same CSS variable) now fails production builds with that error instead of building with an empty theme. Dev servers and watch builds keep running on an empty theme and report the error: Vite shows it in the error overlay in place of the reload, webpack, Next.js (webpack) and Rsbuild add it to every compilation's errors until it is fixed, and a Bun reload logs it",
+  "date": "2026-11-15T00:00:00.000Z"
+}

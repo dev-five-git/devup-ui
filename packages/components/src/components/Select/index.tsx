@@ -10,6 +10,7 @@ import {
 import clsx from 'clsx'
 import {
   ComponentProps,
+  ComponentPropsWithoutRef,
   forwardRef,
   isValidElement,
   useEffect,
@@ -24,7 +25,10 @@ import { elementRef, mergeRefs } from '../../utils/dom'
 import { Button } from '../Button'
 import { IconCheck } from './IconCheck'
 
-interface SelectProps extends Omit<ComponentProps<'div'>, 'onChange'> {
+interface SelectProps extends Omit<
+  ComponentPropsWithoutRef<'div'>,
+  'onChange'
+> {
   defaultValue?: SelectValue<SelectType>
   value?: SelectValue<SelectType>
   onChange?: (value: string) => void
@@ -60,23 +64,27 @@ interface SelectProps extends Omit<ComponentProps<'div'>, 'onChange'> {
   optionProps?: ComponentProps<typeof SelectOption>
 }
 
-export function Select({
-  type = 'default',
-  children,
-  defaultValue,
-  value: valueProp,
-  onChange,
-  defaultOpen,
-  open: openProp,
-  onOpenChange,
-  colors,
-  typography,
-  options,
-  triggerProps,
-  containerProps,
-  optionProps,
-  ...props
-}: SelectProps) {
+// forwardRef: React 18 does not pass `ref` to a function component as a prop
+export const Select = forwardRef<HTMLDivElement, SelectProps>(function Select(
+  {
+    type = 'default',
+    children,
+    defaultValue,
+    value: valueProp,
+    onChange,
+    defaultOpen,
+    open: openProp,
+    onOpenChange,
+    colors,
+    typography,
+    options,
+    triggerProps,
+    containerProps,
+    optionProps,
+    ...props
+  },
+  forwardedRef,
+) {
   const ref = useRef<HTMLDivElement>(null)
   const generatedId = useId()
   const listboxId = `${props.id ?? generatedId}-listbox`
@@ -136,7 +144,6 @@ export function Select({
       }}
     >
       <Box
-        ref={ref}
         display="inline-block"
         h="fit-content"
         selectors={{
@@ -158,6 +165,8 @@ export function Select({
         }}
         typography={typography}
         {...props}
+        // After the spread: outside clicks and positioning need the root
+        ref={mergeRefs(ref, forwardedRef)}
       >
         {options ? (
           <>
@@ -180,7 +189,7 @@ export function Select({
       </Box>
     </SelectContext.Provider>
   )
-}
+})
 
 interface SelectTriggerProps extends ComponentProps<typeof Button> {
   asChild?: boolean
@@ -286,166 +295,175 @@ export const SelectTrigger = forwardRef<HTMLElement, SelectTriggerProps>(
     )
   },
 )
-interface SelectContainerProps extends ComponentProps<'div'> {
+interface SelectContainerProps extends ComponentPropsWithoutRef<'div'> {
   showConfirmButton?: boolean
   confirmButtonText?: string
   x?: number
   y?: number
 }
-export function SelectContainer({
-  children,
-  showConfirmButton,
-  confirmButtonText = '완료',
-  x = 0,
-  y = 0,
-  ...props
-}: SelectContainerProps) {
-  const { open, setOpen, type, ref, listboxId, triggerId } = useSelect()
-  const containerRef = useRef<HTMLDivElement>(null)
-  // An effect rather than a callback ref returning cleanup, which React 18 ignores
-  useEffect(() => {
-    const el = containerRef.current
-    if (!open || !ref.current || !el) return
-    const combobox = ref.current
+export const SelectContainer = forwardRef<HTMLDivElement, SelectContainerProps>(
+  function SelectContainer(
+    {
+      children,
+      showConfirmButton,
+      confirmButtonText = '완료',
+      x = 0,
+      y = 0,
+      ...props
+    },
+    forwardedRef,
+  ) {
+    const { open, setOpen, type, ref, listboxId, triggerId } = useSelect()
+    const containerRef = useRef<HTMLDivElement>(null)
+    // An effect rather than a callback ref returning cleanup, which React 18 ignores
+    useEffect(() => {
+      const el = containerRef.current
+      if (!open || !ref.current || !el) return
+      const combobox = ref.current
 
-    // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
-    const updatePosition = () => {
-      const {
-        height,
-        x: comboboxX,
-        y: comboboxY,
-        top,
-        left,
-      } = combobox.getBoundingClientRect()
+      // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
+      const updatePosition = () => {
+        const {
+          height,
+          x: comboboxX,
+          y: comboboxY,
+          top,
+          left,
+        } = combobox.getBoundingClientRect()
 
-      // The container is fixed to the viewport, so it collides with the viewport
-      const isOverflowBottom =
-        top + height + 10 + y + el.offsetHeight > window.innerHeight
+        // The container is fixed to the viewport, so it collides with the viewport
+        const isOverflowBottom =
+          top + height + 10 + y + el.offsetHeight > window.innerHeight
 
-      const isOverflowRight = left + x + el.offsetWidth > window.innerWidth
+        const isOverflowRight = left + x + el.offsetWidth > window.innerWidth
 
-      // One inset at a time: the other would keep a position from before
-      if (isOverflowBottom) {
-        el.style.top = ''
-        el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
-      } else {
-        el.style.bottom = ''
-        el.style.top = `${comboboxY + height + 10 + y}px`
+        // One inset at a time: the other would keep a position from before
+        if (isOverflowBottom) {
+          el.style.top = ''
+          el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
+        } else {
+          el.style.bottom = ''
+          el.style.top = `${comboboxY + height + 10 + y}px`
+        }
+
+        if (isOverflowRight)
+          el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
+        else el.style.left = `${comboboxX + x}px`
       }
 
-      if (isOverflowRight)
-        el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
-      else el.style.left = `${comboboxX + x}px`
-    }
+      // 최초 위치 설정
+      updatePosition()
 
-    // 최초 위치 설정
-    updatePosition()
+      // 스크롤, 리사이즈, DOM 변경 등 요소 위치가 변할 수 있는 이벤트에 리스너 등록
+      window.addEventListener('scroll', updatePosition, true)
+      window.addEventListener('resize', updatePosition)
 
-    // 스크롤, 리사이즈, DOM 변경 등 요소 위치가 변할 수 있는 이벤트에 리스너 등록
-    window.addEventListener('scroll', updatePosition, true)
-    window.addEventListener('resize', updatePosition)
+      // 컴포넌트 언마운트 시 이벤트 해제
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true)
+        window.removeEventListener('resize', updatePosition)
+      }
+    }, [open, ref, x, y])
 
-    // 컴포넌트 언마운트 시 이벤트 해제
-    return () => {
-      window.removeEventListener('scroll', updatePosition, true)
-      window.removeEventListener('resize', updatePosition)
-    }
-  }, [open, ref, x, y])
+    // Opening moves focus to the selected option, or the first one
+    useEffect(() => {
+      if (!open) return
+      const listbox = document.getElementById(listboxId)
+      const option =
+        listbox?.querySelector<HTMLElement>(
+          '[role=option][aria-selected=true]:not([aria-disabled=true])',
+        ) ??
+        listbox?.querySelector<HTMLElement>(
+          '[role=option]:not([aria-disabled=true])',
+        )
+      option?.focus()
+    }, [open, listboxId])
 
-  // Opening moves focus to the selected option, or the first one
-  useEffect(() => {
-    if (!open) return
-    const listbox = document.getElementById(listboxId)
-    const option =
-      listbox?.querySelector<HTMLElement>(
-        '[role=option][aria-selected=true]:not([aria-disabled=true])',
-      ) ??
-      listbox?.querySelector<HTMLElement>(
-        '[role=option]:not([aria-disabled=true])',
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const options = Array.from(
+        e.currentTarget.querySelectorAll<HTMLElement>(
+          '[role=option]:not([aria-disabled=true])',
+        ),
       )
-    option?.focus()
-  }, [open, listboxId])
+      const index = options.findIndex(
+        (option) => option === document.activeElement,
+      )
+      const moves: Partial<Record<string, number>> = {
+        ArrowDown: index + 1,
+        ArrowUp: index - 1,
+        Home: 0,
+        End: options.length - 1,
+      }
+      const next = moves[e.key]
+      if (next !== undefined) {
+        e.preventDefault()
+        options[(next + options.length) % options.length]?.focus()
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setOpen(false)
+        ref.current
+          ?.querySelector<HTMLElement>('[aria-haspopup=listbox]')
+          ?.focus()
+      }
+    }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const options = Array.from(
-      e.currentTarget.querySelectorAll<HTMLElement>(
-        '[role=option]:not([aria-disabled=true])',
-      ),
+    if (!open) return null
+    return (
+      <VStack
+        aria-labelledby={props['aria-label'] ? undefined : triggerId}
+        aria-multiselectable={type === 'checkbox' || undefined}
+        bg="var(--inputBackground, light-dark(#FFF,#2E2E2E))"
+        border="1px solid var(--border, light-dark(#E4E4E4,#434343))"
+        borderRadius="8px"
+        bottom="-4px"
+        boxShadow="0 2px 2px 0 var(--base10, light-dark(#0000001A,#FFFFFF1A))"
+        boxSize="fit-content"
+        gap="6px"
+        id={listboxId}
+        minW="232px"
+        onKeyDown={handleKeyDown}
+        p="10px"
+        pos="fixed"
+        role="listbox"
+        styleOrder={1}
+        userSelect="none"
+        zIndex={1}
+        {...props}
+        // After the spread: positioning needs the container
+        ref={mergeRefs(containerRef, forwardedRef)}
+      >
+        {children}
+        {showConfirmButton && type === 'checkbox' && (
+          <Flex justifyContent="end" w="100%">
+            <Button
+              className={css({
+                textAlign: 'end',
+                bg: 'var(--primary, light-dark(#674DC7, #8163E1))',
+                borderRadius: '8px',
+                w: 'fit-content',
+                px: '30px',
+                py: '10px',
+                color: '#FFF',
+                typography: 'buttonS',
+              })}
+              onClick={() => setOpen(false)}
+              variant="primary"
+            >
+              {confirmButtonText}
+            </Button>
+          </Flex>
+        )}
+      </VStack>
     )
-    const index = options.findIndex(
-      (option) => option === document.activeElement,
-    )
-    const moves: Partial<Record<string, number>> = {
-      ArrowDown: index + 1,
-      ArrowUp: index - 1,
-      Home: 0,
-      End: options.length - 1,
-    }
-    const next = moves[e.key]
-    if (next !== undefined) {
-      e.preventDefault()
-      options[(next + options.length) % options.length]?.focus()
-      return
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      setOpen(false)
-      ref.current
-        ?.querySelector<HTMLElement>('[aria-haspopup=listbox]')
-        ?.focus()
-    }
-  }
+  },
+)
 
-  if (!open) return null
-  return (
-    <VStack
-      ref={containerRef}
-      aria-labelledby={props['aria-label'] ? undefined : triggerId}
-      aria-multiselectable={type === 'checkbox' || undefined}
-      bg="var(--inputBackground, light-dark(#FFF,#2E2E2E))"
-      border="1px solid var(--border, light-dark(#E4E4E4,#434343))"
-      borderRadius="8px"
-      bottom="-4px"
-      boxShadow="0 2px 2px 0 var(--base10, light-dark(#0000001A,#FFFFFF1A))"
-      boxSize="fit-content"
-      gap="6px"
-      id={listboxId}
-      minW="232px"
-      onKeyDown={handleKeyDown}
-      p="10px"
-      pos="fixed"
-      role="listbox"
-      styleOrder={1}
-      userSelect="none"
-      zIndex={1}
-      {...props}
-    >
-      {children}
-      {showConfirmButton && type === 'checkbox' && (
-        <Flex justifyContent="end" w="100%">
-          <Button
-            className={css({
-              textAlign: 'end',
-              bg: 'var(--primary, light-dark(#674DC7, #8163E1))',
-              borderRadius: '8px',
-              w: 'fit-content',
-              px: '30px',
-              py: '10px',
-              color: '#FFF',
-              typography: 'buttonS',
-            })}
-            onClick={() => setOpen(false)}
-            variant="primary"
-          >
-            {confirmButtonText}
-          </Button>
-        </Flex>
-      )}
-    </VStack>
-  )
-}
-
-interface SelectOptionProps extends Omit<ComponentProps<'div'>, 'onClick'> {
+interface SelectOptionProps extends Omit<
+  ComponentPropsWithoutRef<'div'>,
+  'onClick'
+> {
   value?: string
   disabled?: boolean
   onClick?: (
@@ -455,144 +473,149 @@ interface SelectOptionProps extends Omit<ComponentProps<'div'>, 'onClick'> {
   showCheck?: boolean
 }
 
-export function SelectOption({
-  disabled,
-  onClick,
-  children,
-  value,
-  showCheck = true,
-  ...props
-}: SelectOptionProps) {
-  const { setOpen, setValue, value: selectedValue, type, ref } = useSelect()
+export const SelectOption = forwardRef<HTMLDivElement, SelectOptionProps>(
+  function SelectOption(
+    { disabled, onClick, children, value, showCheck = true, ...props },
+    forwardedRef,
+  ) {
+    const { setOpen, setValue, value: selectedValue, type, ref } = useSelect()
 
-  const handleClose = () => {
-    if (type === 'checkbox') return
-    setOpen(false)
-    ref.current?.querySelector<HTMLElement>('[aria-haspopup=listbox]')?.focus()
-  }
+    const handleClose = () => {
+      if (type === 'checkbox') return
+      setOpen(false)
+      ref.current
+        ?.querySelector<HTMLElement>('[aria-haspopup=listbox]')
+        ?.focus()
+    }
 
-  const handleClick = (e?: React.MouseEvent<HTMLDivElement>) => {
-    // A custom handler replaces the value update, but choosing the option
-    // still closes the list and returns focus to the trigger
-    if (onClick) onClick(value, e)
-    else if (typeof value === 'string') setValue(value)
-    handleClose()
-  }
+    const handleClick = (e?: React.MouseEvent<HTMLDivElement>) => {
+      // A custom handler replaces the value update, but choosing the option
+      // still closes the list and returns focus to the trigger
+      if (onClick) onClick(value, e)
+      else if (typeof value === 'string') setValue(value)
+      handleClose()
+    }
 
-  const isSelected = {
-    default: false,
-    radio: selectedValue === value,
-    checkbox:
-      Array.isArray(selectedValue) && value && selectedValue.includes(value),
-  }[type]
+    const isSelected = {
+      default: false,
+      radio: selectedValue === value,
+      checkbox:
+        Array.isArray(selectedValue) && value && selectedValue.includes(value),
+    }[type]
 
-  const changesOnHover = !disabled && !(type === 'radio' && isSelected)
+    const changesOnHover = !disabled && !(type === 'radio' && isSelected)
 
-  return (
-    <Flex
-      _hover={
-        changesOnHover && {
-          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
+    return (
+      <Flex
+        ref={forwardedRef}
+        _hover={
+          changesOnHover && {
+            bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
+          }
         }
-      }
-      alignItems="center"
-      aria-disabled={disabled}
-      aria-selected={!!isSelected}
-      borderRadius="6px"
-      color={
-        disabled
-          ? 'var(--selectDisabled, light-dark(#C4C5D1, #45464D))'
-          : isSelected
-            ? 'var(--primary, light-dark(#674DC7, #8163E1)'
-            : 'var(--title, light-dark(#1A1A1A,#FAFAFA))'
-      }
-      cursor={changesOnHover ? 'pointer' : 'default'}
-      data-value={value}
-      fontWeight={isSelected ? '700' : '400'}
-      gap={
-        {
-          checkbox: '10px',
-          radio: '6px',
-          default: '0',
-        }[type]
-      }
-      h="40px"
-      onClick={disabled ? undefined : (e) => handleClick(e)}
-      onKeyDown={(e) => {
-        if (disabled || (e.key !== 'Enter' && e.key !== ' ')) return
-        e.preventDefault()
-        handleClick()
-      }}
-      px="10px"
-      role="option"
-      styleOrder={1}
-      tabIndex={disabled ? undefined : -1}
-      transition="background-color 0.1s ease-in-out"
-      {...props}
-    >
-      {showCheck &&
-        {
-          checkbox: (
-            <Box
-              bg={
-                disabled
-                  ? 'var(--inputDisabledBackground, light-dark(#F0F0F3, #414244))'
-                  : isSelected
-                    ? 'var(--primary, light-dark(#674DC7, #8163E1)'
-                    : 'var(--border, light-dark(#E4E4E4, #434343))'
-              }
-              borderRadius="4px"
-              boxSize="18px"
-              pos="relative"
-              transition="background-color 0.1s ease-in-out"
-            >
-              {isSelected && (
-                <IconCheck
-                  className={css({
-                    color: disabled
-                      ? 'var(--inputDisabledText, light-dark(#E5E5E5, #373737))'
-                      : '#FFF',
-                    position: 'absolute',
-                    top: '55%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                  })}
-                />
-              )}
-            </Box>
-          ),
-          radio: (
-            <>
-              {isSelected && (
-                <Box
-                  borderRadius="4px"
-                  boxSize="18px"
-                  pos="relative"
-                  transition="background-color 0.1s ease-in-out"
-                >
+        alignItems="center"
+        aria-disabled={disabled}
+        aria-selected={!!isSelected}
+        borderRadius="6px"
+        color={
+          disabled
+            ? 'var(--selectDisabled, light-dark(#C4C5D1, #45464D))'
+            : isSelected
+              ? 'var(--primary, light-dark(#674DC7, #8163E1)'
+              : 'var(--title, light-dark(#1A1A1A,#FAFAFA))'
+        }
+        cursor={changesOnHover ? 'pointer' : 'default'}
+        data-value={value}
+        fontWeight={isSelected ? '700' : '400'}
+        gap={
+          {
+            checkbox: '10px',
+            radio: '6px',
+            default: '0',
+          }[type]
+        }
+        h="40px"
+        onClick={disabled ? undefined : (e) => handleClick(e)}
+        onKeyDown={(e) => {
+          if (disabled || (e.key !== 'Enter' && e.key !== ' ')) return
+          e.preventDefault()
+          handleClick()
+        }}
+        px="10px"
+        role="option"
+        styleOrder={1}
+        tabIndex={disabled ? undefined : -1}
+        transition="background-color 0.1s ease-in-out"
+        {...props}
+      >
+        {showCheck &&
+          {
+            checkbox: (
+              <Box
+                bg={
+                  disabled
+                    ? 'var(--inputDisabledBackground, light-dark(#F0F0F3, #414244))'
+                    : isSelected
+                      ? 'var(--primary, light-dark(#674DC7, #8163E1)'
+                      : 'var(--border, light-dark(#E4E4E4, #434343))'
+                }
+                borderRadius="4px"
+                boxSize="18px"
+                pos="relative"
+                transition="background-color 0.1s ease-in-out"
+              >
+                {isSelected && (
                   <IconCheck
                     className={css({
+                      color: disabled
+                        ? 'var(--inputDisabledText, light-dark(#E5E5E5, #373737))'
+                        : '#FFF',
                       position: 'absolute',
                       top: '55%',
                       left: '50%',
                       transform: 'translate(-50%, -50%)',
-                      color: 'inherit',
                     })}
                   />
-                </Box>
-              )}
-            </>
-          ),
-          default: null,
-        }[type]}
-      {children}
-    </Flex>
-  )
-}
+                )}
+              </Box>
+            ),
+            radio: (
+              <>
+                {isSelected && (
+                  <Box
+                    borderRadius="4px"
+                    boxSize="18px"
+                    pos="relative"
+                    transition="background-color 0.1s ease-in-out"
+                  >
+                    <IconCheck
+                      className={css({
+                        position: 'absolute',
+                        top: '55%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        color: 'inherit',
+                      })}
+                    />
+                  </Box>
+                )}
+              </>
+            ),
+            default: null,
+          }[type]}
+        {children}
+      </Flex>
+    )
+  },
+)
 
-export function SelectDivider({ ...props }: ComponentProps<'div'>) {
+export const SelectDivider = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<'div'>
+>(function SelectDivider(props, ref) {
   return (
     <Box
+      ref={ref}
       bg="var(--border, light-dark(#E4E4E4,#434343)"
       h="1px"
       styleOrder={1}
@@ -600,4 +623,4 @@ export function SelectDivider({ ...props }: ComponentProps<'div'>) {
       {...props}
     />
   )
-}
+})
