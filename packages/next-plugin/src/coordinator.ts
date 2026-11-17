@@ -1,4 +1,4 @@
-import { existsSync, writeFile, writeFileSync } from 'node:fs'
+import { existsSync, statSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
@@ -67,6 +67,16 @@ export interface CoordinatorOptions {
    * open. Defaults to 60000. Exposed for tests; the plugin omits it.
    */
   maxWaitMs?: number
+  /**
+   * Development only: the files the registered theme was read from, and how
+   * to register it again. Before each `/css` and `/extract` the coordinator
+   * re-registers the theme once one of those files changed, since Next does
+   * not reload next.config for devup.json. `reload` returns the new file list.
+   */
+  theme?: {
+    files: string[]
+    reload: () => string[]
+  }
 }
 
 export interface PrewarmedOutput {
@@ -191,6 +201,36 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 let server: Server | null = null
+
+interface ThemeWatch {
+  files: string[]
+  stamp: string
+  reload: () => string[]
+}
+
+let themeWatch: ThemeWatch | undefined
+
+/** What changes when a theme input is edited, added or deleted. */
+function themeStamp(files: string[]): string {
+  return files
+    .map((file) => {
+      try {
+        const stats = statSync(file)
+        return `${stats.mtimeMs}:${stats.size}`
+      } catch {
+        return 'missing'
+      }
+    })
+    .join('|')
+}
+
+/** Register the theme again when one of its input files has changed. */
+function refreshTheme(): void {
+  if (!themeWatch || themeStamp(themeWatch.files) === themeWatch.stamp) return
+  // A throwing reload keeps the old stamp, so the next request retries.
+  const files = themeWatch.reload()
+  themeWatch = { ...themeWatch, files, stamp: themeStamp(files) }
+}
 
 // Extraction tracking for waitForIdle.
 //
@@ -414,6 +454,10 @@ export function startCoordinator(options: CoordinatorOptions): {
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   extractedSources.clear()
   fileNumToBucket.clear()
+  themeWatch = options.theme && {
+    ...options.theme,
+    stamp: themeStamp(options.theme.files),
+  }
 
   // A deleted file is never extracted again, so its styles would stay in the
   // sheet; its importers are, once they stop importing it. A repeated
@@ -452,6 +496,14 @@ export function startCoordinator(options: CoordinatorOptions): {
       const importMainCss = url.searchParams.get('importMainCss') === 'true'
       const shouldWait = url.searchParams.get('waitForIdle') === 'true'
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
+
+      try {
+        refreshTheme()
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end(error instanceof Error ? error.message : String(error))
+        return
+      }
 
       if (shouldWait) {
         if (fileNum != null && fileNumToBucket.has(fileNum)) {
@@ -499,6 +551,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
+        refreshTheme()
         const repeated = extractedSources.has(filename)
         extractedSources.set(filename, resourcePath)
 
@@ -756,6 +809,7 @@ export const resetCoordinator = () => {
   bucketToMembers = new Map()
   canonicalMapRef = {}
   expectedBaseFiles = new Set()
+  themeWatch = undefined
   writeChain.clear()
   latestContent.clear()
   writingContent.clear()

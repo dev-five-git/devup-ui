@@ -635,6 +635,7 @@ export const a = <div css={{ color: 'red' }} />`
             watch: true,
             singleCss: true,
             coordinatorPortFile: 'coordinator.port',
+            themeFiles: [resolve('devup.json'), resolve('base.json')],
           }),
           async: mock().mockReturnValue(asyncCallback),
           resourcePath: join(process.cwd(), 'src', 'App.tsx'),
@@ -654,6 +655,9 @@ export const a = <div css={{ color: 'red' }} />`
           )
         })
 
+        // A theme edit re-runs the loader under Turbopack.
+        expect(t.addDependency).toHaveBeenCalledWith(resolve('devup.json'))
+        expect(t.addDependency).toHaveBeenCalledWith(resolve('base.json'))
         expect(t.addDependency).toHaveBeenCalledWith(resolve('src/tokens.ts'))
         expect(t.addDependency).not.toHaveBeenCalledWith(resolve('1'))
 

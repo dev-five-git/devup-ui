@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
@@ -13,12 +12,7 @@ import {
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 import { takeExtractOutput } from './coordinator'
-import {
-  isConnectionError,
-  missingPortFileError,
-  parsePortFile,
-  unreachableCoordinatorError,
-} from './coordinator-port'
+import { callCoordinator, resetCoordinatorClient } from './coordinator-client'
 import { loadWasm } from './wasm'
 
 const stateWriter = createStateWriter((path, content, encoding) =>
@@ -33,6 +27,8 @@ export interface DevupUILoaderOptions {
   classMapFile: string
   fileMapFile: string
   themeFile: string
+  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  themeFiles?: string[]
   watch: boolean
   singleCss: boolean
   coordinatorPortFile?: string
@@ -45,9 +41,6 @@ export interface DevupUILoaderOptions {
 }
 let initializedCompilers = new WeakSet<DevupCompiler>()
 
-const cachedPorts = new Map<string, number>()
-const keepAliveAgent = new Agent({ keepAlive: true })
-
 interface CoordinatorResponse {
   code?: string
   error?: string
@@ -57,15 +50,6 @@ interface CoordinatorResponse {
 
 function toLoaderError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
-}
-
-function readCoordinatorPort(portFile: string): number {
-  const cachedPort = cachedPorts.get(portFile)
-  if (cachedPort !== undefined) return cachedPort
-
-  const port = parsePortFile(readFileSync(portFile, 'utf-8')).port
-  cachedPorts.set(portFile, port)
-  return port
 }
 
 function parseCoordinatorResponse(content: string): CoordinatorResponse {
@@ -95,7 +79,7 @@ function parseSourceMap(sourceMap: string | undefined): string | null {
 }
 
 function coordinatorExtract(
-  port: number,
+  portFile: string,
   body: string,
   callback: (
     err: Error | null,
@@ -104,42 +88,31 @@ function coordinatorExtract(
     dependencies?: string[],
   ) => void,
 ): void {
-  const req = request(
-    {
-      hostname: '127.0.0.1',
-      port,
-      path: '/extract',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      agent: keepAliveAgent,
-    },
-    (res) => {
-      const chunks: Buffer[] = []
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-      res.on('end', () => {
-        try {
-          const data = parseCoordinatorResponse(
-            Buffer.concat(chunks).toString('utf-8'),
-          )
-          if (res.statusCode !== 200) {
-            callback(new Error(data.error ?? 'Coordinator error'))
-            return
-          }
-          if (data.code === undefined) {
-            callback(new Error('Coordinator response missing code'))
-            return
-          }
-          const sourceMap = parseSourceMap(data.map)
-          callback(null, data.code, sourceMap, data.dependencies)
-        } catch (e) {
-          callback(toLoaderError(e))
+  callCoordinator(
+    portFile,
+    { path: '/extract', method: 'POST', body },
+    (error, reply) => {
+      if (reply === undefined) {
+        callback(error)
+        return
+      }
+      try {
+        const data = parseCoordinatorResponse(reply.body)
+        if (reply.statusCode !== 200) {
+          callback(new Error(data.error ?? 'Coordinator error'))
+          return
         }
-      })
+        if (data.code === undefined) {
+          callback(new Error('Coordinator response missing code'))
+          return
+        }
+        const sourceMap = parseSourceMap(data.map)
+        callback(null, data.code, sourceMap, data.dependencies)
+      } catch (e) {
+        callback(toLoaderError(e))
+      }
     },
   )
-  req.on('error', (err) => callback(err))
-  req.write(body)
-  req.end()
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -156,6 +129,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       singleCss,
       coordinatorPortFile,
       theme,
+      themeFiles = [],
       defaultClassMap,
       defaultFileMap,
       defaultSheet,
@@ -165,61 +139,33 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     // Coordinator mode: delegate to HTTP server
     if (coordinatorPortFile) {
       this.addDependency(coordinatorPortFile)
+      // Extraction reads theme tokens: re-run when the theme changes (the
+      // coordinator registers the new theme before it answers).
+      for (const file of themeFiles) this.addDependency(file)
       const callback = this.async()
-      const tryCoordinator = (retries: number) => {
-        if (!existsSync(coordinatorPortFile)) {
-          if (retries > 0) {
-            setTimeout(() => tryCoordinator(retries - 1), 50)
-            return
+      // POSIX-normalize so the engine's bucket key matches the canonical map
+      // and FILE_ROUTES keys (both built with forward slashes). Without this,
+      // canonical collapse and atom hoisting silently no-op on Windows.
+      const relativePath = relative(
+        process.cwd(),
+        this.resourcePath,
+      ).replaceAll('\\', '/')
+      const body = JSON.stringify({
+        filename: relativePath,
+        code: source.toString(),
+        resourcePath: this.resourcePath,
+      })
+      coordinatorExtract(
+        coordinatorPortFile,
+        body,
+        (err, content, sourceMap, dependencies = []) => {
+          if (err) return callback(err)
+          for (const dependency of dependencies) {
+            this.addDependency(resolve(dependency))
           }
-          // Port file never appeared — fall through to error
-          callback(missingPortFileError(coordinatorPortFile))
-          return
-        }
-        try {
-          const port = readCoordinatorPort(coordinatorPortFile)
-          // POSIX-normalize so the engine's bucket key matches the canonical map
-          // and FILE_ROUTES keys (both built with forward slashes). Without this,
-          // canonical collapse and atom hoisting silently no-op on Windows.
-          const relativePath = relative(
-            process.cwd(),
-            this.resourcePath,
-          ).replaceAll('\\', '/')
-          const body = JSON.stringify({
-            filename: relativePath,
-            code: source.toString(),
-            resourcePath: this.resourcePath,
-          })
-          coordinatorExtract(
-            port,
-            body,
-            (err, content, sourceMap, dependencies = []) => {
-              if (err) {
-                if (isConnectionError(err)) {
-                  // Forget a port that no longer answers so the next file
-                  // re-reads the port file instead of repeating the timeout.
-                  cachedPorts.delete(coordinatorPortFile)
-                  return callback(
-                    unreachableCoordinatorError(coordinatorPortFile, err),
-                  )
-                }
-                return callback(err)
-              }
-              for (const dependency of dependencies) {
-                this.addDependency(resolve(dependency))
-              }
-              callback(
-                null,
-                content,
-                sourceMap as Parameters<typeof callback>[2],
-              )
-            },
-          )
-        } catch (error) {
-          callback(toLoaderError(error))
-        }
-      }
-      tryCoordinator(20) // 20 retries × 50ms = 1s max wait
+          callback(null, content, sourceMap as Parameters<typeof callback>[2])
+        },
+      )
       return
     }
 
@@ -335,7 +281,7 @@ export default devupUILoader
 /** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
   initializedCompilers = new WeakSet<DevupCompiler>()
-  cachedPorts.clear()
+  resetCoordinatorClient()
 }
 
 export { setWasmForTesting } from './wasm'
