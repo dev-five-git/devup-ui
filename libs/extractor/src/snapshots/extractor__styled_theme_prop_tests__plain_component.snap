@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/styled_theme_prop_tests.rs
+expression: compile(code)
+---
+const B = () => <div />;
+export const A = () => <B theme={{ primary: 'blue' }} />;

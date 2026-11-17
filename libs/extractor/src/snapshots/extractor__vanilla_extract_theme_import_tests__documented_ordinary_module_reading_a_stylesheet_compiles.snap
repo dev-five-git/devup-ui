@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/vanilla_extract_theme_import_tests.rs
+expression: output.code
+---
+import "@devup-ui/react/devup-ui-1.css";
+import { base, vars } from "./theme.css";
+import { PRIMARY } from "./tokens";
+export const button = "a-a b-a b-b";

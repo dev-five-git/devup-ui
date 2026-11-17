@@ -183,6 +183,7 @@ describe('devupUICssLoader', () => {
       p === portFile ? String(port) : '{}',
     )
 
+    const addDependency = mock()
     const result = await new Promise<string>((resolve, reject) => {
       const asyncCallback = mock((err: Error | null, content?: string) => {
         if (err) reject(err)
@@ -191,10 +192,12 @@ describe('devupUICssLoader', () => {
       devupUICssLoader.bind({
         async: () => asyncCallback,
         addContextDependency: mock(),
+        addDependency,
         getOptions: () => ({
           ...defaultOptions,
           watch: true,
           coordinatorPortFile: portFile,
+          themeFiles: ['/project/devup.json', '/project/app.css'],
         }),
         resourcePath: 'devup-ui-1.css',
       } as unknown as CssLoaderThis)(
@@ -205,6 +208,11 @@ describe('devupUICssLoader', () => {
     })
 
     expect(result).toBe('.a{color:red}')
+    // A theme edit re-fetches the sheet with its new variables.
+    expect(addDependency.mock.calls).toEqual([
+      ['/project/devup.json'],
+      ['/project/app.css'],
+    ])
 
     // NO WASM functions should be called
     expect(getCssSpy).not.toHaveBeenCalled()
