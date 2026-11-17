@@ -67,6 +67,16 @@ export interface CoordinatorOptions {
    * open. Defaults to 60000. Exposed for tests; the plugin omits it.
    */
   maxWaitMs?: number
+  /**
+   * Development only: the files the registered theme was read from, and how
+   * to register it again. Before each `/css` and `/extract` the coordinator
+   * re-registers the theme once one of those files changed, since Next does
+   * not reload next.config for devup.json. `reload` returns the new file list.
+   */
+  theme?: {
+    files: string[]
+    reload: () => string[]
+  }
 }
 
 export interface PrewarmedOutput {
@@ -123,6 +133,8 @@ export function takeExtractOutput(
 // for the same file are collapsed into 1 effective write.
 const writeChain = new Map<string, Promise<void>>()
 const latestContent = new Map<string, string>()
+/** The content of the write running for each path */
+const writingContent = new Map<string, string>()
 
 function safeWrite(path: string, content: string): Promise<void> {
   // Always record the most recent content for this path so a queued write
@@ -145,9 +157,12 @@ function safeWrite(path: string, content: string): Promise<void> {
           return
         }
         latestContent.delete(path)
-        writeFile(path, final, 'utf-8', (err) =>
-          err ? reject(err) : resolve(),
-        )
+        writingContent.set(path, final)
+        writeFile(path, final, 'utf-8', (err) => {
+          writingContent.delete(path)
+          if (err) reject(err)
+          else resolve()
+        })
       }),
   )
 
@@ -155,10 +170,20 @@ function safeWrite(path: string, content: string): Promise<void> {
   return next
 }
 
-// Best-effort drain of every pending write. Used on coordinator close so the
-// build process does not exit with stale files mid-flight.
+/** Wait for every pending serialized write to settle. */
 function flushPendingWrites(): Promise<void> {
   return Promise.allSettled([...writeChain.values()]).then(() => undefined)
+}
+
+/**
+ * Write the newest content of every path whose write is queued or still
+ * running, synchronously: `close` runs from `process.on('exit')`, where
+ * nothing asynchronous completes. Outside of `exit` the queued writes still
+ * run afterwards and write the same newest content again.
+ */
+function writePendingSync(): void {
+  for (const [path, content] of new Map([...writingContent, ...latestContent]))
+    writeFileSync(path, content, 'utf-8')
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -188,11 +213,23 @@ interface CachedExtract {
 
 const transformCache = new Map<string, CachedExtract>()
 
-function dependencyStamp(dependencies: string[] = []): string {
-  return dependencies
-    .map((dependency) => {
+interface ThemeWatch {
+  files: string[]
+  stamp: string
+  reload: () => string[]
+}
+
+let themeWatch: ThemeWatch | undefined
+
+/**
+ * What changes when one of the files is edited, added or deleted: a theme
+ * input, or a file an extraction read through the resolver.
+ */
+function fileStamp(files: string[] = []): string {
+  return files
+    .map((file) => {
       try {
-        const stats = statSync(resolve(dependency))
+        const stats = statSync(resolve(file))
         return `${stats.mtimeMs}:${stats.size}`
       } catch {
         return 'missing'
@@ -209,9 +246,20 @@ function cachedExtract(
   const cached = transformCache.get(filename)
   return cached?.code === code &&
     cached.relCssDir === relCssDir &&
-    cached.dependencies === dependencyStamp(cached.output.dependencies)
+    cached.dependencies === fileStamp(cached.output.dependencies)
     ? cached.output
     : undefined
+}
+
+/** Register the theme again when one of its input files has changed. */
+function refreshTheme(): void {
+  if (!themeWatch || fileStamp(themeWatch.files) === themeWatch.stamp) return
+  // Every cached extraction was made under the old theme. Even a reload that
+  // throws may have changed the registered theme, so drop them first.
+  transformCache.clear()
+  // A throwing reload keeps the old stamp, so the next request retries.
+  const files = themeWatch.reload()
+  themeWatch = { ...themeWatch, files, stamp: fileStamp(files) }
 }
 
 // Extraction tracking for waitForIdle.
@@ -437,6 +485,10 @@ export function startCoordinator(options: CoordinatorOptions): {
   extractedSources.clear()
   fileNumToBucket.clear()
   transformCache.clear()
+  themeWatch = options.theme && {
+    ...options.theme,
+    stamp: fileStamp(options.theme.files),
+  }
 
   // A deleted file is never extracted again, so its styles would stay in the
   // sheet; its importers are, once they stop importing it. A repeated
@@ -477,6 +529,14 @@ export function startCoordinator(options: CoordinatorOptions): {
       const importMainCss = url.searchParams.get('importMainCss') === 'true'
       const shouldWait = url.searchParams.get('waitForIdle') === 'true'
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
+
+      try {
+        refreshTheme()
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end(error instanceof Error ? error.message : String(error))
+        return
+      }
 
       if (shouldWait) {
         if (fileNum != null && fileNumToBucket.has(fileNum)) {
@@ -524,6 +584,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
+        refreshTheme()
         const repeated = extractedSources.has(filename)
         extractedSources.set(filename, resourcePath)
 
@@ -566,7 +627,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           transformCache.set(filename, {
             code,
             relCssDir,
-            dependencies: dependencyStamp(result.dependencies),
+            dependencies: fileStamp(result.dependencies),
             output: result,
           })
         }
@@ -762,16 +823,14 @@ export function startCoordinator(options: CoordinatorOptions): {
 
   return {
     close: () => {
-      // Fire-and-forget drain of any in-flight serialized writes so the
-      // last-written CSS reflects the final sheet state, even though
-      // `close` itself returns synchronously (it is invoked from
-      // `process.on('exit', ...)` where awaiting is not possible).
-      void flushPendingWrites()
       coordinatorServer.close()
       if (server === coordinatorServer) {
         server = null
         removeOwnPortFile(coordinatorPortFile)
       }
+      // The last CSS and state on disk must hold the final sheet, though
+      // `close` cannot await the writes still pending
+      writePendingSync()
     },
   }
 }
@@ -799,6 +858,8 @@ export const resetCoordinator = () => {
   canonicalMapRef = {}
   expectedBaseFiles = new Set()
   transformCache.clear()
+  themeWatch = undefined
   writeChain.clear()
   latestContent.clear()
+  writingContent.clear()
 }

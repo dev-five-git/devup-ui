@@ -49,14 +49,17 @@ const routes = [
  * its dev modules, and Chromium never reports some of the requests it aborts as
  * finished, so Playwright counts them against the English document and
  * networkidle never fires there. Follow the refresh, then settle the target in
- * a fresh document.
+ * a fresh document. The refresh can also abort the localized document before it
+ * loads, which fails `waitForURL`, so poll the URL instead.
  */
 async function open(page: Page, route: string, target: string) {
   if (route === target) {
     return page.goto(route, { waitUntil: 'networkidle' })
   }
   const response = await page.goto(route, { waitUntil: 'commit' })
-  await page.waitForURL(`http://localhost:3098${target}`, { waitUntil: 'load' })
+  await expect(page).toHaveURL(`http://localhost:3098${target}`, {
+    timeout: 60_000,
+  })
   await page.goto('about:blank')
   await page.goto(target, { waitUntil: 'networkidle' })
   return response

@@ -52,23 +52,58 @@ export interface DevupUIBunPluginOptions {
    * `false` in `Bun.build`.
    */
   debug?: boolean
+  /**
+   * Packages whose published `.js` files are compiled as well, as in the
+   * other plugins: a library that ships Devup UI components uncompiled.
+   * Each name matches that whole package (`pkg` is not `pkg-extra` or
+   * `@scope/pkg`), not the dependencies in its own `node_modules`.
+   */
+  include?: readonly string[]
 }
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
-async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
-  let theme = {}
+const SEPARATOR = '[\\/\\\\]'
+
+/**
+ * The files the plugin loads: TypeScript and JSX sources anywhere, `.js` under
+ * Devup UI, and `.js` of the packages in `include`. An included package is the
+ * directory right under the innermost `node_modules` (pnpm and Bun stores
+ * included), matched the way `createNodeModulesExcludeRegex` matches it.
+ */
+function createSourceFilter(include: readonly string[]): RegExp {
+  const sources = `\\.(?:tsx?|jsx|mjs)$|${SEPARATOR}@devup-ui${SEPARATOR}.*\\.js$`
+  if (include.length === 0) return new RegExp(sources)
+  const names = include
+    .map((name) =>
+      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', SEPARATOR),
+    )
+    .join('|')
+  return new RegExp(
+    `${sources}|${SEPARATOR}node_modules${SEPARATOR}(?!.*${SEPARATOR}node_modules${SEPARATOR})(?:${names})${SEPARATOR}.*\\.js$`,
+  )
+}
+
+/**
+ * Load devup.json into the compiler. The first load fails on a theme that
+ * cannot be loaded or registered: Bun runs once, and an empty theme would
+ * leave every token unstyled. A reload for a changed Tailwind CSS runs in a
+ * process that is already up, so it reports the error and clears the theme.
+ */
+async function writeDataFiles(
+  compiler: DevupCompiler,
+  reloading = false,
+): Promise<string[]> {
   let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = withTailwindCss(config.theme ?? {}, config)
     tailwindFiles = tailwindCssFiles(config)
+    compiler.registerTheme(withTailwindCss(config.theme ?? {}, config))
   } catch (error) {
-    // A broken devup.json clears the theme, as in the other plugins; the
-    // error says which file and how to fix it.
+    if (!reloading) throw error
     console.error(error)
+    compiler.registerTheme({})
   }
-  compiler.registerTheme(theme)
 
   // Generate theme interface after registration (always write, even if empty)
   await writeFile(
@@ -178,8 +213,8 @@ async function loadSourceFile(
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
   const compiler = loadCompiler(options.engine)
-  const watchTailwindCss = createTailwindWatcher(
-    writeDataFiles.bind(undefined, compiler),
+  const watchTailwindCss = createTailwindWatcher(() =>
+    writeDataFiles(compiler, true),
   )
   return {
     name: 'devup-ui',
@@ -273,9 +308,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
 
       // Load source files from packages directory (file namespace)
       build.onLoad(
-        {
-          filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
-        },
+        { filter: createSourceFilter(options.include ?? []) },
         ({ path }) => {
           if (reservationPending) {
             reserveFiles()
