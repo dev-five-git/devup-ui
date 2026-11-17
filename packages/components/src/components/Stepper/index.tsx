@@ -2,7 +2,13 @@
 
 import { css, Flex } from '@devup-ui/react'
 import clsx from 'clsx'
-import { ComponentProps, createContext, useContext, useState } from 'react'
+import {
+  ComponentPropsWithoutRef,
+  createContext,
+  forwardRef,
+  useContext,
+  useState,
+} from 'react'
 
 import { Button } from '../Button'
 import { Input } from '../Input'
@@ -69,15 +75,23 @@ function Stepper({
   )
 }
 
-function StepperContainer(props: ComponentProps<'div'>) {
-  return <Flex alignItems="center" gap="8px" styleOrder={1} {...props} />
-}
+// forwardRef: React 18 does not pass `ref` to a function component as a prop
+const StepperContainer = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<'div'>
+>(function StepperContainer(props, ref) {
+  return (
+    <Flex ref={ref} alignItems="center" gap="8px" styleOrder={1} {...props} />
+  )
+})
 
-function StepperDecreaseButton({
-  onClick,
-  disabled: disabledProp,
-  ...props
-}: ComponentProps<typeof Button>) {
+const StepperDecreaseButton = forwardRef<
+  HTMLButtonElement,
+  ComponentPropsWithoutRef<typeof Button>
+>(function StepperDecreaseButton(
+  { onClick, disabled: disabledProp, ...props },
+  ref,
+) {
   const stepper = useStepper()
   const { value, min } = stepper
   const disabled = value <= min
@@ -90,6 +104,7 @@ function StepperDecreaseButton({
         borderRadius: '4px',
       })}
       {...props}
+      ref={ref}
       disabled={disabled || disabledProp}
       onClick={(e) => {
         onClick?.(e)
@@ -105,13 +120,15 @@ function StepperDecreaseButton({
       />
     </Button>
   )
-}
+})
 
-function StepperIncreaseButton({
-  onClick,
-  disabled: disabledProp,
-  ...props
-}: ComponentProps<typeof Button>) {
+const StepperIncreaseButton = forwardRef<
+  HTMLButtonElement,
+  ComponentPropsWithoutRef<typeof Button>
+>(function StepperIncreaseButton(
+  { onClick, disabled: disabledProp, ...props },
+  ref,
+) {
   const stepper = useStepper()
   const { value, max } = stepper
   const disabled = value >= max
@@ -127,6 +144,7 @@ function StepperIncreaseButton({
         },
       })}
       {...props}
+      ref={ref}
       disabled={disabled || disabledProp}
       onClick={(e) => {
         onClick?.(e)
@@ -142,9 +160,9 @@ function StepperIncreaseButton({
       />
     </Button>
   )
-}
+})
 
-type StepperInputProps = ComponentProps<typeof Input>
+type StepperInputProps = ComponentPropsWithoutRef<typeof Input>
 
 const notEditableClass = css({
   p: '0',
@@ -180,39 +198,44 @@ function outputProps(props: StepperInputProps) {
   )
 }
 
-function StepperInput({ className, onChange, ...props }: StepperInputProps) {
-  const stepper = useStepper()
-  const { value, type } = stepper
+/** The ref is the `<input>`, or the `<output>` of a `type="text"` stepper */
+const StepperInput = forwardRef<HTMLElement, StepperInputProps>(
+  function StepperInput({ className, onChange, ...props }, ref) {
+    const stepper = useStepper()
+    const { value, type } = stepper
 
-  if (type === 'text')
+    if (type === 'text')
+      return (
+        <output
+          ref={ref as React.Ref<HTMLOutputElement>}
+          aria-label="Stepper value"
+          className={clsx(stepperValueClass, notEditableClass, className)}
+          data-value={value}
+          {...outputProps(props)}
+        >
+          {Number(value).toString()}
+        </output>
+      )
+
     return (
-      <output
+      <Input
         aria-label="Stepper value"
-        className={clsx(stepperValueClass, notEditableClass, className)}
+        className={clsx(stepperValueClass, className)}
         data-value={value}
-        {...outputProps(props)}
-      >
-        {Number(value).toString()}
-      </output>
+        {...props}
+        ref={ref as React.Ref<HTMLInputElement>}
+        allowClear={false}
+        onChange={(e) => {
+          onChange?.(e)
+          if (!e.defaultPrevented) stepper.setValue(Number(e.target.value))
+        }}
+        type="number"
+        // Fix prefix 0 issue
+        value={value.toString()}
+      />
     )
-
-  return (
-    <Input
-      aria-label="Stepper value"
-      className={clsx(stepperValueClass, className)}
-      data-value={value}
-      {...props}
-      allowClear={false}
-      onChange={(e) => {
-        onChange?.(e)
-        if (!e.defaultPrevented) stepper.setValue(Number(e.target.value))
-      }}
-      type="number"
-      // Fix prefix 0 issue
-      value={value.toString()}
-    />
-  )
-}
+  },
+)
 export {
   Stepper,
   StepperContainer,

@@ -428,6 +428,7 @@ fn exact_array_spreads_keep_element_order_and_empty_spreads(
         option: &option,
         exports: FxHashMap::default(),
         loading: vec![],
+        read: Default::default(),
     };
 
     let Some(Constant::Array(values)) = scope.evaluate(&mut modules, &statement.expression) else {
@@ -480,6 +481,7 @@ fn referenced_local_shapes_reject_eager_tdz_and_keep_safe_controls(
             option: &option,
             exports: FxHashMap::default(),
             loading: vec![],
+            read: Default::default(),
         };
         let mut found = Vec::new();
         let mut shapes = FxHashMap::default();

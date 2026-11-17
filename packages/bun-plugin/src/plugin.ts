@@ -56,19 +56,26 @@ export interface DevupUIBunPluginOptions {
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 
-async function writeDataFiles(compiler: DevupCompiler): Promise<string[]> {
-  let theme = {}
+/**
+ * Load devup.json into the compiler. The first load fails on a theme that
+ * cannot be loaded or registered: Bun runs once, and an empty theme would
+ * leave every token unstyled. A reload for a changed Tailwind CSS runs in a
+ * process that is already up, so it reports the error and clears the theme.
+ */
+async function writeDataFiles(
+  compiler: DevupCompiler,
+  reloading = false,
+): Promise<string[]> {
   let tailwindFiles: string[] = []
   try {
     const config = await loadDevupConfig(devupFile)
-    theme = withTailwindCss(config.theme ?? {}, config)
     tailwindFiles = tailwindCssFiles(config)
+    compiler.registerTheme(withTailwindCss(config.theme ?? {}, config))
   } catch (error) {
-    // A broken devup.json clears the theme, as in the other plugins; the
-    // error says which file and how to fix it.
+    if (!reloading) throw error
     console.error(error)
+    compiler.registerTheme({})
   }
-  compiler.registerTheme(theme)
 
   // Generate theme interface after registration (always write, even if empty)
   await writeFile(
@@ -178,8 +185,8 @@ async function loadSourceFile(
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
   const compiler = loadCompiler(options.engine)
-  const watchTailwindCss = createTailwindWatcher(
-    writeDataFiles.bind(undefined, compiler),
+  const watchTailwindCss = createTailwindWatcher(() =>
+    writeDataFiles(compiler, true),
   )
   return {
     name: 'devup-ui',

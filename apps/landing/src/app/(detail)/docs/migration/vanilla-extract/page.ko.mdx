@@ -31,6 +31,8 @@ export const base = style({ padding: 8 })
 
 숫자는 스타일시트와 일반 모듈 모두에서 vanilla-extract와 같은 의미를 유지합니다. `padding: 8`은 `8px`이 되고, `lineHeight`나 `zIndex`처럼 단위가 없는 속성은 작성한 그대로 유지됩니다. vanilla-extract와 마찬가지로 시간 값에 숫자를 쓰면 `px`가 붙으므로(`transitionDuration: 300`은 `300px`이 되어 브라우저가 무시합니다) 시간은 `transitionDuration: '300ms'`처럼 단위와 함께 작성하세요.
 
+`debugId`는 `createVar`, `createContainer`, `layer`, `fontFace`, `createTheme`가 생성하는 이름에 쓰입니다. 클래스 이름은 Devup UI가 만들므로, 플러그인의 `debug` 옵션을 켜면 `style(rule, 'root')`는 읽기 쉬운 클래스 옆에 `root-0-0` 같은 클래스를 더하고, `styleVariants(variants, 'tone')`은 vanilla-extract처럼 `primary` variant에 `tone_primary-0-1`을 더합니다. 이 클래스는 아무 스타일도 갖지 않으며 `debug` 없이 빌드하면 붙지 않습니다. `keyframes`는 `debugId`를 받지만 무시합니다. 그 이름은 Devup UI가 만들며 `debug`를 켜면 읽기 쉬워집니다.
+
 스타일시트는 다른 스타일시트와 일반 모듈(ES 모듈 또는 CommonJS)을 import할 수 있으며, 이들은 번들러와 같은 방식(상대 경로, `tsconfig` `paths`, 패키지)으로 해석됩니다. import된 스타일시트는 번들러가 추출하는 방식 그대로 추출되므로, 내보내는 클래스 이름과 커스텀 속성은 해당 스타일시트의 CSS에서 사용하는 것과 같습니다. 또한 그 CSS가 로드되도록 import하는 쪽의 import 구문은 유지됩니다.
 
 ```ts
@@ -104,7 +106,7 @@ export const button = "b c";
 
 `button`에는 충돌하는 red 클래스가 포함되지 않습니다. 빌드 시점에 알 수 없는 외부 클래스는 여전히 CSS 캐스케이드를 따르며, 클래스 이름 문자열의 순서가 덮어쓰기 규칙이 되지는 않습니다.
 
-일반 모듈 추출은 생성된 커스텀 속성을 알아내기 위해 vanilla-extract 테마 계약을 실행하지 **않습니다**. 계약과 이를 사용하는 스타일은 `.css.ts` / `.css.js`에 함께 두세요. 예를 들어 이 페이지 상단의 스타일시트 예제를 일반 `theme.ts` 모듈로 저장하면 유효하지 않습니다:
+일반 모듈 추출은 생성된 커스텀 속성을 알아내기 위해 그 모듈에 선언된 vanilla-extract 테마 계약을 실행하지 **않습니다**. 계약과 테마는 `.css.ts` / `.css.js`에 선언하세요. 예를 들어 이 페이지 상단의 스타일시트 예제를 일반 `theme.ts` 모듈로 저장하면 유효하지 않습니다:
 
 ```ts
 // theme.ts (스타일시트 파일이 아님)
@@ -121,7 +123,7 @@ export const box = style({ background: vars.colors.bg })
 `css()` cannot use `vars.colors.bg` at build time: its values must be literals, theme tokens or constants, or be computed from them
 ```
 
-마찬가지로 위의 두 파일 스타일시트 예제도 같은 import가 일반 `.ts` 모듈에서 동작한다고 보장하지 않습니다:
+하지만 일반 모듈은 스타일시트가 내보내는 값을 import할 수 있습니다. 빌드는 import된 `.css.ts` / `.css.js`를 번들러가 추출하는 방식 그대로 추출하고, 그 export를 스타일시트 자신의 CSS가 쓰는 리터럴로 읽습니다: `createThemeContract`, `createTheme`, `createGlobalTheme`의 vars 객체, 테마 클래스, `createVar` 변수, `style` 클래스 이름이 여기에 해당합니다. 따라서 위의 두 파일 예제는 일반 모듈에서도 동작합니다:
 
 ```ts
 // button.ts (스타일시트 파일이 아님)
@@ -133,13 +135,13 @@ import { PRIMARY } from './tokens'
 export const button = style([base, { color: PRIMARY, margin: vars.space }])
 ```
 
-`theme.css.ts`와 `tokens.ts`를 해석할 수 있더라도, 이 예제를 빌드하면 7번째 줄 23번째 열의 테마 변수 읽기 위치와 함께 다음 메시지가 보고됩니다:
+`vars.space`는 `theme.css.ts`가 선언한 커스텀 속성(`margin: var(--space-…)`)으로 읽히고, `base`는 `theme.css.ts`가 생성한 클래스를 그대로 더합니다. `./theme.css` import는 남으므로 그 CSS가 로드되며, 이 파일이나 이 파일이 읽는 파일이 바뀌면 `button.ts`가 다시 빌드됩니다.
+
+이렇게 읽히는 것은 스타일시트의 export뿐입니다. 추출 중 예외를 던지는 스타일시트나, 빌드가 리터럴로 읽을 수 없는 export를 읽으면 여전히 위치가 표시된 오류가 보고됩니다:
 
 ```text
 `css()` cannot use `vars.space` at build time: its values must be literals, theme tokens or constants, or be computed from them
 ```
-
-이 모듈을 `button.css.ts`로 옮기고, 스타일과 테마 값은 유효한 스타일시트 모듈에서 내보내세요. 일반 모듈은 해석할 수 있는 리터럴 상수를 읽을 수 있지만, 그렇다고 생성된 테마 객체가 일반 리터럴 상수가 되는 것은 아닙니다. 빌드 시점에 알 수 있는 조합과, 일반 모듈 경로에서 해석할 수 없는 테마 변수 읽기를 혼동하지 마세요.
 
 나머지 API는 스타일시트 파일 밖에서 `@vanilla-extract/css` import로 그대로 남습니다. 예를 들어 `createVar()`와 `styleVariants()`는 같은 모듈의 `style()` 호출이 변환되더라도 해당 패키지에 대한 호출로 남으며, 일반 모듈 추출 경로에서 평가되지 않습니다.
 
