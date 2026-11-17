@@ -95,9 +95,10 @@ type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
 const SEPARATOR = '[\\/\\\\]'
 
 /**
- * The files the plugin loads: TypeScript and JSX sources anywhere, `.js` and
- * `.cjs` outside `node_modules`, and `.js` and `.cjs` of Devup UI and of the
- * packages in `include`. A package is the directory right under the innermost
+ * The files the plugin loads: TypeScript (`.mts` and `.cts` included) and JSX
+ * sources anywhere, `.js` and `.cjs` outside `node_modules`, and `.js` and
+ * `.cjs` of Devup UI and of the packages in `include`, in `Bun.build` and
+ * under the runtime alike. A package is the directory right under the innermost
  * `node_modules` (pnpm and Bun stores included), matched the way
  * `createNodeModulesExcludeRegex` matches it.
  */
@@ -110,8 +111,53 @@ function createSourceFilter(include: readonly string[]): RegExp {
   ].join('|')
   const nodeModules = `${SEPARATOR}node_modules${SEPARATOR}`
   return new RegExp(
-    `\\.(?:[cm]?tsx?|jsx|mjs)$|^(?!.*${nodeModules}).*\\.c?js$|${nodeModules}(?!.*${nodeModules})(?:${packages})${SEPARATOR}.*\\.c?js$`,
+    `\\.(?:[mc]?ts|tsx|jsx|mjs)$|^(?!.*${nodeModules}).*\\.c?js$|${nodeModules}(?!.*${nodeModules})(?:${packages})${SEPARATOR}.*\\.c?js$`,
   )
+}
+
+/**
+ * The `exports` conditions Bun resolves an import with: those of its target
+ * (`browser` by default for `Bun.build`, `bun` under the runtime) and the
+ * configured `conditions`
+ */
+export function bunConditions(
+  config: Pick<Bun.BuildConfig, 'target' | 'conditions'> | undefined,
+): string[] {
+  const target = config ? (config.target ?? 'browser') : 'bun'
+  return [
+    'import',
+    'module',
+    ...{ browser: ['browser'], node: ['node'], bun: ['bun', 'node'] }[target],
+    ...[config?.conditions ?? []].flat(),
+  ]
+}
+
+/**
+ * `code` followed by a bare import of each build-time dependency, so that
+ * Bun's module graph, and with it its watcher, keeps the modules whose values
+ * the extractor inlined. Appended, the imports move no line or column of the
+ * extracted code.
+ */
+export function withDependencyImports(
+  code: string,
+  filePath: string,
+  dependencies: readonly string[],
+): string {
+  return [
+    code,
+    ...[...new Set(dependencies)].map((dependency) => {
+      const path = relative(dirname(filePath), dependency).replaceAll('\\', '/')
+      return `import ${JSON.stringify(path.startsWith('.') ? path : `./${path}`)};`
+    }),
+  ].join('\n')
+}
+
+/** Bun's loader for a source file */
+function sourceLoader(filePath: string): SourceLoader {
+  if (filePath.endsWith('.tsx')) return 'tsx'
+  if (/\.[mc]?ts$/.test(filePath)) return 'ts'
+  if (filePath.endsWith('.jsx')) return 'jsx'
+  return 'js'
 }
 
 /**
@@ -159,11 +205,12 @@ async function initialize(
   shorthands: Record<string, readonly string[]>,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
   project: BunProject,
+  conditions: readonly string[],
 ) {
   const { distDir } = project
   compiler.registerShorthands(shorthands)
   compiler.setPrefix(null)
-  compiler.setModuleResolver(createModuleResolver())
+  compiler.setModuleResolver(createModuleResolver({ conditions }))
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(
@@ -201,17 +248,6 @@ function importsCompiledPackage(
   }
 }
 
-/** Bun's loader for a source file */
-function sourceLoader(filePath: string): SourceLoader {
-  return filePath.endsWith('.tsx')
-    ? 'tsx'
-    : /\.[cm]?ts$/.test(filePath)
-      ? 'ts'
-      : filePath.endsWith('.jsx')
-        ? 'jsx'
-        : 'js'
-}
-
 // Synchronous: Bun cannot `require()` a module whose `onLoad` is async
 function loadSourceFile(
   compiler: DevupCompiler,
@@ -222,6 +258,7 @@ function loadSourceFile(
   const loader = sourceLoader(filePath)
   let contents = readFileSync(filePath, 'utf-8')
   let stylesheet: string | undefined
+  let dependencies: readonly string[] = []
 
   if (
     isProjectJsx(filePath, importAliases) ||
@@ -252,13 +289,20 @@ function loadSourceFile(
       writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
     contents = code.code
     stylesheet = `${cssImportDir}/devup-ui.css`
+    dependencies = code.dependencies
   }
   // `Bun.build` bundles the CommonJS it is handed; the runtime does not run it
   const commonJs = bundling
     ? undefined
     : commonJsSource(filePath, contents, loader, stylesheet)
+  // The dependency imports go to ES modules only: an `import` would make
+  // CommonJS an ES module again and lose its exports. (The extractor reads
+  // dependencies through `import`, so CommonJS has none today.)
   return commonJs === undefined
-    ? { contents, loader }
+    ? {
+        contents: withDependencyImports(contents, filePath, dependencies),
+        loader,
+      }
     : { contents: commonJs, loader: 'js' as const }
 }
 
@@ -293,7 +337,13 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
-      await initialize(compiler, shorthands, watchTailwindCss, project)
+      await initialize(
+        compiler,
+        shorthands,
+        watchTailwindCss,
+        project,
+        bunConditions(build.config),
+      )
       const debug = options.debug ?? !bundling
       compiler.setDebug(debug)
       const slots = createSharedSlotReservation(compiler)
@@ -374,9 +424,10 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         },
       )
 
-      // Load every TypeScript and JavaScript source, ES module or CommonJS.
-      // JavaScript in node_modules is left to Bun, except Devup UI's own and
-      // that of the packages in `include`.
+      // Load every TypeScript and JavaScript source, ES module or CommonJS,
+      // in `Bun.build` and under the runtime alike. JavaScript in
+      // node_modules is left to Bun, except Devup UI's own and that of the
+      // packages in `include`.
       build.onLoad(
         { filter: createSourceFilter(options.include ?? []) },
         ({ path }) => {

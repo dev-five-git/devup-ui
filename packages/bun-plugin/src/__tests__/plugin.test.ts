@@ -17,7 +17,7 @@ import {
 } from 'bun:test'
 
 import { bunRegistration } from '../../../../bun.setup'
-import { DevupUI, register } from '../plugin'
+import { bunConditions, DevupUI, register } from '../plugin'
 import { captureBunHooks } from './captured-hooks.test-support'
 
 const selectCompiler = pluginUtils.loadCompiler
@@ -122,6 +122,32 @@ async function load(path: string, namespace = 'file') {
     defer: async () => {},
   })
 }
+
+describe('bunConditions', () => {
+  it('resolves with the conditions of the target and the configured ones', () => {
+    expect(bunConditions(undefined)).toEqual([
+      'import',
+      'module',
+      'bun',
+      'node',
+    ])
+    expect(bunConditions({})).toEqual(['import', 'module', 'browser'])
+    expect(bunConditions({ target: 'node', conditions: 'worker' })).toEqual([
+      'import',
+      'module',
+      'node',
+      'worker',
+    ])
+    expect(bunConditions({ target: 'bun', conditions: ['a', 'b'] })).toEqual([
+      'import',
+      'module',
+      'bun',
+      'node',
+      'a',
+      'b',
+    ])
+  })
+})
 
 describe('registered Bun hooks', () => {
   it('compiles default runtime input into native state without mutating WASM', async () => {
@@ -296,6 +322,52 @@ describe('registered Bun hooks', () => {
     expect(writeSync).not.toHaveBeenCalled()
   })
 
+  it('bundles the project .js and .cjs modules and leaves packages to Bun', async () => {
+    const dir = join(root, 'local-scripts')
+    await Bun.write(
+      join(dir, 'entry.ts'),
+      "import { view } from './view.js'; import { lib } from 'lib'; export { view, lib }",
+    )
+    await Bun.write(
+      join(dir, 'view.js'),
+      "import { css } from '@devup-ui/react'; export const view = css({ color: 'orange' })",
+    )
+    await Bun.write(
+      join(dir, 'node_modules/lib/package.json'),
+      JSON.stringify({ name: 'lib', main: 'index.js' }),
+    )
+    await Bun.write(
+      join(dir, 'node_modules/lib/index.js'),
+      'export const lib = 1',
+    )
+    const result = await Bun.build({
+      entrypoints: [join(dir, 'entry.ts')],
+      target: 'bun',
+      outdir: join(dir, 'out'),
+      plugins: [DevupUI({ engine: 'wasm' })],
+    })
+    expect(result.success).toBe(true)
+    const outputs = await Promise.all(
+      result.outputs.map((output) => output.text()),
+    )
+    expect(outputs.join('')).toMatch(/color:\s*orange/)
+    expect(outputs.join('')).not.toContain('css(')
+  })
+
+  it('keeps the build-time dependencies of a source in its module graph', async () => {
+    await Bun.write(join(root, 'dep-tokens.ts'), "export const color = 'red'")
+    const path = join(root, 'dep-source.ts')
+    await Bun.write(
+      path,
+      "import { css } from '@devup-ui/react'; import { color } from './dep-tokens'; export const c = css({ color })",
+    )
+    await register({ engine: 'wasm' })
+    const result = await load(path)
+    if (!result || !('contents' in result))
+      throw new Error('Expected transformed source contents')
+    expect(result.contents).toEndWith('\nimport "./dep-tokens.ts";')
+  })
+
   it('creates cold directories before writing configuration and CSS', async () => {
     await register({ engine: 'wasm' })
     expect(mkdir).toHaveBeenCalledWith('df', { recursive: true })
@@ -415,6 +487,8 @@ describe('registered Bun hooks', () => {
   for (const [extension, loader] of [
     ['tsx', 'tsx'],
     ['ts', 'ts'],
+    ['mts', 'ts'],
+    ['cts', 'ts'],
     ['jsx', 'jsx'],
     ['mjs', 'js'],
     ['js', 'js'],

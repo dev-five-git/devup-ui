@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "New `createSession()`, `selectSession(id)` and `dropSession(id)` exports on the WASM and native engines: a session is an engine state of its own (numbering, sheet, theme, settings and module resolver), and every call works on the selected one. Session 0 is selected from the start. `selectSession` and `dropSession` throw a `TypeError` for an id that is not an unsigned 32-bit integer, and an `Error` for an unknown session or for dropping session 0",
+  "date": "2026-11-15T00:00:00.000Z"
+}

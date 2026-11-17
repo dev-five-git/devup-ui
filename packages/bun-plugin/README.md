@@ -65,8 +65,9 @@ Class names are short in `Bun.build` and readable under the runtime; pass
 `.ts`, `.mts`, `.cts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever
 they are, and `.js` and `.cjs` files outside `node_modules`, inside
 `@devup-ui` packages and inside the packages you list in `include`, as in the
-other plugins. The `.js` and `.cjs` files of other packages in `node_modules`
-are left to Bun.
+other plugins. Outside `node_modules` includes a linked workspace package
+Bun resolves to its real path. The `.js` and `.cjs` files of other packages in
+`node_modules` are left to Bun.
 
 ES modules and CommonJS are both supported, under the runtime as in
 `Bun.build`. A `.cjs`, `.cts` or `.js` file written with `require`,
