@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'bun:test'
 
@@ -40,9 +40,21 @@ exports.seen = require('./cycle-b.cjs').seen
 `,
   'syntax.cjs': `export const kind = 'module syntax'
 `,
+  // A CommonJS library the child lists in `include`
+  'node_modules/cjs-lib/index.js': `const { css } = require('@devup-ui/react')
+module.exports = { cls: css({ color: '#131415' }), name: 'cjs-lib' }
+`,
 }
 const files = Object.keys(sources).filter((file) => file !== 'cycle-b.cjs')
-const colors = ['010203', '040506', '070809', '0A0B0C', '0D0E0F', '101112']
+const colors = [
+  '010203',
+  '040506',
+  '070809',
+  '0A0B0C',
+  '0D0E0F',
+  '101112',
+  '131415',
+]
 
 const roots: string[] = []
 afterAll(() => {
@@ -54,8 +66,10 @@ function fixture() {
   roots.push(root)
   writeFileSync(join(root, 'bunfig.toml'), '')
   writeFileSync(join(root, 'devup.json'), '{}')
-  for (const [file, source] of Object.entries(sources))
+  for (const [file, source] of Object.entries(sources)) {
+    mkdirSync(dirname(join(root, file)), { recursive: true })
     writeFileSync(join(root, file), source)
+  }
   // The runtime stub a `require()` the extractor keeps loads
   const react = join(root, 'node_modules', '@devup-ui', 'react')
   mkdirSync(react, { recursive: true })
@@ -146,6 +160,7 @@ describe.each(['require-first', 'import-first'])('Bun runtime, %s', (order) => {
         imported: { kind: 'module syntax' },
         same: false,
       },
+      'node_modules/cjs-lib/index.js': commonJs({ ...styled, name: 'cjs-lib' }),
     })
     // Every module's class is in the stylesheet, with its color
     const classes = Object.values(results).flatMap(({ required }) =>

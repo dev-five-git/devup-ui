@@ -53,9 +53,39 @@ export interface DevupUIBunPluginOptions {
    * `false` in `Bun.build`.
    */
   debug?: boolean
+  /**
+   * Packages whose published `.js` and `.cjs` files are compiled as well, as
+   * in the other plugins: a library that ships Devup UI components
+   * uncompiled, as ES modules or CommonJS.
+   * Each name matches that whole package (`pkg` is not `pkg-extra` or
+   * `@scope/pkg`), not the dependencies in its own `node_modules`.
+   */
+  include?: readonly string[]
 }
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
+
+const SEPARATOR = '[\\/\\\\]'
+
+/**
+ * The files the plugin loads: TypeScript and JSX sources anywhere, `.js` and
+ * `.cjs` outside `node_modules`, and `.js` and `.cjs` of Devup UI and of the
+ * packages in `include`. A package is the directory right under the innermost
+ * `node_modules` (pnpm and Bun stores included), matched the way
+ * `createNodeModulesExcludeRegex` matches it.
+ */
+function createSourceFilter(include: readonly string[]): RegExp {
+  const packages = [
+    '@devup-ui',
+    ...include.map((name) =>
+      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', SEPARATOR),
+    ),
+  ].join('|')
+  const nodeModules = `${SEPARATOR}node_modules${SEPARATOR}`
+  return new RegExp(
+    `\\.(?:[cm]?tsx?|jsx|mjs)$|^(?!.*${nodeModules}).*\\.c?js$|${nodeModules}(?!.*${nodeModules})(?:${packages})${SEPARATOR}.*\\.c?js$`,
+  )
+}
 
 /**
  * Load devup.json into the compiler. The first load fails on a theme that
@@ -298,12 +328,10 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       )
 
       // Load every TypeScript and JavaScript source, ES module or CommonJS.
-      // JavaScript in node_modules is left to Bun, except Devup UI's own.
+      // JavaScript in node_modules is left to Bun, except Devup UI's own and
+      // that of the packages in `include`.
       build.onLoad(
-        {
-          filter:
-            /\.(?:[cm]?tsx?|jsx|mjs)$|^(?![^]*[\\/]node_modules[\\/])[^]*\.c?js$|[\\/]node_modules[\\/]@devup-ui[\\/](?![^]*[\\/]node_modules[\\/])[^]*\.c?js$/,
-        },
+        { filter: createSourceFilter(options.include ?? []) },
         ({ path }) => {
           if (reservationPending) {
             reserveFiles()

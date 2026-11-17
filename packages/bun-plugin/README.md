@@ -63,9 +63,10 @@ Class names are short in `Bun.build` and readable under the runtime; pass
 ## Compiled Files
 
 `.ts`, `.mts`, `.cts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever
-they are, and `.js` and `.cjs` files outside `node_modules` and inside
-`@devup-ui` packages. The `.js` and `.cjs` files of other packages in
-`node_modules` are left to Bun.
+they are, and `.js` and `.cjs` files outside `node_modules`, inside
+`@devup-ui` packages and inside the packages you list in `include`, as in the
+other plugins. The `.js` and `.cjs` files of other packages in `node_modules`
+are left to Bun.
 
 ES modules and CommonJS are both supported, under the runtime as in
 `Bun.build`. A `.cjs`, `.cts` or `.js` file written with `require`,
@@ -80,6 +81,23 @@ exports its `module.exports`. `require()` returns `module.exports`, and
 `import` gets it as `default` (`exports.default` when `__esModule` is set)
 along with its named exports. `.jsx` and `.tsx` files are ES modules, as Bun
 reads them.
+
+## Libraries
+
+List a library that ships Devup UI components as compiled `.js` or `.cjs` in
+`include`:
+
+```ts
+DevupUI({ include: ['my-design-system'] })
+// or, under the runtime
+await register({ include: ['my-design-system'] })
+```
+
+Each name matches that whole package (`my-lib` is not `my-lib-extra` or
+`@scope/my-lib`), including in pnpm and Bun stores, but not the dependencies
+in its own `node_modules`. Its files go through the same path as your own, so
+a package that publishes ES modules or CommonJS keeps its exports under the
+runtime as in `Bun.build`.
 
 ## Compiler Engine
 

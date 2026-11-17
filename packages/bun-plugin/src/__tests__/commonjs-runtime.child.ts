@@ -11,7 +11,7 @@ const [root, order, ...files] = process.argv.slice(2)
 if (!root) throw new Error('Expected a fixture root')
 const importFirst = order === 'import-first'
 process.chdir(root)
-await register({ engine: 'wasm' })
+await register({ engine: 'wasm', include: ['cjs-lib'] })
 
 function describe(value: unknown): unknown {
   if (typeof value === 'function') return { function: value() }
