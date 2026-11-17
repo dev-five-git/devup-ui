@@ -21,13 +21,13 @@ use oxc_ast::ast::{
     Argument, ArrowFunctionBody, BindingIdentifier, CallExpression, ComputedMemberExpression,
     Expression, IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier,
     JSXAttributeItem, JSXAttributeValue, JSXElement, JSXElementName, JSXOpeningElement,
-    LogicalOperator, ModuleExportName, ObjectPropertyKind, Statement,
+    LogicalOperator, ModuleExportName, ObjectPropertyKind, Statement, VariableDeclarator,
 };
 use oxc_ast_visit::{
     Visit,
     walk::{
         walk_call_expression, walk_computed_member_expression, walk_jsx_element,
-        walk_jsx_opening_element,
+        walk_jsx_opening_element, walk_variable_declarator,
     },
 };
 use oxc_parser::Parser;
@@ -72,9 +72,22 @@ struct LibraryNumbers {
     /// Where a constant inlined later is a number or rules of the library, as
     /// the source reads them
     marks: Vec<(usize, usize)>,
+    /// The references that are the whole value of a `css` prop
+    css_reads: rustc_hash::FxHashSet<oxc_syntax::reference::ReferenceId>,
 }
 
 impl LibraryNumbers {
+    /// Whether `symbol` is a `const` code reads, and only as the whole value of
+    /// `css` props
+    fn read_only_as_css(&self, symbol: SymbolId) -> bool {
+        let references = self.scoping.get_resolved_reference_ids(symbol);
+        self.scoping.symbol_flags(symbol).is_const_variable()
+            && !references.is_empty()
+            && references
+                .iter()
+                .all(|reference| self.css_reads.contains(reference))
+    }
+
     fn symbol(&self, reference: &IdentifierReference<'_>) -> Option<SymbolId> {
         self.scoping
             .get_reference(reference.reference_id.get()?)
@@ -418,6 +431,25 @@ impl<'a> Visit<'a> for LibraryNumbers {
             }
         }
         walk_call_expression(self, call);
+    }
+
+    /// A `const` choosing among rules that only `css` props read holds
+    /// Emotion's rules, which the build compiles where it is declared
+    fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
+        if let Some(init) = &declarator.init
+            && matches!(
+                crate::utils::unwrap_syntax_only(init),
+                Expression::ConditionalExpression(_) | Expression::LogicalExpression(_)
+            )
+            && declarator
+                .id
+                .get_binding_identifier()
+                .and_then(|id| id.symbol_id.get())
+                .is_some_and(|symbol| self.read_only_as_css(symbol))
+        {
+            self.pixelify_css(init);
+        }
+        walk_variable_declarator(self, declarator);
     }
 
     /// `styled['div']` builds what `styled.div` does, so it is written so
@@ -872,8 +904,26 @@ pub fn transform_import_aliases_with_edits<'a>(
             }
         }
     }
-    numbers.scoping = scoping.unwrap_or_default();
     numbers.css_prop = CssProp::of(import_aliases, code, uses_emotion);
+    // The bindings `css` props read are resolved even in a file importing
+    // nothing the build redirects
+    numbers.scoping = match scoping {
+        Some(scoping) => scoping,
+        None if numbers.css_prop != CssProp::Off => SemanticBuilder::new()
+            .build(&program)
+            .semantic
+            .into_scoping(),
+        None => Scoping::default(),
+    };
+    if numbers.css_prop != CssProp::Off {
+        let css_reads = crate::visit::css_prop_reads(&program, &|name| {
+            numbers.css_prop.takes(name, |_| {
+                crate::imported_constants::jsx_root_identifier(name)
+                    .is_some_and(|root| numbers.contains(&numbers.devup, root))
+            })
+        });
+        numbers.css_reads = css_reads;
+    }
     if !(numbers.calls.is_empty()
         && numbers.styled.is_empty()
         && numbers.components.is_empty()

@@ -105,6 +105,13 @@ impl<'a> StyleValues<'a> {
             .is_some_and(|scoping| scoping.symbol_scope_id(symbol) != scoping.root_scope_id())
     }
 
+    /// Whether code reads `symbol`
+    pub fn is_read(&self, symbol: SymbolId) -> bool {
+        self.scoping
+            .as_ref()
+            .is_some_and(|scoping| !scoping.get_resolved_reference_ids(symbol).is_empty())
+    }
+
     /// Whether every read of `symbol` is one of `references`
     pub fn read_only_by(
         &self,
