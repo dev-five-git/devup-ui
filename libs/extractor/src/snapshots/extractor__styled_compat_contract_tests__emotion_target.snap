@@ -8,8 +8,13 @@ function __devupOmit0(__devupOmitted) {
 	return Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k[0] !== "$" && k !== "theme"));
 }
 const __devupStyled = (c) => (c.styledComponentId = "devup", c);
-export const Card = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a e1card a-a ${className}` : "a--a e1card a-a"} style={style} />)), { __devupBase: __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a ${className}` : "a--a a-a"} style={style} />)) });
-export const Wide = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--b a--a a-b a-a ${className}` : "a--b a--a a-b a-a"} style={style} />));
+const __devupAs = (c, t) => __devupStyled(__devupForwardRef((p, r) => c.render({
+	...p,
+	as: p.as || t
+}, r)));
+const __devupWithComponent = (c) => (c.withComponent = (t) => __devupWithComponent(Object.assign(__devupAs(c, t), c.__devupBase && { __devupBase: __devupAs(c.__devupBase, t) })), c);
+export const Card = __devupWithComponent(Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a e1card a-a ${className}` : "a--a e1card a-a"} style={style} />)), { __devupBase: __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a-a ${className}` : "a-a"} style={style} />)) }));
+export const Wide = __devupWithComponent(Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--b a-b a-a ${className}` : "a--b a-b a-a"} style={style} />)), { __devupBase: __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a-b a-a ${className}` : "a-b a-a"} style={style} />)) }));
 
 Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })
 Static(ExtractStaticStyle { property: "width", value: "100%", level: 0, selector: None, style_order: None, layer: None })

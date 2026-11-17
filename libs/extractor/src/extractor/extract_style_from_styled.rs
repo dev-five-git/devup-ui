@@ -10,7 +10,9 @@ mod identity;
 #[path = "styled_residual.rs"]
 mod residual;
 use identity::runtime_base;
-pub use identity::{read_identity, with_statics};
+pub use identity::{
+    WITH_COMPONENT_MARKING, base_as, read_identity, with_runtime_component, with_statics,
+};
 #[path = "styled_stages.rs"]
 mod stages;
 use super::style_order_projection::{AuthoredStyles, extract_with_order};
@@ -123,6 +125,9 @@ pub struct StyledDefinition<'a> {
     /// Emotion's `target` classes among its markers, which Emotion gives the
     /// component alone: an extension renders its base without them
     targets: Vec<String>,
+    /// Whether the compiled component takes `withComponent` at runtime, as
+    /// Emotion's components do
+    takes_with_component: bool,
     bindings: Vec<(String, Expression<'a>)>,
     capability: Option<StyledCapability>,
     execution: Execution<'a>,
@@ -267,6 +272,7 @@ impl<'a> StyledDefinition<'a> {
             markers: self.markers.clone(),
             inherited_markers: self.inherited_markers.clone(),
             targets: self.targets.clone(),
+            takes_with_component: self.takes_with_component,
             capability: self.capability.clone(),
             execution: self.execution.clone_in(allocator),
             bindings: self
@@ -459,6 +465,7 @@ impl<'a> StyledDefinition<'a> {
             markers: self.markers.clone(),
             inherited_markers: self.inherited_markers.clone(),
             targets: self.targets.clone(),
+            takes_with_component: self.takes_with_component,
             bindings: self
                 .bindings
                 .iter()
@@ -544,6 +551,20 @@ impl<'a> StyledDefinition<'a> {
     #[must_use]
     pub const fn has_targets(&self) -> bool {
         !self.targets.is_empty()
+    }
+
+    /// The definition of a component that takes `withComponent` at runtime
+    /// when `takes`
+    #[must_use]
+    pub const fn taking_with_component(mut self, takes: bool) -> Self {
+        self.takes_with_component = takes;
+        self
+    }
+
+    /// Whether the compiled component takes `withComponent` at runtime
+    #[must_use]
+    pub const fn takes_with_component(&self) -> bool {
+        self.takes_with_component
     }
 
     pub(crate) fn marker_classes(&self, ast: &AstBuilder<'a>) -> Option<Expression<'a>> {
@@ -723,6 +744,7 @@ impl<'a> Base<'a> {
             markers: Vec::new(),
             inherited_markers: Vec::new(),
             targets: Vec::new(),
+            takes_with_component: false,
             capability: None,
             execution: Execution::Replay,
             bindings: bindings

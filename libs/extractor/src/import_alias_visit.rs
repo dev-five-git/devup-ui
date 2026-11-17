@@ -72,6 +72,8 @@ struct LibraryNumbers {
     /// Where a constant inlined later is a number or rules of the library, as
     /// the source reads them
     marks: Vec<(usize, usize)>,
+    /// The names the file imports Emotion's `styled` as
+    emotion_styled: Vec<String>,
 }
 
 impl LibraryNumbers {
@@ -520,6 +522,9 @@ pub struct Aliased<'a> {
     /// Where, in `code`, a constant read is a number or rules the library
     /// reads as `px` lengths
     pub px: PxMarks,
+    /// The names the file imports Emotion's `styled` as, whose components a
+    /// component selector picks out without the components extending them
+    pub emotion_styled: Vec<String>,
 }
 
 /// The spans of the style values and rules written as an expression a
@@ -706,6 +711,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         edits: Vec::new(),
         css_prop,
         px,
+        emotion_styled: Vec::new(),
     };
     let emotion_aliased = import_aliases.contains_key(EMOTION_REACT);
     let emotion_jsx = builds_jsx_with_emotion(import_aliases);
@@ -868,6 +874,15 @@ pub fn transform_import_aliases_with_edits<'a>(
                             _ => {}
                         }
                     }
+                    if source_value == "@emotion/styled" {
+                        numbers.emotion_styled.extend(
+                            import_decl
+                                .specifiers
+                                .iter()
+                                .flatten()
+                                .map(|specifier| specifier.local().name.to_string()),
+                        );
+                    }
                 }
             }
         }
@@ -924,6 +939,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         edits,
         css_prop: numbers.css_prop,
         px,
+        emotion_styled: numbers.emotion_styled,
     }
 }
 

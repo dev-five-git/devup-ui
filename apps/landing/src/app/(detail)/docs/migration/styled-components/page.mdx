@@ -71,6 +71,10 @@ import * as Emotion from '@emotion/styled'
 const Card = Emotion.div`color: red;`
 ```
 
+A component selector matches the elements each library matches. A selected component carries a short marker class, and `${Card}` selects it. Under styled-components, `styled(Card)` keeps `Card`'s class, so `${Card}` matches the extension too. Emotion's selector reads `Card`'s `target`, which `styled(Card)` renders without, so a component made with Emotion's `styled` keeps its marker to itself, as it does a `target`. The marker stays on `Card.withComponent('a')`, which keeps `Card`'s options.
+
+`withComponent` renders the component's styles as another tag or component. The build compiles it when it reads the component, in the same module or another one. A component compiled from Emotion's `styled` also takes `withComponent` at runtime, as Emotion's components do, so the call works where the build cannot see the component, or when only the runtime knows the target (`Card.withComponent(pick())`). That component renders the tag through `as`, which a later `as` still replaces, and keeps the classes the component's `target` gives. Options passed beside the target are a build error, because they would change classes and props the build cannot see. Create that component with `styled(tag, options)` instead.
+
 ## Transient props
 
 Props whose names start with `$` are transient, as in styled-components: style functions read them, but a styled component never passes them on to what it renders — a tag, a component or what `as` names. That includes `$` props a runtime spread brings and those attrs create, even when `shouldForwardProp` allows them:
@@ -153,7 +157,7 @@ A styled component compiles to a function component, whose `defaultProps` React 
 | `isStyledComponent`                      | `true` for components compiled from `styled`, marked with `styledComponentId`    |
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
-| Component selectors (`${Child}`)         | a marker class on the selected component                                         |
+| Component selectors (`${Child}`)         | a marker class; Emotion extensions render without it, as Emotion's do            |
 | `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`; `componentId` classes   |
 
 ## Limitations

@@ -6,12 +6,13 @@ use crate::utils::{
     build_time_error, get_string_by_literal_expression, readable_code, unwrap_syntax_only,
     wrap_direct_call,
 };
-use oxc_allocator::{CloneIn, GetAllocator};
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{
     ast::{
         ArrayExpressionElement, BindingPattern, Expression, FormalParameter, FormalParameterKind,
         FormalParameterRest, FormalParameters, IdentifierName, IdentifierReference,
-        ObjectPropertyKind, StaticMemberExpression, TSTypeAnnotation, TSTypeParameterDeclaration,
+        ObjectPropertyKind, StaticMemberExpression, Str, TSTypeAnnotation,
+        TSTypeParameterDeclaration,
     },
     builder::AstBuilder,
 };
@@ -115,6 +116,56 @@ pub fn with_statics<'a>(
         ast_builder,
         &member(ast_builder, "Object", "assign"),
         &[component, statics],
+    )
+}
+
+/// The binding giving a compiled component Emotion's `withComponent`, for
+/// modules that call it where the build cannot see the component
+pub const WITH_COMPONENT: &str = "__devupWithComponent";
+
+/// The declarations of [`WITH_COMPONENT`]: `withComponent(tag)` renders the
+/// component as `tag`, which `as` still replaces, and holds its base the same
+/// way, as Emotion creates the component again on `tag` with its options
+pub const WITH_COMPONENT_MARKING: &str = "const __devupAs = (c, t) => __devupStyled(__devupForwardRef((p, r) => c.render({ ...p, as: p.as || t }, r)));const __devupWithComponent = (c) => ((c.withComponent = (t) => __devupWithComponent(Object.assign(__devupAs(c, t), c.__devupBase && { __devupBase: __devupAs(c.__devupBase, t) }))), c);";
+
+/// `__devupWithComponent(component)`: the component, with `withComponent`
+pub fn with_runtime_component<'a>(
+    ast_builder: &AstBuilder<'a>,
+    component: Expression<'a>,
+) -> Expression<'a> {
+    wrap_direct_call(
+        ast_builder,
+        &Expression::new_identifier(SPAN, WITH_COMPONENT, ast_builder),
+        &[component],
+    )
+}
+
+/// `__devupAs(component.__devupBase, tag)`: the base of `component`, without
+/// its Emotion targets, rendered as `tag`, reading a member of a module the
+/// way `component.member` writes it
+pub fn base_as<'a>(
+    ast_builder: &AstBuilder<'a>,
+    component: &Expression<'a>,
+    tag: &Expression<'a>,
+) -> Expression<'a> {
+    let allocator = ast_builder.allocator();
+    let component = match crate::style_values::component_member(component) {
+        Some((object, name)) => Expression::StaticMemberExpression(StaticMemberExpression::boxed(
+            SPAN,
+            unwrap_syntax_only(object).clone_in_with_semantic_ids(allocator),
+            IdentifierName::new(SPAN, Str::from_in(name, allocator), ast_builder),
+            false,
+            ast_builder,
+        )),
+        None => unwrap_syntax_only(component).clone_in_with_semantic_ids(allocator),
+    };
+    wrap_direct_call(
+        ast_builder,
+        &Expression::new_identifier(SPAN, "__devupAs", ast_builder),
+        &[
+            base_of(ast_builder, component),
+            tag.clone_in_with_semantic_ids(allocator),
+        ],
     )
 }
 

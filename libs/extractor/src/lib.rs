@@ -558,6 +558,7 @@ fn extract_source(
         edits: alias_edits,
         css_prop,
         px,
+        emotion_styled,
     } = import_alias_visit::transform_import_aliases_with_edits(
         &namespace_code,
         filename,
@@ -884,6 +885,7 @@ fn extract_source(
     visitor.rule_spreads(inlined.rule_spreads);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.styles_with_emotion(emotion_styled);
     visitor.reuse_scoping(inlined.scoping);
     visitor.own_rules(own_rules, &program);
     visitor.import_styled(imported.components);
@@ -15863,8 +15865,12 @@ const Button = styled.button({ bg: 'red' })
             .min()
             .unwrap_or(body.len());
         let body = &body[..end];
+        // `withComponent` gives its component `withComponent` too
+        let rendered = body
+            .strip_prefix(&format!("{declaration}__devupWithComponent("))
+            .unwrap_or_else(|| &body[declaration.len()..]);
         assert!(
-            body.starts_with(&format!("{declaration}__devupStyled(__devupForwardRef(")),
+            rendered.starts_with("__devupStyled(__devupForwardRef("),
             "{body}"
         );
         body
