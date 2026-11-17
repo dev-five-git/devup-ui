@@ -1444,7 +1444,9 @@ export const box = style({ color: 'red' })`
           join(stateDir, 'setup.bin'),
           expect.anything(),
         )
-        const rule = config.turbopack?.rules?.['*.{tsx,ts,jsx,js,mjs}'] as {
+        const rule = config.turbopack?.rules?.[
+          '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'
+        ] as {
           loaders: { options: { sheetFile: string } }[]
         }
         expect(rule.loaders[0].options.sheetFile).toBe(
