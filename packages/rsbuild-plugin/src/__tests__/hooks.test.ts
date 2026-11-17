@@ -80,7 +80,14 @@ function fakeApi(root: string) {
     },
     transform: ({ test }: { test: unknown }, handler: Transform) => {
       const css = typeof test === 'string'
-      order.push(css ? 'transform(cssDir)' : 'transform(source)')
+      const mdx = test instanceof RegExp && test.test('page.mdx')
+      order.push(
+        css
+          ? 'transform(cssDir)'
+          : mdx
+            ? 'transform(mdx)'
+            : 'transform(source)',
+      )
       transforms.push({ css, handler })
     },
   }
@@ -197,6 +204,7 @@ describe('hook registration', () => {
       'modifyRspackConfig',
       'modifyRsbuildConfig',
       'transform(source)',
+      'transform(mdx)',
     ])
   })
 
