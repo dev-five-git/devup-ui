@@ -42,7 +42,13 @@ export async function openAdapter({ adapter, worktree, root, files }) {
           assert.equal(typeof result?.code, 'string')
           return { code: result.code, map: result.map ?? null }
         },
-        loadCss: (name) => plugin.load(join(cssDir, name)),
+        // A build names each sheet in the source it loads; generateBundle
+        // drops it
+        loadCss: (name) => {
+          const css = plugin.load(join(cssDir, name))
+          assert.ok(css.startsWith(`/*! ${name} */`), 'loaded sheet is named')
+          return css.slice(`/*! ${name} */`.length)
+        },
         finish: async (names) => {
           const bundle = Object.fromEntries(
             names.map((name) => [

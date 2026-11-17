@@ -32,7 +32,7 @@ import { Box } from '@devup-ui/react'
 
 // No consecutive duplicates
 ;<Box w={[1, 2, 3]} />
-;<Box w={[1, null, null]} /> // null values are fine
+;<Box w={[1, null, 2]} /> // null values are fine
 ;<Box w={[1, 2, null, 3]} /> // null between different values
 ```
 
@@ -70,7 +70,6 @@ The rule will not trigger for:
 ## Auto-fixable
 
 This rule is auto-fixable. ESLint will automatically replace consecutive duplicate values with `null` when possible.
-
 
 ## Where it applies
 

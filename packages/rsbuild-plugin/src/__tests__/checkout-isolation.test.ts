@@ -79,6 +79,8 @@ async function extractedCssDirIn(checkout: string) {
 
   codeExtractSpy.mockClear()
   await transform.mock.calls[1][1]({
+    addDependency: mock(),
+    addMissingDependency: mock(),
     environment: { name: 'web' },
     code: source,
     resourcePath: join(checkout, 'src', 'App.tsx'),

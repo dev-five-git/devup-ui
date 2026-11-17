@@ -14,7 +14,7 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
-import type { Plugin } from 'vite'
+import type { Plugin, ViteBuilder } from 'vite'
 
 import { DevupUI } from '../plugin'
 
@@ -810,6 +810,30 @@ describe('devupUIVitePlugin', () => {
       expect(bundle['nested.css'].source).toEqual('sheet:4')
       expect(bundle['other.css'].source).toEqual('keep')
       expect(bundle['chunk.js']).not.toHaveProperty('source')
+    })
+
+    it('builds an environment again once a sheet it emitted has grown', async () => {
+      getCssSpy.mockReturnValue('a{}')
+      const plugins = DevupUI({ engine: 'wasm' }) as unknown as [
+        ViteTestPlugin,
+        ViteTestRestorePlugin,
+        unknown,
+        { buildApp: { handler: (builder: ViteBuilder) => Promise<void> } },
+      ]
+      activePlugins.push(plugins[0])
+      await plugins[0].generateBundle({}, {
+        'base.css': { source: 'stale', name: 'devup-ui.css' },
+      } as unknown as Record<string, { source: string; name: string }>)
+      getCssSpy.mockReturnValue('a{}b{}')
+      const client = { name: 'client', isBuilt: true }
+      const build = mock(async () => {})
+
+      await plugins[3].buildApp.handler({
+        environments: { client },
+        build,
+      } as unknown as ViteBuilder)
+
+      expect(build).toHaveBeenCalledWith(client)
     })
 
     it('leaves an app asset whose name merely ends in devup-ui.css alone', async () => {

@@ -166,6 +166,71 @@ test.describe('Landing Page - Interactions', () => {
     ).toBe('preserved')
   })
 
+  test('client navigation reads exported RSC payloads without 404s', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const failedResponses: string[] = []
+    const rscResponses: string[] = []
+    page.on('response', (response) => {
+      const url = new URL(response.url())
+      if (url.origin !== 'http://localhost:3099') return
+      if (response.status() >= 400) {
+        failedResponses.push(`${response.status()} ${url.pathname}`)
+      }
+      if (response.request().headers()['rsc'] === '1') {
+        rscResponses.push(`${response.status()} ${url.pathname}`)
+      }
+    })
+    await page.evaluate(() => {
+      ;(
+        window as Window & { __landingNavigationMarker?: string }
+      ).__landingNavigationMarker = 'preserved'
+    })
+
+    const docsLink = page.getByRole('link', { name: 'Docs', exact: true })
+    await docsLink.hover()
+    await docsLink.click()
+    await expect(page).toHaveURL(/\/docs\/overview$/)
+    await expect(
+      page.getByRole('heading', { name: 'What is Devup UI?' }),
+    ).toBeVisible()
+
+    const installationLink = page
+      .getByRole('link', { name: 'Installation', exact: true })
+      .first()
+    await installationLink.hover()
+    await installationLink.click()
+    await expect(page).toHaveURL(/\/docs\/installation$/)
+
+    await page.goBack()
+    await expect(page).toHaveURL(/\/docs\/overview$/)
+    await page.waitForLoadState('networkidle')
+
+    expect(
+      await page.evaluate(
+        () =>
+          (window as Window & { __landingNavigationMarker?: string })
+            .__landingNavigationMarker,
+      ),
+      'client navigation must not reload the document',
+    ).toBe('preserved')
+    expect(failedResponses, 'failed same-origin responses').toEqual([])
+    // Every RSC request of a static export targets a `.txt` payload the
+    // export wrote, so a stale transport suffix (`.txt.rsc`) or a missing
+    // artifact shows up here even when a fallback hides it from the user.
+    expect(rscResponses.length, 'RSC requests').toBeGreaterThan(0)
+    if (process.env.LANDING_BUILD_MODE !== 'next') {
+      // vinext fetches the route's full payload; Next reads segment files.
+      expect(rscResponses).toContain('200 /docs/overview.txt')
+      expect(rscResponses).toContain('200 /docs/installation.txt')
+    }
+    expect(
+      rscResponses.filter((entry) => !/^200 \/.*\.txt$/u.test(entry)),
+      'RSC requests outside the exported payloads',
+    ).toEqual([])
+  })
+
   test('Lenis responds to wheel scrolling', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.mouse.wheel(0, 900)

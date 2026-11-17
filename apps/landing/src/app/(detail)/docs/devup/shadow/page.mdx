@@ -43,6 +43,8 @@ Each array index corresponds to a breakpoint. Use `null` to skip a breakpoint an
 
 Use shadow tokens with the `$` prefix on `boxShadow`:
 
+{/* conformance: theme */}
+
 ```tsx
 <>
   <Box boxShadow="$card" />
@@ -51,7 +53,40 @@ Use shadow tokens with the `$` prefix on `boxShadow`:
 </>
 ```
 
-Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes.
+Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes. The theme defines each token as a CSS variable per breakpoint (colors become hex), and every class reads the variable:
+
+```css
+@layer t {
+  :root {
+    --card: 0 1px 2px #0000001a;
+    --modal: 0 4px 12px #00000026;
+    --sm: 0 1px 2px #0000000d;
+  }
+  @media (min-width: 992px) {
+    :root {
+      --card: 0 4px 8px #0000001a;
+      --modal: 0 8px 24px #00000026;
+    }
+  }
+}
+.a {
+  box-shadow: var(--card);
+}
+.c {
+  box-shadow: var(--sm);
+}
+.d {
+  box-shadow: var(--modal);
+}
+@media (min-width: 992px) {
+  .b {
+    box-shadow: var(--card);
+  }
+  .e {
+    box-shadow: var(--modal);
+  }
+}
+```
 
 ## Responsive Array Behavior
 

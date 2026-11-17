@@ -40,6 +40,7 @@ import type {
 
 import { assetNames, hashSheetAssetNames } from './asset-names'
 import { createCompiledDependencies } from './compiled-dependencies'
+import { createEnvironmentSheets } from './environment-sheets'
 import { createViteReservation } from './reservation'
 import { createServerWatch } from './server-watch'
 
@@ -423,6 +424,9 @@ export function DevupUI({
       compiledDependencies.hasSupplier(file),
   })
   const cssMap = new Map()
+  const environmentSheets = createEnvironmentSheets((fileNum) =>
+    compiler.getCss(fileNum, false),
+  )
   const compiledDependencies = createCompiledDependencies()
   let stopWatching: (() => void) | undefined
   let watcherSession: ExtractionSession | undefined
@@ -938,7 +942,11 @@ export function DevupUI({
         const fileNum = getFileNumByFilename(fileName)
         const css = compiler.getCss(fileNum, false)
         cssMap.set(fileNum, css)
-        return css
+        // The bundler emits two assets whose sources match as one file, so two
+        // sheets that are equal when loaded (empty ones, say) would share a
+        // file and `generateBundle` would give it one sheet. Name each sheet in
+        // its source to keep them apart; `generateBundle` replaces the source.
+        return isServe ? css : `/*! ${fileName} */${css}`
       }
     },
     enforce: 'pre',
@@ -950,6 +958,7 @@ export function DevupUI({
       if (!extractCss) return
       const writesOutput = this.environment?.config.build?.write !== false
       const cssFiles = new Set<string>()
+      const sheets = environmentSheets.emit(this.environment?.name ?? 'client')
 
       // `load` can only snapshot the sheet as it stood when the module was
       // pulled in, and module order varies per build, so the emitted asset was
@@ -962,8 +971,10 @@ export function DevupUI({
         const cssName = getDevupCssChunkName(asset.name)
         if (!cssName) continue
         if (!('source' in asset)) continue
-        const source = compiler.getCss(getFileNumByFilename(cssName), false)
+        const fileNum = getFileNumByFilename(cssName)
+        const source = compiler.getCss(fileNum, false)
         asset.source = source
+        sheets.set(fileNum, source)
         cssFiles.add(file)
       }
 
@@ -1013,5 +1024,6 @@ export function DevupUI({
     },
     restorePlugin,
     mdxPlugin,
+    environmentSheets.plugin,
   ]
 }

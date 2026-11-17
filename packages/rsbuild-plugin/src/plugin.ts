@@ -83,11 +83,17 @@ async function writeDataFiles(
   >,
   compiler: DevupCompiler,
   watching: boolean,
-): Promise<{ tailwindFiles: string[]; themeError: unknown }> {
+): Promise<{
+  tailwindFiles: string[]
+  configFiles: string[]
+  themeError: unknown
+}> {
   let tailwindFiles: string[] = []
   let themeError: unknown
+  // devup.json and every config it `extends`, read or not
+  const inputs = new Set([resolve(options.devupFile)])
   try {
-    const config = await loadDevupConfig(options.devupFile)
+    const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
 
     // Watched even when the theme fails, so fixing the Tailwind CSS reloads it
@@ -120,7 +126,7 @@ async function writeDataFiles(
       compiler.getCss(null, false),
     )
   }
-  return { tailwindFiles, themeError }
+  return { tailwindFiles, configFiles: [...inputs], themeError }
 }
 
 /**
@@ -180,7 +186,7 @@ export const DevupUI = ({
 
       // `rsbuild dev` outlives a broken devup.json; every compilation reports
       // it until it loads again
-      let { tailwindFiles, themeError } = await writeDataFiles(
+      let { tailwindFiles, configFiles, themeError } = await writeDataFiles(
         {
           package: libPackage,
           cssDir,
@@ -193,8 +199,9 @@ export const DevupUI = ({
       )
       if (!extractCss) return
 
-      // The project's Tailwind CSS defines what a Tailwind class compiles to:
-      // read it again when it changes, and compile every module again
+      // devup.json, the configs it extends and the project's Tailwind CSS
+      // define the theme: read them again when one changes, is added or is
+      // deleted, and compile every module again
       api.modifyRspackConfig((config) => {
         config.plugins ??= []
         config.plugins.push({
@@ -211,7 +218,7 @@ export const DevupUI = ({
               async () => {
                 const current = (
                   await Promise.all(
-                    tailwindFiles.map((file) =>
+                    [...configFiles, ...tailwindFiles].map((file) =>
                       stat(file).then(
                         (stats) => stats.mtimeMs,
                         () => 0,
@@ -220,17 +227,18 @@ export const DevupUI = ({
                   )
                 ).join()
                 if (stamp !== undefined && stamp !== current) {
-                  ;({ tailwindFiles, themeError } = await writeDataFiles(
-                    {
-                      package: libPackage,
-                      cssDir,
-                      devupFile,
-                      distDir,
-                      singleCss,
-                    },
-                    compiler,
-                    true,
-                  ))
+                  ;({ tailwindFiles, configFiles, themeError } =
+                    await writeDataFiles(
+                      {
+                        package: libPackage,
+                        cssDir,
+                        devupFile,
+                        distDir,
+                        singleCss,
+                      },
+                      compiler,
+                      true,
+                    ))
                 }
                 stamp = current
               },
@@ -521,10 +529,14 @@ export const DevupUI = ({
         code,
         resourcePath,
         addDependency,
+        addMissingDependency,
         environment,
       }) => {
         if (excludeRegex.test(resourcePath)) return code
         for (const file of tailwindFiles) addDependency(file)
+        for (const file of configFiles)
+          if (existsSync(file)) addDependency(file)
+          else addMissingDependency(file)
         // The stylesheet import is emitted relative to the importing file, as
         // in the next/webpack/vite loaders. An absolute cssDir would bake this
         // checkout's path into the emitted module, so byte-identical sources
