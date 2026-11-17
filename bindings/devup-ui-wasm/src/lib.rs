@@ -206,12 +206,12 @@ pub fn set_stylex_style_resolution_internal(value: Option<&str>) -> Result<(), S
     binding_core::set_stylex_style_resolution(value)
 }
 
-/// Read `stylex.create()` under the `StyleX` `styleResolution` `value` names,
+/// Read `stylex.create()` under the `StyleX` `styleResolution` `resolution` names,
 /// the default when nullish; an unknown name fails
 #[wasm_bindgen(js_name = "setStylexStyleResolution")]
 #[cfg(not(tarpaulin_include))]
-pub fn set_stylex_style_resolution(value: Option<String>) -> Result<(), JsValue> {
-    set_stylex_style_resolution_internal(value.as_deref()).map_err(js_error)
+pub fn set_stylex_style_resolution(resolution: Option<String>) -> Result<(), JsValue> {
+    set_stylex_style_resolution_internal(resolution.as_deref()).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "getPrefix")]

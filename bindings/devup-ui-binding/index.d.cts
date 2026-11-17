@@ -96,7 +96,7 @@ export function setModuleResolver(
 ): void
 export function setPrefix(prefix?: string | null): void
 export function setStylexStyleResolution(
-  value?:
+  resolution?:
     | 'property-specificity'
     | 'application-order'
     | 'legacy-expand-shorthands'

@@ -195,8 +195,9 @@ pub fn set_prefix(value: Option<String>) {
 }
 /// Install the named `StyleX` `styleResolution`, the default when nullish; an unknown name fails.
 #[napi]
-pub fn set_stylex_style_resolution(env: Env, value: Option<String>) -> Result<()> {
-    core::set_stylex_style_resolution(value.as_deref()).map_err(|error| binding_error(env, error))
+pub fn set_stylex_style_resolution(env: Env, resolution: Option<String>) -> Result<()> {
+    core::set_stylex_style_resolution(resolution.as_deref())
+        .map_err(|error| binding_error(env, error))
 }
 /// Return the default theme as a string or undefined.
 #[napi]
