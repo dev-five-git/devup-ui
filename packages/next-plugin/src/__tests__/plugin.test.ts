@@ -23,6 +23,7 @@ import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
+  restoreSessionState,
 } from '../plugin'
 import {
   loadWasm,
@@ -1048,14 +1049,32 @@ export const box = style({ color: 'red' })`
         throw new Error('unreadable')
       })
       const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
       try {
         expect(DevupUI({}).turbopack?.rules).toBeDefined()
         expect(profileSpy).toHaveBeenCalledWith(
           expect.stringContaining('"failed":true'),
         )
+        expect(warnSpy).toHaveBeenCalledWith(
+          '[devup-ui] Turbopack import graph failed: unreadable. Classes are not merged across files only one module imports, and the production stylesheet waits for extraction to go quiet instead of for every compiled file.',
+        )
       } finally {
         profileSpy.mockRestore()
+        warnSpy.mockRestore()
         graphSpy.mockRestore()
+      }
+    })
+    it.each([
+      [{}, false],
+      [{ debug: true }, true],
+    ])('sets debug class names from %j', (options, debug) => {
+      process.env.TURBOPACK = '1'
+      const setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
+      try {
+        DevupUI({}, options)
+        expect(setDebugSpy).toHaveBeenCalledWith(debug)
+      } finally {
+        setDebugSpy.mockRestore()
       }
     })
     it('should create theme.d.ts file', async () => {
@@ -1163,13 +1182,67 @@ export const box = style({ color: 'red' })`
           include: ['@acme/ui'],
         })
         collectSpy.mockImplementation(() => {
-          throw new Error('scan boom')
+          throw 'scan boom'
         })
-        DevupUI({}, {})
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          DevupUI({}, {})
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack file numbering failed: scan boom. Stylesheet file numbers follow the order Turbopack compiles files in, so they can differ between builds of the same source.',
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
       }
+    })
+    describe('restoreSessionState', () => {
+      const files = ['sheet.json', 'classMap.json', 'fileMap.json'] as const
+      const engine = () => ({
+        importSheet: mock(),
+        importClassMap: mock(),
+        importFileMap: mock(),
+        resetBuildState: mock(),
+      })
+
+      it('imports nothing unless every file reads', () => {
+        readFileSyncSpy.mockImplementation((path: string) => {
+          if (path === 'fileMap.json') throw new Error('ENOENT')
+          return '{}'
+        })
+        const restored = engine()
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).not.toHaveBeenCalled()
+        expect(restored.importClassMap).not.toHaveBeenCalled()
+        expect(restored.importFileMap).not.toHaveBeenCalled()
+      })
+
+      it('imports nothing when one file is corrupt', () => {
+        readFileSyncSpy.mockImplementation((path: string) =>
+          path === 'classMap.json' ? '{"a":' : '{}',
+        )
+        const restored = engine()
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).not.toHaveBeenCalled()
+      })
+
+      it('drops a state that does not import', () => {
+        readFileSyncSpy.mockImplementation((path: string) =>
+          JSON.stringify({ path }),
+        )
+        const restored = engine()
+        restored.importClassMap.mockImplementation(() => {
+          throw new Error('older release')
+        })
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).toHaveBeenCalledWith({
+          path: 'sheet.json',
+        })
+        expect(restored.importFileMap).not.toHaveBeenCalled()
+        expect(restored.resetBuildState).toHaveBeenCalledTimes(1)
+      })
     })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'
