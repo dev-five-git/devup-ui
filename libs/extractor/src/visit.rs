@@ -38,8 +38,8 @@ use crate::extractor::{
     extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        FORWARD_REF, Naming, StyledBindings, StyledDefinition, StyledExtraction, extended,
-        extract_style_from_styled, read_forward, read_identity, take_styled_modifiers,
+        FORWARD_REF, Naming, STYLED_MARKING, StyledBindings, StyledDefinition, StyledExtraction,
+        extended, extract_style_from_styled, read_forward, read_identity, take_styled_modifiers,
         with_component,
     },
     rule_array_evaluation::{self, composes_array_under_condition},
@@ -77,9 +77,9 @@ use oxc_ast::ast::{
     ChainElement, ComputedMemberExpression, ExportDefaultDeclaration, Expression,
     ExpressionStatement, FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration,
     ImportOrExportKind, JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
-    JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
-    UnaryOperator, VariableDeclarator,
+    JSXExpressionContainer, JSXOpeningElement, ObjectExpression, ObjectProperty,
+    ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str,
+    StringLiteral, UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut;
@@ -1561,11 +1561,48 @@ impl<'a> DevupVisitor<'a> {
             }
             return;
         }
-        match unwrap_syntax_only_mut(node) {
-            Expression::StaticMemberExpression(member) => self.plain_styled(&mut member.object),
-            Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
-            _ => {}
+        let node = unwrap_syntax_only_mut(node);
+        let tag = match node {
+            Expression::StaticMemberExpression(member) => {
+                self.plain_styled(&mut member.object);
+                None
+            }
+            Expression::CallExpression(call) => {
+                self.plain_styled(&mut call.callee);
+                None
+            }
+            Expression::ComputedMemberExpression(member) => self.static_styled_tag(member),
+            _ => None,
+        };
+        if let Some(tag) = tag {
+            *node = tag;
         }
+    }
+
+    /// The `styled.div` that `member` reads when it is `styled['div']`
+    fn static_styled_tag(
+        &self,
+        member: &mut oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) -> Option<Expression<'a>> {
+        self.plain_styled(&mut member.object);
+        if !self.bindings.is_styled(&member.object) {
+            return None;
+        }
+        let tag = crate::utils::literal_member_name(member)?;
+        let tag = IdentifierName::new(
+            member.expression.span(),
+            Str::from_in(tag.as_ref(), self.ast.allocator()),
+            &self.ast,
+        );
+        Some(Expression::StaticMemberExpression(
+            StaticMemberExpression::boxed(
+                member.span,
+                member.object.take_in(&self.ast),
+                tag,
+                false,
+                &self.ast,
+            ),
+        ))
     }
 
     /// Report where `program` still reads what the build compiled away: its
@@ -1665,6 +1702,38 @@ impl<'a> DevupVisitor<'a> {
                 JSXAttributeItem::SpreadAttribute(_) => None,
             })
             .collect()
+    }
+
+    /// Report a `theme` attribute on an element of a styled component whose
+    /// styles read the theme: they read it as CSS variables of the theme the
+    /// page declares, which a theme given to one element cannot change
+    fn report_theme_prop(&mut self, element: &JSXOpeningElement<'a>) {
+        let name = element.name.to_string();
+        let reads_theme = self
+            .css_definition(self.style_values.jsx_symbol(&element.name), &name)
+            .is_some_and(StyledDefinition::reads_theme);
+        let theme = element
+            .attributes
+            .iter()
+            .find_map(|attribute| match attribute {
+                Attribute(attribute)
+                    if attribute
+                        .name
+                        .as_identifier()
+                        .is_some_and(|name| name.name == "theme") =>
+                {
+                    Some(attribute.span.start)
+                }
+                _ => None,
+            });
+        if let Some(offset) = theme.filter(|_| reads_theme) {
+            self.errors.push((
+                offset,
+                format!(
+                    "`<{name} theme={{...}}>` cannot change the theme at build time: the styles of `{name}` read the theme as CSS variables, so the theme passed to one element would be ignored. Fix: wrap the element in a `ThemeProvider` with that theme, or pass the values as props the styles read"
+                ),
+            ));
+        }
     }
 
     /// Whether the element `name` takes Emotion's `css` prop
@@ -3483,14 +3552,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .ast
                 .allocator()
                 .alloc_str(&if it.source_type.is_commonjs() {
-                    format!("const {FORWARD_REF} = require('react').forwardRef;")
+                    format!("const {FORWARD_REF} = require('react').forwardRef;{STYLED_MARKING}")
                 } else {
-                    format!("import {{ forwardRef as {FORWARD_REF} }} from 'react';")
+                    format!(
+                        "import {{ forwardRef as {FORWARD_REF} }} from 'react';{STYLED_MARKING}"
+                    )
                 });
-            let program =
+            let mut program =
                 oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
                     .parse()
                     .program;
+            crate::utils::clear_generated_program_spans(&mut program);
             for statement in program.body.into_iter().rev() {
                 it.body.insert(0, statement);
             }
@@ -5369,6 +5441,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.pending_replacement = Some(rendered);
             return;
         }
+        self.report_theme_prop(&elem.opening_element);
         let styled_symbol = self.style_values.jsx_symbol(&elem.opening_element.name);
         // The style props of a styled Devup UI component are compiled in the
         // element as they are for the component, where only what the

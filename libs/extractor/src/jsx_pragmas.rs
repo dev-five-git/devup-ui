@@ -5,7 +5,7 @@ use oxc_ast::{
     ast::{Program, Statement},
 };
 use oxc_parser::Parser;
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 
 /// The original header ends at the first body statement, not the first directive.
 pub(crate) struct HeaderPragmas {
@@ -86,7 +86,7 @@ pub(crate) fn stylesheet_source(source: &str, generated: String, filename: &str)
     let program = Parser::new(
         &allocator,
         source,
-        SourceType::from_path(filename).unwrap_or_default(),
+        crate::parsing::path_source_type(filename).unwrap_or_default(),
     )
     .parse()
     .program;
