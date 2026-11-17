@@ -11,7 +11,8 @@
 //
 // A change that makes a build slower or larger on purpose runs the two writes
 // on a CI run's `benchmark-run` artifact and commits the files in the same pull
-// request.
+// request. After a merge, CI rewrites benchmark-results.json on main itself and
+// records the run in benchmark/history.json (benchmark-refresh.js).
 import { readFileSync, writeFileSync } from 'node:fs'
 
 import {
@@ -20,6 +21,7 @@ import {
   nextCssBaseline,
   report,
 } from './benchmark-gate.js'
+import { applyRun, formatJson } from './benchmark-record.js'
 
 const read = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const write = (file, value) =>
@@ -50,25 +52,10 @@ if (process.argv.includes('--write-css-baseline')) {
   write('benchmark-baseline.json', nextBaseline(run, manifest, previous))
   console.info('benchmark-baseline.json rewritten')
 } else if (process.argv.includes('--write-results')) {
-  const results = read('benchmark-results.json')
-  const runId = run.run.id ?? results.run.id
-  results.run = {
-    ...results.run,
-    id: runId,
-    url: `https://github.com/dev-five-git/devup-ui/actions/runs/${runId}`,
-    commit: (run.run.commit ?? results.run.commit).slice(0, 8),
-  }
-  results.samples = run.samples
-  results.rows = results.rows.map((row) => ({
-    ...row,
-    samples: run.rows[row.target].samples,
-    median: run.rows[row.target].median,
-    min: run.rows[row.target].min,
-    max: run.rows[row.target].max,
-    bytes: run.rows[row.target].bytes,
-    cssBytes: run.rows[row.target].cssBytes,
-  }))
-  write('benchmark-results.json', results)
+  writeFileSync(
+    'benchmark-results.json',
+    formatJson(applyRun(read('benchmark-results.json'), run)),
+  )
   console.info('benchmark-results.json rewritten')
 } else {
   const baseline = read('benchmark-baseline.json')

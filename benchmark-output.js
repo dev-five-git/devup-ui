@@ -2,19 +2,25 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Sum all files, or only CSS files, recursively. Missing directories throw. */
-function directoryBytes(directory, cssOnly = false) {
+const isCss = (path) => path.endsWith('.css')
+const isClientCode = (path) => /\.(?:css|m?js)$/.test(path)
+
+/** Sum the files `include` accepts, recursively. Missing directories throw. */
+function directoryBytes(directory, include = () => true) {
   let bytes = 0
   for (const entry of readdirSync(directory)) {
     const path = join(directory, entry)
     const stat = statSync(path)
-    if (stat.isDirectory()) bytes += directoryBytes(path, cssOnly)
-    else if (!cssOnly || path.endsWith('.css')) bytes += stat.size
+    if (stat.isDirectory()) bytes += directoryBytes(path, include)
+    else if (include(path)) bytes += stat.size
   }
   return bytes
 }
 
-/** Whole-build bytes include caches/server output; CSS bytes are shipped assets only. */
+/**
+ * Whole-build bytes include caches/server output. CSS bytes and client bytes
+ * are browser-shipped assets only: the CSS, and the JavaScript plus CSS.
+ */
 export function measureOutput(benchmarkDir) {
   // vinext also leaves a vestigial .next stub: keep preferring dist.
   const distDir = join(benchmarkDir, 'dist')
@@ -25,6 +31,7 @@ export function measureOutput(benchmarkDir) {
     bytes: directoryBytes(outputDir),
     // Next Webpack uses static/css; Turbopack uses static/chunks.
     // An existing empty browser directory counts zero; a missing one throws.
-    cssBytes: directoryBytes(browserDir, true),
+    cssBytes: directoryBytes(browserDir, isCss),
+    clientBytes: directoryBytes(browserDir, isClientCode),
   }
 }
