@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
@@ -26,6 +26,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
+import { commonJsSource } from './commonjs'
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
 import { createTailwindWatcher } from './tailwind-watch'
 
@@ -136,30 +137,41 @@ function importsCompiledPackage(contents: string, loader: SourceLoader) {
   }
 }
 
-async function loadSourceFile(
-  compiler: DevupCompiler,
-  filePath: string,
-  bundling: boolean,
-) {
-  const loader: SourceLoader = filePath.endsWith('.tsx')
+/** Bun's loader for a source file */
+function sourceLoader(filePath: string): SourceLoader {
+  return filePath.endsWith('.tsx')
     ? 'tsx'
-    : filePath.endsWith('.ts')
+    : /\.[cm]?ts$/.test(filePath)
       ? 'ts'
       : filePath.endsWith('.jsx')
         ? 'jsx'
         : 'js'
-  const contents = await Bun.file(filePath).text()
+}
+
+// Synchronous: Bun cannot `require()` a module whose `onLoad` is async
+function loadSourceFile(
+  compiler: DevupCompiler,
+  filePath: string,
+  bundling: boolean,
+) {
+  const loader = sourceLoader(filePath)
+  let contents = readFileSync(filePath, 'utf-8')
+  let stylesheet: string | undefined
 
   if (
     isProjectJsx(filePath, importAliases) ||
     importsCompiledPackage(contents, loader) ||
     compiler.hasDevupUI(filePath, contents, libPackage, importAliases)
   ) {
+    const cssImportDir = relative(dirname(filePath), cssDir).replaceAll(
+      '\\',
+      '/',
+    )
     using code = compiler.codeExtract(
       filePath,
       contents,
       libPackage,
-      relative(dirname(filePath), cssDir).replaceAll('\\', '/'),
+      cssImportDir,
       singleCss,
       true,
       false,
@@ -173,9 +185,16 @@ async function loadSourceFile(
     const sheet = code.css
     if (!bundling && sheet !== undefined)
       writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
-    return { contents: code.code, loader }
+    contents = code.code
+    stylesheet = `${cssImportDir}/devup-ui.css`
   }
-  return { contents, loader }
+  // `Bun.build` bundles the CommonJS it is handed; the runtime does not run it
+  const commonJs = bundling
+    ? undefined
+    : commonJsSource(filePath, contents, loader, stylesheet)
+  return commonJs === undefined
+    ? { contents, loader }
+    : { contents: commonJs, loader: 'js' as const }
 }
 
 /**
@@ -278,10 +297,12 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         },
       )
 
-      // Load source files from packages directory (file namespace)
+      // Load every TypeScript and JavaScript source, ES module or CommonJS.
+      // JavaScript in node_modules is left to Bun, except Devup UI's own.
       build.onLoad(
         {
-          filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
+          filter:
+            /\.(?:[cm]?tsx?|jsx|mjs)$|^(?![^]*[\\/]node_modules[\\/])[^]*\.c?js$|[\\/]node_modules[\\/]@devup-ui[\\/](?![^]*[\\/]node_modules[\\/])[^]*\.c?js$/,
         },
         ({ path }) => {
           if (reservationPending) {

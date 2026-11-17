@@ -62,16 +62,24 @@ Class names are short in `Bun.build` and readable under the runtime; pass
 
 ## Compiled Files
 
-`.ts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever they are, and
-`.js` files only inside `@devup-ui` packages. Devup UI code in a `.js` file of
-your own project is not compiled and reaches the runtime placeholders
-(`Cannot run on the runtime`). Give such files a `.jsx`, `.tsx` or `.mjs`
-extension.
+`.ts`, `.mts`, `.cts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever
+they are, and `.js` and `.cjs` files outside `node_modules` and inside
+`@devup-ui` packages. The `.js` and `.cjs` files of other packages in
+`node_modules` are left to Bun.
 
-The runtime cannot take those files on. A Bun runtime plugin must return the
-source of every file its filter matches, it cannot hand a file back to Bun, and
-Bun reads returned source as an ES module, so a CommonJS `.js` file
-(`require`, `module.exports`) it matched would stop loading.
+ES modules and CommonJS are both supported, under the runtime as in
+`Bun.build`. A `.cjs`, `.cts` or `.js` file written with `require`,
+`module.exports`, `exports.name` or `export =` keeps its exports for
+`require()` and `import`.
+
+A Bun runtime plugin must return the source of every file it matches, and Bun
+runs returned source as an ES module: CommonJS returned as is would not run
+and would export nothing. So under the runtime the plugin runs a CommonJS
+module itself, when it is loaded, as Bun does, and hands Bun an ES module that
+exports its `module.exports`. `require()` returns `module.exports`, and
+`import` gets it as `default` (`exports.default` when `__esModule` is set)
+along with its named exports. `.jsx` and `.tsx` files are ES modules, as Bun
+reads them.
 
 ## Compiler Engine
 
