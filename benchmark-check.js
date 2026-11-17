@@ -5,7 +5,8 @@
 //   bun benchmark-check.js --write-baseline add this run to the calibration and rewrite benchmark-baseline.json
 //   bun benchmark-check.js --write-css-baseline devup-ui  replace only the existing per-file CSS baseline (original mode)
 //   bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui  replace only these two CSS fields
-// CSS-only targets are limited to devup-ui, devup-ui-single and vinext-devup-ui;
+// CSS-only targets are limited to devup-ui, devup-ui-single, vinext-devup-ui and
+// vanilla-extract-devup-ui (CSS_BASELINE_TARGETS in benchmark-gate.js);
 // keep all calibration, time and build-size fields, never select rows implicitly.
 //   bun benchmark-check.js --write-results  rewrite benchmark-results.json (the README tables) from this run
 //
