@@ -78,7 +78,8 @@ A dynamic value such as `width` becomes a CSS variable set in `style`, so a comp
 | API                                                             | Behavior                                                                                             |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `ServerStyleSheet`, `StyleSheetManager`, `CacheProvider`        | Accepted and inert; Devup UI writes a real stylesheet at build time. `CacheProvider` ignores `value` |
-| stylis plugins (`stylisPlugins`)                                | Not applied; there is no stylis pass at build time                                                   |
+| stylis plugins (`stylisPlugins`)                                | A build error on `StyleSheetManager` or `createCache()`; there is no stylis pass at build time       |
+| `StyleSheetManager` `shouldForwardProp`, `namespace`            | A build error; use `.withConfig({ shouldForwardProp })` per component, and write the scope yourself  |
 | `@emotion/css` `cache`, `flush`, `hydrate`, `sheet`             | Stay on `@emotion/css`; they work on styles inserted at runtime                                      |
 | `@emotion/css/create-instance`                                  | A build error while `@emotion/css` is aliased; import `css`, `cx` and the rest from `@emotion/css`   |
 | `@emotion/react` `ThemeContext`, `withEmotionCache`, `* as`     | A build error while `@emotion/react` is aliased; import what Devup UI compiles by name               |
