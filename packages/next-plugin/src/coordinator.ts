@@ -1,6 +1,6 @@
 import { existsSync, statSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 
@@ -197,6 +197,22 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 let server: Server | null = null
 
+// The latest extraction of each file. Next compiles a module that both the
+// server and the client graph import once per graph, with the same source,
+// and in no guaranteed order. Re-running WASM for the second copy only
+// rebuilds the same styles, so it answers from here instead. Keeping only the
+// latest source per file bounds the cache by the project's file count and
+// guarantees the sheet still holds exactly that source's styles.
+interface CachedExtract {
+  code: string
+  relCssDir: string
+  /** mtime and size of the files the extraction read through the resolver */
+  dependencies: string
+  output: ExtractOutputSnapshot
+}
+
+const transformCache = new Map<string, CachedExtract>()
+
 interface ThemeWatch {
   files: string[]
   stamp: string
@@ -205,12 +221,15 @@ interface ThemeWatch {
 
 let themeWatch: ThemeWatch | undefined
 
-/** What changes when a theme input is edited, added or deleted. */
-function themeStamp(files: string[]): string {
+/**
+ * What changes when one of the files is edited, added or deleted: a theme
+ * input, or a file an extraction read through the resolver.
+ */
+function fileStamp(files: string[] = []): string {
   return files
     .map((file) => {
       try {
-        const stats = statSync(file)
+        const stats = statSync(resolve(file))
         return `${stats.mtimeMs}:${stats.size}`
       } catch {
         return 'missing'
@@ -219,12 +238,28 @@ function themeStamp(files: string[]): string {
     .join('|')
 }
 
+function cachedExtract(
+  filename: string,
+  code: string,
+  relCssDir: string,
+): ExtractOutputSnapshot | undefined {
+  const cached = transformCache.get(filename)
+  return cached?.code === code &&
+    cached.relCssDir === relCssDir &&
+    cached.dependencies === fileStamp(cached.output.dependencies)
+    ? cached.output
+    : undefined
+}
+
 /** Register the theme again when one of its input files has changed. */
 function refreshTheme(): void {
-  if (!themeWatch || themeStamp(themeWatch.files) === themeWatch.stamp) return
+  if (!themeWatch || fileStamp(themeWatch.files) === themeWatch.stamp) return
+  // Every cached extraction was made under the old theme. Even a reload that
+  // throws may have changed the registered theme, so drop them first.
+  transformCache.clear()
   // A throwing reload keeps the old stamp, so the next request retries.
   const files = themeWatch.reload()
-  themeWatch = { ...themeWatch, files, stamp: themeStamp(files) }
+  themeWatch = { ...themeWatch, files, stamp: fileStamp(files) }
 }
 
 // Extraction tracking for waitForIdle.
@@ -449,9 +484,10 @@ export function startCoordinator(options: CoordinatorOptions): {
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   extractedSources.clear()
   fileNumToBucket.clear()
+  transformCache.clear()
   themeWatch = options.theme && {
     ...options.theme,
-    stamp: themeStamp(options.theme.files),
+    stamp: fileStamp(options.theme.files),
   }
 
   // A deleted file is never extracted again, so its styles would stay in the
@@ -462,6 +498,8 @@ export function startCoordinator(options: CoordinatorOptions): {
     for (const [filename, resourcePath] of extractedSources) {
       if (existsSync(resourcePath)) continue
       extractedSources.delete(filename)
+      // Its styles leave the sheet, so the same source must extract again.
+      transformCache.delete(filename)
       if (removeFile(filename)) removed = true
     }
     if (!removed) return
@@ -562,22 +600,37 @@ export function startCoordinator(options: CoordinatorOptions): {
         // Require exact source equality because Turbopack may hand a loader
         // code modified by an earlier transform.
         const prewarmed = prewarmedOutputs.get(filename)
-        const cacheHit = prewarmed?.source === code
         const extractStartedAt = profileStart()
-        const result = cacheHit
-          ? prewarmed
-          : takeExtractOutput(
-              extract(
-                filename,
-                code,
-                libPackage,
-                relCssDir,
-                singleCss,
-                false,
-                true,
-                importAliases,
-              ),
-            )
+        const cached =
+          prewarmed?.source === code
+            ? prewarmed
+            : cachedExtract(filename, code, relCssDir)
+        const cacheHit = cached !== undefined
+        let result: ExtractOutputSnapshot
+        if (cached) {
+          result = cached
+        } else {
+          // Whatever the engine kept of an earlier source is gone if this throws.
+          transformCache.delete(filename)
+          result = takeExtractOutput(
+            extract(
+              filename,
+              code,
+              libPackage,
+              relCssDir,
+              singleCss,
+              false,
+              true,
+              importAliases,
+            ),
+          )
+          transformCache.set(filename, {
+            code,
+            relCssDir,
+            dependencies: fileStamp(result.dependencies),
+            output: result,
+          })
+        }
         const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
@@ -804,6 +857,7 @@ export const resetCoordinator = () => {
   bucketToMembers = new Map()
   canonicalMapRef = {}
   expectedBaseFiles = new Set()
+  transformCache.clear()
   themeWatch = undefined
   writeChain.clear()
   latestContent.clear()
