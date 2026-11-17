@@ -6,9 +6,11 @@ import { dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
   collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
+  conventionalSourceRoots,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -16,6 +18,7 @@ import {
   type CustomShorthands,
   type DevupCompiler,
   type DevupUIBasePluginOptions,
+  esmImportConditions,
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
@@ -26,8 +29,11 @@ import {
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   seedFileNumbers,
   setupWarning,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -79,15 +85,22 @@ export class DevupUIWebpackPlugin {
   sheetFile: string
   classMapFile: string
   fileMapFile: string
-  private importAliases: WasmImportAliases
+  private importAliases: WasmImportAliases = {}
   private readonly normalizedShorthands: Record<string, readonly string[]>
   private readonly compiler: DevupCompiler
+  /** The path options as given, resolved against the project root */
+  private readonly paths: Pick<
+    Partial<DevupUIWebpackPluginOptions>,
+    'cssDir' | 'devupFile' | 'distDir' | 'importAliases'
+  > & { readonly productionPrewarmFiles?: readonly string[] }
+  /** Webpack's `context` once applied; the working directory before */
+  private root = process.cwd()
 
   constructor({
     package: libPackage = '@devup-ui/react',
-    devupFile = 'devup.json',
+    devupFile,
     distDir = 'df',
-    cssDir = resolve(distDir, 'devup-ui'),
+    cssDir,
     watch = false,
     debug = false,
     include = [],
@@ -102,15 +115,18 @@ export class DevupUIWebpackPlugin {
     this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
     this.compiler = loadCompiler(engine)
     this.compiler.registerShorthands(this.normalizedShorthands)
-    this.importAliases = mergeImportAliases(
-      userImportAliases,
-      readJsxImportSource(),
-    )
+    this.paths = {
+      cssDir,
+      devupFile,
+      distDir,
+      importAliases: userImportAliases,
+      productionPrewarmFiles,
+    }
 
     this.options = {
       package: libPackage,
-      cssDir,
-      devupFile,
+      cssDir: '',
+      devupFile: '',
       distDir,
       watch,
       debug,
@@ -120,6 +136,35 @@ export class DevupUIWebpackPlugin {
       prefix,
       shorthands,
       atomHoist,
+      productionPrewarmFiles: undefined,
+    }
+    this.sheetFile = ''
+    this.classMapFile = ''
+    this.fileMapFile = ''
+    this.locate(this.root)
+  }
+
+  /**
+   * Resolve the path options, the tsconfig and the extraction ids against the
+   * project root, so a build started from a parent directory (as monorepo
+   * tools do) reads and writes the same files as one started from the root
+   */
+  private locate(root: string) {
+    this.root = root
+    const {
+      cssDir,
+      devupFile,
+      distDir = 'df',
+      productionPrewarmFiles,
+    } = this.paths
+    this.options = {
+      ...this.options,
+      distDir: resolveProjectPath(root, distDir),
+      cssDir:
+        cssDir === undefined
+          ? resolve(root, distDir, 'devup-ui')
+          : resolveProjectPath(root, cssDir),
+      devupFile: resolveDevupFile(root, devupFile),
       productionPrewarmFiles:
         productionPrewarmFiles === undefined
           ? undefined
@@ -127,14 +172,17 @@ export class DevupUIWebpackPlugin {
               ...new Set(
                 productionPrewarmFiles.map((file) =>
                   relative(
-                    process.cwd(),
-                    resolve(process.cwd(), file.replaceAll('\\', '/')),
+                    root,
+                    resolve(root, file.replaceAll('\\', '/')),
                   ).replaceAll('\\', '/'),
                 ),
               ),
             ].sort(),
     }
-
+    this.importAliases = mergeImportAliases(
+      this.paths.importAliases,
+      readJsxImportSource(root),
+    )
     this.sheetFile = join(this.options.distDir, 'sheet.json')
     this.classMapFile = join(this.options.distDir, 'classMap.json')
     this.fileMapFile = join(this.options.distDir, 'fileMap.json')
@@ -196,23 +244,40 @@ export class DevupUIWebpackPlugin {
   }
 
   /**
-   * Extract the source files under `src` that `entries` reach into the shared
-   * compiler sheet, in path order, so that a stylesheet built on its first import
-   * holds the styles of every one (all collapsed members of a bucket, and the
-   * shared base), not just those of the modules webpack happened to build
-   * first. Mirrors the loader's `codeExtract` call (same filename keying +
-   * options) so re-extraction during compilation is idempotent. Generic entry
-   * discovery remains best-effort; an adapter's complete set is authoritative
-   * and its read/extraction failures must fail the build.
+   * The import graph of the `src` and `app` directories of the project root
+   * (webpack's `context`)
    */
-  private prewarmExtractor(entries: string[]) {
+  private sourceGraph() {
+    return buildStaticImportGraph(
+      this.root,
+      resolve(this.root, 'tsconfig.json'),
+      conventionalSourceRoots(this.root),
+    )
+  }
+
+  /**
+   * Extract the source files under `src` and `app` that `entries` reach into
+   * the shared compiler sheet, in path order, so that a stylesheet built on
+   * its first import holds the styles of every one (all collapsed members of a
+   * bucket, and the shared base), not just those of the modules webpack
+   * happened to build first. Mirrors the loader's `codeExtract` call (same
+   * filename keying + options) so re-extraction during compilation is
+   * idempotent. Generic entry discovery remains best-effort; an adapter's
+   * complete set is authoritative and its read/extraction failures must fail
+   * the build.
+   */
+  private prewarmExtractor(
+    entries: string[],
+    { resolve: resolveOptions }: Compiler['options'],
+  ) {
     try {
-      const cwd = process.cwd()
+      const cwd = this.root
       // The same resolver as the loader's, so imported constants and
       // stylesheets extract to the classes the loader emits
       this.compiler.setModuleResolver(
         createModuleResolver({
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+          conditions: esmImportConditions(resolveOptions),
         }),
       )
       const files =
@@ -220,9 +285,9 @@ export class DevupUIWebpackPlugin {
           resolve(cwd, file),
         ) ??
         computeReachableFiles({
-          srcDir: resolve(cwd, 'src'),
-          tsconfigPath: resolve(cwd, 'tsconfig.json'),
+          srcDir: cwd,
           entries,
+          graph: this.sourceGraph(),
         })
       if (this.options.productionPrewarmFiles !== undefined) {
         seedFileNumbers(this.compiler, [...this.options.productionPrewarmFiles])
@@ -266,7 +331,7 @@ export class DevupUIWebpackPlugin {
    * stylesheet modules are built from the sheet on every compilation.
    */
   removeFiles(files: ReadonlySet<string> | undefined) {
-    const cwd = process.cwd()
+    const cwd = this.root
     let removed = false
     for (const file of files ?? [])
       if (this.compiler.removeFile(relative(cwd, file).replaceAll('\\', '/')))
@@ -293,6 +358,7 @@ export class DevupUIWebpackPlugin {
   }
 
   private initialize(compiler: Compiler) {
+    this.locate(resolve(compiler.options.context ?? process.cwd()))
     this.compiler.setDebug(this.options.debug)
     this.compiler.setPrefix(this.options.prefix ?? null)
     this.compiler.registerShorthands(this.normalizedShorthands)
@@ -334,8 +400,9 @@ export class DevupUIWebpackPlugin {
     // eligible atoms receive global short counter names. The selected compiler
     // instance is shared in-process with the loaders. Composes with
     // single-importer collapse: both keyed by the canonical bucket. The webpack
-    // loader passes relative(process.cwd(), id) as the extraction filename, so
-    // the graph maps use cwd-relative keys (keyBy: 'cwd-relative').
+    // loader passes the id relative to the project root as the extraction
+    // filename, so the graph maps use root-relative keys (keyBy:
+    // 'cwd-relative', with the root as `cwd`).
     const atomHoist = this.options.atomHoist
     const atomMode =
       !this.options.singleCss &&
@@ -347,23 +414,24 @@ export class DevupUIWebpackPlugin {
     // The canonical map is built + imported unconditionally; only atom HOISTING
     // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
     try {
-      const srcDir = resolve(process.cwd(), 'src')
-      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
-      const cwd = process.cwd()
+      const cwd = this.root
+      // One graph over every source root serves both the canonical map and
+      // the routes, so an `app` directory is hoisted like `src`
+      const graph = this.sourceGraph()
       const canonicalMap = buildCanonicalMap({
-        srcDir,
-        tsconfigPath,
+        srcDir: cwd,
         cwd,
         keyBy: 'cwd-relative',
+        graph,
       })
       this.compiler.importCanonicalMap(canonicalMap)
 
       if (atomMode) {
         const fileReach = computeFileReach({
-          srcDir,
-          tsconfigPath,
+          srcDir: cwd,
           cwd,
           keyBy: 'cwd-relative',
+          graph,
         })
         const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
         if (plan) {
@@ -383,7 +451,7 @@ export class DevupUIWebpackPlugin {
         throw error
       // Best-effort; on failure canonical() is the identity (no merge) and atom
       // hoisting stays off.
-      if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+      if (!isMissingDirectory(error, resolve(this.root, 'src')))
         console.warn(
           setupWarning(
             'webpack import graph',
@@ -400,7 +468,7 @@ export class DevupUIWebpackPlugin {
     // already handed out (a restored map in watch mode) stay.
     if (this.options.debug)
       try {
-        const cwd = process.cwd()
+        const cwd = this.root
         seedFileNumbers(
           this.compiler,
           collectNumberedFiles({
@@ -444,13 +512,14 @@ export class DevupUIWebpackPlugin {
     const reserveBeforeCompile = () => {
       reserve(compiler.options)
       if (this.options.watch) return
-      const { entry, context = process.cwd() } = compiler.options
+      const { entry, context = this.root } = compiler.options
       this.prewarmExtractor(
         typeof entry === 'function'
           ? []
           : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
               requests.map((request) => resolve(context, request)),
             ),
+        compiler.options,
       )
     }
     compiler.hooks.run.tap(
@@ -602,7 +671,7 @@ export class DevupUIWebpackPlugin {
     }
 
     const sourceRule = {
-      test: /\.(tsx|ts|js|mjs|jsx)$/,
+      test: SOURCE_FILE_REGEX,
       exclude: createNodeModulesExcludeRegex(
         this.options.include,
         '.mdx.[tj]sx?$',
@@ -616,6 +685,7 @@ export class DevupUIWebpackPlugin {
           options: {
             package: this.options.package,
             engine: this.options.engine,
+            root: this.root,
             cssDir: this.options.cssDir,
             sheetFile: this.sheetFile,
             classMapFile: this.classMapFile,

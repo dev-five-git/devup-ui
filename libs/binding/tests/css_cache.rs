@@ -48,7 +48,7 @@ fn css_is_reused_until_an_extraction_changes_the_sheet() -> Result<(), String> {
     let changed = get_css(None, false);
 
     // Then: the unchanged sheet reads the same, the changed one holds both.
-    assert_eq!(red.css.as_deref(), Some(first.as_str()));
+    assert_eq!(red.css.map(|css| css.get()), Some(first.clone()));
     assert_eq!(again, first);
     assert!(!first.contains("blue"));
     assert!(changed.contains("red") && changed.contains("blue"));

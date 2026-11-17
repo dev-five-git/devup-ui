@@ -3,6 +3,12 @@ export {
   getBuildOwnership,
   type ResettableEngine,
 } from './build-session'
+export {
+  type ConditionResolveOptions,
+  esmImportConditions,
+  type ViteConditionConfig,
+  viteImportConditions,
+} from './bundler-conditions'
 export { loadCompiler } from './compiler'
 export { type CompilerSession, openCompilerSession } from './compiler-session'
 export type {
@@ -23,6 +29,7 @@ export {
   type ComputeFileRoutesOptions,
   computeReachableFiles,
   type ComputeReachableFilesOptions,
+  conventionalSourceRoots,
   createModuleResolver,
   type CreateModuleResolverOptions,
   listSourceFiles,
@@ -41,6 +48,7 @@ export {
   isProjectJsx,
   seedFileNumbers,
 } from './numbering'
+export { resolveDevupFile, resolveProjectPath } from './project-root'
 export {
   collectReservationInputs,
   PreparedInputConflictError,
@@ -74,6 +82,7 @@ export {
   ShorthandConfigError,
   type ShorthandErrorLocation,
 } from './shorthands'
+export { SOURCE_EXTENSIONS, SOURCE_FILE_REGEX } from './source-extensions'
 export {
   createStateWriter,
   type StateWriter,

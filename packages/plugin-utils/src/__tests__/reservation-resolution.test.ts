@@ -157,3 +157,24 @@ it('detects exchanged specifier targets even when the importer target set stays 
   expect(recorded.packets).toHaveLength(2)
   expect(recorded.packets[1]).toEqual(recorded.packets[0])
 })
+
+it('resolves package imports with the bundler conditions', () => {
+  // Given
+  using fs = tokens()
+  fs.write(
+    'node_modules/@devup-ui/tokens/package.json',
+    JSON.stringify({ exports: { browser: './blue.js', default: './red.js' } }),
+  )
+  const imported = (conditions?: readonly string[]) =>
+    [
+      ...collectReservationInputs({
+        ...fs.options,
+        conditions,
+      }).resolutions.imports.values(),
+    ]
+      .map((targets) => targets.get('@devup-ui/tokens'))
+      .find(Boolean)
+  // When / Then
+  expect(imported(['browser'])).toEndWith('blue.js')
+  expect(imported()).toEndWith('red.js')
+})

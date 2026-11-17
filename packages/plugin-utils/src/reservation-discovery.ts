@@ -36,6 +36,8 @@ export type ReservationDiscoveryOptions = {
   readonly importAliases: Readonly<WasmImportAliases>
   readonly toId?: (physicalPath: string) => string
   readonly prepared?: readonly PreparedReservationInput[]
+  /** The package `exports` conditions the bundler resolves imports with. */
+  readonly conditions?: readonly string[]
 }
 
 export type ReservationInventory = {
@@ -111,6 +113,7 @@ export function collectReservationInputs(
     ...(options.tsconfigPath === undefined
       ? {}
       : { tsconfigPath: resolve(cwd, options.tsconfigPath) }),
+    conditions: options.conditions,
   }
   const resolver = createModuleResolver({
     ...resolverOptions,

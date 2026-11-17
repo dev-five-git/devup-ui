@@ -62,17 +62,30 @@ Class names are short in `Bun.build` and readable under the runtime; pass
 
 ## Compiled Files
 
-`.ts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever they are, and
-`.js` files only inside `@devup-ui` packages and the packages you list in
-`include`, as in the other plugins. Devup UI code in a `.js` file of your own
-project is not compiled and reaches the runtime placeholders
+`.ts`, `.mts`, `.cts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever
+they are, `node_modules` included, and `.js` files inside `@devup-ui`
+packages and the packages you list in `include`, as in the other plugins.
+`.mts` and `.cts` files are read as TypeScript.
+
+`Bun.build` also compiles every `.js` and `.cjs` file outside `node_modules`:
+those of your own project, and those of a linked workspace package Bun resolves
+to its real path. A `.js` or `.cjs` file inside `node_modules` is left to Bun,
+except the `.js` files of `@devup-ui` packages and of the packages in
+`include`.
+
+Under the runtime, the `.js` and `.cjs` files of your own project are not
+compiled: Devup UI code in one reaches the runtime placeholders
 (`Cannot run on the runtime`). Give such files a `.jsx`, `.tsx` or `.mjs`
 extension.
 
 The runtime cannot take those files on. A Bun runtime plugin must return the
 source of every file its filter matches, it cannot hand a file back to Bun, and
-Bun reads returned source as an ES module, so a CommonJS `.js` file
-(`require`, `module.exports`) it matched would stop loading.
+Bun reads returned source as an ES module, so a CommonJS `.js` or `.cjs` file
+(`require`, `module.exports`) it matched would stop loading. For the same
+reason, a `.cts` file loaded under the runtime must be written with `import`
+and `export`: one written with `module.exports` or `export =` loses its
+exports. `Bun.build` reads returned CommonJS as CommonJS, so this applies to
+the runtime only.
 
 ## Libraries
 
@@ -169,6 +182,12 @@ Create a `devup.json` file in your project root:
 ```
 
 The plugin will generate `df/theme.d.ts` with TypeScript types for your theme.
+
+The project root is the `root` of `Bun.build` when it sets one, and the working
+directory otherwise: `devup.json`, `df` and `tsconfig.json` are read and written
+there. When the root has no `devup.json` but the working directory does, that
+file is still read and a one-time warning is printed; move `devup.json` into the
+root to resolve it.
 
 ## How It Works
 
