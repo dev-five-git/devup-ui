@@ -1735,6 +1735,93 @@ describe('coordinator per-bucket completion', () => {
   })
 })
 
+describe('coordinator theme reload', () => {
+  async function start(theme: CoordinatorOptions['theme']) {
+    const coordinator = startCoordinator(makeOptions({ theme }))
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    return { coordinator, port }
+  }
+
+  function extract(port: number) {
+    return httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/A.tsx',
+        code: 'c',
+        resourcePath: join(process.cwd(), 'src', 'A.tsx'),
+      }),
+    )
+  }
+
+  it('registers the theme again once one of its files changes', async () => {
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('css')
+    const devupFile = join(tmpDir, 'theme-devup.json')
+    const extended = join(tmpDir, 'theme-extended.json')
+    await Bun.write(devupFile, '{}')
+    // `extended` does not exist yet: creating it is a change too.
+    const reload = mock(() => [devupFile, extended])
+    const { coordinator, port } = await start({
+      files: [devupFile, extended],
+      reload,
+    })
+
+    await httpRequest(port, 'GET', '/css')
+    await extract(port)
+    expect(reload).not.toHaveBeenCalled()
+
+    await Bun.write(devupFile, '{"theme":{"colors":{}}}')
+    expect((await httpRequest(port, 'GET', '/css')).status).toBe(200)
+    expect(reload).toHaveBeenCalledTimes(1)
+    await httpRequest(port, 'GET', '/css')
+    expect(reload).toHaveBeenCalledTimes(1)
+
+    await Bun.write(extended, '{}')
+    expect((await extract(port)).status).toBe(200)
+    expect(reload).toHaveBeenCalledTimes(2)
+
+    coordinator.close()
+  })
+
+  it('reports a theme that fails to load and retries on the next request', async () => {
+    const devupFile = join(tmpDir, 'theme-broken.json')
+    await Bun.write(devupFile, '{}')
+    const reload = mock((): string[] => {
+      throw new Error('invalid theme')
+    })
+    const { coordinator, port } = await start({ files: [devupFile], reload })
+
+    await Bun.write(devupFile, '{"theme":1}')
+    const css = await httpRequest(port, 'GET', '/css')
+    expect(css).toEqual({ status: 500, body: 'invalid theme' })
+    reload.mockImplementation(() => {
+      throw 'still invalid'
+    })
+    expect(await httpRequest(port, 'GET', '/css')).toEqual({
+      status: 500,
+      body: 'still invalid',
+    })
+    const extracted = await extract(port)
+    expect(extracted.status).toBe(500)
+    expect(JSON.parse(extracted.body)).toEqual({ error: 'still invalid' })
+    expect(reload).toHaveBeenCalledTimes(3)
+
+    coordinator.close()
+  })
+})
+
 describe('coordinator deleted sources', () => {
   it('forgets the files deleted since when a file is extracted again', async () => {
     // Given: three extracted files, two of which are deleted later
