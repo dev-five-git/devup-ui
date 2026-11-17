@@ -1,4 +1,4 @@
-import { writeFile, writeFileSync } from 'node:fs'
+import { existsSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
@@ -128,6 +128,8 @@ export function takeExtractOutput(
 // for the same file are collapsed into 1 effective write.
 const writeChain = new Map<string, Promise<void>>()
 const latestContent = new Map<string, string>()
+/** The content of the write running for each path */
+const writingContent = new Map<string, string>()
 
 function safeWrite(path: string, content: string): Promise<void> {
   // Always record the most recent content for this path so a queued write
@@ -150,9 +152,12 @@ function safeWrite(path: string, content: string): Promise<void> {
           return
         }
         latestContent.delete(path)
-        writeFile(path, final, 'utf-8', (err) =>
-          err ? reject(err) : resolve(),
-        )
+        writingContent.set(path, final)
+        writeFile(path, final, 'utf-8', (err) => {
+          writingContent.delete(path)
+          if (err) reject(err)
+          else resolve()
+        })
       }),
   )
 
@@ -160,10 +165,20 @@ function safeWrite(path: string, content: string): Promise<void> {
   return next
 }
 
-// Best-effort drain of every pending write. Used on coordinator close so the
-// build process does not exit with stale files mid-flight.
+/** Wait for every pending serialized write to settle. */
 function flushPendingWrites(): Promise<void> {
   return Promise.allSettled([...writeChain.values()]).then(() => undefined)
+}
+
+/**
+ * Write the newest content of every path whose write is queued or still
+ * running, synchronously: `close` runs from `process.on('exit')`, where
+ * nothing asynchronous completes. Outside of `exit` the queued writes still
+ * run afterwards and write the same newest content again.
+ */
+function writePendingSync(): void {
+  for (const [path, content] of new Map([...writingContent, ...latestContent]))
+    writeFileSync(path, content, 'utf-8')
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -279,6 +294,8 @@ function waitForBase(): Promise<void> {
 // threshold (flaky CI rendering). Instead we wait for the bucket's KNOWN
 // members (from the canonical map) — no guessing, no extra extraction.
 const extractedFiles = new Set<string>()
+// Where each file the loaders posted lives, to notice the ones deleted since
+const extractedSources = new Map<string, string>()
 const fileNumToBucket = new Map<number, string>()
 let bucketToMembers = new Map<string, Set<string>>()
 let canonicalMapRef: Record<string, string> = {}
@@ -381,6 +398,7 @@ export function startCoordinator(options: CoordinatorOptions): {
     exportFileMap,
     exportSheet,
     getCss,
+    removeFile,
   } = wasm
   const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
   const extract =
@@ -394,7 +412,30 @@ export function startCoordinator(options: CoordinatorOptions): {
   expectedBaseFiles = new Set(options.expectedBaseFiles ?? [])
   extractedFiles.clear()
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
+  extractedSources.clear()
   fileNumToBucket.clear()
+
+  // A deleted file is never extracted again, so its styles would stay in the
+  // sheet; its importers are, once they stop importing it. A repeated
+  // extraction (an edit, never the first build) forgets the files gone since.
+  const removeDeletedSources = async () => {
+    let removed = false
+    for (const [filename, resourcePath] of extractedSources) {
+      if (existsSync(resourcePath)) continue
+      extractedSources.delete(filename)
+      if (removeFile(filename)) removed = true
+    }
+    if (!removed) return
+    await Promise.all([
+      safeWrite(
+        join(cssDir, 'devup-ui.css'),
+        `${getCss(null, false)}\n/* ${Date.now()} */`,
+      ),
+      safeWrite(sheetFile, exportSheet()),
+      safeWrite(classMapFile, exportClassMap()),
+      safeWrite(fileMapFile, exportFileMap()),
+    ])
+  }
 
   const coordinatorServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
@@ -458,6 +499,8 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
+        const repeated = extractedSources.has(filename)
+        extractedSources.set(filename, resourcePath)
 
         let relCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
           '\\',
@@ -511,6 +554,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         let sheetSnapshotBytes: number | undefined
         let sheetSnapshotMs: number | undefined
         const promises: Promise<void>[] = []
+        if (repeated) promises.push(removeDeletedSources())
 
         if (!cacheHit && result.updatedBaseStyle) {
           const cssStartedAt =
@@ -678,16 +722,14 @@ export function startCoordinator(options: CoordinatorOptions): {
 
   return {
     close: () => {
-      // Fire-and-forget drain of any in-flight serialized writes so the
-      // last-written CSS reflects the final sheet state, even though
-      // `close` itself returns synchronously (it is invoked from
-      // `process.on('exit', ...)` where awaiting is not possible).
-      void flushPendingWrites()
       coordinatorServer.close()
       if (server === coordinatorServer) {
         server = null
         removeOwnPortFile(coordinatorPortFile)
       }
+      // The last CSS and state on disk must hold the final sheet, though
+      // `close` cannot await the writes still pending
+      writePendingSync()
     },
   }
 }
@@ -709,10 +751,12 @@ export const resetCoordinator = () => {
   quietMs = 10_000
   maxWaitMs = 60_000
   extractedFiles.clear()
+  extractedSources.clear()
   fileNumToBucket.clear()
   bucketToMembers = new Map()
   canonicalMapRef = {}
   expectedBaseFiles = new Set()
   writeChain.clear()
   latestContent.clear()
+  writingContent.clear()
 }

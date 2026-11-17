@@ -280,28 +280,164 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(writeFileSyncSpy).not.toHaveBeenCalled()
   })
 
-  it('should error when write data files', async () => {
+  it.each([
+    ['rsbuild build', 'build'],
+    ['an rsbuild without an action', undefined],
+  ])('fails %s on a theme error', async (_name, action) => {
     const consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
     try {
-      readFileSpy.mockRejectedValueOnce('error')
-      existsSyncSpy.mockImplementation((path: string) => {
-        if (path === 'devup.json') return true
-        return false
-      })
-      const plugin = DevupUI()
-      expect(plugin).toBeDefined()
-      expect(plugin.setup).toBeDefined()
-      const transform = mock()
-      const modifyRsbuildConfig = mock()
-      await plugin.setup(
-        createSetupContext({
-          transform,
-          modifyRsbuildConfig,
-        }),
+      const clash = new Error(
+        "theme: color token 'card' and shadow token 'card' both become the CSS variable --card",
       )
-      expect(console.error).toHaveBeenCalledWith('error')
+      registerThemeSpy.mockImplementationOnce(() => {
+        throw clash
+      })
+      existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
+      const transform = mock()
+
+      await expect(
+        DevupUI().setup(
+          createSetupContext({
+            transform,
+            context: { rootPath: process.cwd(), action },
+          } as Partial<RsbuildSetupContext>),
+        ),
+      ).rejects.toBe(clash)
+
+      expect(console.error).not.toHaveBeenCalled()
+      expect(transform).not.toHaveBeenCalled()
     } finally {
       consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it.each([
+    ['an Error', new Error('bad token'), '[devup-ui] bad token'],
+    ['a thrown string', 'error', '[devup-ui] error'],
+  ])(
+    'reports a theme error that is %s in every dev compilation until it loads again',
+    async (_name, thrown, message) => {
+      const consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
+      const statSpy = spyOn(fsPromises, 'stat')
+      const readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+        '@theme { --color-brand: #0af; }',
+      )
+      try {
+        registerThemeSpy.mockImplementationOnce(() => {
+          throw thrown
+        })
+        readFileSpy.mockResolvedValue(
+          JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+        )
+        existsSyncSpy.mockImplementation(
+          (path: string) => path === 'devup.json',
+        )
+        const modifyRspackConfig = mock()
+        await DevupUI({ atomHoist: 0 }).setup(
+          createSetupContext({
+            modifyRspackConfig,
+            context: { rootPath: process.cwd(), action: 'dev' },
+          } as Partial<RsbuildSetupContext>),
+        )
+        expect(console.error).toHaveBeenCalledWith(thrown)
+        expect(registerThemeSpy).toHaveBeenLastCalledWith({})
+
+        const taps: Record<string, (...args: unknown[]) => unknown> = {}
+        const tap =
+          (hook: string) =>
+          (_: unknown, fn: (...args: unknown[]) => unknown) => {
+            taps[hook] = fn
+          }
+        const compiler = {
+          options: {},
+          rspack: {
+            WebpackError: Error,
+            Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 },
+          },
+          hooks: {
+            run: { tap: tap('run') },
+            watchRun: { tap: tap('watchRun') },
+            invalid: { tap: tap('invalid') },
+            thisCompilation: { tap: tap('start') },
+          },
+        }
+        const config: { plugins?: { apply(compiler: unknown): void }[] } = {}
+        modifyRspackConfig.mock.calls[0][0](config)
+        const tapPromise = mock()
+        config.plugins![0]!.apply({ hooks: { watchRun: { tapPromise } } })
+        modifyRspackConfig.mock.calls[1][0](config, {
+          environment: { name: 'web' },
+        })
+        config.plugins![1]!.apply(compiler)
+        const compile = () => {
+          const compilation = {
+            errors: [] as Error[],
+            assets: {},
+            hooks: {
+              finishModules: { tap: mock() },
+              processAssets: { tap: mock() },
+              needAdditionalPass: { tap: mock() },
+            },
+          }
+          taps.start!(compilation)
+          return compilation.errors.map((error) => error.message)
+        }
+        expect(compile()).toEqual([message])
+        expect(compile()).toEqual([message])
+
+        // The theme loads again once its files change
+        const watchRun = tapPromise.mock.calls[0][1] as () => Promise<void>
+        statSpy.mockResolvedValueOnce({ mtimeMs: 1 } as fs.Stats)
+        await watchRun()
+        expect(compile()).toEqual([message])
+        statSpy.mockResolvedValueOnce({ mtimeMs: 2 } as fs.Stats)
+        await watchRun()
+        expect(compile()).toEqual([])
+      } finally {
+        consoleErrorSpy.mockRestore()
+        statSpy.mockRestore()
+        readFileSyncSpy.mockRestore()
+        readFileSpy.mockResolvedValue('{}')
+      }
+    },
+  )
+
+  it('keeps a dev server running when a reload fails to register the theme', async () => {
+    const consoleErrorSpy = spyOn(console, 'error').mockReturnValue(undefined)
+    const statSpy = spyOn(fsPromises, 'stat')
+    const readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
+      '@theme { --color-brand: #0af; }',
+    )
+    try {
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ tailwind: { css: 'tailwind.css' } }),
+      )
+      existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
+      const modifyRspackConfig = mock()
+      // A build run: only its first load fails the build
+      await DevupUI({}).setup(createSetupContext({ modifyRspackConfig }))
+      const config: { plugins?: { apply: (compiler: unknown) => void }[] } = {}
+      modifyRspackConfig.mock.calls[0][0](config)
+      const tapPromise = mock()
+      config.plugins?.[0].apply({ hooks: { watchRun: { tapPromise } } })
+      const watchRun = tapPromise.mock.calls[0][1] as () => Promise<void>
+      const failure = new Error('bad token')
+      registerThemeSpy.mockImplementationOnce(() => {
+        throw failure
+      })
+
+      statSpy.mockResolvedValueOnce({ mtimeMs: 1 } as fs.Stats)
+      await watchRun()
+      statSpy.mockResolvedValueOnce({ mtimeMs: 2 } as fs.Stats)
+      await watchRun()
+
+      expect(console.error).toHaveBeenCalledWith(failure)
+      expect(registerThemeSpy).toHaveBeenLastCalledWith({})
+    } finally {
+      consoleErrorSpy.mockRestore()
+      statSpy.mockRestore()
+      readFileSyncSpy.mockRestore()
+      readFileSpy.mockResolvedValue('{}')
     }
   })
 
@@ -370,6 +506,22 @@ describe('DevupUIRsbuildPlugin', () => {
       getCssSpy.mockRestore()
     }
   })
+  it('extracts MDX in a post transform, after the MDX loader compiled it', async () => {
+    const transform = mock()
+    await DevupUI().setup(
+      createSetupContext({ transform, modifyRsbuildConfig: mock() }),
+    )
+    const source = transform.mock.calls.find(
+      ([descriptor]) =>
+        String(descriptor.test) === String(/\.(tsx|ts|js|mjs|jsx)$/),
+    )
+    const mdx = transform.mock.calls.find(
+      ([descriptor]) => descriptor.order === 'post',
+    )
+    expect(mdx?.[0]).toEqual({ test: /\.mdx$/i, order: 'post' })
+    expect(mdx?.[1]).toBe(source?.[1])
+  })
+
   it('should transform code', async () => {
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
@@ -686,6 +838,35 @@ const App = () => <Box></Box>`,
         },
       })
     }
+  })
+
+  it('overwrites theme.d.ts when the theme has no tokens and creates cssDir before writing into it', async () => {
+    getThemeInterfaceSpy.mockReturnValue('')
+    const cssDir = resolve('df', 'devup-ui')
+    let made = false
+    mkdirSpy.mockImplementation(
+      () =>
+        new Promise<undefined>((done) =>
+          setTimeout(() => {
+            made = true
+            done(undefined)
+          }, 5),
+        ),
+    )
+    const writtenAfterMkdir = new Map<string, boolean>()
+    writeFileSpy.mockImplementation((path: string) => {
+      writtenAfterMkdir.set(path, made)
+      return Promise.resolve()
+    })
+    const plugin = DevupUI({ atomHoist: 0 })
+    await plugin.setup(createSetupContext())
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      '',
+      'utf-8',
+    )
+    expect(mkdirSpy).toHaveBeenCalledWith(cssDir, { recursive: true })
+    expect(writtenAfterMkdir.get(join(cssDir, 'devup-ui.css'))).toBe(true)
   })
 
   it('should call setPrefix when prefix option is provided', async () => {
@@ -1021,10 +1202,20 @@ const App = () => <Box></Box>`,
       expect(
         rspackCfg.optimization.splitChunks.cacheGroups?.devupUiShared.type,
       ).toBe('css/mini-extract')
-      // splitChunks missing/false -> no cacheGroup added, no throw
-      const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
+      // no optimization or splitChunks yet -> the group is still added
+      const rspackCfg2 = {} as {
+        optimization?: {
+          splitChunks?: { cacheGroups?: Record<string, { type?: string }> }
+        }
+      }
       inject(rspackCfg2)
-      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+      expect(
+        rspackCfg2.optimization?.splitChunks?.cacheGroups?.devupUiShared.type,
+      ).toBe('css/mini-extract')
+      // splitChunks false (chunk splitting off on purpose) -> left as it is
+      const rspackCfg3 = { optimization: { splitChunks: false } }
+      inject(rspackCfg3)
+      expect(rspackCfg3.optimization.splitChunks).toBe(false)
     })
 
     it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {
@@ -1210,6 +1401,28 @@ const App = () => <Box></Box>`,
         resolve('src', 'App.tsx').replaceAll('\\', '/'),
       )
     })
+
+    it.each([
+      [2, resolve('src', 'Gone.tsx').replaceAll('\\', '/')],
+      [0, resolve('src', 'Gone.tsx')],
+    ])(
+      'forgets deleted sources at watchRun with atomHoist=%s',
+      async (atomHoist, name) => {
+        // Given: a watch revision that deleted a source
+        using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+        const { compiler, taps } = await setup({ atomHoist })
+        assert(taps.watchRun)
+        taps.watchRun()
+        expect(removeFile).not.toHaveBeenCalled()
+        Object.assign(compiler, {
+          removedFiles: new Set([resolve('src', 'Gone.tsx')]),
+        })
+        // When
+        taps.watchRun()
+        // Then: the engine forgets it under the name the transform used
+        expect(removeFile.mock.calls).toEqual([[name]])
+      },
+    )
 
     it('reserves public compiler revisions without adding watch prewarm', async () => {
       const reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(

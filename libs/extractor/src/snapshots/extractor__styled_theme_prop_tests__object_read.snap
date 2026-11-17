@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/styled_theme_prop_tests.rs
+expression: compile(code)
+---
+theme.tsx:3:27: `<B theme={...}>` cannot change the theme at build time: the styles of `B` read the theme as CSS variables, so the theme passed to one element would be ignored. Fix: wrap the element in a `ThemeProvider` with that theme, or pass the values as props the styles read

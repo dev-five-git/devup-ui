@@ -14,7 +14,7 @@ pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use lazy_css::LazyCss;
 pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};
 pub use reservation::{ReservationInput, reserve_class_slots_internal};
-pub use resolver_state::{ResolverRequest, ResolverState};
+pub use resolver_state::{ResolverRequest, ResolverState, check_resolved_path, resolved_module};
 
 use css::class_map::{set_class_map, with_class_map};
 use css::file_map::{set_canonical_map, set_file_map, with_canonical_map, with_file_map};
@@ -143,6 +143,19 @@ pub fn export_canonical_map_internal() -> Result<String, String> {
 /// Seed deterministic file numbers without replacing existing assignments.
 pub fn seed_file_map(files: &[String]) {
     css::file_map::seed_file_numbers(files);
+}
+
+/// Forget a deleted source file: its global CSS, its own bucket with the class
+/// names handed out in it, and the bucket it collapsed into.
+///
+/// File numbers stay, as they are handed out by count and a freed one would be
+/// handed out twice. Returns whether the sheet changed.
+pub fn remove_file_internal(filename: &str) -> bool {
+    let (bucket, alone) = css::file_map::remove_bucket_membership(filename);
+    if alone {
+        css::class_map::remove_class_scope(&bucket);
+    }
+    with_style_sheet_mut(|sheet| sheet.rm_file(filename, &bucket, alone))
 }
 
 /// Clear production build state, retaining theme registries, shorthands and debug.

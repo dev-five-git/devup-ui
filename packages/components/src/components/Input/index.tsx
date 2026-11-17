@@ -12,7 +12,7 @@ import { ComponentProps, forwardRef, useId, useRef, useState } from 'react'
 
 import { joinIds, mergeRefs } from '../../utils/dom'
 
-interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
+export interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   type?: Exclude<ComponentProps<'input'>['type'], 'file'>
   typography?: keyof DevupThemeTypography
   error?: boolean

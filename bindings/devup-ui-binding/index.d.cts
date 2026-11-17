@@ -11,7 +11,7 @@ export class Output {
   readonly updatedBaseStyle: boolean
 }
 
-// Positional signatures intentionally match the existing 29-name compiler ABI.
+// Positional signatures intentionally match the existing 30-name compiler ABI.
 export function codeExtract(
   filename: string,
   code: string,
@@ -65,6 +65,8 @@ export function importSheet(value: unknown): void
 export function isDebug(): boolean
 export function registerShorthands(value: unknown): void
 export function registerTheme(value: unknown): void
+/** Forget a deleted source file's own styles; whether the sheet changed. */
+export function removeFile(filename: string): boolean
 export function reserveClassSlots(
   rows: unknown,
   packageName: string,

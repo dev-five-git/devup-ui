@@ -376,8 +376,8 @@ fn resolved_token_keys_are_reserved_before_real_output() -> TestResult {
         &option,
     )?;
     let css = output.css.ok_or("expected token CSS")?.get();
-    assert!(css.contains("width:8px"));
-    assert!(css.contains("box-shadow:0 0 1px red"));
+    assert!(css.contains("width:var(--size)"));
+    assert!(css.contains("box-shadow:var(--card)"));
     assert!(!css.contains("$size"));
     assert!(!css.contains("$card"));
     assert_eq!(get_unreserved_class_slot_count(), 0);

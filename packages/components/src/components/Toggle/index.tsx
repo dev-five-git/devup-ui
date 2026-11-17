@@ -1,6 +1,6 @@
 'use client'
 import { Box, Input } from '@devup-ui/react'
-import { useState } from 'react'
+import { forwardRef, useState } from 'react'
 
 interface ToggleProps {
   defaultValue?: boolean | null
@@ -31,21 +31,25 @@ interface ToggleProps {
   }
 }
 
-export function Toggle({
-  defaultValue = null,
-  value = null,
-  onChange,
-  disabled,
-  className,
-  style,
-  variant = 'default',
-  colors,
-  classNames,
-  styles,
-  name,
-  'aria-label': ariaLabel,
-  'aria-labelledby': ariaLabelledBy,
-}: ToggleProps) {
+/** The ref is the switch element, the one with `role="switch"` */
+export const Toggle = forwardRef<HTMLDivElement, ToggleProps>(function Toggle(
+  {
+    defaultValue = null,
+    value = null,
+    onChange,
+    disabled,
+    className,
+    style,
+    variant = 'default',
+    colors,
+    classNames,
+    styles,
+    name,
+    'aria-label': ariaLabel,
+    'aria-labelledby': ariaLabelledBy,
+  },
+  ref,
+) {
   const [innerValue, setInnerValue] = useState<boolean>(
     value ?? defaultValue ?? false,
   )
@@ -62,6 +66,7 @@ export function Toggle({
   return (
     <>
       <Box
+        ref={ref}
         _focusVisible={{
           outline: '2px solid $primary',
           outlineOffset: '2px',
@@ -152,4 +157,4 @@ export function Toggle({
       />
     </>
   )
-}
+})
