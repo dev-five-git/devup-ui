@@ -1,7 +1,9 @@
 //! A shorthand written after a longhand it covers wins (#688), whatever order
 //! the stylesheet gives the two (#690 writes a longhand after its shorthands):
 //! the earlier longhand's atom is dropped when both are static and
-//! unconditional at the same selector, breakpoint, layer and style order
+//! unconditional at the same selector, breakpoint, layer and style order.
+//! JSX attributes between two spreads have no written order (the lint sorts
+//! them by name), so only a spread orders them
 use crate::{ExtractOption, extract};
 use css::{class_map::reset_class_map, file_map::reset_file_map};
 use rstest::rstest;
@@ -55,16 +57,20 @@ const STYLED: &str = "import { styled } from '@devup-ui/react';";
     format!("{CSS} const b = css({{ borderTopWidth: 2 }}); export const a = css(b, {{ borderWidth: 1 }});"),
     &["border-top-width-0-8px--255", "border-width-0-4px--255"]
 )]
-#[case::box_props(
-    format!("{BOX} export const a = <Box borderTopWidth={{2}} borderWidth={{1}} />;"),
-    &["border-width-0-4px--255"]
-)]
 #[case::box_selector(
     format!("{BOX} export const a = <Box _hover={{{{ borderTopWidth: 2, borderWidth: 1 }}}} />;"),
     &["border-width-0-4px-_a__c_hover-255"]
 )]
 #[case::box_spread(
     format!("{BOX} export const a = <Box {{...{{ borderTopWidth: 2 }}}} borderWidth={{1}} />;"),
+    &["border-width-0-4px--255"]
+)]
+#[case::box_attribute_before_spread(
+    format!("{BOX} export const a = <Box borderTopWidth={{2}} {{...{{ borderWidth: 1 }}}} />;"),
+    &["border-width-0-4px--255"]
+)]
+#[case::box_attribute_runs(
+    format!("{BOX} export const a = (p) => <Box borderTopWidth={{2}} {{...p}} borderWidth={{1}} />;"),
     &["border-width-0-4px--255"]
 )]
 #[case::styled_member(
@@ -95,6 +101,18 @@ fn later_shorthand_drops_the_longhand_it_covers(#[case] code: String, #[case] ex
 #[case::other_breakpoint(
     format!("{CSS} export const a = css({{ borderTopWidth: [2, 3], borderWidth: 1 }});"),
     &["border-top-width-1-12px--255", "border-width-0-4px--255"]
+)]
+#[case::box_props(
+    format!("{BOX} export const a = <Box borderTopWidth={{2}} borderWidth={{1}} />;"),
+    &["border-top-width-0-8px--255", "border-width-0-4px--255"]
+)]
+#[case::box_gradient_text(
+    format!("{BOX} export const a = <Box backgroundClip=\"text\" bg=\"red\" />;"),
+    &["background-0-red--255", "background-clip-0-text--255"]
+)]
+#[case::box_spread_attribute_runs(
+    format!("{BOX} export const a = (p) => <Box {{...p}} borderTopWidth={{2}} borderWidth={{1}} />;"),
+    &["border-top-width-0-8px--255", "border-width-0-4px--255"]
 )]
 #[case::unrelated(
     format!("{CSS} export const a = css({{ paddingTop: 2, margin: 1 }});"),
