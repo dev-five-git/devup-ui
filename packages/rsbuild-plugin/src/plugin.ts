@@ -17,16 +17,18 @@ import {
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
   type ImportAliases,
+  isMissingDirectory,
   loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  setupWarning,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import type { RsbuildPlugin, Rspack } from '@rsbuild/core'
+import type { RsbuildPlugin, Rspack, TransformHandler } from '@rsbuild/core'
 
 import { createReservation, staticEntries } from './reservation'
 
@@ -76,41 +78,45 @@ async function writeDataFiles(
     'extractCss' | 'debug' | 'include'
   >,
   compiler: DevupCompiler,
-): Promise<string[]> {
+  watching: boolean,
+): Promise<{ tailwindFiles: string[]; themeError: unknown }> {
   let tailwindFiles: string[] = []
+  let themeError: unknown
   try {
     const config = await loadDevupConfig(options.devupFile)
     const theme = config.theme ?? {}
 
-    compiler.registerTheme(withTailwindCss(theme, config))
+    // Watched even when the theme fails, so fixing the Tailwind CSS reloads it
     tailwindFiles = tailwindCssFiles(config)
-    const interfaceCode = compiler.getThemeInterface(
-      ...createThemeInterfaceArgs(options.package),
+    compiler.registerTheme(withTailwindCss(theme, config))
+    // Written even when empty, so tokens removed from the theme leave no
+    // stale declarations behind.
+    await writeFile(
+      join(options.distDir, 'theme.d.ts'),
+      compiler.getThemeInterface(...createThemeInterfaceArgs(options.package)),
+      'utf-8',
     )
-
-    if (interfaceCode) {
-      await writeFile(
-        join(options.distDir, 'theme.d.ts'),
-        interfaceCode,
-        'utf-8',
-      )
-    }
   } catch (error) {
+    // A one-shot build fails on a theme it cannot load or register: an empty
+    // theme would ship unstyled output. A watcher keeps running, since
+    // devup.json may be mid-edit, and reports the error until it is fixed.
+    if (!watching) throw error
     console.error(error)
     compiler.registerTheme({})
+    themeError = error
   }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(
-          join(options.cssDir, 'devup-ui.css'),
-          compiler.getCss(null, false),
-        )
-      : Promise.resolve(),
-  ])
-  return tailwindFiles
+  // Sequential: writing into cssDir concurrently with its own mkdir loses the
+  // race on a cold start (no `df/`) and fails the build with ENOENT.
+  if (!existsSync(options.cssDir)) {
+    await mkdir(options.cssDir, { recursive: true })
+  }
+  if (!options.singleCss) {
+    await writeFile(
+      join(options.cssDir, 'devup-ui.css'),
+      compiler.getCss(null, false),
+    )
+  }
+  return { tailwindFiles, themeError }
 }
 
 /**
@@ -139,6 +145,7 @@ export const DevupUI = ({
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
   const importAliases = mergeImportAliases(
@@ -167,7 +174,9 @@ export const DevupUI = ({
         'utf-8',
       )
 
-      let tailwindFiles = await writeDataFiles(
+      // `rsbuild dev` outlives a broken devup.json; every compilation reports
+      // it until it loads again
+      let { tailwindFiles, themeError } = await writeDataFiles(
         {
           package: libPackage,
           cssDir,
@@ -176,6 +185,7 @@ export const DevupUI = ({
           singleCss,
         },
         compiler,
+        api.context.action === 'dev',
       )
       if (!extractCss) return
 
@@ -206,7 +216,7 @@ export const DevupUI = ({
                   )
                 ).join()
                 if (stamp !== undefined && stamp !== current) {
-                  tailwindFiles = await writeDataFiles(
+                  ;({ tailwindFiles, themeError } = await writeDataFiles(
                     {
                       package: libPackage,
                       cssDir,
@@ -215,7 +225,8 @@ export const DevupUI = ({
                       singleCss,
                     },
                     compiler,
-                  )
+                    true,
+                  ))
                 }
                 stamp = current
               },
@@ -265,8 +276,16 @@ export const DevupUI = ({
               '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
             )
           }
-        } catch {
+        } catch (error) {
           // Best-effort; on failure atom hoisting stays off (identity).
+          if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+            console.warn(
+              setupWarning(
+                'Rsbuild import graph',
+                error,
+                'Atom hoisting is off, so atoms several routes share are not moved into the shared stylesheet.',
+              ),
+            )
         }
       }
 
@@ -326,6 +345,12 @@ export const DevupUI = ({
       })
 
       const servedCss = new Map<string, Map<string, string>>()
+      // Forget deleted source files, under the names the transform extracts
+      // them under
+      const removeFiles = (files: ReadonlySet<string> | undefined) => {
+        for (const file of files ?? [])
+          compiler.removeFile(atomMode ? file.replaceAll('\\', '/') : file)
+      }
       const stylesheet = (resourcePath: string) =>
         // A file's stylesheet imports the shared base, except in atom mode,
         // where the entry code imports the base itself so that hoisted atoms
@@ -365,9 +390,18 @@ export const DevupUI = ({
             compiler.hooks.invalid.tap(PLUGIN_NAME, reservation.invalidate)
             compiler.hooks.watchRun.tap(PLUGIN_NAME, () => {
               passes = 0
+              // A deleted source file is never transformed again; the
+              // stylesheets it was in are checked against the sheet below
+              removeFiles(compiler.removedFiles)
               reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
+              if (themeError !== undefined)
+                compilation.errors.push(
+                  new compiler.rspack.WebpackError(
+                    `[devup-ui] ${themeError instanceof Error ? themeError.message : String(themeError)}`,
+                  ),
+                )
               const basePath = join(cssDir, 'devup-ui.css')
               const base = stylesheet(basePath)
               writeChanged(basePath, base)
@@ -437,8 +471,11 @@ export const DevupUI = ({
             }
           }) => {
             rspackConfig.optimization ??= {}
-            const sc = rspackConfig.optimization.splitChunks
-            if (sc && typeof sc === 'object') {
+            // No splitChunks config yet still gets the group (rspack fills
+            // in its defaults around it); `false` turns chunk splitting off
+            // on purpose, so the base CSS stays in each entry.
+            const sc = (rspackConfig.optimization.splitChunks ??= {})
+            if (sc) {
               sc.cacheGroups ??= {}
               sc.cacheGroups['devupUiShared'] = {
                 type: 'css/mini-extract',
@@ -458,81 +495,83 @@ export const DevupUI = ({
         return config
       })
 
-      api.transform(
-        {
-          test: /\.(tsx|ts|js|mjs|jsx)$/,
-        },
-        async ({ code, resourcePath, addDependency }) => {
-          if (createNodeModulesExcludeRegex(include).test(resourcePath))
-            return code
-          for (const file of tailwindFiles) addDependency(file)
-          // The stylesheet import is emitted relative to the importing file, as
-          // in the next/webpack/vite loaders. An absolute cssDir would bake this
-          // checkout's path into the emitted module, so byte-identical sources
-          // in two checkouts (git worktrees, a CI matrix, sibling clones) would
-          // produce different output and any content-addressed or relocated
-          // build cache would serve the wrong checkout's stylesheet.
-          //
-          // Atom mode additionally mirrors vite: the entry CODE imports the
-          // shared base (import_main_css_in_code=true) so rspack emits
-          // devup-ui.css once and links it from every entry (hoisted atoms
-          // shared, not inlined), and the extraction filename is
-          // POSIX-normalized to match the absolute-keyed canonical map /
-          // FILE_ROUTES.
-          let extractCssDir = relative(
-            dirname(resourcePath),
-            cssDir,
-          ).replaceAll('\\', '/')
-          if (!extractCssDir.startsWith('./'))
-            extractCssDir = `./${extractCssDir}`
-          const extractName = atomMode
-            ? resourcePath.replaceAll('\\', '/')
-            : resourcePath
-          const {
-            code: retCode,
-            map,
-            cssFile,
-            updatedBaseStyle,
-            dependencies = [],
-          } = compiler.codeExtract(
-            extractName,
-            code,
-            libPackage,
-            extractCssDir,
-            singleCss,
-            atomMode,
-            !atomMode,
-            importAliases,
+      const extractModule: TransformHandler = async ({
+        code,
+        resourcePath,
+        addDependency,
+      }) => {
+        if (excludeRegex.test(resourcePath)) return code
+        for (const file of tailwindFiles) addDependency(file)
+        // The stylesheet import is emitted relative to the importing file, as
+        // in the next/webpack/vite loaders. An absolute cssDir would bake this
+        // checkout's path into the emitted module, so byte-identical sources
+        // in two checkouts (git worktrees, a CI matrix, sibling clones) would
+        // produce different output and any content-addressed or relocated
+        // build cache would serve the wrong checkout's stylesheet.
+        //
+        // Atom mode additionally mirrors vite: the entry CODE imports the
+        // shared base (import_main_css_in_code=true) so rspack emits
+        // devup-ui.css once and links it from every entry (hoisted atoms
+        // shared, not inlined), and the extraction filename is
+        // POSIX-normalized to match the absolute-keyed canonical map /
+        // FILE_ROUTES.
+        let extractCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
+          '\\',
+          '/',
+        )
+        if (!extractCssDir.startsWith('./'))
+          extractCssDir = `./${extractCssDir}`
+        const extractName = atomMode
+          ? resourcePath.replaceAll('\\', '/')
+          : resourcePath
+        const {
+          code: retCode,
+          map,
+          cssFile,
+          updatedBaseStyle,
+          dependencies = [],
+        } = compiler.codeExtract(
+          extractName,
+          code,
+          libPackage,
+          extractCssDir,
+          singleCss,
+          atomMode,
+          !atomMode,
+          importAliases,
+        )
+        for (const dependency of dependencies) addDependency(dependency)
+        const promises: Promise<void>[] = []
+        if (updatedBaseStyle) {
+          // update base style
+          promises.push(
+            stateWriter.write(
+              join(cssDir, 'devup-ui.css'),
+              compiler.getCss(null, false),
+              'utf-8',
+            ),
           )
-          for (const dependency of dependencies) addDependency(dependency)
-          const promises: Promise<void>[] = []
-          if (updatedBaseStyle) {
-            // update base style
-            promises.push(
-              stateWriter.write(
-                join(cssDir, 'devup-ui.css'),
-                compiler.getCss(null, false),
-                'utf-8',
-              ),
-            )
-          }
+        }
 
-          if (cssFile) {
-            promises.push(
-              stateWriter.write(
-                join(cssDir, basename(cssFile)),
-                stylesheet(cssFile),
-                'utf-8',
-              ),
-            )
-          }
-          await Promise.all(promises)
-          return {
-            code: retCode,
-            map,
-          }
-        },
-      )
+        if (cssFile) {
+          promises.push(
+            stateWriter.write(
+              join(cssDir, basename(cssFile)),
+              stylesheet(cssFile),
+              'utf-8',
+            ),
+          )
+        }
+        await Promise.all(promises)
+        return {
+          code: retCode,
+          map,
+        }
+      }
+      api.transform({ test: /\.(tsx|ts|js|mjs|jsx)$/ }, extractModule)
+      // MDX compiles to JavaScript in a normal-phase loader such as
+      // `@mdx-js/loader`: a `post` transform extracts what it compiled.
+      api.transform({ test: /\.mdx$/i, order: 'post' }, extractModule)
     },
   }
 }

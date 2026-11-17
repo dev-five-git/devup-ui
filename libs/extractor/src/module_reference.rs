@@ -39,7 +39,8 @@ pub fn original_module_references(
     source: &str,
 ) -> HashMap<String, Vec<ModuleReferenceLocation>> {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
+    let source_type =
+        crate::parsing::path_source_type(filename).unwrap_or_else(|_| SourceType::ts());
     let parsed = Parser::new(&allocator, source, source_type).parse();
     let program = parsed.program;
     let mut offsets = Vec::new();

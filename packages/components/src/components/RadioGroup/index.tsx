@@ -1,12 +1,19 @@
 'use client'
 import { Flex } from '@devup-ui/react'
-import { useId, useState } from 'react'
+import {
+  type ForwardedRef,
+  forwardRef,
+  type ReactElement,
+  type Ref,
+  useId,
+  useState,
+} from 'react'
 
 import { Radio } from '../Radio'
 
 type RadioValue = string | number | boolean
 
-interface RadioGroupProps<T extends RadioValue> {
+export interface RadioGroupProps<T extends RadioValue> {
   options: {
     value: T
     label: React.ReactNode
@@ -46,22 +53,25 @@ interface RadioGroupProps<T extends RadioValue> {
     container?: React.CSSProperties
   }
 }
-export function RadioGroup<T extends RadioValue>({
-  disabled,
-  options,
-  direction = 'row',
-  variant = 'default',
-  style,
-  value,
-  onChange,
-  defaultValue,
-  colors,
-  className,
-  classNames,
-  styles,
-  name,
-  label,
-}: RadioGroupProps<T>) {
+function RadioGroupWithRef<T extends RadioValue>(
+  {
+    disabled,
+    options,
+    direction = 'row',
+    variant = 'default',
+    style,
+    value,
+    onChange,
+    defaultValue,
+    colors,
+    className,
+    classNames,
+    styles,
+    name,
+    label,
+  }: RadioGroupProps<T>,
+  ref: ForwardedRef<HTMLDivElement>,
+) {
   const generatedId = useId()
   const [innerValue, setInnerValue] = useState<T | undefined>(defaultValue)
   const resultValue = value !== undefined ? value : innerValue
@@ -73,6 +83,7 @@ export function RadioGroup<T extends RadioValue>({
 
   return (
     <Flex
+      ref={ref}
       aria-disabled={disabled}
       aria-label={label}
       className={classNames?.container}
@@ -114,3 +125,9 @@ export function RadioGroup<T extends RadioValue>({
     </Flex>
   )
 }
+// forwardRef drops the type parameter, so the generic signature is restored
+export const RadioGroup = forwardRef(RadioGroupWithRef) as <
+  T extends RadioValue,
+>(
+  props: RadioGroupProps<T> & { ref?: Ref<HTMLDivElement> },
+) => ReactElement

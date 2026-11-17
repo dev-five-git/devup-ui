@@ -46,14 +46,40 @@ export function deepMerge<T, U>(base: T, override: U): T {
 }
 
 /**
- * Parse JSON content safely
+ * Parse a config file's content. A file that is not a JSON object is an
+ * error naming the file: loading it as an empty config would silently drop
+ * the whole theme.
  */
-function parseConfig(content: string): DevupConfig {
+function parseConfig(content: string, path: string): DevupConfig {
+  let config: unknown
   try {
-    return JSON.parse(content) as DevupConfig
-  } catch {
-    return {}
+    config = JSON.parse(content)
+  } catch (cause) {
+    throw new Error(
+      `${path} is not valid JSON: ${(cause as Error).message}. Fix its syntax; Devup UI does not load the theme until it parses.`,
+      { cause },
+    )
   }
+  if (!isPlainObject(config)) {
+    throw new Error(
+      `${path} must hold a JSON object such as { "theme": {} }, not ${config === null ? 'null' : Array.isArray(config) ? 'an array' : `a ${typeof config}`}.`,
+    )
+  }
+  return config as DevupConfig
+}
+
+/**
+ * The `extends` chain that leads to `configPath`, ending with it. A file
+ * that is already on the chain extends itself through it, which never ends.
+ */
+function enterConfig(configPath: string, chain: readonly string[]): string[] {
+  const path = resolve(configPath)
+  if (chain.includes(path)) {
+    throw new Error(
+      `devup.json \`extends\` form a cycle: ${[...chain, path].join(' -> ')}. Remove the \`extends\` entry that points back to an earlier file.`,
+    )
+  }
+  return [...chain, path]
 }
 
 /**
@@ -87,13 +113,22 @@ export function loadDevupConfigSync(
   configPath: string,
   inputs?: Set<string>,
 ): DevupConfig {
+  return loadConfigSync(configPath, inputs, [])
+}
+
+function loadConfigSync(
+  configPath: string,
+  inputs: Set<string> | undefined,
+  parents: readonly string[],
+): DevupConfig {
   inputs?.add(resolve(configPath))
+  const chain = enterConfig(configPath, parents)
   if (!existsSync(configPath)) {
     return {}
   }
 
   const content = readFileSync(configPath, 'utf-8')
-  const config = parseConfig(content)
+  const config = parseConfig(content, chain[chain.length - 1])
 
   // If no extends, return the config as-is
   if (!config.extends || config.extends.length === 0) {
@@ -105,7 +140,7 @@ export function loadDevupConfigSync(
   return mergeExtendedConfigs(
     config,
     config.extends.map((extendPath) =>
-      loadDevupConfigSync(resolve(configDir, extendPath), inputs),
+      loadConfigSync(resolve(configDir, extendPath), inputs, chain),
     ),
   )
 }
@@ -117,17 +152,26 @@ export function loadDevupConfigSync(
  * @param configPath - Path to the devup.json file
  * @returns Resolved configuration with all extends merged
  */
-export async function loadDevupConfig(
+export function loadDevupConfig(
   configPath: string,
   inputs?: Set<string>,
 ): Promise<DevupConfig> {
+  return loadConfig(configPath, inputs, [])
+}
+
+async function loadConfig(
+  configPath: string,
+  inputs: Set<string> | undefined,
+  parents: readonly string[],
+): Promise<DevupConfig> {
   inputs?.add(resolve(configPath))
+  const chain = enterConfig(configPath, parents)
   if (!existsSync(configPath)) {
     return {}
   }
 
   const content = await readFile(configPath, 'utf-8')
-  const config = parseConfig(content)
+  const config = parseConfig(content, chain[chain.length - 1])
 
   // If no extends, return the config as-is
   if (!config.extends || config.extends.length === 0) {
@@ -140,7 +184,7 @@ export async function loadDevupConfig(
   const extendedConfigs: DevupConfig[] = []
   for (const extendPath of config.extends) {
     extendedConfigs.push(
-      await loadDevupConfig(resolve(configDir, extendPath), inputs),
+      await loadConfig(resolve(configDir, extendPath), inputs, chain),
     )
   }
 

@@ -34,7 +34,8 @@ const expectedEntry = await realpath(
   join(packageRoot, manifest.exports['.'][format]),
 )
 const expectedLoaders = await Promise.all(
-  ['./loader', './css-loader'].map((name) =>
+  // The MDX post rule runs the source loader again
+  ['./loader', './css-loader', './loader'].map((name) =>
     realpath(join(packageRoot, manifest.exports[name].require)),
   ),
 )
@@ -91,7 +92,11 @@ try {
       ),
     ].map((path) => realpath(path)),
   )
-  assert.deepEqual(utilsPaths, [utilsPaths[0], utilsPaths[0], utilsPaths[0]])
+  assert.deepEqual(
+    utilsPaths,
+    utilsPaths.map(() => utilsPaths[0]),
+  )
+  assert.equal(utilsPaths.length, 4)
   for (const path of loaders) {
     const fromLoader = createRequire(path)(
       '@devup-ui/plugin-utils',
@@ -176,7 +181,7 @@ try {
   assert.deepEqual(
     selectedLoaders,
     expectedLoaders,
-    'both loaders must belong to the installed plugin',
+    'every loader must belong to the installed plugin',
   )
 } finally {
   for (const name of methods) {

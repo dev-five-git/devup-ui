@@ -69,6 +69,11 @@ pub fn get_class_map() -> HashMap<String, HashMap<String, usize>> {
     with_class_map(Clone::clone)
 }
 
+/// Forget the class names handed out in one bucket.
+pub fn remove_class_scope(scope: &str) {
+    with_class_map_mut(|map| map.remove(scope));
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
