@@ -252,11 +252,44 @@ your-project/
 └── ...
 ```
 
+## Extending Other Files
+
+`extends` lists other `devup.json` files to build on, such as a theme shared
+across the packages of a monorepo:
+
+```json
+{
+  "extends": ["../../shared/devup.json"],
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3"
+      }
+    }
+  }
+}
+```
+
+- Paths are file paths relative to the file that lists them, not package
+  names. An extended file may extend others in turn.
+- The files merge in order: the first entry is the base, each later entry
+  overrides it, and the file itself is applied last.
+- Objects merge key by key, so the example keeps every color the shared file
+  defines and replaces only `primary`. Arrays, such as responsive values and
+  `breakpoints`, are replaced as a whole.
+- A path to a file that does not exist adds nothing, without an error. Check
+  the path when a shared token is missing.
+- Files that extend each other in a loop are an error naming the chain.
+
+The development servers of the Vite, webpack, Rsbuild and Next.js plugins
+reload the theme when any file of the chain changes.
+
 ## Plugin Configuration
 
 By default, plugins look for `devup.json` in the project root: Vite's `root`,
 webpack's `context`, Rsbuild's root, the Next.js project directory (webpack
-builds) or the `root` of `Bun.build`. Relative `devupFile`, `distDir` and
+builds; Turbopack builds use the working directory) or the `root` of
+`Bun.build`. Relative `devupFile`, `distDir` and
 `cssDir` paths resolve against it, not against the directory a monorepo tool
 (turbo, nx, ...) starts the build from. If `devupFile` is not set and only the
 working directory holds a `devup.json`, that file is still used and a one-time
@@ -281,11 +314,16 @@ export default defineConfig({
 ### Next.js
 
 ```js
-const withDevupUI = require('@devup-ui/next-plugin')
+const { DevupUI } = require('@devup-ui/next-plugin')
 
-module.exports = withDevupUI({
-  devupFile: 'config/devup.json', // custom path
-})
+module.exports = DevupUI(
+  {
+    // your Next.js config
+  },
+  {
+    devupFile: 'config/devup.json', // custom path
+  },
+)
 ```
 
 ## Type Generation
