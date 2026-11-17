@@ -9,6 +9,7 @@ pub mod debug;
 pub mod file_map;
 pub mod file_routes;
 pub mod is_special_property;
+pub mod license_banner;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;

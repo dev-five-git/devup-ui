@@ -205,6 +205,16 @@ pub fn set_debug(value: bool) {
 pub fn is_debug() -> bool {
     core::is_debug()
 }
+/// Turn the license banner of emitted stylesheets on or off.
+#[napi]
+pub fn set_license_banner(value: bool) {
+    core::set_license_banner(value);
+}
+/// Read whether emitted stylesheets carry the license banner.
+#[napi]
+pub fn is_license_banner() -> bool {
+    core::is_license_banner()
+}
 /// Set hoisting after facade nullish/unsigned-i32 conversion.
 #[napi]
 pub fn set_atom_hoist(value: Option<u32>) {

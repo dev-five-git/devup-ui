@@ -88,6 +88,17 @@ errors retain their cause and identify the missing platform package; they never
 silently select WASM. Each factory retains its selected compiler for later loads
 and theme reloads. Independent concurrent builds in one process are unsupported.
 
+## License Banner
+
+Every emitted stylesheet starts with a
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` comment, which
+minifiers keep. It is on by default; `licenseBanner: false` drops it from every
+stylesheet. A stylesheet without any rule is emitted empty, banner included.
+
+```ts
+await register({ licenseBanner: false })
+```
+
 ## Custom Shorthands
 
 To configure custom shorthands, preload a local module instead of the

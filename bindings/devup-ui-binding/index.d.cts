@@ -63,6 +63,8 @@ export function importFileMap(value: unknown): void
 export function importFileRoutes(value: unknown): void
 export function importSheet(value: unknown): void
 export function isDebug(): boolean
+/** Whether emitted stylesheets start with the license banner (on by default). */
+export function isLicenseBanner(): boolean
 export function registerShorthands(value: unknown): void
 export function registerTheme(value: unknown): void
 /** Forget a deleted source file's own styles; whether the sheet changed. */
@@ -80,6 +82,8 @@ export function resetStateForTesting(): void
 export function seedFileMap(files: string[]): void
 export function setAtomHoist(threshold?: number | null): void
 export function setDebug(debug: boolean): void
+/** Turn the license banner of emitted stylesheets on or off. */
+export function setLicenseBanner(enabled: boolean): void
 export function setModuleResolver(
   resolver?:
     | ((

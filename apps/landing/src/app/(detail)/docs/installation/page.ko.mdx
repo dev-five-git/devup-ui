@@ -147,6 +147,29 @@ await Bun.build({
 })
 ```
 
+## 라이선스 배너
+
+Devup UI가 내보내는 모든 스타일시트는
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` 주석으로
+시작하며, 압축기도 이 주석을 남깁니다. 기본값은 켜짐입니다. 모든 빌드 플러그인은
+`licenseBanner` 옵션을 받으며, `licenseBanner: false`로 설정하면 모든
+스타일시트에서 배너를 뺍니다. 규칙이 하나도 없는 스타일시트는 배너 없이 빈
+파일로 내보냅니다.
+
+```ts
+// next.config.ts
+export default DevupUI(nextConfig, { licenseBanner: false })
+
+// vite.config.ts
+DevupUI({ licenseBanner: false })
+
+// rsbuild.config.ts
+DevupUIRsbuildPlugin({ licenseBanner: false })
+
+// webpack.config.js
+new DevupUIWebpackPlugin({ licenseBanner: false })
+```
+
 ## 프로젝트 예제
 
 - [Next.js 예제](https://github.com/dev-five-git/devup-ui/tree/main/apps/next)

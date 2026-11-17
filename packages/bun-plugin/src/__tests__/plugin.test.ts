@@ -223,6 +223,20 @@ describe('registered Bun hooks', () => {
     expect(loads.length).toBe(2)
   })
 
+  it('turns the license banner off only when asked to', async () => {
+    try {
+      await register({ engine: 'wasm', licenseBanner: false })
+      expect(wasm.isLicenseBanner()).toBe(false)
+      await register({ engine: 'wasm', licenseBanner: true })
+      expect(wasm.isLicenseBanner()).toBe(true)
+      wasm.setLicenseBanner(false)
+      await register({ engine: 'wasm' })
+      expect(wasm.isLicenseBanner()).toBe(true)
+    } finally {
+      wasm.setLicenseBanner(true)
+    }
+  })
+
   it('warns when runtime file numbering fails, and stays quiet without src', async () => {
     const collect = spyOn(pluginUtils, 'collectNumberedFiles')
     const warn = spyOn(console, 'warn').mockImplementation(() => {})

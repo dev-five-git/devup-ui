@@ -438,6 +438,7 @@ describe('devupUIWebpackPlugin', () => {
         debug: false,
         singleCss: false,
         engine: 'native',
+        licenseBanner: true,
         atomHoist: 2,
       })
     },
@@ -518,6 +519,7 @@ describe('devupUIWebpackPlugin', () => {
       ).toEqual({
         ...options,
         engine: 'wasm',
+        licenseBanner: true,
         atomHoist: 2,
       })
     })
@@ -952,6 +954,24 @@ describe('devupUIWebpackPlugin', () => {
     plugin.apply(asCompiler(compiler))
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
+
+  it.each([
+    [undefined, true],
+    [true, true],
+    [false, false],
+  ] as const)(
+    'sets the license banner from licenseBanner=%s',
+    (licenseBanner, expected) => {
+      using setLicenseBanner = spyOn(wasm, 'setLicenseBanner').mockReturnValue(
+        undefined,
+      )
+      existsSyncSpy.mockReturnValue(false)
+      new DevupUIWebpackPlugin({ engine: 'wasm', licenseBanner }).apply(
+        asCompiler(createCompiler()),
+      )
+      expect(setLicenseBanner).toHaveBeenCalledWith(expected)
+    },
+  )
 
   describe('collapse + atomHoist pre-pass', () => {
     let buildCanonicalMapSpy: ReturnType<typeof spyOn>

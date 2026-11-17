@@ -135,7 +135,7 @@ const example = <div className="a b c" />;
 CSS:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **동적 값은 CSS 변수로 변환:**
@@ -158,7 +158,7 @@ const example = <div className="a" style={{ "--b": colorVariable }} />;
 CSS:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
 ```
 
 **복잡한 표현식과 반응형 배열:**
@@ -181,7 +181,7 @@ const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": d
 각 브레이크포인트에 대한 반응형 CSS:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **타입 세이프 테마:**

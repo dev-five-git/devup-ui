@@ -47,6 +47,7 @@ export const positions = [
   ['seedFileMap', 'files:seed', () => [['src/new.tsx']]],
   ['setAtomHoist', 'threshold:n', () => [2]],
   ['setDebug', 'debug:b', () => [true]],
+  ['setLicenseBanner', 'enabled:b', () => [false]],
   ['setModuleResolver', 'resolver:resolver', () => [null]],
   ['setPrefix', 'prefix:prefix', () => ['valid-']],
 ].flatMap(([fn, slots, args]) =>
@@ -154,6 +155,6 @@ export const cases = positions.flatMap((position) =>
         .map((good, index) => (index === position.index ? value : good)),
   })),
 )
-assert.equal(positions.length, 46)
-assert.equal(new Set(positions.map((p) => p.fn)).size, 19)
+assert.equal(positions.length, 47)
+assert.equal(new Set(positions.map((p) => p.fn)).size, 20)
 assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)

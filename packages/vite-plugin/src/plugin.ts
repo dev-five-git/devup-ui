@@ -260,7 +260,7 @@ function createCssChunkBuildOptions(
 
 export interface DevupUIPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'licenseBanner'
 > {
   package: string
   cssDir: string
@@ -357,6 +357,7 @@ export function DevupUI({
   include = [],
   singleCss = false,
   prefix,
+  licenseBanner = true,
   shorthands,
   engine,
   atomHoist = 2,
@@ -403,6 +404,7 @@ export function DevupUI({
     compiler.registerShorthands(normalizedShorthands)
     compiler.setDebug(debug)
     compiler.setPrefix(prefix ?? null)
+    compiler.setLicenseBanner(licenseBanner)
   }
   if (ownsEngine) configureEngine()
   const importAliases = mergeImportAliases(

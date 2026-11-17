@@ -197,6 +197,17 @@ The selected compiler serves configuration, reservation, transforms and delayed
 watch/build callbacks together. Neither engine supports concurrent independent
 builds in the same process.
 
+## License banner
+
+Every emitted stylesheet starts with a
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` comment, which
+minifiers keep. It is on by default; `licenseBanner: false` drops it from every
+stylesheet. A stylesheet without any rule is emitted empty, banner included.
+
+```ts
+DevupUI({ licenseBanner: false })
+```
+
 ## Custom Shorthands
 
 ```ts

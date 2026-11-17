@@ -195,6 +195,17 @@ engine selection. Configuration, reservation, transforms and delayed callbacks
 use the same selected compiler. Neither engine supports concurrent independent
 builds in one process; Vite environments within a build share its compiler state.
 
+## License banner
+
+Every emitted stylesheet starts with a
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` comment, which
+minifiers keep. It is on by default; `licenseBanner: false` drops it from every
+stylesheet. A stylesheet without any rule is emitted empty, banner included.
+
+```ts
+DevupUI({ licenseBanner: false })
+```
+
 ## Custom Shorthands
 
 Custom shorthands are build-plugin options, not theme tokens. Every target

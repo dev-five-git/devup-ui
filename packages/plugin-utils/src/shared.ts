@@ -117,6 +117,12 @@ export interface DevupUIBasePluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  /**
+   * Start every emitted stylesheet with the `/*! devup-ui v… | Apache License
+   * 2.0 | https://devup-ui.com *\/` comment, which minifiers keep. Defaults to
+   * `true`; `false` drops it from every stylesheet.
+   */
+  licenseBanner?: boolean
   importAliases?: ImportAliases
   /** Build-time aliases that expand one style prop into multiple CSS properties. */
   shorthands?: CustomShorthands

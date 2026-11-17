@@ -20,6 +20,7 @@ export const {
   importFileRoutes,
   importSheet,
   isDebug,
+  isLicenseBanner,
   registerShorthands,
   registerTheme,
   removeFile,
@@ -29,6 +30,7 @@ export const {
   seedFileMap,
   setAtomHoist,
   setDebug,
+  setLicenseBanner,
   setModuleResolver,
   setPrefix,
 } = binding

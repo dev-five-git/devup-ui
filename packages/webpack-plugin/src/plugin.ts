@@ -40,7 +40,7 @@ import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'licenseBanner'
 > {
   package: string
   cssDir: string
@@ -94,6 +94,7 @@ export class DevupUIWebpackPlugin {
     singleCss = false,
     engine = 'native',
     prefix,
+    licenseBanner = true,
     shorthands,
     atomHoist = 2,
     productionPrewarmFiles,
@@ -118,6 +119,7 @@ export class DevupUIWebpackPlugin {
       singleCss,
       engine,
       prefix,
+      licenseBanner,
       shorthands,
       atomHoist,
       productionPrewarmFiles:
@@ -284,6 +286,7 @@ export class DevupUIWebpackPlugin {
   private initialize(compiler: Compiler) {
     this.compiler.setDebug(this.options.debug)
     this.compiler.setPrefix(this.options.prefix ?? null)
+    this.compiler.setLicenseBanner(this.options.licenseBanner !== false)
     this.compiler.registerShorthands(this.normalizedShorthands)
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json

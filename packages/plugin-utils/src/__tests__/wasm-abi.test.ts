@@ -16,6 +16,7 @@ function saveState() {
     canonicalMap: JSON.parse(wasm.exportCanonicalMap()),
     css: wasm.getCss(null, false),
     debug: wasm.isDebug(),
+    licenseBanner: wasm.isLicenseBanner(),
     prefix: wasm.getPrefix(),
   }
 }
@@ -26,6 +27,7 @@ function restoreState(state: ReturnType<typeof saveState>) {
   wasm.importFileMap(state.fileMap)
   wasm.importCanonicalMap(state.canonicalMap)
   wasm.setDebug(state.debug)
+  wasm.setLicenseBanner(state.licenseBanner)
   wasm.setPrefix(state.prefix ?? null)
 }
 
@@ -60,6 +62,7 @@ describe('@devup-ui/wasm exports', () => {
       'importFileRoutes',
       'importSheet',
       'isDebug',
+      'isLicenseBanner',
       'registerShorthands',
       'registerTheme',
       'removeFile',
@@ -69,6 +72,7 @@ describe('@devup-ui/wasm exports', () => {
       'seedFileMap',
       'setAtomHoist',
       'setDebug',
+      'setLicenseBanner',
       'setModuleResolver',
       'setPrefix',
     ])
@@ -142,6 +146,26 @@ describe('@devup-ui/wasm extraction', () => {
     expect(output.code).toMatch(/className="du-/)
     wasm.setPrefix(null)
     expect(wasm.getPrefix()).toBeUndefined()
+  })
+
+  it('starts stylesheets with the license banner unless it is turned off', () => {
+    extract(
+      `import { Box } from '${PACKAGE}'\nexport const a = <Box p={1} />`,
+      'banner.tsx',
+    )
+    // The banner is on by default and names the published version
+    expect(wasm.isLicenseBanner()).toBe(true)
+    const css = wasm.getCss(null, false)
+    expect(css).toMatch(
+      /^\/\*! devup-ui v\d+\.\d+\.\d+ \| Apache License 2\.0 \| https:\/\/devup-ui\.com \*\/\S/,
+    )
+
+    wasm.setLicenseBanner(false)
+    expect(wasm.isLicenseBanner()).toBe(false)
+    expect(wasm.getCss(null, false)).toBe(css.slice(css.indexOf('*/') + 2))
+
+    wasm.setLicenseBanner(true)
+    expect(wasm.getCss(null, false)).toBe(css)
   })
 })
 

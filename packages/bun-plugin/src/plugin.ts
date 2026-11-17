@@ -52,6 +52,11 @@ export interface DevupUIBunPluginOptions {
    * `false` in `Bun.build`.
    */
   debug?: boolean
+  /**
+   * Start every emitted stylesheet with the devup-ui license banner comment.
+   * Defaults to `true`.
+   */
+  licenseBanner?: boolean
 }
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
@@ -198,6 +203,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
+      compiler.setLicenseBanner(options.licenseBanner ?? true)
       await initialize(compiler, shorthands, watchTailwindCss)
       const debug = options.debug ?? !bundling
       compiler.setDebug(debug)

@@ -219,6 +219,18 @@ original cause. There is no automatic fallback to WASM. Install optional native
 dependencies normally, or choose WASM explicitly for an unsupported platform.
 Both engines extract CSS during the build and add no client styling runtime.
 
+## License banner
+
+Every emitted stylesheet starts with a
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` comment, which
+minifiers keep. It is on by default; `licenseBanner: false` drops it from every
+stylesheet, under Webpack and Turbopack alike. A stylesheet without any rule is
+emitted empty, banner included.
+
+```ts
+export default DevupUI(nextConfig, { licenseBanner: false })
+```
+
 ## Turbopack build profiling
 
 Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a

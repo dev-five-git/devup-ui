@@ -22,6 +22,7 @@ module.exports = function createBoundary() {
     seedFileMap: 'files:a',
     setAtomHoist: 'threshold:n',
     setDebug: 'debug:b',
+    setLicenseBanner: 'enabled:b',
     setModuleResolver: 'resolver:f',
     setPrefix: 'prefix:p',
   }

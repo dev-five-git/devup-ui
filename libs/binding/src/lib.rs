@@ -6,6 +6,7 @@ mod reservation;
 mod resolver_state;
 
 pub use css::debug::{is_debug, set_debug};
+pub use css::license_banner::{is_license_banner, set_license_banner};
 pub use css::slot_reservation::unreserved_slot_count as get_unreserved_class_slot_count;
 pub use css::{get_prefix, set_custom_shorthands as register_shorthands_internal, set_prefix};
 pub use css_cache::{SheetCell, SheetGuard};

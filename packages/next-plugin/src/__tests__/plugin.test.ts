@@ -443,6 +443,16 @@ describe('DevupUINextPlugin', () => {
       })
     })
 
+    it('hands licenseBanner to the webpack plugin', () => {
+      DevupUI({}, { licenseBanner: false }).webpack!(
+        createWebpackConfig(),
+        createWebpackContext(),
+      )
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ licenseBanner: false }),
+      )
+    })
+
     it('reads routes from the project root when it holds app or pages', () => {
       // Given: a Next app with `app/` at the root and no `src/`.
       existsSyncSpy.mockImplementation(
@@ -1145,6 +1155,27 @@ export const box = style({ color: 'red' })`
       DevupUI({}, { prefix: 'my-prefix' })
       expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
     })
+    it.each([
+      [undefined, true],
+      [true, true],
+      [false, false],
+    ] as const)(
+      'sets the license banner from licenseBanner=%s under Turbopack',
+      (licenseBanner, expected) => {
+        process.env.TURBOPACK = '1'
+        using setLicenseBanner = spyOn(
+          wasm,
+          'setLicenseBanner',
+        ).mockReturnValue(undefined)
+        existsSyncSpy
+          .mockReturnValueOnce(true)
+          .mockReturnValueOnce(true)
+          .mockReturnValueOnce(true)
+          .mockReturnValueOnce(false)
+        DevupUI({}, { licenseBanner })
+        expect(setLicenseBanner).toHaveBeenCalledWith(expected)
+      },
+    )
     it('numbers the files the scan finds, and survives a failing scan', () => {
       process.env.TURBOPACK = '1'
       const collectSpy = spyOn(importGraphModule, 'collectNumberedFiles')

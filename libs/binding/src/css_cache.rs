@@ -11,8 +11,9 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{LazyLock, LockResult, Mutex, MutexGuard, PoisonError};
 
 /// What a serialization reads besides the sheet: the bucket, whether a file
-/// stylesheet imports the shared base, and whether atom hoisting is in effect.
-type Key = (Option<String>, bool, bool);
+/// stylesheet imports the shared base, whether atom hoisting is in effect, and
+/// whether the license banner is on.
+type Key = (Option<String>, bool, bool, bool);
 
 static CSS_CACHE: LazyLock<Mutex<HashMap<Key, String>>> = LazyLock::new(Mutex::default);
 
@@ -26,6 +27,7 @@ fn key(bucket: Option<&str>, import_main_css: bool) -> Key {
         bucket.map(str::to_string),
         bucket.is_some() && import_main_css,
         css::atom_hoist::is_atom_hoist(),
+        css::license_banner::is_license_banner(),
     )
 }
 
@@ -97,6 +99,23 @@ mod tests {
     fn only_file_stylesheets_import_the_shared_base() {
         assert_eq!(key(None, true), key(None, false));
         assert_ne!(key(Some("a.tsx"), true), key(Some("a.tsx"), false));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn the_license_banner_setting_keys_a_serialization() {
+        let _state = css::test_state::TestStateGuard::new();
+        invalidate_css();
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("a", "color", 0, "red", None, Some(255), None);
+        let with_banner = cached_css(&sheet, None, false);
+        assert!(with_banner.starts_with("/*! devup-ui v"));
+        // A serialization cached with the banner is not served without it
+        css::license_banner::set_license_banner(false);
+        assert_eq!(cached_css(&sheet, None, false), ".a{color:red}");
+        css::license_banner::set_license_banner(true);
+        assert_eq!(cached_css(&sheet, None, false), with_banner);
+        invalidate_css();
     }
 
     #[test]

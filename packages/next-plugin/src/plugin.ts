@@ -163,6 +163,7 @@ export function DevupUI(
       devupFile = 'devup.json',
       include = [],
       prefix,
+      licenseBanner = true,
       atomHoist,
       importAliases: userImportAliases,
     } = options
@@ -201,6 +202,7 @@ export function DevupUI(
       importAliases,
       include,
       libPackage,
+      licenseBanner,
       prefix,
       shorthands: normalizedShorthands,
       singleCss,
@@ -259,12 +261,14 @@ export function DevupUI(
       importSheet,
       registerShorthands,
       registerTheme,
+      setLicenseBanner,
       setPrefix,
     } = wasm
 
     registerShorthands(normalizedShorthands)
 
     setPrefix(prefix ?? null)
+    setLicenseBanner(licenseBanner)
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),
