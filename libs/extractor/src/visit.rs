@@ -1444,17 +1444,57 @@ impl<'a> DevupVisitor<'a> {
     }
 
     /// Whether the styled factory `factory` reads Emotion's `styled`, whose
-    /// component selector picks out the component alone, not its extensions
+    /// component selector picks out the component alone, not its extensions:
+    /// a binding of the import, read before the walk reaches the import too
     fn emotion_factory(&self, factory: &Expression<'_>) -> bool {
         match unwrap_syntax_only(factory) {
             Expression::CallExpression(call) => self.emotion_factory(&call.callee),
             Expression::StaticMemberExpression(member) => self.emotion_factory(&member.object),
             root => {
-                self.bindings.is_styled(root)
+                (self.bindings.is_styled(root)
+                    || self
+                        .style_values
+                        .symbol(root)
+                        .and_then(|symbol| self.style_values.import_name(symbol))
+                        .is_some())
                     && matches!(root, Expression::Identifier(identifier)
                         if self.emotion_styled.iter().any(|name| identifier.name == name.as_str()))
             }
         }
+    }
+
+    /// Whether `init` makes a component with Emotion's `styled`
+    fn emotion_component(&self, init: &Expression<'_>) -> bool {
+        match init {
+            Expression::CallExpression(call) => self.emotion_factory(&call.callee),
+            Expression::TaggedTemplateExpression(tag) => self.emotion_factory(&tag.tag),
+            _ => false,
+        }
+    }
+
+    /// The component the Emotion components selected or exported as
+    /// `withComponent` results share the target of, which takes a marker for
+    /// them, as they render it
+    fn shared_targets(&self, program: &Program<'a>) -> Vec<oxc_syntax::symbol::SymbolId> {
+        let emotion = |init: &Expression<'_>| self.emotion_component(init);
+        crate::emotion_retargets::read(program, &self.style_values, &emotion)
+            .into_iter()
+            .filter(|(symbol, name, _)| {
+                self.selected_components.contains(symbol) || !self.exports.of(name).is_empty()
+            })
+            .map(|(.., root)| root)
+            .collect()
+    }
+
+    /// For a `withComponent` result of an Emotion component, the classes that
+    /// component is selected by, which the result shares instead of a marker
+    /// of its own
+    fn shared_target(&self, init: Option<&Expression<'a>>) -> Option<Vec<String>> {
+        init.map(unwrap_syntax_only)
+            .and_then(crate::emotion_retargets::receiver)
+            .and_then(|receiver| self.definition_of(receiver))
+            .filter(|definition| definition.is_emotion())
+            .map(|definition| definition.selectors().to_vec())
     }
 
     /// Hand the visitor the styled components other modules define
@@ -1547,7 +1587,7 @@ impl<'a> DevupVisitor<'a> {
                 .root_symbol(binding)
                 .and_then(|symbol| self.styled_definitions.get(&symbol))
                 .map(|definition| ImportedComponent {
-                    markers: definition.markers().to_vec(),
+                    markers: definition.selectors().to_vec(),
                     definition: Some(definition.clone_in(allocator)),
                 })
                 .or_else(|| {
@@ -1565,7 +1605,7 @@ impl<'a> DevupVisitor<'a> {
             components.insert(
                 "default".to_string(),
                 ImportedComponent {
-                    markers: definition.markers().to_vec(),
+                    markers: definition.selectors().to_vec(),
                     definition: Some(definition.clone_in(allocator)),
                 },
             );
@@ -3600,6 +3640,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
             self.selected_components = crate::style_values::selected(it, &self.style_values);
+            let shared = self.shared_targets(it);
+            self.selected_components.extend(shared);
             self.rendered = crate::style_values::rendered(it);
             let imported: Vec<_> = self
                 .selected_components
@@ -3758,11 +3800,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.bindings.symbol(identifier).is_none()
         });
         self.errors.extend(identity_errors);
-        let emotion = match it {
-            Expression::CallExpression(call) => self.emotion_factory(&call.callee),
-            Expression::TaggedTemplateExpression(tag) => self.emotion_factory(&tag.tag),
-            _ => false,
-        };
+        let emotion = self.emotion_component(it);
         self.chained_attrs(it);
         let mut refused_array_controllers = Vec::new();
         if self.is_styled_call(it)
@@ -3961,7 +3999,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.pending_styled = definition.map(|definition| {
                 let mut definition = definition
                     .with_targets(targets)
-                    .taking_with_component(emotion);
+                    .taking_with_component(emotion)
+                    .made_by_emotion(emotion);
                 definition.takes_styles = takes_styles;
                 (start, definition, takes_styles)
             });
@@ -3980,6 +4019,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(definition) = self
                 .definition_of(unwrap_syntax_only(&member.object))
                 .map(|definition| definition.used_as(&self.ast, &member.object))
+            && let emotion = definition.is_emotion()
             && let pending = self
                 .pending_marker
                 .as_ref()
@@ -4017,8 +4057,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             );
             *it = with_runtime_component(&self.ast, with_statics(&self.ast, component, None, base));
             let takes_styles = definition.takes_styles;
-            self.pending_styled =
-                Some((start, definition.taking_with_component(true), takes_styles));
+            self.pending_styled = Some((
+                start,
+                definition
+                    .taking_with_component(true)
+                    .made_by_emotion(emotion),
+                takes_styles,
+            ));
         } else if let Expression::CallExpression(call) = it
             && let Expression::StaticMemberExpression(member) = &call.callee
             && member.property.name == "withComponent"
@@ -5346,7 +5391,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.local_objects.insert(symbol);
         }
 
+        // A `withComponent` result of an Emotion component is selected by the
+        // target it shares, as Emotion's, and takes no marker of its own
+        let shared = self.shared_target(it.init.as_ref());
+        if let Some((symbol, class)) = styled_binding
+            .filter(|symbol| self.selected_components.contains(symbol))
+            .zip(shared.iter().flatten().next())
+        {
+            self.style_values.insert(
+                symbol,
+                crate::style_values::StyleValue::Component(format!(".{class}")),
+            );
+        }
         let marked = styled_binding
+            .filter(|_| shared.is_none())
             .zip(start)
             .zip(it.id.get_binding_identifier().map(|id| id.name.to_string()))
             .and_then(|((symbol, start), name)| {

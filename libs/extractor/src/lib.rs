@@ -34,6 +34,7 @@ mod diagnostics_tests;
 #[cfg(test)]
 mod dynamic_as_sibling_props_tests;
 mod emotion_namespace;
+mod emotion_retargets;
 mod evaluation_sandbox;
 pub mod extract_style;
 mod extractor;

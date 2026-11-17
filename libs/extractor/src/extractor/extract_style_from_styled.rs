@@ -128,6 +128,9 @@ pub struct StyledDefinition<'a> {
     /// Whether the compiled component takes `withComponent` at runtime, as
     /// Emotion's components do
     takes_with_component: bool,
+    /// Whether Emotion's `styled` made it, whose `withComponent` results
+    /// share its target
+    emotion: bool,
     bindings: Vec<(String, Expression<'a>)>,
     capability: Option<StyledCapability>,
     execution: Execution<'a>,
@@ -273,6 +276,7 @@ impl<'a> StyledDefinition<'a> {
             inherited_markers: self.inherited_markers.clone(),
             targets: self.targets.clone(),
             takes_with_component: self.takes_with_component,
+            emotion: self.emotion,
             capability: self.capability.clone(),
             execution: self.execution.clone_in(allocator),
             bindings: self
@@ -424,12 +428,6 @@ impl<'a> StyledDefinition<'a> {
             .map(|capability| &capability.classes)
     }
 
-    /// The classes other styles select the component by
-    #[must_use]
-    pub fn markers(&self) -> &[String] {
-        &self.markers
-    }
-
     /// This definition in the arena of another file
     #[must_use]
     pub fn clone_in<'b>(&self, allocator: &'b oxc_allocator::Allocator) -> StyledDefinition<'b> {
@@ -466,6 +464,7 @@ impl<'a> StyledDefinition<'a> {
             inherited_markers: self.inherited_markers.clone(),
             targets: self.targets.clone(),
             takes_with_component: self.takes_with_component,
+            emotion: self.emotion,
             bindings: self
                 .bindings
                 .iter()
@@ -565,6 +564,31 @@ impl<'a> StyledDefinition<'a> {
     #[must_use]
     pub const fn takes_with_component(&self) -> bool {
         self.takes_with_component
+    }
+
+    /// The definition made, or not, with Emotion's `styled`
+    #[must_use]
+    pub const fn made_by_emotion(mut self, emotion: bool) -> Self {
+        self.emotion = emotion;
+        self
+    }
+
+    /// Whether Emotion's `styled` made it, so that its `withComponent`
+    /// results share its target
+    #[must_use]
+    pub const fn is_emotion(&self) -> bool {
+        self.emotion
+    }
+
+    /// The classes other styles select it by: its markers, or, for a
+    /// `withComponent` result sharing its component's target, those targets
+    #[must_use]
+    pub fn selectors(&self) -> &[String] {
+        if self.markers.is_empty() {
+            &self.targets
+        } else {
+            &self.markers
+        }
     }
 
     pub(crate) fn marker_classes(&self, ast: &AstBuilder<'a>) -> Option<Expression<'a>> {
@@ -745,6 +769,7 @@ impl<'a> Base<'a> {
             inherited_markers: Vec::new(),
             targets: Vec::new(),
             takes_with_component: false,
+            emotion: false,
             capability: None,
             execution: Execution::Replay,
             bindings: bindings
