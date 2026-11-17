@@ -84,10 +84,19 @@ export const observed=JSON.stringify([
   render(jsx(Dyn,{...props,big:true})),render(jsx(Wrapped,{...props,big:true})),
   render(jsx(Retargeted,{...props,big:true}))
 ]);`)
-  // When: Bun evaluates the actual whole modules and invokes their concrete renderers.
-  const loaded = record(await import(observer))
-  assert(typeof loaded.observed === 'string')
-  const parsed: unknown = JSON.parse(loaded.observed)
+  // When: Bun evaluates the actual whole modules and invokes their concrete
+  // renderers, in a child process so the emitted modules stay out of the
+  // coverage of the packages
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      '--eval',
+      'const m = await import(await Bun.stdin.text()); process.stdout.write(m.observed)',
+    ],
+    { stdin: Buffer.from(observer), stdout: 'pipe', stderr: 'pipe' },
+  )
+  assert.equal(child.exitCode, 0, child.stderr.toString())
+  const parsed: unknown = JSON.parse(child.stdout.toString())
   assert(Array.isArray(parsed))
   const elements: readonly unknown[] = parsed
   const rules = [...css.matchAll(/\.([\w-]+)\{([^{}]*)\}/g)]
