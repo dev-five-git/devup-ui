@@ -46,14 +46,19 @@ impl LaterDeclarations {
         &mut self,
         styles: Vec<ExtractStyleProp<'a>>,
     ) -> Vec<ExtractStyleProp<'a>> {
-        let kept: Vec<ExtractStyleProp<'a>> = styles
-            .into_iter()
-            .filter_map(|prop| self.keep(prop))
-            .collect();
+        let kept = self.without_covered(styles);
         for prop in &kept {
             self.record(prop);
         }
         kept
+    }
+
+    /// `styles` without the longhands a shorthand read so far covers
+    fn without_covered<'a>(&self, styles: Vec<ExtractStyleProp<'a>>) -> Vec<ExtractStyleProp<'a>> {
+        styles
+            .into_iter()
+            .filter_map(|prop| self.keep(prop))
+            .collect()
     }
 
     /// `prop` without what a later shorthand replaces; the atoms of a
@@ -84,6 +89,52 @@ impl LaterDeclarations {
     fn covers(&self, prop: &ExtractStyleProp<'_>) -> bool {
         static_atom(prop)
             .is_some_and(|longhand| self.0.iter().any(|shorthand| replaces(shorthand, longhand)))
+    }
+}
+
+/// The static atoms of an element's attributes read so far, read from the last
+/// attribute to its first.
+///
+/// The attributes between two spreads have no written order: the lint sorts
+/// them by name (`perfectionist/sort-jsx-props`), so `backgroundClip` always
+/// comes before `bg`. A shorthand attribute then replaces no longhand
+/// attribute of its run, and the stylesheet's order (a longhand after its
+/// shorthands) decides between them. A spread keeps its place among them, so a
+/// shorthand in a later run or spread still replaces an earlier longhand
+#[derive(Default)]
+pub(crate) struct LaterAttributes {
+    /// The atoms of the runs and spreads after the run being read
+    later: LaterDeclarations,
+    /// The atoms of the run being read
+    run: LaterDeclarations,
+}
+
+impl LaterAttributes {
+    /// The styles of an attribute written before every one read so far,
+    /// without the longhands a shorthand of a later run or spread covers
+    pub(crate) fn attribute<'a>(
+        &mut self,
+        styles: Vec<ExtractStyleProp<'a>>,
+    ) -> Vec<ExtractStyleProp<'a>> {
+        let kept = self.later.without_covered(styles);
+        for prop in &kept {
+            self.run.record(prop);
+        }
+        kept
+    }
+
+    /// A spread, whatever the build reads of it, ends the run being read
+    pub(crate) fn end_run(&mut self) {
+        self.later.0.append(&mut self.run.0);
+    }
+
+    /// The styles of a spread written before every attribute read so far,
+    /// without the longhands a later shorthand covers
+    pub(crate) fn spread<'a>(
+        &mut self,
+        styles: Vec<ExtractStyleProp<'a>>,
+    ) -> Vec<ExtractStyleProp<'a>> {
+        self.later.before(styles)
     }
 }
 
