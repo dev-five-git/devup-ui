@@ -17,6 +17,8 @@ export const metadata = {
 You can use `css` as a tag function to create a css string. Pass in a string of css properties as an argument, ans it will be converted
 into a class list.
 
+{/* conformance */}
+
 ```tsx
 import { css } from '@devup-ui/react'
 
@@ -43,19 +45,21 @@ function App() {
 
 ```css
 .a {
-  background: red;
-}
-.b {
   width: 100px;
 }
-.c {
+.b {
   height: 100px;
+}
+.c {
+  background: red;
 }
 ```
 
 ### CSS Object
 
 You can also use the css function by passing in a css object as an argument.
+
+{/* conformance */}
 
 ```tsx
 import { css } from '@devup-ui/react'

@@ -13,6 +13,8 @@ Devup UI provides flexible color management through direct values and theme toke
 
 You can pass color values directly to any component:
 
+{/* conformance */}
+
 ```tsx
 // Hex colors
 const example1 = <Box bg="#FF0000" />
@@ -30,7 +32,25 @@ const example6 = <Box bg="red" />
 const example7 = <Box bg="tomato" />
 ```
 
-> Devup UI automatically optimizes color values at build time. For example, `rgb(255, 0, 0)` becomes `red` and `#FF0000` becomes `#f00`.
+> Devup UI automatically optimizes color values at build time. `#FF0000`, `#F00` and `rgb(255, 0, 0)` all become `#F00` and share one class, and `rgba(255, 0, 0, 0.5)` becomes `#FF000080`:
+
+```css
+.a {
+  background: #f00;
+}
+.b {
+  background: #ff000080;
+}
+.c {
+  background: hsl(0, 100%, 50%);
+}
+.d {
+  background: red;
+}
+.e {
+  background: tomato;
+}
+```
 
 ## Theme Colors
 
@@ -69,10 +89,26 @@ For larger projects, define colors in `devup.json` for consistency and theme sup
 
 Use theme colors with the `$` prefix:
 
+{/* conformance: theme */}
+
 ```tsx
 const boxExample1 = <Box bg="$primary" />
 const textExample = <Text color="$text" />
 const boxExample2 = <Box borderColor="$border" />
+```
+
+Each token reads a CSS variable, so switching the theme needs no new classes:
+
+```css
+.a {
+  background: var(--primary);
+}
+.b {
+  color: var(--text);
+}
+.c {
+  border-color: var(--border);
+}
 ```
 
 ## Multiple Theme Variants

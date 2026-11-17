@@ -38,8 +38,8 @@ use crate::extractor::{
     extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
-        FORWARD_REF, Naming, StyledBindings, StyledDefinition, StyledExtraction, extended,
-        extract_style_from_styled, read_forward, take_styled_modifiers, with_component,
+        FORWARD_REF, Naming, STYLED_MARKING, StyledBindings, StyledDefinition, StyledExtraction,
+        extended, extract_style_from_styled, read_forward, take_styled_modifiers, with_component,
     },
     rule_array_evaluation::{self, composes_array_under_condition},
     styled_capability::StyledCapability,
@@ -58,9 +58,9 @@ use crate::prop_modify_utils::{
 use crate::scope::{Bindings, NAMESPACE_STYLED};
 use crate::style_collector::StyleCollector;
 use crate::stylex::{
-    StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
-    css_variable_block, css_variable_rules, define_vars_variable, unsupported_stylex_error,
-    variable_values,
+    StylexDynamicInfo, StylexFunction, StylexIncludeRef, StylexNamespaceValue, create_theme_class,
+    css_variable_block, css_variable_rules, define_vars_variable, joined_key_classes,
+    merge_included_keys, unsupported_stylex_error, variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
@@ -76,9 +76,9 @@ use oxc_ast::ast::{
     ComputedMemberExpression, ExportDefaultDeclaration, Expression, ExpressionStatement,
     FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
-    JSXExpressionContainer, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
-    PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
-    UnaryOperator, VariableDeclarator,
+    JSXExpressionContainer, JSXOpeningElement, ObjectExpression, ObjectProperty,
+    ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str,
+    StringLiteral, UnaryOperator, VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut;
@@ -1476,11 +1476,48 @@ impl<'a> DevupVisitor<'a> {
             }
             return;
         }
-        match unwrap_syntax_only_mut(node) {
-            Expression::StaticMemberExpression(member) => self.plain_styled(&mut member.object),
-            Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
-            _ => {}
+        let node = unwrap_syntax_only_mut(node);
+        let tag = match node {
+            Expression::StaticMemberExpression(member) => {
+                self.plain_styled(&mut member.object);
+                None
+            }
+            Expression::CallExpression(call) => {
+                self.plain_styled(&mut call.callee);
+                None
+            }
+            Expression::ComputedMemberExpression(member) => self.static_styled_tag(member),
+            _ => None,
+        };
+        if let Some(tag) = tag {
+            *node = tag;
         }
+    }
+
+    /// The `styled.div` that `member` reads when it is `styled['div']`
+    fn static_styled_tag(
+        &self,
+        member: &mut oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) -> Option<Expression<'a>> {
+        self.plain_styled(&mut member.object);
+        if !self.bindings.is_styled(&member.object) {
+            return None;
+        }
+        let tag = crate::utils::literal_member_name(member)?;
+        let tag = IdentifierName::new(
+            member.expression.span(),
+            Str::from_in(tag.as_ref(), self.ast.allocator()),
+            &self.ast,
+        );
+        Some(Expression::StaticMemberExpression(
+            StaticMemberExpression::boxed(
+                member.span,
+                member.object.take_in(&self.ast),
+                tag,
+                false,
+                &self.ast,
+            ),
+        ))
     }
 
     /// Report where `program` still reads what the build compiled away: its
@@ -1580,6 +1617,38 @@ impl<'a> DevupVisitor<'a> {
                 JSXAttributeItem::SpreadAttribute(_) => None,
             })
             .collect()
+    }
+
+    /// Report a `theme` attribute on an element of a styled component whose
+    /// styles read the theme: they read it as CSS variables of the theme the
+    /// page declares, which a theme given to one element cannot change
+    fn report_theme_prop(&mut self, element: &JSXOpeningElement<'a>) {
+        let name = element.name.to_string();
+        let reads_theme = self
+            .css_definition(self.style_values.jsx_symbol(&element.name), &name)
+            .is_some_and(StyledDefinition::reads_theme);
+        let theme = element
+            .attributes
+            .iter()
+            .find_map(|attribute| match attribute {
+                Attribute(attribute)
+                    if attribute
+                        .name
+                        .as_identifier()
+                        .is_some_and(|name| name.name == "theme") =>
+                {
+                    Some(attribute.span.start)
+                }
+                _ => None,
+            });
+        if let Some(offset) = theme.filter(|_| reads_theme) {
+            self.errors.push((
+                offset,
+                format!(
+                    "`<{name} theme={{...}}>` cannot change the theme at build time: the styles of `{name}` read the theme as CSS variables, so the theme passed to one element would be ignored. Fix: wrap the element in a `ThemeProvider` with that theme, or pass the values as props the styles read"
+                ),
+            ));
+        }
     }
 
     /// Whether the element `name` takes Emotion's `css` prop
@@ -2772,6 +2841,47 @@ impl<'a> DevupVisitor<'a> {
         Some(())
     }
 
+    /// Each top-level key of a static namespace and the classes its styles get
+    fn stylex_key_classes(
+        &self,
+        styles: &mut [ExtractStyleProp<'a>],
+        groups: Vec<(String, usize)>,
+    ) -> Vec<(String, String)> {
+        let mut offset = 0;
+        let mut keys = Vec::with_capacity(groups.len());
+        for (key, count) in groups {
+            let class = gen_class_names(
+                &self.ast,
+                &mut styles[offset..offset + count],
+                None,
+                self.split_filename.as_deref(),
+            );
+            offset += count;
+            let class = match class {
+                Some(Expression::StringLiteral(class)) => class
+                    .value
+                    .as_str()
+                    .map_or_else(String::new, str::to_string),
+                _ => String::new(),
+            };
+            keys.push((key, class));
+        }
+        keys
+    }
+
+    /// The keys of the namespace an `include()` reads; none when they are not
+    /// known, as for a dynamic namespace
+    fn stylex_included_keys(
+        &self,
+        visible: &FxHashMap<String, SymbolId>,
+        include: &StylexIncludeRef,
+    ) -> Option<Vec<(String, String)>> {
+        self.stylex_keys
+            .get(visible.get(&include.var_name)?)?
+            .get(&include.member_name)
+            .cloned()
+    }
+
     /// The classes each key of the namespace `expr` reads gives; none for a
     /// value `StyleX` skips
     fn stylex_keyed(&self, expr: &Expression<'a>) -> Option<Vec<(String, String)>> {
@@ -3385,14 +3495,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .ast
                 .allocator()
                 .alloc_str(&if it.source_type.is_commonjs() {
-                    format!("const {FORWARD_REF} = require('react').forwardRef;")
+                    format!("const {FORWARD_REF} = require('react').forwardRef;{STYLED_MARKING}")
                 } else {
-                    format!("import {{ forwardRef as {FORWARD_REF} }} from 'react';")
+                    format!(
+                        "import {{ forwardRef as {FORWARD_REF} }} from 'react';{STYLED_MARKING}"
+                    )
                 });
-            let program =
+            let mut program =
                 oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
                     .parse()
                     .program;
+            crate::utils::clear_generated_program_spans(&mut program);
             for statement in program.body.into_iter().rev() {
                 it.body.insert(0, statement);
             }
@@ -3726,32 +3839,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             for (ns_name, mut styles, css_vars, include_refs, groups) in namespaces {
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
-                if include_refs.is_empty() && css_vars.is_none() {
-                    let mut offset = 0;
-                    let mut keys = Vec::with_capacity(groups.len());
-                    for (key, count) in groups {
-                        let class = gen_class_names(
-                            &self.ast,
-                            &mut styles[offset..offset + count],
-                            None,
-                            self.split_filename.as_deref(),
-                        );
-                        offset += count;
-                        let class = match class {
-                            Some(Expression::StringLiteral(class))
-                                if class.value.as_str().is_some() =>
-                            {
-                                class
-                                    .value
-                                    .as_str()
-                                    .map_or_else(String::new, str::to_string)
-                            }
-                            _ => String::new(),
-                        };
-                        keys.push((key, class));
-                    }
-                    key_map.insert(ns_name.clone(), keys);
-                }
+                let own_keys = css_vars
+                    .is_none()
+                    .then(|| self.stylex_key_classes(&mut styles, groups));
                 self.styles
                     .extend(styles.into_iter().flat_map(ExtractStyleProp::into_extract));
 
@@ -3763,7 +3853,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     _ => String::new(),
                 };
 
-                // Resolve include() references — prepend included classNames
+                // Resolve include() references: merge their keys where they are written,
+                // else prepend the included classNames
+                let mut included_keys = Some(Vec::with_capacity(include_refs.len()));
                 for inc_ref in &include_refs {
                     let Some(ns_value) = visible
                         .get(&inc_ref.var_name)
@@ -3780,6 +3872,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         ));
                         continue;
                     };
+                    included_keys = included_keys
+                        .zip(self.stylex_included_keys(&visible, inc_ref))
+                        .map(|(mut included, keys)| {
+                            included.push((inc_ref.position, keys));
+                            included
+                        });
                     let included_class = match ns_value {
                         StylexNamespaceValue::Static(s) => s.clone(),
                         StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
@@ -3791,6 +3889,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             class_name_str = format!("{included_class} {class_name_str}");
                         }
                     }
+                }
+                if let Some((own, included)) = own_keys.zip(included_keys) {
+                    let keys = merge_included_keys(own, included);
+                    if !include_refs.is_empty() {
+                        class_name_str = joined_key_classes(&keys);
+                    }
+                    key_map.insert(ns_name.clone(), keys);
                 }
 
                 let ns_value = if let Some(vars) = css_vars {
@@ -5267,6 +5372,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.pending_replacement = Some(rendered);
             return;
         }
+        self.report_theme_prop(&elem.opening_element);
         let styled_symbol = self.style_values.jsx_symbol(&elem.opening_element.name);
         // The style props of a styled Devup UI component are compiled in the
         // element as they are for the component, where only what the

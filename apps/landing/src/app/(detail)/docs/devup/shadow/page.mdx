@@ -43,6 +43,8 @@ Each array index corresponds to a breakpoint. Use `null` to skip a breakpoint an
 
 Use shadow tokens with the `$` prefix on `boxShadow`:
 
+{/* conformance: theme */}
+
 ```tsx
 <>
   <Box boxShadow="$card" />
@@ -51,7 +53,40 @@ Use shadow tokens with the `$` prefix on `boxShadow`:
 </>
 ```
 
-Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes.
+Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes. The theme defines each token as a CSS variable per breakpoint (colors become hex), and every class reads the variable:
+
+```css
+@layer t {
+  :root {
+    --card: 0 1px 2px #0000001a;
+    --modal: 0 4px 12px #00000026;
+    --sm: 0 1px 2px #0000000d;
+  }
+  @media (min-width: 992px) {
+    :root {
+      --card: 0 4px 8px #0000001a;
+      --modal: 0 8px 24px #00000026;
+    }
+  }
+}
+.a {
+  box-shadow: var(--card);
+}
+.c {
+  box-shadow: var(--sm);
+}
+.d {
+  box-shadow: var(--modal);
+}
+@media (min-width: 992px) {
+  .b {
+    box-shadow: var(--card);
+  }
+  .e {
+    box-shadow: var(--modal);
+  }
+}
+```
 
 ## Responsive Array Behavior
 
@@ -59,19 +94,21 @@ When a `$token` appears inside a responsive array, it does **not** expand — th
 
 ```tsx
 {
-  /* "$card" stays as a single value at breakpoint index 3 */
+  /* "$card" stays as a single class at breakpoint index 3 */
 }
 ;<Box boxShadow={['none', null, null, '$card']} />
 ```
 
+The class at index 3 still reads `var(--card)`. The theme redefines `--card` at each breakpoint and theme variant, so the slot shows the token's current value wherever its media query applies.
+
 This is the key distinction:
 
-| Syntax                                      | Behavior                            | Classes  |
-| ------------------------------------------- | ----------------------------------- | -------- |
-| `boxShadow="$card"`                         | Expands to all defined breakpoints  | Multiple |
-| `boxShadow={"$card"}`                       | Expands to all defined breakpoints  | Multiple |
-| `boxShadow={["$card"]}`                     | Single value at index 0             | 1        |
-| `boxShadow={["none", null, null, "$card"]}` | `none` at index 0, token at index 3 | 2        |
+| Syntax                                      | Behavior                              | Classes  |
+| ------------------------------------------- | ------------------------------------- | -------- |
+| `boxShadow="$card"`                         | Expands to all defined breakpoints    | Multiple |
+| `boxShadow={"$card"}`                       | Expands to all defined breakpoints    | Multiple |
+| `boxShadow={["$card"]}`                     | `var(--card)` at index 0              | 1        |
+| `boxShadow={["none", null, null, "$card"]}` | `none` at index 0, `var(--card)` at 3 | 2        |
 
 ## Theme Variants
 

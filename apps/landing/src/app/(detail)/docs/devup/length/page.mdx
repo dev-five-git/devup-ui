@@ -44,25 +44,46 @@ Use length tokens with the `$` prefix on any length-accepting prop:
 
 Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes.
 
+{/* conformance: theme */}
+
+```tsx
+<Box gap="$gutter" />
+```
+
+`gutter` is defined at indexes 0 and 2, so the prop gets a class for each, both reading the token's CSS variable (the theme defines `--gutter` per breakpoint):
+
+```css
+.a {
+  gap: var(--gutter);
+}
+@media (min-width: 768px) {
+  .b {
+    gap: var(--gutter);
+  }
+}
+```
+
 ## Responsive Array Behavior
 
 When a `$token` appears inside a responsive array, it does **not** expand — the array itself defines the breakpoints:
 
 ```tsx
 {
-  /* "$containerX" stays as a single value at breakpoint index 2 */
+  /* "$containerX" stays as a single class at breakpoint index 2 */
 }
 ;<Box px={['8px', null, '$containerX']} />
 ```
 
+The class at index 2 still reads `var(--containerX)`. The theme redefines `--containerX` at each breakpoint and theme variant, so the slot shows the token's current value wherever its media query applies.
+
 This is the key distinction:
 
-| Syntax                              | Behavior                           | Classes  |
-| ----------------------------------- | ---------------------------------- | -------- |
-| `px="$containerX"`                  | Expands to all defined breakpoints | Multiple |
-| `px={"$containerX"}`                | Expands to all defined breakpoints | Multiple |
-| `px={["$containerX"]}`              | Single value at index 0            | 1        |
-| `px={["8px", null, "$containerX"]}` | `8px` at index 0, token at index 2 | 2        |
+| Syntax                              | Behavior                                   | Classes  |
+| ----------------------------------- | ------------------------------------------ | -------- |
+| `px="$containerX"`                  | Expands to all defined breakpoints         | Multiple |
+| `px={"$containerX"}`                | Expands to all defined breakpoints         | Multiple |
+| `px={["$containerX"]}`              | `var(--containerX)` at index 0             | 1        |
+| `px={["8px", null, "$containerX"]}` | `8px` at index 0, `var(--containerX)` at 2 | 2        |
 
 ## Theme Variants
 

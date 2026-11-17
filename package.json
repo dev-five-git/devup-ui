@@ -18,6 +18,7 @@
     "pack:native": "node e2e/binding/package/collect.mjs",
     "test:native:package": "node --test e2e/binding/package/package.test.mjs e2e/binding/package/publish.test.mjs e2e/binding/package/elf.test.mjs e2e/binding/package/build-host.test.mjs",
     "test:native:consumer": "node e2e/binding/package/consumer.mjs",
+    "test:wasm-abi": "node --test e2e/binding/wasm-abi/coverage.test.mjs && node e2e/binding/wasm-abi/run.mjs",
     "test:e2e:ui": "bunx playwright test --ui",
     "test:e2e:update": "bunx playwright test --update-snapshots",
     "build": "node e2e/binding/package/build-host.mjs && bun run --filter @devup-ui/wasm --filter @devup-ui/plugin-utils build && bun run --filter @devup-ui/react --filter @devup-ui/webpack-plugin build && bun run --filter @devup-ui/eslint-plugin --filter @devup-ui/vite-plugin --filter @devup-ui/next-plugin --filter @devup-ui/rsbuild-plugin --filter @devup-ui/bun-plugin --filter @devup-ui/components --filter @devup-ui/reset-css build",

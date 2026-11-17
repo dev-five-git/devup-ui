@@ -131,7 +131,9 @@ As StyleX requires, variables usually live in a `.stylex.ts` file and are import
 // tokens.stylex.ts
 export const colors = stylex.defineVars({ primary: 'blue' })
 export const spacing = stylex.defineConsts({ gap: '8px' })
+```
 
+```tsx
 // Button.tsx
 import { colors, spacing } from './tokens.stylex'
 
@@ -166,7 +168,7 @@ const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
 
 `firstThatWorks()` emits its fallbacks in CSS order and `types.*()` unwraps to the inner value. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
 
-`include()` is not part of the current StyleX API. StyleX deprecated it and current `@stylexjs/stylex` releases no longer export it; StyleX composes namespaces by passing several of them to `props()` instead. Only the `@devup-ui/react/compat/stylex` declarations still type it. Devup UI still compiles the legacy `...stylex.include(base.root)` spread inside `create()` as a Devup UI extension, so code written for older StyleX keeps building: the namespace gets the classes of `base.root` before its own. The argument must be a namespace that a `create()` call earlier in the same file defines; anything else is a build error. The included classes are only added, so a property that the namespace sets again is not guaranteed to override the included value. To override, pass both namespaces to `props()` (`stylex.props(base.root, styles.fancy)`), which works the same in StyleX.
+`include()` is not part of the current StyleX API. StyleX deprecated it and current `@stylexjs/stylex` releases no longer export it; StyleX composes namespaces by passing several of them to `props()` instead. Only the `@devup-ui/react/compat/stylex` declarations still type it. Devup UI still compiles the legacy `...stylex.include(base.root)` spread inside `create()` as a Devup UI extension, so code written for older StyleX keeps building. The argument must be a namespace that a `create()` call earlier in the same file defines; anything else is a build error. The spread merges the included namespace's keys where it is written: a key written after the `include()` overrides the included one, so `{ ...stylex.include(base.root), color: 'blue' }` keeps only the blue class for `color`, and a later `include()` likewise overrides the keys before it. This is resolved at build time, including when the namespace is passed to `props()`. A dynamic (arrow function) namespace has no keys to merge, so its classes are only added before the namespace's own. Passing both namespaces to `props()` (`stylex.props(base.root, styles.fancy)`) composes them the same way in StyleX and Devup UI.
 
 ## Unsupported APIs
 
