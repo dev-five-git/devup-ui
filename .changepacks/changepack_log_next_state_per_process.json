@@ -1,0 +1,1 @@
+{"changes":{"packages/next-plugin/package.json":"Patch"},"note":"Write coordinator state to a per-process directory when another live next dev or next build already uses the same distDir, so concurrent processes no longer overwrite each other's sheet and class/file maps","date":"2026-11-15T00:00:00.000Z"}

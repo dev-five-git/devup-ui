@@ -62,8 +62,8 @@ export function createReservation(
             })),
           ),
           include: options.include,
-          cwd: process.cwd(),
-          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          cwd: options.root,
+          tsconfigPath: resolve(options.root, 'tsconfig.json'),
           package: options.package,
           importAliases: options.importAliases,
           toId: (path) =>

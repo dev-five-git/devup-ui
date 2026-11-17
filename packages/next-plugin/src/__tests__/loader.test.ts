@@ -305,6 +305,42 @@ describe('devupUILoader', () => {
     })
   })
 
+  it('never reads the CSS the engine serializes on demand', async () => {
+    const asyncCallback = mock()
+    const readCss = mock(() => 'css')
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+        defaultClassMap: {},
+        defaultFileMap: {},
+        defaultSheet: {},
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'index.tsx',
+      addDependency: mock(),
+    }
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      get css() {
+        return readCss()
+      },
+      free: mock(),
+      map: undefined,
+      cssFile: 'devup-ui.css',
+      updatedBaseStyle: true,
+      [Symbol.dispose]: mock(),
+    })
+    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
+    })
+    expect(readCss).not.toHaveBeenCalled()
+  })
+
   it('extracts a file that reaches Devup UI only through a project module', async () => {
     const source = `import { Box } from './ui'
 export const a = <Box bg="red" />`
