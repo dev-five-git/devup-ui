@@ -22,7 +22,7 @@ use css::{
     style_selector::{
         AtRuleKind, StyleSelector, is_selector_name, optimize_selector, split_selector_list,
     },
-    theme_tokens::{get_responsive_theme_token, get_typography_keys, is_responsive_theme_token},
+    theme_tokens::{get_responsive_theme_token, get_typography_keys},
     utils::to_kebab_case,
 };
 use oxc_allocator::{CloneIn, GetAllocator};
@@ -645,15 +645,11 @@ pub(super) fn extract_projected<'a>(
                             ThemeTokenResolution::CssVariable,
                         )
                     }
-                } else if is_responsive_theme_token(&value) {
-                    create_static_styles(
-                        name,
-                        &value,
-                        &[level],
-                        selector,
-                        ThemeTokenResolution::FirstValue,
-                    )
                 } else {
+                    // A responsive array slot keeps one class at its own level, yet a
+                    // `$token` there still reads `var(--token)`: the theme redefines
+                    // the variable per breakpoint and per theme variant, so the slot
+                    // shows the token's value wherever its media query applies.
                     create_static_styles(
                         name,
                         &value,
