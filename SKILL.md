@@ -416,10 +416,10 @@ Length and shadow tokens support responsive arrays like typography. The key dist
 |--------|----------|---------|
 | `px="$containerX"` | Expands to all defined breakpoints | Multiple |
 | `px={"$containerX"}` | Expands to all defined breakpoints | Multiple |
-| `px={["$containerX"]}` | Single value at index 0 only | 1 |
-| `px={["8px", null, "$containerX"]}` | `8px` at index 0, token at index 2 | 2 |
+| `px={["$containerX"]}` | `var(--containerX)` at index 0 only | 1 |
+| `px={["8px", null, "$containerX"]}` | `8px` at index 0, `var(--containerX)` at index 2 | 2 |
 
-Both `"$token"` and `{"$token"}` expand the responsive token. Only `{["$token"]}` inside a responsive array keeps it as a single class — because the array itself defines the breakpoint levels.
+Both `"$token"` and `{"$token"}` expand the responsive token. Only `{["$token"]}` inside a responsive array keeps it as a single class — because the array itself defines the breakpoint levels. That class still reads `var(--token)`, which the theme redefines per breakpoint and theme variant.
 
 Theme types are auto-generated via module augmentation of `DevupTheme` and `DevupThemeTypography`.
 

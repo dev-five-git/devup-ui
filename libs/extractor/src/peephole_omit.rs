@@ -50,13 +50,11 @@ pub(super) fn share<'a>(
         let function = format!(
             "function {name}(__devupOmitted) {{ return Object.fromEntries(Object.entries(__devupOmitted).filter({predicate})); }}"
         );
+        let mut module = parse(ast, &function).parse().program;
+        // The function is generated: its offsets map to no authored source.
+        crate::utils::clear_generated_program_spans(&mut module);
         if let Ok(predicate) = parse(ast, predicate).parse_expression()
-            && let Some(function) = parse(ast, &function)
-                .parse()
-                .program
-                .body
-                .into_iter()
-                .next()
+            && let Some(function) = module.body.into_iter().next()
         {
             predicates.push((predicate, name));
             functions.push(function);

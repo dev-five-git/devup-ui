@@ -11,6 +11,7 @@ use css::{
     atom_hoist::{atom_plan, freeze_atom_plan, is_atom_hoist, is_hoisted_bucket},
     file_map::canonical,
     get_custom_shorthand_names,
+    property_order::cmp_properties,
     style_selector::{
         AtRule, AtRuleKind, StyleSelector, get_selector_order, global_selector_order, write_at_rule,
     },
@@ -51,16 +52,16 @@ fn selector_group(selector: Option<&str>) -> (u8, u8) {
 
 /// Typography preset declarations come first so a declaration written directly
 /// on the same selector wins, and each preset stays contiguous so its rules merge.
+/// Properties follow `cmp_properties`, so a longhand wins over a shorthand covering it.
 fn prop_cmp(a: &StyleSheetProperty, b: &StyleSheetProperty) -> std::cmp::Ordering {
     b.typography.cmp(&a.typography).then_with(|| {
         if a.typography {
             a.class_name
                 .cmp(&b.class_name)
-                .then_with(|| a.property.cmp(&b.property))
+                .then_with(|| cmp_properties(&a.property, &b.property))
                 .then_with(|| a.value.cmp(&b.value))
         } else {
-            a.property
-                .cmp(&b.property)
+            cmp_properties(&a.property, &b.property)
                 .then_with(|| a.value.cmp(&b.value))
                 .then_with(|| a.class_name.cmp(&b.class_name))
         }
@@ -557,8 +558,13 @@ impl StyleSheet {
         } else {
             canonical(file)
         };
+        self.rm_global_atoms(file, &property_key);
+        true
+    }
 
-        let bucket_empty = if let Some(prop_map) = self.properties.get_mut(&property_key) {
+    /// Drop the global-selector atoms `file` wrote into the `property_key` bucket.
+    fn rm_global_atoms(&mut self, file: &str, property_key: &str) {
+        let bucket_empty = if let Some(prop_map) = self.properties.get_mut(property_key) {
             for map in prop_map.values_mut() {
                 for props in map.values_mut() {
                     props.retain(|prop| match prop.selector.as_ref() {
@@ -579,9 +585,29 @@ impl StyleSheet {
             true
         };
         if bucket_empty {
-            self.properties.remove(&property_key);
+            self.properties.remove(property_key);
         }
-        true
+    }
+
+    /// Forget a deleted source file: everything it wrote globally and, when
+    /// `drop_bucket` says no other file shares it, its whole `bucket`.
+    ///
+    /// Atoms other files share (the single-CSS sheet, a bucket other files
+    /// collapse into) stay: nothing records which file added them, and a class
+    /// no module references any more styles nothing. Returns whether the sheet
+    /// changed.
+    pub fn rm_file(&mut self, file: &str, bucket: &str, drop_bucket: bool) -> bool {
+        // Global CSS of a single-CSS or global file sits in the shared bucket,
+        // otherwise in the file's own one.
+        let mut removed = self.rm_global_css(file, true);
+        if removed {
+            self.rm_global_atoms(file, bucket);
+        }
+        if drop_bucket {
+            removed |= self.properties.remove(bucket).is_some();
+            removed |= self.keyframes.remove(bucket).is_some();
+        }
+        removed
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -1831,6 +1857,54 @@ mod tests {
         );
     }
 
+    #[test]
+    #[serial]
+    fn rm_file_drops_what_only_the_file_wrote() {
+        let _state = css::test_state::TestStateGuard::new();
+        let global = |file: &str| Some(StyleSelector::Global("body".to_string(), file.to_string()));
+        let mut sheet = StyleSheet::default();
+        // Given: a file's own bucket, keyframes and global CSS in both buckets.
+        sheet.add_property("a", "color", 0, "red", None, None, Some("a.tsx"));
+        sheet.add_property(
+            "b",
+            "margin",
+            0,
+            "0",
+            global("a.tsx").as_ref(),
+            Some(0),
+            None,
+        );
+        sheet.add_property(
+            "c",
+            "padding",
+            0,
+            "0",
+            global("a.tsx").as_ref(),
+            Some(0),
+            Some("root.tsx"),
+        );
+        sheet.add_property("d", "color", 0, "blue", None, None, Some("root.tsx"));
+        sheet.add_keyframes("spin", BTreeMap::new(), Some("a.tsx"));
+        sheet.add_css("a.tsx", "html { gap: 1px }");
+
+        // When / Then: a file collapsed into `root.tsx` takes only its global CSS.
+        assert!(sheet.rm_file("a.tsx", "root.tsx", false));
+        let css = sheet.create_css(None, false) + &sheet.create_css(Some("root.tsx"), false);
+        assert!(
+            !css.contains("margin:0") && !css.contains("padding:0") && !css.contains("gap: 1px"),
+            "{css}"
+        );
+        assert!(css.contains("color:blue"), "{css}");
+        assert!(sheet.properties.contains_key("a.tsx"));
+
+        // When / Then: the file's own bucket goes when no other file shares it.
+        assert!(sheet.rm_file("a.tsx", "a.tsx", true));
+        assert!(!sheet.properties.contains_key("a.tsx"));
+        assert!(!sheet.keyframes.contains_key("a.tsx"));
+        assert!(!sheet.rm_file("a.tsx", "a.tsx", true));
+        assert!(!sheet.rm_file("a.tsx", "a.tsx", false));
+    }
+
     // Under single-importer collapse, a collapsed file's globalCss atoms are
     // bucketed by canonical(file). rm_global_css(raw) must therefore clear them
     // from the CANONICAL bucket (matching the raw owner via f == file), and must
@@ -2015,6 +2089,66 @@ mod tests {
         sheet.add_property("test", "display", 0, "none", None, None, None);
         sheet.add_property("test", "display", 2, "flex", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[rstest]
+    #[case("border-width", "border-top-width")]
+    #[case("place-items", "align-items")]
+    #[case("border", "border-top-width")]
+    #[case("overflow", "overflow-x")]
+    #[case("padding", "padding-top")]
+    #[serial]
+    fn longhand_rule_follows_its_shorthand(#[case] shorthand: &str, #[case] longhand: &str) {
+        let _state = css::test_state::TestStateGuard::new();
+        for selector in [None, Some(StyleSelector::from("hover"))] {
+            for (first, second) in [(shorthand, longhand), (longhand, shorthand)] {
+                let mut sheet = StyleSheet::default();
+                sheet.add_property("a", first, 0, "1px", selector.as_ref(), None, None);
+                sheet.add_property("b", second, 0, "2px", selector.as_ref(), None, None);
+                sheet.add_property("c", first, 1, "1px", selector.as_ref(), Some(1), None);
+                sheet.add_property("d", second, 1, "2px", selector.as_ref(), Some(1), None);
+                let css = sheet.create_css(None, false);
+                let at = |property: &str| css.find(&format!("{{{property}:")).unwrap();
+                // Within the default bucket and inside a breakpoint of an order layer.
+                let (shorthand_at, longhand_at) = (at(shorthand), at(longhand));
+                assert!(shorthand_at < longhand_at, "{css}");
+                let (shorthand_at, longhand_at) = (
+                    css.rfind(&format!("{{{shorthand}:")).unwrap(),
+                    css.rfind(&format!("{{{longhand}:")).unwrap(),
+                );
+                assert!(shorthand_at < longhand_at, "{css}");
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::stylex(
+        "import * as stylex from '@stylexjs/stylex';const s=stylex.create({a:{borderTopWidth:2,alignItems:'end'},b:{borderWidth:1,placeItems:'start'}});<div {...stylex.props(s.a,s.b)}/>"
+    )]
+    #[case::box_props(
+        "import {Box} from '@devup-ui/react';<Box borderTopWidth='2px' alignItems='end' borderWidth='1px' placeItems='start'/>"
+    )]
+    #[serial]
+    fn extracted_longhands_win_over_shorthands(#[case] code: &str) {
+        let _state = css::test_state::TestStateGuard::new();
+        let output = extract(
+            "index.tsx",
+            code,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+        let mut sheet = StyleSheet::default();
+        sheet.update_styles(&output.styles, "index.tsx", true);
+        let css = sheet.create_css(None, true);
+        let at = |property: &str| css.find(&format!("{{{property}:")).unwrap();
+        assert!(at("border-width") < at("border-top-width"), "{css}");
+        assert!(at("place-items") < at("align-items"), "{css}");
     }
 
     #[test]
@@ -3750,6 +3884,77 @@ mod tests {
             css_body.contains("background:var(--a) !important"),
             "CSS should contain !important. Got: {css_body}",
         );
+    }
+
+    fn responsive_token_theme() -> Theme {
+        serde_json::from_str(
+            r##"{
+                "colors": {
+                    "default": { "primary": "#f00", "text": "#000" },
+                    "dark": { "primary": "#0f0", "text": "#fff" }
+                },
+                "length": {
+                    "default": { "containerX": ["16px", null, "32px"] },
+                    "compact": { "containerX": ["8px", null, "12px"] }
+                },
+                "shadow": {
+                    "default": { "card": ["0 1px 2px #0003", null, null, "0 4px 8px #0003"] }
+                }
+            }"##,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::length_first_slot(
+        r#"<Box w={["$containerX", "10%"]} />"#,
+        &[".c0{width:var(--containerX)}", "@media(min-width:480px){.c1{width:10%}}"],
+        "width:16px"
+    )]
+    #[case::length_later_slot(
+        r#"<Box w={["8px", null, "$containerX"]} />"#,
+        &[".c0{width:8px}", "@media(min-width:768px){.c1{width:var(--containerX)}}"],
+        "width:16px"
+    )]
+    #[case::length_only_slot(
+        r#"<Box w={["$containerX"]} />"#,
+        &[".c0{width:var(--containerX)}"],
+        "width:16px"
+    )]
+    #[case::shadow_later_slot(
+        r#"<Box boxShadow={["none", null, null, "$card"]} />"#,
+        &[".c0{box-shadow:none}", "@media(min-width:992px){.c1{box-shadow:var(--card)}}"],
+        "box-shadow:0 1px 2px"
+    )]
+    #[case::color_slots(
+        r#"<Box bg={["$primary", null, "$text"]} />"#,
+        &[".c0{background:var(--primary)}", "@media(min-width:768px){.c1{background:var(--text)}}"],
+        "background:#"
+    )]
+    #[serial]
+    fn responsive_array_slots_read_theme_token_variables(
+        #[case] source: &str,
+        #[case] expected: &[&str],
+        #[case] literal: &str,
+    ) {
+        let css = pipeline_css(responsive_token_theme(), source);
+        // The theme redefines each variable per breakpoint and per theme variant
+        assert!(
+            css.contains("@media(min-width:768px){:root{--containerX:32px}}"),
+            "{css}"
+        );
+        assert!(
+            css.contains(":root[data-theme=compact]{--containerX:8px}"),
+            "{css}"
+        );
+        assert!(
+            css.contains("@media(min-width:992px){:root{--card:0 4px 8px #0003}}"),
+            "{css}"
+        );
+        for rule in expected {
+            assert!(css.contains(rule), "{rule} missing from {css}");
+        }
+        assert!(!css.contains(literal), "{literal} inlined in {css}");
     }
 
     fn pipeline_css(theme: Theme, source: &str) -> String {

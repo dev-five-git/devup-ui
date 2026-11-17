@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/object_selector_keys_tests.rs
+expression: rules(source)
+---
+{
+    "Some(At { kind: Media, query: \"print\", selector: None, outer: [], file: None }) 0 color: blue",
+    "Some(Selector(\"& .a > b\")) 0 color: blue",
+    "Some(Selector(\"& Button\")) 0 color: blue",
+    "Some(Selector(\"& h1\")) 0 color: blue",
+    "Some(Selector(\"&.x\")) 0 color: blue",
+    "Some(Selector(\"&::before\")) 0 color: blue",
+    "Some(Selector(\"&:focus\")) 0 color: blue",
+    "Some(Selector(\"&:hover\")) 0 color: blue",
+    "Some(Selector(\"&[data-a]\")) 0 color: blue",
+}
