@@ -481,6 +481,7 @@ describe('devupUIWebpackPlugin', () => {
       })
       expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(
         join(context, 'devup.json'),
+        expect.any(Set),
       )
     })
 
