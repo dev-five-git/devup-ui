@@ -3,8 +3,8 @@ import { defineConfig } from '@pandacss/dev'
 export default defineConfig({
   presets: ['@pandacss/preset-base', '@pandacss/preset-panda'],
 
-  // Whether to use css reset
-  preflight: true,
+  // No css reset, like the other benchmark fixtures
+  preflight: false,
 
   // Where to look for your css declarations
   include: ['./src/**/*.{js,jsx,ts,tsx}', './pages/**/*.{js,jsx,ts,tsx}'],
@@ -12,9 +12,13 @@ export default defineConfig({
   // Files to exclude
   exclude: [],
 
-  // Useful for theme customization
+  // Match the 480px second breakpoint the other fixtures use
   theme: {
-    extend: {},
+    extend: {
+      breakpoints: {
+        sm: '30rem',
+      },
+    },
   },
   jsxFramework: 'react',
 

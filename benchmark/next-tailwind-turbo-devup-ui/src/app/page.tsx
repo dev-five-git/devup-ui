@@ -1,43 +1,47 @@
 'use client'
 
-import { Box, Button } from '@devup-ui/react'
-import { useState } from 'react'
+import { Box } from '@devup-ui/react'
+import { type CSSProperties, useState } from 'react'
 
 export default function HomePage() {
-  const [color, setColor] = useState('text-yellow-500')
+  const [color, setColor] = useState('yellow')
   const [enabled, setEnabled] = useState(false)
 
   return (
     <div>
-      <Box as="p" className="bg-blue-500 text-white p-2">
+      <p
+        style={{
+          backgroundColor: 'blue',
+        }}
+      >
         Track & field champions:
-      </Box>
+      </p>
       <Box
         as="section"
-        className={`${color} cursor-pointer relative py-7 hover:bg-yellow-500 hover:cursor-cell text-3xl`}
+        className="bg-(--text) text-(--box-color) cursor-pointer text-[32px] relative py-7 hover:bg-[yellow] hover:cursor-cell"
         data-testid="box"
+        style={{ '--box-color': color } as CSSProperties}
       >
         <div>hello</div>
         <div>hello</div>
       </Box>
-      <Box as="p" className="text-gray-900">
+      <Box as="span" className="text-(--text)">
         text
       </Box>
       <Box
-        className={`${enabled ? 'text-green-500' : 'text-blue-500'} text-3xl pr-5`}
+        className={`${enabled ? 'text-[green]' : 'text-[blue]'} text-[32px] pr-5`}
       >
         hello
       </Box>
-      <Box className="text-xs sm:text-3xl">hello</Box>
-      <Button
-        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4"
+      <Box className="text-[12px] sm:text-[32px]">hello</Box>
+      <button
         onClick={() => {
-          setColor('text-blue-500')
+          setColor('blue')
           setEnabled((prev) => !prev)
         }}
       >
         Change
-      </Button>
+      </button>
     </div>
   )
 }

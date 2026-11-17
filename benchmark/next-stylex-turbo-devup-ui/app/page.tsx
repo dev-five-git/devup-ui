@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, globalCss } from '@devup-ui/react'
+import { Box } from '@devup-ui/react'
 import * as stylex from '@stylexjs/stylex'
 import { useState } from 'react'
 
@@ -11,7 +11,7 @@ const styles = stylex.create({
     paddingTop: '28px',
     paddingBottom: '28px',
     backgroundColor: {
-      default: 'blue',
+      default: 'var(--text)',
       ':hover': 'yellow',
     },
     cursor: {
@@ -19,6 +19,9 @@ const styles = stylex.create({
       ':hover': 'cell',
     },
   },
+  dynamicColor: (color: string) => ({
+    color,
+  }),
   typo: {
     color: 'var(--text)',
   },
@@ -33,15 +36,10 @@ const styles = stylex.create({
     paddingRight: '20px',
   },
   hello2: {
-    fontSize: 12,
-  },
-})
-
-globalCss({
-  '*': {
-    boxSizing: 'border-box',
-    p: 0,
-    m: 0,
+    fontSize: {
+      default: 12,
+      '@media (min-width: 480px)': 32,
+    },
   },
 })
 
@@ -51,14 +49,24 @@ export default function HomePage() {
 
   return (
     <div>
-      <Box as="p" style={{ backgroundColor: 'blue' }}>
+      <p
+        style={{
+          backgroundColor: 'blue',
+        }}
+      >
         Track & field champions:
-      </Box>
-      <Box as="section" {...stylex.props(styles.base)} style={{ color }}>
+      </p>
+      <Box
+        as="section"
+        {...stylex.props(styles.base, styles.dynamicColor(color))}
+        data-testid="box"
+      >
         <div>hello</div>
         <div>hello</div>
       </Box>
-      <Box {...stylex.props(styles.typo)}>text</Box>
+      <Box as="span" {...stylex.props(styles.typo)}>
+        text
+      </Box>
       <Box
         {...stylex.props(
           enabled ? styles.conditional : styles.conditional1,

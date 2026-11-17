@@ -1,5 +1,4 @@
-/** @type {import('next').NextConfig} */
-const stylexPlugin = require('@stylexjs/nextjs-plugin')
+import stylexPlugin from '@stylexjs/nextjs-plugin'
 
 const nextConfig = {
   experimental: { useTypeScriptCli: true },
@@ -9,6 +8,6 @@ const nextConfig = {
   // Optionally, add any other Next.js config below
 }
 
-module.exports = stylexPlugin({
+export default stylexPlugin({
   rootDir: __dirname,
 })(nextConfig)

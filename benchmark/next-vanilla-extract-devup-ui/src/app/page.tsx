@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 
 import {
   conditional,
@@ -24,11 +24,15 @@ export default function HomePage() {
       >
         Track & field champions:
       </p>
-      <section className={hello} style={{ color }}>
+      <section
+        className={hello}
+        data-testid="box"
+        style={{ '--box-color': color } as CSSProperties}
+      >
         <div>hello</div>
         <div>hello</div>
       </section>
-      <p className={text}>text</p>
+      <span className={text}>text</span>
       <div className={`${enabled ? conditional : conditional1} ${hello3}`}>
         hello
       </div>

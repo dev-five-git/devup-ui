@@ -22,7 +22,7 @@ export default function HomePage() {
           cursor: 'cell',
         }}
         as="section"
-        bg="$text"
+        bg="var(--text)"
         color={color}
         cursor="pointer"
         data-testid="box"
@@ -33,8 +33,10 @@ export default function HomePage() {
         <Box>hello</Box>
         <Box>hello</Box>
       </Box>
-      <Text color="$text">text</Text>
-      <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">
+      <Text as="span" color="var(--text)">
+        text
+      </Text>
+      <Box color={enabled ? 'green' : 'blue'} fontSize={32} pr="20px">
         hello
       </Box>
       <Box fontSize={[12, 32]}>hello</Box>

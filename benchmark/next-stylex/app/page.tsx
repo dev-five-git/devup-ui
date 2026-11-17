@@ -9,9 +9,8 @@ const styles = stylex.create({
     position: 'relative',
     paddingTop: '28px',
     paddingBottom: '28px',
-
     backgroundColor: {
-      default: 'blue',
+      default: 'var(--text)',
       ':hover': 'yellow',
     },
     cursor: {
@@ -19,6 +18,9 @@ const styles = stylex.create({
       ':hover': 'cell',
     },
   },
+  dynamicColor: (color: string) => ({
+    color,
+  }),
   typo: {
     color: 'var(--text)',
   },
@@ -33,7 +35,10 @@ const styles = stylex.create({
     paddingRight: '20px',
   },
   hello2: {
-    fontSize: 12,
+    fontSize: {
+      default: 12,
+      '@media (min-width: 480px)': 32,
+    },
   },
 })
 
@@ -50,11 +55,14 @@ export default function HomePage() {
       >
         Track & field champions:
       </p>
-      <section {...stylex.props(styles.base)} style={{ color }}>
+      <section
+        {...stylex.props(styles.base, styles.dynamicColor(color))}
+        data-testid="box"
+      >
         <div>hello</div>
         <div>hello</div>
       </section>
-      <div {...stylex.props(styles.typo)}>text</div>
+      <span {...stylex.props(styles.typo)}>text</span>
       <div
         {...stylex.props(
           enabled ? styles.conditional : styles.conditional1,

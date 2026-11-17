@@ -26,7 +26,7 @@ export default function HomePage() {
         color={color}
         cursor="pointer"
         data-testid="box"
-        fontSize={32}
+        fontSize={8}
         position="relative"
         py="28px"
       >
@@ -34,10 +34,10 @@ export default function HomePage() {
         <Box>hello</Box>
       </Box>
       <Text color="$text">text</Text>
-      <Box color={enabled ? 'green' : 'blue'} fontSize={32} pr="20px">
+      <Box color={enabled ? 'green' : 'blue'} fontSize={8} pr="20px">
         hello
       </Box>
-      <Box fontSize={[12, 32]}>hello</Box>
+      <Box fontSize={[3, 8]}>hello</Box>
       <button
         onClick={() => {
           setColor('blue')
