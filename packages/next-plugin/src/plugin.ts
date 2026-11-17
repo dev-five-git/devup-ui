@@ -547,6 +547,7 @@ export function DevupUI(
             true,
             importAliases as unknown as Record<string, string | null>,
           ),
+          false,
         )
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt

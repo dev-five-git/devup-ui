@@ -113,11 +113,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         'code' | 'css' | 'map' | 'cssFile' | 'updatedBaseStyle' | 'dependencies'
       >
       try {
+        const cssFile = output.cssFile
         snapshot = {
           code: output.code,
-          css: output.css,
+          // The engine serializes the CSS only when it is read; watch mode
+          // never writes it
+          css: cssFile && !watch ? output.css : undefined,
           map: output.map,
-          cssFile: output.cssFile,
+          cssFile,
           updatedBaseStyle: output.updatedBaseStyle,
           dependencies: output.dependencies,
         }
