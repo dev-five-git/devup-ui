@@ -1,0 +1,1 @@
+{"changes":{"packages/next-plugin/package.json":"Patch"},"note":"Fail a Turbopack build whose CSS the coordinator cannot prove complete, naming the files that never extracted, instead of answering with partial CSS","date":"2026-11-15T00:00:00.000Z"}
