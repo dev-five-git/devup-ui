@@ -214,13 +214,15 @@ For nested groups, the selector applies to the nearest parent with `data-group`:
 
 ## CSS Output
 
+{/* conformance */}
+
 ```tsx
 <Box data-group>
   <Box _groupHover={{ bg: 'red' }} />
 </Box>
 ```
 
-Generates CSS like this (the class name depends on the build):
+Generates this CSS:
 
 ```css
 :is([role='group'], [data-group]):hover .a {
