@@ -299,6 +299,40 @@ pub fn seed_file_map(files: Vec<String>) {
     binding_core::seed_file_map(&files);
 }
 
+/// Create an engine session with a clean state and return its id.
+///
+/// Two apps in one process each keep their own session: select it before
+/// every call so the call reads and changes only that app's state. Session 0
+/// is live until another is selected.
+#[wasm_bindgen(js_name = "createSession")]
+#[must_use]
+pub fn create_session() -> u32 {
+    binding_core::create_session()
+}
+
+/// Make session `id` live: every later call works on its state until
+/// another session is selected.
+#[wasm_bindgen(js_name = "selectSession")]
+#[cfg(not(tarpaulin_include))]
+pub fn select_session(id: u32) -> Result<(), JsValue> {
+    binding_core::select_session(id).map(drop).map_err(js_error)
+}
+
+/// Drop session `id` with its state and resolver (testable without `JsValue`)
+pub fn drop_session_internal(id: u32) -> Result<bool, String> {
+    let dropped = binding_core::drop_session(id)?;
+    MODULE_RESOLVER.with_borrow_mut(|resolvers| resolvers.remove(id));
+    Ok(dropped)
+}
+
+/// Drop session `id` with its state and module resolver, returning whether
+/// it existed. Dropping the live session makes session 0 live.
+#[wasm_bindgen(js_name = "dropSession")]
+#[cfg(not(tarpaulin_include))]
+pub fn drop_session(id: u32) -> Result<bool, JsValue> {
+    drop_session_internal(id).map_err(js_error)
+}
+
 /// Forget a source file that was deleted or renamed away.
 ///
 /// Its global CSS, its own bucket and the class names handed out in it go,
@@ -1727,6 +1761,25 @@ mod tests {
         // The result should be valid JSON (empty map)
         let json_str = result.unwrap();
         assert!(json_str.starts_with('{') || json_str.starts_with("[]"));
+    }
+
+    #[test]
+    #[serial]
+    fn sessions_keep_their_own_prefix_until_dropped() {
+        let _state = TestStateGuard::new();
+        // Given: a second session with its own prefix
+        let session = create_session();
+        assert_eq!(binding_core::select_session(session), Ok(0));
+        set_prefix(Some("app-".into()));
+        // When / Then: session 0 keeps its own, and the dropped session goes
+        assert_eq!(binding_core::select_session(0), Ok(session));
+        assert_eq!(get_prefix(), None);
+        assert_eq!(
+            drop_session_internal(0),
+            Err("engine session 0 cannot be dropped".to_string())
+        );
+        assert_eq!(drop_session_internal(session), Ok(true));
+        assert_eq!(drop_session_internal(session), Ok(false));
     }
 
     #[test]
