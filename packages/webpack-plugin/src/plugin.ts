@@ -6,9 +6,11 @@ import { dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
   collectNumberedFiles,
   computeFileReach,
   computeReachableFiles,
+  conventionalSourceRoots,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -16,6 +18,7 @@ import {
   type CustomShorthands,
   type DevupCompiler,
   type DevupUIBasePluginOptions,
+  esmImportConditions,
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
@@ -30,6 +33,7 @@ import {
   resolveProjectPath,
   seedFileNumbers,
   setupWarning,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -240,16 +244,32 @@ export class DevupUIWebpackPlugin {
   }
 
   /**
-   * Extract the source files under `src` that `entries` reach into the shared
-   * compiler sheet, in path order, so that a stylesheet built on its first import
-   * holds the styles of every one (all collapsed members of a bucket, and the
-   * shared base), not just those of the modules webpack happened to build
-   * first. Mirrors the loader's `codeExtract` call (same filename keying +
-   * options) so re-extraction during compilation is idempotent. Generic entry
-   * discovery remains best-effort; an adapter's complete set is authoritative
-   * and its read/extraction failures must fail the build.
+   * The import graph of the `src` and `app` directories of the project root
+   * (webpack's `context`)
    */
-  private prewarmExtractor(entries: string[]) {
+  private sourceGraph() {
+    return buildStaticImportGraph(
+      this.root,
+      resolve(this.root, 'tsconfig.json'),
+      conventionalSourceRoots(this.root),
+    )
+  }
+
+  /**
+   * Extract the source files under `src` and `app` that `entries` reach into
+   * the shared compiler sheet, in path order, so that a stylesheet built on
+   * its first import holds the styles of every one (all collapsed members of a
+   * bucket, and the shared base), not just those of the modules webpack
+   * happened to build first. Mirrors the loader's `codeExtract` call (same
+   * filename keying + options) so re-extraction during compilation is
+   * idempotent. Generic entry discovery remains best-effort; an adapter's
+   * complete set is authoritative and its read/extraction failures must fail
+   * the build.
+   */
+  private prewarmExtractor(
+    entries: string[],
+    { resolve: resolveOptions }: Compiler['options'],
+  ) {
     try {
       const cwd = this.root
       // The same resolver as the loader's, so imported constants and
@@ -257,6 +277,7 @@ export class DevupUIWebpackPlugin {
       this.compiler.setModuleResolver(
         createModuleResolver({
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+          conditions: esmImportConditions(resolveOptions),
         }),
       )
       const files =
@@ -264,9 +285,9 @@ export class DevupUIWebpackPlugin {
           resolve(cwd, file),
         ) ??
         computeReachableFiles({
-          srcDir: resolve(cwd, 'src'),
-          tsconfigPath: resolve(cwd, 'tsconfig.json'),
+          srcDir: cwd,
           entries,
+          graph: this.sourceGraph(),
         })
       if (this.options.productionPrewarmFiles !== undefined) {
         seedFileNumbers(this.compiler, [...this.options.productionPrewarmFiles])
@@ -393,23 +414,24 @@ export class DevupUIWebpackPlugin {
     // The canonical map is built + imported unconditionally; only atom HOISTING
     // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
     try {
-      const srcDir = resolve(this.root, 'src')
-      const tsconfigPath = resolve(this.root, 'tsconfig.json')
       const cwd = this.root
+      // One graph over every source root serves both the canonical map and
+      // the routes, so an `app` directory is hoisted like `src`
+      const graph = this.sourceGraph()
       const canonicalMap = buildCanonicalMap({
-        srcDir,
-        tsconfigPath,
+        srcDir: cwd,
         cwd,
         keyBy: 'cwd-relative',
+        graph,
       })
       this.compiler.importCanonicalMap(canonicalMap)
 
       if (atomMode) {
         const fileReach = computeFileReach({
-          srcDir,
-          tsconfigPath,
+          srcDir: cwd,
           cwd,
           keyBy: 'cwd-relative',
+          graph,
         })
         const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
         if (plan) {
@@ -497,6 +519,7 @@ export class DevupUIWebpackPlugin {
           : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
               requests.map((request) => resolve(context, request)),
             ),
+        compiler.options,
       )
     }
     compiler.hooks.run.tap(
@@ -648,7 +671,7 @@ export class DevupUIWebpackPlugin {
     }
 
     const sourceRule = {
-      test: /\.(tsx|ts|js|mjs|jsx)$/,
+      test: SOURCE_FILE_REGEX,
       exclude: createNodeModulesExcludeRegex(
         this.options.include,
         '.mdx.[tj]sx?$',

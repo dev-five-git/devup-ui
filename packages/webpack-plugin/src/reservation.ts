@@ -4,6 +4,7 @@ import {
   createModuleResolver,
   createSharedSlotReservation,
   type DevupCompiler,
+  esmImportConditions,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import type { Compiler } from 'webpack'
@@ -19,12 +20,15 @@ export function createWebpackReservation(
   return ({
     context,
     entry,
-  }: Pick<Compiler['options'], 'context' | 'entry'>) => {
+    resolve: resolveOptions,
+  }: Pick<Compiler['options'], 'context' | 'entry'> &
+    Partial<Pick<Compiler['options'], 'resolve'>>) => {
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
     // The loaders extract files under ids relative to the project root
     const toId = (path: string) => relative(root, path).replaceAll('\\', '/')
-    compiler.setModuleResolver(createModuleResolver({ toId }))
+    const conditions = esmImportConditions(resolveOptions)
+    compiler.setModuleResolver(createModuleResolver({ toId, conditions }))
     slots.invalidate()
     slots.reserve(
       {
@@ -48,6 +52,7 @@ export function createWebpackReservation(
         package: options.package,
         importAliases,
         toId,
+        conditions,
       },
       {
         singleCss: options.singleCss,
