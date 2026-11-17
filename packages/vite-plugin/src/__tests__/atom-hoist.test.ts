@@ -20,7 +20,12 @@ const transform = async (file, code) => {
   const result = await plugin.transform.call(context, code, join(root, file).replaceAll('\\\\', '/'));
   return result.code;
 };
-const loadCss = name => plugin.load(join(cssDir, name));
+// A build names each sheet in the source it loads; generateBundle drops it.
+const loadCss = name => {
+  const css = plugin.load(join(cssDir, name));
+  assert.ok(css.startsWith('/*! ' + name + ' */'), 'loaded sheet must be named');
+  return css.slice(name.length + 7);
+};
 const finish = async () => {
   const asset = { type: 'asset', name: 'devup-ui.css', source: 'stale', fileName: 'shared.css' };
   await plugin.generateBundle.call({}, {}, { 'shared.css': asset });

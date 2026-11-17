@@ -205,18 +205,36 @@ function readBody(req: IncomingMessage): Promise<string> {
   })
 }
 
+// The latest extraction of each file. Next compiles a module that both the
+// server and the client graph import once per graph, with the same source,
+// and in no guaranteed order. Re-running WASM for the second copy only
+// rebuilds the same styles, so it answers from here instead. Keeping only the
+// latest source per file bounds the cache by the project's file count and
+// guarantees the sheet still holds exactly that source's styles. Each app
+// keeps its own in its CoordinatorState, since each app has its own sheet.
+interface CachedExtract {
+  code: string
+  relCssDir: string
+  /** mtime and size of the files the extraction read through the resolver */
+  dependencies: string
+  output: ExtractOutputSnapshot
+}
+
 interface ThemeWatch {
   files: string[]
   stamp: string
   reload: () => string[]
 }
 
-/** What changes when a theme input is edited, added or deleted. */
-function themeStamp(files: string[]): string {
+/**
+ * What changes when one of the files is edited, added or deleted: a theme
+ * input, or a file an extraction read through the resolver.
+ */
+function fileStamp(files: string[] = []): string {
   return files
     .map((file) => {
       try {
-        const stats = statSync(file)
+        const stats = statSync(resolve(file))
         return `${stats.mtimeMs}:${stats.size}`
       } catch {
         return 'missing'
@@ -225,13 +243,31 @@ function themeStamp(files: string[]): string {
     .join('|')
 }
 
+function cachedExtract(
+  state: CoordinatorState,
+  filename: string,
+  code: string,
+  relCssDir: string,
+): ExtractOutputSnapshot | undefined {
+  const cached = state.transformCache.get(filename)
+  return cached?.code === code &&
+    cached.relCssDir === relCssDir &&
+    cached.dependencies === fileStamp(cached.output.dependencies)
+    ? cached.output
+    : undefined
+}
+
 /** Register the app's theme again when one of its input files has changed. */
 function refreshTheme(state: CoordinatorState): void {
   const { themeWatch } = state
-  if (!themeWatch || themeStamp(themeWatch.files) === themeWatch.stamp) return
+  if (!themeWatch || fileStamp(themeWatch.files) === themeWatch.stamp) return
+  // Every cached extraction of this app was made under the old theme. Even a
+  // reload that throws may have changed the registered theme, so drop them
+  // first.
+  state.transformCache.clear()
   // A throwing reload keeps the old stamp, so the next request retries.
   const files = themeWatch.reload()
-  state.themeWatch = { ...themeWatch, files, stamp: themeStamp(files) }
+  state.themeWatch = { ...themeWatch, files, stamp: fileStamp(files) }
 }
 
 // Extraction tracking for waitForIdle.
@@ -278,6 +314,8 @@ interface CoordinatorState {
   extractedFiles: Set<string>
   // Where each file the loaders posted lives, to notice the ones deleted since
   extractedSources: Map<string, string>
+  // The latest extraction of each file, for this app's sheet only
+  transformCache: Map<string, CachedExtract>
   fileNumToBucket: Map<number, string>
   bucketToMembers: Map<string, Set<string>>
   canonicalMap: Record<string, string>
@@ -300,13 +338,14 @@ function createState(options: CoordinatorOptions): CoordinatorState {
     maxWaitMs: options.maxWaitMs ?? 60_000,
     extractedFiles: new Set(options.prewarmedFiles),
     extractedSources: new Map(),
+    transformCache: new Map(),
     fileNumToBucket: new Map(),
     bucketToMembers: buildBucketToMembers(options.canonicalMap),
     canonicalMap: options.canonicalMap,
     expectedBaseFiles: new Set(options.expectedBaseFiles),
     themeWatch: options.theme && {
       ...options.theme,
-      stamp: themeStamp(options.theme.files),
+      stamp: fileStamp(options.theme.files),
     },
   }
 }
@@ -536,7 +575,8 @@ export function startCoordinator(options: CoordinatorOptions): {
     options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
   const state = createState(options)
-  const { extractedFiles, extractedSources, fileNumToBucket } = state
+  const { extractedFiles, extractedSources, fileNumToBucket, transformCache } =
+    state
 
   // A deleted file is never extracted again, so its styles would stay in the
   // sheet; its importers are, once they stop importing it. A repeated
@@ -546,6 +586,8 @@ export function startCoordinator(options: CoordinatorOptions): {
     for (const [filename, resourcePath] of extractedSources) {
       if (existsSync(resourcePath)) continue
       extractedSources.delete(filename)
+      // Its styles leave the sheet, so the same source must extract again.
+      transformCache.delete(filename)
       if (removeFile(filename)) removed = true
     }
     if (!removed) return
@@ -646,22 +688,37 @@ export function startCoordinator(options: CoordinatorOptions): {
         // Require exact source equality because Turbopack may hand a loader
         // code modified by an earlier transform.
         const prewarmed = prewarmedOutputs.get(filename)
-        const cacheHit = prewarmed?.source === code
         const extractStartedAt = profileStart()
-        const result = cacheHit
-          ? prewarmed
-          : takeExtractOutput(
-              extract(
-                filename,
-                code,
-                libPackage,
-                relCssDir,
-                singleCss,
-                false,
-                true,
-                importAliases,
-              ),
-            )
+        const cached =
+          prewarmed?.source === code
+            ? prewarmed
+            : cachedExtract(state, filename, code, relCssDir)
+        const cacheHit = cached !== undefined
+        let result: ExtractOutputSnapshot
+        if (cached) {
+          result = cached
+        } else {
+          // Whatever the engine kept of an earlier source is gone if this throws.
+          transformCache.delete(filename)
+          result = takeExtractOutput(
+            extract(
+              filename,
+              code,
+              libPackage,
+              relCssDir,
+              singleCss,
+              false,
+              true,
+              importAliases,
+            ),
+          )
+          transformCache.set(filename, {
+            code,
+            relCssDir,
+            dependencies: fileStamp(result.dependencies),
+            output: result,
+          })
+        }
         const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
