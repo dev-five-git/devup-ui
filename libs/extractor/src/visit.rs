@@ -1476,11 +1476,48 @@ impl<'a> DevupVisitor<'a> {
             }
             return;
         }
-        match unwrap_syntax_only_mut(node) {
-            Expression::StaticMemberExpression(member) => self.plain_styled(&mut member.object),
-            Expression::CallExpression(call) => self.plain_styled(&mut call.callee),
-            _ => {}
+        let node = unwrap_syntax_only_mut(node);
+        let tag = match node {
+            Expression::StaticMemberExpression(member) => {
+                self.plain_styled(&mut member.object);
+                None
+            }
+            Expression::CallExpression(call) => {
+                self.plain_styled(&mut call.callee);
+                None
+            }
+            Expression::ComputedMemberExpression(member) => self.static_styled_tag(member),
+            _ => None,
+        };
+        if let Some(tag) = tag {
+            *node = tag;
         }
+    }
+
+    /// The `styled.div` that `member` reads when it is `styled['div']`
+    fn static_styled_tag(
+        &self,
+        member: &mut oxc_ast::ast::ComputedMemberExpression<'a>,
+    ) -> Option<Expression<'a>> {
+        self.plain_styled(&mut member.object);
+        if !self.bindings.is_styled(&member.object) {
+            return None;
+        }
+        let tag = crate::utils::literal_member_name(member)?;
+        let tag = IdentifierName::new(
+            member.expression.span(),
+            Str::from_in(tag.as_ref(), self.ast.allocator()),
+            &self.ast,
+        );
+        Some(Expression::StaticMemberExpression(
+            StaticMemberExpression::boxed(
+                member.span,
+                member.object.take_in(&self.ast),
+                tag,
+                false,
+                &self.ast,
+            ),
+        ))
     }
 
     /// Report where `program` still reads what the build compiled away: its
