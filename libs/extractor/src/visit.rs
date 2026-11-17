@@ -5119,7 +5119,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.private_styled.insert(start);
         }
         if self.css_prop != CssProp::Off
-            && !self.compile_css_choice(&it.id, it.init.as_mut())
+            && !it
+                .init
+                .as_mut()
+                .is_some_and(|init| self.compile_css_choice(&it.id, init))
             && let Some(requirement) = it
                 .init
                 .as_ref()

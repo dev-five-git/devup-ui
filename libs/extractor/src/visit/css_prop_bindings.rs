@@ -50,29 +50,32 @@ pub(crate) fn css_prop_reads<'a>(
     program: &Program<'a>,
     takes: &dyn Fn(&JSXElementName<'a>) -> bool,
 ) -> FxHashSet<ReferenceId> {
-    struct Reads<'t, 'a> {
-        takes: &'t dyn Fn(&JSXElementName<'a>) -> bool,
-        found: FxHashSet<ReferenceId>,
-    }
-    impl<'a> Visit<'a> for Reads<'_, 'a> {
-        fn visit_jsx_element(&mut self, it: &JSXElement<'a>) {
-            if (self.takes)(&it.opening_element.name) {
-                self.found.extend(
-                    it.opening_element
-                        .attributes
-                        .iter()
-                        .filter_map(css_prop_reference),
-                );
-            }
-            walk::walk_jsx_element(self, it);
-        }
-    }
     let mut reads = Reads {
         takes,
         found: FxHashSet::default(),
     };
     reads.visit_program(program);
     reads.found
+}
+
+/// Collects the references that are the whole value of a `css` prop
+struct Reads<'t, 'a> {
+    takes: &'t dyn Fn(&JSXElementName<'a>) -> bool,
+    found: FxHashSet<ReferenceId>,
+}
+
+impl<'a> Visit<'a> for Reads<'_, 'a> {
+    fn visit_jsx_element(&mut self, it: &JSXElement<'a>) {
+        if (self.takes)(&it.opening_element.name) {
+            self.found.extend(
+                it.opening_element
+                    .attributes
+                    .iter()
+                    .filter_map(css_prop_reference),
+            );
+        }
+        walk::walk_jsx_element(self, it);
+    }
 }
 
 /// The binding `attribute` reads when it is `css={binding}`
@@ -190,11 +193,8 @@ impl<'a> DevupVisitor<'a> {
     pub(super) fn compile_css_choice(
         &self,
         id: &BindingPattern<'a>,
-        init: Option<&mut Expression<'a>>,
+        init: &mut Expression<'a>,
     ) -> bool {
-        let Some(init) = init else {
-            return false;
-        };
         let compiles = self.style_values.constant(id).is_some_and(|symbol| {
             self.style_values.is_read(symbol)
                 && self.style_values.read_only_by(symbol, &self.css_prop_reads)
@@ -297,4 +297,37 @@ fn is_style_literal(value: &Expression<'_>) -> bool {
         Expression::ObjectExpression(_) | Expression::ArrayExpression(_) => Leaf::Styles,
         _ => Leaf::Class,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use oxc_allocator::Allocator;
+    use oxc_parser::Parser;
+    use oxc_semantic::SemanticBuilder;
+    use oxc_span::SourceType;
+
+    /// Only `css={binding}` on an element that takes the prop is a read:
+    /// spreads, namespaced names, text, other expressions and other props are
+    /// not
+    #[test]
+    fn css_prop_reads_only_whole_bindings() {
+        let allocator = Allocator::default();
+        let code = "const a = { b: 1 }, b = 2;\n<><div {...a} xlink:href={a} css=\"color: red\" title={a} /><div css={a.b} /><div css={a} /><span css={b} /></>;";
+        let program = Parser::new(&allocator, code, SourceType::tsx())
+            .parse()
+            .program;
+        let scoping = SemanticBuilder::new()
+            .build(&program)
+            .semantic
+            .into_scoping();
+        let reads = super::css_prop_reads(
+            &program,
+            &|name| !matches!(name, oxc_ast::ast::JSXElementName::Identifier(name) if name.name == "span"),
+        );
+        let read: Vec<_> = reads
+            .iter()
+            .map(|reference| scoping.get_reference(*reference).symbol_id())
+            .collect();
+        assert_eq!(read, [scoping.get_root_binding("a".into())]);
+    }
 }
