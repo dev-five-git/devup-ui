@@ -5,7 +5,7 @@ import { useContext, useMemo } from 'react'
 
 import { StyledThemeContext } from '../utils/theme-context'
 import type { StyledTheme } from '../utils/theme-vars'
-import { themeToCssVariables } from '../utils/theme-vars'
+import { themeToCssVariables, themeToRootRule } from '../utils/theme-vars'
 
 export type ThemeArgument =
   StyledTheme | ((outer: StyledTheme | undefined) => StyledTheme)
@@ -37,6 +37,12 @@ export function resolveTheme(
  * differ from the outer provider's; a provider without one adds no element.
  * Whether the element exists follows only the `theme` prop being given, so a
  * changing theme never remounts the subtree.
+ *
+ * The outermost provider also declares the whole theme on `:root`, so global
+ * styles on `html`, `body` or `:root` (`createGlobalStyle`, `<Global>`) read
+ * it too. That rule is an ordinary `<style>` element, so server rendering
+ * sends it with the markup, a theme change updates it and unmounting removes
+ * it.
  */
 export function ThemeProvider({ theme, children }: ThemeProviderProps) {
   const outer = useContext(StyledThemeContext)
@@ -45,8 +51,18 @@ export function ThemeProvider({ theme, children }: ThemeProviderProps) {
     () => themeToCssVariables(resolved, outer),
     [resolved, outer],
   )
+  const rootRule = useMemo(
+    () =>
+      outer === undefined && resolved !== undefined
+        ? themeToRootRule(resolved)
+        : undefined,
+    [resolved, outer],
+  )
   return (
     <StyledThemeContext.Provider value={resolved}>
+      {rootRule !== undefined && (
+        <style dangerouslySetInnerHTML={{ __html: rootRule }} />
+      )}
       {theme === undefined ? children : <div style={style}>{children}</div>}
     </StyledThemeContext.Provider>
   )

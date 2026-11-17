@@ -18,6 +18,7 @@ import {
 } from 'bun:test'
 
 import * as coordinatorModule from '../coordinator'
+import * as coordinatorPortModule from '../coordinator-port'
 import cssLoader, { resetInit as resetCssInit } from '../css-loader'
 import {
   DevupUI,
@@ -492,6 +493,47 @@ describe('DevupUINextPlugin', () => {
       } finally {
         graphSpy.mockRestore()
       }
+    })
+
+    it('reads routes and places the CSS under the Next project directory', () => {
+      // Given: `next build apps/web` started from the workspace root.
+      const dir = resolve('apps', 'web')
+      existsSyncSpy.mockImplementation(
+        (path: fs.PathLike) => String(path) === join(dir, 'app'),
+      )
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(join(dir, 'app', 'page.tsx')))
+      try {
+        // When
+        DevupUI({}).webpack!(
+          createWebpackConfig(),
+          createWebpackContext({ dir }),
+        )
+        // Then
+        expect(graphSpy).toHaveBeenCalledWith(dir, join(dir, 'tsconfig.json'))
+        expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cssDir: join(dir, '.next', 'cache', 'devup-ui'),
+          }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+      }
+    })
+
+    it('places the dev CSS under the Next project directory', () => {
+      const dir = resolve('apps', 'web')
+      DevupUI({}).webpack!(
+        createWebpackConfig(),
+        createWebpackContext({ dev: true, dir }),
+      )
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
+        cssDir: join(dir, 'df', 'devup-ui_tmpBuildId'),
+        engine: 'native',
+        watch: true,
+      })
     })
 
     it('should apply webpack plugin with dev', async () => {
@@ -1232,6 +1274,70 @@ export const box = style({ color: 'red' })`
         seedSpy.mockRestore()
       }
     })
+    it('reserves shared class slots in path order before next dev extracts', () => {
+      process.env.TURBOPACK = '1'
+      const reserve = mock()
+      const reservationSpy = spyOn(
+        importGraphModule,
+        'createSharedSlotReservation',
+      ).mockReturnValue({
+        dependencies: [],
+        packageManifests: [],
+        invalidate: mock(),
+        reserve,
+      })
+      try {
+        // One-shot builds take their order from the sorted prewarm instead.
+        DevupUI({})
+        expect(reservationSpy).not.toHaveBeenCalled()
+
+        setNodeEnv('development')
+        DevupUI({}, { include: ['@acme/ui'], singleCss: true })
+        expect(reservationSpy).toHaveBeenCalledWith(wasm)
+        const [discovery, options] = reserve.mock.calls[0] as Parameters<
+          ReturnType<
+            typeof importGraphModule.createSharedSlotReservation
+          >['reserve']
+        >
+        expect(discovery).toMatchObject({
+          roots: ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          include: ['@acme/ui'],
+          cwd: process.cwd(),
+          tsconfigPath: resolve('tsconfig.json'),
+          package: '@devup-ui/react',
+        })
+        // The coordinator's own filename and CSS directory for each file.
+        expect(discovery.toId?.(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
+        expect(options).toMatchObject({
+          singleCss: true,
+          importMainCssInCode: false,
+          importMainCssInCss: true,
+        })
+        expect(
+          options.cssDir({
+            filename: 'src/app/page.tsx',
+            physicalPath: resolve('src', 'app', 'page.tsx'),
+            code: '',
+          }),
+        ).toBe('./../../df/devup-ui')
+
+        // A failing reservation leaves extraction in arrival order.
+        reserve.mockImplementation(() => {
+          throw new Error('reserve boom')
+        })
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          expect(() => DevupUI({})).not.toThrow()
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack shared class-slot reservation failed: reserve boom. Classes several files share take their names in the order `next dev` extracts them, so they can differ between dev sessions.',
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
+      } finally {
+        reservationSpy.mockRestore()
+      }
+    })
     describe('restoreSessionState', () => {
       const files = ['sheet.json', 'classMap.json', 'fileMap.json'] as const
       const engine = () => ({
@@ -1298,10 +1404,12 @@ export const box = style({ color: 'red' })`
       const prevClassMap = { a: 0 }
       const prevFileMap = { 'src/App.tsx': 0 }
 
-      readFileSyncSpy
-        .mockReturnValueOnce(JSON.stringify(prevSheet)) // sheetFile
-        .mockReturnValueOnce(JSON.stringify(prevClassMap)) // classMapFile
-        .mockReturnValueOnce(JSON.stringify(prevFileMap)) // fileMapFile
+      const files: Record<string, string> = {
+        [join('df', 'sheet.json')]: JSON.stringify(prevSheet),
+        [join('df', 'classMap.json')]: JSON.stringify(prevClassMap),
+        [join('df', 'fileMap.json')]: JSON.stringify(prevFileMap),
+      }
+      readFileSyncSpy.mockImplementation((path: string) => files[path] ?? '{}')
 
       DevupUI({})
 
@@ -1313,6 +1421,56 @@ export const box = style({ color: 'red' })`
 
       // Verify stale port file was deleted before starting coordinator
       expect(unlinkSyncSpy).toHaveBeenCalledWith(join('df', 'coordinator.port'))
+    })
+    it('writes its own state next to another live process on the same distDir', () => {
+      process.env.TURBOPACK = '1'
+      const stateDir = join('df', `state.${process.pid}`)
+      const portSpy = spyOn(
+        coordinatorPortModule,
+        'resolveCoordinatorPortFile',
+      ).mockReturnValue(join('df', `coordinator.${process.pid}.port`))
+      const staleSpy = spyOn(
+        coordinatorPortModule,
+        'removeStaleStateDirs',
+      ).mockReturnValue(undefined)
+      const prevSheet = { css: { a: 'color:red' } }
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === join('df', 'sheet.json') ? JSON.stringify(prevSheet) : '{}',
+      )
+      try {
+        const config = DevupUI({})
+
+        expect(staleSpy).toHaveBeenCalledWith('df')
+        expect(mkdirSyncSpy).toHaveBeenCalledWith(stateDir, { recursive: true })
+        // It still restores what the shared state holds...
+        expect(importSheetSpy).toHaveBeenCalledWith(prevSheet)
+        // ...but writes only its own files.
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            coordinatorPortFile: join('df', `coordinator.${process.pid}.port`),
+            sheetFile: join(stateDir, 'sheet.json'),
+            classMapFile: join(stateDir, 'classMap.json'),
+            fileMapFile: join(stateDir, 'fileMap.json'),
+          }),
+        )
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(stateDir, 'canonicalMap.json'),
+          expect.any(String),
+        )
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(stateDir, 'setup.bin'),
+          expect.anything(),
+        )
+        const rule = config.turbopack?.rules?.['*.{tsx,ts,jsx,js,mjs}'] as {
+          loaders: { options: { sheetFile: string } }[]
+        }
+        expect(rule.loaders[0].options.sheetFile).toBe(
+          join(stateDir, 'sheet.json'),
+        )
+      } finally {
+        portSpy.mockRestore()
+        staleSpy.mockRestore()
+      }
     })
     it('should handle missing state files gracefully on first run', () => {
       process.env.TURBOPACK = '1'

@@ -42,7 +42,7 @@ where
 }
 
 #[inline]
-fn with_file_routes_mut<F, R>(f: F) -> R
+pub(crate) fn with_file_routes_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut HashMap<String, HashSet<u32>>) -> R,
 {

@@ -114,7 +114,7 @@ for (const [engine, entry] of [
 const summary = {
   cases: cases.length,
   positions: positions.length,
-  functions: 20,
+  functions: 22,
   engines: 2,
   runs: runs.length,
   failed: runs.filter((run) => run.failed).length,

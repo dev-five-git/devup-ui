@@ -14,7 +14,7 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
-import type { Plugin } from 'vite'
+import type { Plugin, ViteBuilder } from 'vite'
 
 import { DevupUI } from '../plugin'
 
@@ -347,6 +347,64 @@ afterEach(() => {
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
   consoleErrorSpy.mockRestore()
+})
+
+describe('project root', () => {
+  const written = () => writeFileSpy.mock.calls.map(([path]) => String(path))
+
+  it("resolves the relative options against Vite's root", async () => {
+    const root = resolve('apps', 'web')
+    const plugin = createPlugin()
+    await plugin.configResolved({ command: 'build', root })
+
+    expect(written()).toContain(join(root, 'df', '.gitignore'))
+    expect(written()).toContain(join(root, 'df', 'theme.d.ts'))
+    expect(written()).toContain(join(root, 'df', 'devup-ui', 'devup-ui.css'))
+    expect(
+      plugin.resolveId('./df/devup-ui/devup-ui.css', join(root, 'main.tsx')),
+    ).toBe(join(root, 'df', 'devup-ui', 'devup-ui.css'))
+  })
+
+  it('resolves relative user paths against the root', async () => {
+    const root = resolve('apps', 'web')
+    const devupFile = join(root, 'theme', 'devup.json')
+    existsSyncSpy.mockImplementation((path: string) => path === devupFile)
+    const plugin = createPlugin({
+      devupFile: 'theme/devup.json',
+      distDir: 'out',
+      cssDir: 'out/css',
+    })
+    await plugin.configResolved({ command: 'build', root })
+
+    expect(readFileSpy).toHaveBeenCalledWith(devupFile, 'utf-8')
+    expect(written()).toContain(join(root, 'out', '.gitignore'))
+    expect(written()).toContain(join(root, 'out', 'css', 'devup-ui.css'))
+  })
+
+  it('keeps the paths as given when the root is the cwd', async () => {
+    const plugin = createPlugin()
+    await plugin.configResolved({ command: 'build', root: process.cwd() })
+
+    expect(written()).toContain(join('df', '.gitignore'))
+    expect(written()).toContain(resolve('df', 'devup-ui', 'devup-ui.css'))
+  })
+
+  it('falls back to the devup.json of the cwd with a warning', async () => {
+    const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+    const cwdFile = resolve('devup.json')
+    existsSyncSpy.mockImplementation((path: string) => path === cwdFile)
+    try {
+      const root = resolve('apps', 'vite-fallback')
+      await createPlugin().configResolved({ command: 'build', root })
+
+      expect(readFileSpy).toHaveBeenCalledWith(cwdFile, 'utf-8')
+      expect(written()).toContain(join(root, 'df', '.gitignore'))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('devupFile')
+    } finally {
+      warn.mockRestore()
+    }
+  })
 })
 
 describe('devupUIVitePlugin', () => {
@@ -833,6 +891,30 @@ describe('devupUIVitePlugin', () => {
       expect(bundle['nested.css'].source).toEqual('sheet:4')
       expect(bundle['other.css'].source).toEqual('keep')
       expect(bundle['chunk.js']).not.toHaveProperty('source')
+    })
+
+    it('builds an environment again once a sheet it emitted has grown', async () => {
+      getCssSpy.mockReturnValue('a{}')
+      const plugins = DevupUI({ engine: 'wasm' }) as unknown as [
+        ViteTestPlugin,
+        ViteTestRestorePlugin,
+        unknown,
+        { buildApp: { handler: (builder: ViteBuilder) => Promise<void> } },
+      ]
+      activePlugins.push(plugins[0])
+      await plugins[0].generateBundle({}, {
+        'base.css': { source: 'stale', name: 'devup-ui.css' },
+      } as unknown as Record<string, { source: string; name: string }>)
+      getCssSpy.mockReturnValue('a{}b{}')
+      const client = { name: 'client', isBuilt: true }
+      const build = mock(async () => {})
+
+      await plugins[3].buildApp.handler({
+        environments: { client },
+        build,
+      } as unknown as ViteBuilder)
+
+      expect(build).toHaveBeenCalledWith(client)
     })
 
     it('leaves an app asset whose name merely ends in devup-ui.css alone', async () => {

@@ -16,20 +16,23 @@ pub struct Resolved {
     pub code: String,
 }
 type Resolver = FunctionRef<FnArgs<(String, String)>, Option<Either<String, Resolved>>>;
-struct State(Option<Rc<Resolver>>);
+/// The resolver each engine session set in this environment
+struct State(core::PerSession<Rc<Resolver>>);
 
 /// Initialize environment-local ownership without overwriting existing state.
 #[napi]
 pub fn init(env: Env) -> Result<()> {
     if env.get_instance_data::<State>()?.is_none() {
-        env.set_instance_data(State(None), (), |context| drop(context.value))?;
+        env.set_instance_data(State(core::PerSession::new()), (), |context| {
+            drop(context.value);
+        })?;
     }
     Ok(())
 }
 /// Replace the owned synchronous resolver in the current environment only.
 #[napi]
 pub fn set_resolver(env: Env, resolver: Option<Resolver>) -> Result<()> {
-    state(&env)?.0 = resolver.map(Rc::new);
+    state(&env)?.0.set_live(resolver.map(Rc::new));
     Ok(())
 }
 fn state(env: &Env) -> Result<&'static mut State> {
@@ -41,12 +44,31 @@ fn state(env: &Env) -> Result<&'static mut State> {
 pub fn reset(env: Env, full: bool) -> Result<()> {
     let state = state(&env)?;
     if full {
-        core::reset_state_internal(|| state.0 = None);
+        core::reset_state_internal(|| state.0 = core::PerSession::new());
     } else {
         core::reset_build_state_internal();
-        state.0 = None;
+        state.0.set_live(None);
     }
     Ok(())
+}
+/// Create an engine session with a clean state and return its id.
+#[napi]
+pub fn create_session() -> u32 {
+    core::create_session()
+}
+/// Make session `id` live until another is selected.
+#[napi]
+pub fn select_session(env: Env, id: u32) -> Result<()> {
+    core::select_session(id)
+        .map(drop)
+        .map_err(|error| binding_error(env, error))
+}
+/// Drop session `id` with its state and this environment's resolver for it.
+#[napi]
+pub fn drop_session(env: Env, id: u32) -> Result<bool> {
+    let dropped = core::drop_session(id).map_err(|error| binding_error(env, error))?;
+    state(&env)?.0.remove(id);
+    Ok(dropped)
 }
 fn with_resolver<T>(
     env: Env,
@@ -56,7 +78,7 @@ fn with_resolver<T>(
         &dyn Fn() -> std::result::Result<(), String>,
     ) -> Result<T>,
 ) -> Result<T> {
-    let current = state(&env)?.0.clone();
+    let current = state(&env)?.0.live();
     let diagnostics = Rc::new(RefCell::new(diagnostics));
     let failure = Rc::new(RefCell::new(None));
     let resolver = current.map(|current| {

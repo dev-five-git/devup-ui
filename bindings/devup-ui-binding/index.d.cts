@@ -11,7 +11,7 @@ export class Output {
   readonly updatedBaseStyle: boolean
 }
 
-// Positional signatures intentionally match the existing 31-name compiler ABI.
+// Positional signatures intentionally match the existing 34-name compiler ABI.
 export function codeExtract(
   filename: string,
   code: string,
@@ -32,6 +32,10 @@ export function codeExtractWithoutSourceMap(
   importMainCssInCss: boolean,
   importAliases: unknown,
 ): Output
+/** Create an engine session with a clean state; select it before each call. */
+export function createSession(): number
+/** Drop a session and its state; dropping the live one makes session 0 live. */
+export function dropSession(id: number): boolean
 export function exportCanonicalMap(): string
 export function exportClassMap(): string
 export function exportFileMap(): string
@@ -78,6 +82,8 @@ export function reserveClassSlots(
 export function resetBuildState(): void
 export function resetStateForTesting(): void
 export function seedFileMap(files: string[]): void
+/** Make a session live: later calls work on its state until another is selected. */
+export function selectSession(id: number): void
 export function setAtomHoist(threshold?: number | null): void
 export function setDebug(debug: boolean): void
 export function setModuleResolver(

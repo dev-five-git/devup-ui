@@ -136,7 +136,7 @@ export async function consume(options) {
     ]
       .map((match) => match[1])
       .sort()
-    assert.equal(names.length, 31)
+    assert.equal(names.length, 34)
     for (const manager of ['npm', 'bun']) {
       for (const omit of [false, true]) {
         const startRequest = server.requests.length

@@ -230,6 +230,7 @@ describe('DevupUIRsbuildPlugin', () => {
       )
       const addDependency = mock()
       await transform.mock.calls[1][1]({
+        addMissingDependency: mock(),
         code: "import { Box } from '@devup-ui/react'",
         resourcePath: 'src/App.tsx',
         addDependency,
@@ -238,6 +239,78 @@ describe('DevupUIRsbuildPlugin', () => {
     } finally {
       setModuleResolverSpy.mockRestore()
     }
+  })
+
+  describe('project root', () => {
+    async function setupAt(
+      rootPath: string,
+      options: Parameters<typeof DevupUI>[0] = {},
+    ) {
+      const transform = mock()
+      writeFileSpy.mockClear()
+      readFileSpy.mockClear()
+      const { context } = createSetupContext()
+      await DevupUI({ engine: 'wasm', atomHoist: 0, ...options }).setup(
+        createSetupContext({ transform, context: { ...context, rootPath } }),
+      )
+      return {
+        cssTest: transform.mock.calls[0]?.[0].test as string,
+        written: writeFileSpy.mock.calls.map(([path]) => path),
+      }
+    }
+
+    it('resolves the relative options against the Rsbuild root', async () => {
+      const root = resolve('apps', 'web')
+      const { cssTest, written } = await setupAt(root)
+
+      expect(cssTest).toBe(join(root, 'df', 'devup-ui'))
+      expect(written).toContain(join(root, 'df', '.gitignore'))
+      expect(written).toContain(join(root, 'df', 'compat.d.ts'))
+    })
+
+    it('resolves relative user paths against the root', async () => {
+      const root = resolve('apps', 'web')
+      const devupFile = join(root, 'theme', 'devup.json')
+      existsSyncSpy.mockImplementation((path: string) => path === devupFile)
+      try {
+        const { cssTest, written } = await setupAt(root, {
+          devupFile: 'theme/devup.json',
+          distDir: 'out',
+          cssDir: 'out/css',
+        })
+
+        expect(cssTest).toBe(join(root, 'out', 'css'))
+        expect(written).toContain(join(root, 'out', '.gitignore'))
+        expect(readFileSpy).toHaveBeenCalledWith(devupFile, 'utf-8')
+      } finally {
+        existsSyncSpy.mockReturnValue(false)
+      }
+    })
+
+    it('keeps the paths as given when the root is the cwd', async () => {
+      const { cssTest, written } = await setupAt(process.cwd())
+
+      expect(cssTest).toBe(resolve('df', 'devup-ui'))
+      expect(written).toContain(join('df', '.gitignore'))
+    })
+
+    it('falls back to the devup.json of the cwd with a warning', async () => {
+      const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+      const cwdFile = resolve('devup.json')
+      existsSyncSpy.mockImplementation((path: string) => path === cwdFile)
+      try {
+        const root = resolve('apps', 'rsbuild-fallback')
+        const { written } = await setupAt(root)
+
+        expect(readFileSpy).toHaveBeenCalledWith(cwdFile, 'utf-8')
+        expect(written).toContain(join(root, 'df', '.gitignore'))
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0]?.[0]).toContain('devupFile')
+      } finally {
+        existsSyncSpy.mockReturnValue(false)
+        warn.mockRestore()
+      }
+    })
   })
 
   it('should return a plugin object with correct name', async () => {
@@ -569,6 +642,8 @@ describe('DevupUIRsbuildPlugin', () => {
     )
     await expect(
       transform.mock.calls[1][1]({
+        addDependency: mock(),
+        addMissingDependency: mock(),
         code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
         resourcePath: 'src/App.tsx',
@@ -579,6 +654,8 @@ const App = () => <Box></Box>`,
     })
     await expect(
       transform.mock.calls[1][1]({
+        addDependency: mock(),
+        addMissingDependency: mock(),
         code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
         resourcePath: 'node_modules/@wrong-ui/react/index.tsx',
@@ -608,6 +685,8 @@ export const a = <Box bg="red" />`
     )
     await expect(
       transform.mock.calls[1][1]({
+        addDependency: mock(),
+        addMissingDependency: mock(),
         code: source,
         resourcePath: 'src/App.tsx',
       }),
@@ -638,6 +717,8 @@ export const a = <div css={{ color: 'red' }} />`
     )
     await expect(
       transform.mock.calls[1][1]({
+        addDependency: mock(),
+        addMissingDependency: mock(),
         code: source,
         resourcePath: 'src/App.tsx',
       }),
@@ -681,6 +762,8 @@ export const a = <div css={{ color: 'red' }} />`
       }),
     )
     const ret = await transform.mock.calls[1][1]({
+      addDependency: mock(),
+      addMissingDependency: mock(),
       code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
       resourcePath: 'src/App.tsx',
@@ -697,6 +780,8 @@ const App = () => <Box></Box>`,
     )
 
     const ret1 = await transform.mock.calls[1][1]({
+      addDependency: mock(),
+      addMissingDependency: mock(),
       code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
       resourcePath: 'node_modules/@devup-ui/react/index.tsx',
@@ -748,6 +833,7 @@ const App = () => <Box></Box>`,
     codeExtractSpy.mockReturnValue(createCodeExtractResult())
     const addDependency = mock()
     await transform.mock.calls[1][1]({
+      addMissingDependency: mock(),
       code: "import { Box } from '@devup-ui/react'",
       resourcePath: 'src/App.tsx',
       addDependency,
@@ -756,6 +842,71 @@ const App = () => <Box></Box>`,
     statSpy.mockRestore()
     readFileSyncSpy.mockRestore()
     readFileSpy.mockResolvedValue('{}')
+  })
+  it('watches the configs devup.json extends and reloads when one changes or is deleted', async () => {
+    const base = resolve('themes/base.json')
+    const statSpy = spyOn(fsPromises, 'stat')
+    try {
+      const present = new Set(['devup.json', base])
+      existsSyncSpy.mockImplementation(
+        (path: string) => present.has(path) || path === resolve('devup.json'),
+      )
+      readFileSpy.mockImplementation(async (path: string) =>
+        path === 'devup.json'
+          ? JSON.stringify({ extends: ['./themes/base.json'] })
+          : JSON.stringify({
+              theme: { colors: { default: { primary: '#123456' } } },
+            }),
+      )
+      const stamps = new Map([
+        [resolve('devup.json'), 1],
+        [base, 1],
+      ])
+      statSpy.mockImplementation(async (path: fs.PathLike) => {
+        const mtimeMs = stamps.get(String(path))
+        if (mtimeMs === undefined) throw new Error('gone')
+        return { mtimeMs } as fs.Stats
+      })
+      const modifyRspackConfig = mock()
+      const transform = mock()
+      await DevupUI({}).setup(
+        createSetupContext({ modifyRspackConfig, transform }),
+      )
+      const config: { plugins?: { apply: (compiler: unknown) => void }[] } = {}
+      modifyRspackConfig.mock.calls[0][0](config)
+      const tapPromise = mock()
+      config.plugins?.[0].apply({ hooks: { watchRun: { tapPromise } } })
+      const watchRun = tapPromise.mock.calls[0][1] as () => Promise<void>
+
+      await watchRun()
+      registerThemeSpy.mockClear()
+      await watchRun()
+      expect(registerThemeSpy).not.toHaveBeenCalled()
+      stamps.set(base, 2)
+      await watchRun()
+      expect(registerThemeSpy).toHaveBeenCalledTimes(1)
+      present.delete(base)
+      stamps.delete(base)
+      await watchRun()
+      expect(registerThemeSpy).toHaveBeenCalledTimes(2)
+
+      // Every module depends on the configs; a deleted one is watched for
+      // being added again
+      codeExtractSpy.mockReturnValue(createCodeExtractResult())
+      const addDependency = mock()
+      const addMissingDependency = mock()
+      await transform.mock.calls[1][1]({
+        code: "import { Box } from '@devup-ui/react'",
+        resourcePath: 'src/App.tsx',
+        addDependency,
+        addMissingDependency,
+      })
+      expect(addDependency).toHaveBeenCalledWith(resolve('devup.json'))
+      expect(addMissingDependency).toHaveBeenCalledWith(base)
+    } finally {
+      statSpy.mockRestore()
+      readFileSpy.mockResolvedValue('{}')
+    }
   })
   it('registers the text of the Tailwind CSS with the theme', async () => {
     const readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue(
@@ -1038,6 +1189,7 @@ const App = () => <Box></Box>`,
             const userRspack = config.tools.rspack
             modifyRsbuildConfig.mock.calls[0][0](config)
             await transform.mock.calls[1][1]({
+              addMissingDependency: mock(),
               code: 'source',
               resourcePath,
               addDependency: mock(),
@@ -1182,6 +1334,8 @@ const App = () => <Box></Box>`,
       // calls[1] is the source transform; atom mode posix-normalizes the
       // filename and passes a relative cssDir + import_main_css_in_code=true.
       await transform.mock.calls[1][1]({
+        addDependency: mock(),
+        addMissingDependency: mock(),
         code: `import { Box } from '@devup-ui/react'\nconst A = () => <Box w="1px" />`,
         resourcePath: 'src/App.tsx',
       })
@@ -1355,6 +1509,7 @@ const App = () => <Box></Box>`,
         // When
         for (const name of [first, second]) {
           await transform.mock.calls[1][1]({
+            addMissingDependency: mock(),
             code: 'source',
             resourcePath: resolve('src', `${name}.tsx`),
             addDependency: mock(),
