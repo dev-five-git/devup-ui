@@ -18,13 +18,13 @@ import {
   createThemeInterfaceArgs,
   type DevupUIBasePluginOptions,
   extractedNeedles,
+  findTailwindCss,
   loadDevupConfigSync,
   mergeImportAliases,
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
-  withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
 
@@ -314,18 +314,27 @@ export function DevupUI(
     setPrefix(prefix ?? null)
     setDebug(debug)
 
-    const devupConfig = loadDevupConfigSync(devupFile)
-
-    const theme: any = withTailwindCss(devupConfig.theme ?? {}, devupConfig)
     // Register current theme after importing previous state,
     // since importSheet replaces the entire sheet including its theme.
-    registerTheme(theme)
-    const themeInterface = getThemeInterface(
-      ...createThemeInterfaceArgs(libPackage),
-    )
-    // Written even when empty, so tokens removed from the theme leave no
-    // stale declarations behind.
-    writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
+    // Returns every file the theme was read from: devup.json, the configs it
+    // extends and the project's Tailwind CSS.
+    const registerProjectTheme = () => {
+      const inputs = new Set<string>()
+      const devupConfig = loadDevupConfigSync(devupFile, inputs)
+      const tailwind = findTailwindCss(devupConfig)
+      const theme: any = tailwind
+        ? { ...devupConfig.theme, tailwindCss: tailwind.css }
+        : (devupConfig.theme ?? {})
+      registerTheme(theme)
+      const themeInterface = getThemeInterface(
+        ...createThemeInterfaceArgs(libPackage),
+      )
+      // Written even when empty, so tokens removed from the theme leave no
+      // stale declarations behind.
+      writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
+      return { theme, files: [...inputs, ...(tailwind?.files ?? [])] }
+    }
+    const { theme, files: themeFiles } = registerProjectTheme()
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
@@ -546,6 +555,11 @@ export function DevupUI(
       prewarmedFiles,
       prewarmedOutputs,
       sourceMap,
+      // Next does not reload next.config when devup.json changes, so under
+      // `next dev` the coordinator registers the theme again itself.
+      theme: watch
+        ? { files: themeFiles, reload: () => registerProjectTheme().files }
+        : undefined,
     })
 
     // Cleanup on exit
@@ -622,6 +636,7 @@ export function DevupUI(
             classMapFile,
             fileMapFile,
             themeFile: devupFile,
+            themeFiles,
             defaultSheet,
             defaultClassMap,
             defaultFileMap,
@@ -647,6 +662,7 @@ export function DevupUI(
               classMapFile,
               fileMapFile,
               themeFile: devupFile,
+              themeFiles,
               defaultSheet,
               defaultClassMap,
               defaultFileMap,
