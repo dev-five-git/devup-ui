@@ -52,7 +52,7 @@ compiler.hooks.thisCompilation.call(compilation);
 const jsTransform = transforms.find(item => item.options.test instanceof RegExp).handler;
 const cssTransform = transforms.find(item => item.options.test === cssDir).handler;
 const transform = async (file, code) => {
-  const result = await jsTransform({ code, resourcePath: join(root, file), addDependency() {} });
+  const result = await jsTransform({ code, resourcePath: join(root, file), addDependency() {}, addMissingDependency() {}, environment: { name: 'web' } });
   return result.code;
 };
 const loadCss = name => cssTransform({ resourcePath: join(cssDir, name), environment: { name: 'web' } });

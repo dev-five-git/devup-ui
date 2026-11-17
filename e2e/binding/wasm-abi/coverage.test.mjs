@@ -157,6 +157,6 @@ test('exempts only the documented unvalidated parameters', () => {
 
 test('the validation oracle covers every documented argument position', () => {
   const positions = new Set(cases.map((item) => `${item.fn}.${item.parameter}`))
-  assert.equal(positions.size, 45)
+  assert.equal(positions.size, 48)
   for (const key of Object.keys(UNVALIDATED)) assert.ok(!positions.has(key))
 })

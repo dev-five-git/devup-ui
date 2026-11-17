@@ -18,6 +18,11 @@ import {
 } from 'node:path'
 
 import { PackageManifestShapeError } from './package-manifest'
+import {
+  SOURCE_EXTENSIONS,
+  SOURCE_FILE_REGEX,
+  sourceFileCandidates,
+} from './source-extensions'
 import { decodeStringLiteral } from './string-literal'
 
 /**
@@ -69,11 +74,11 @@ interface ResolveContext {
   aliases: PathAlias[]
   aliasBaseDir: string
   files: Set<string>
-  srcDir: string
 }
 
+/** The extensions an extensionless import is completed with, like a bundler. */
 const jsExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs']
-const jsFileRegex = /\.(?:tsx?|jsx?|mjs)$/
+const sourceExtensions: readonly string[] = SOURCE_EXTENSIONS
 const testFileRegex = /\.(?:test|spec)\.[mc]?[jt]sx?$/
 const routeFileRegex =
   /(^|\/)(page|layout|template|default|loading|error|not-found|global-error)\.(tsx|ts|jsx|js)$/
@@ -130,20 +135,31 @@ export interface StaticImportGraph {
  * Scan `srcDir` once (`listSourceFiles` -> read -> parse imports -> resolve)
  * and return the full static import graph. All three graph consumers accept
  * the result, so the file I/O and parsing cost is paid a single time.
+ *
+ * `roots` lists the directories to scan instead of all of `srcDir`, such as
+ * both `src` and `app` of a project whose `srcDir` is the project root. Files
+ * stay ordered by their path relative to `srcDir`.
  */
 export function buildStaticImportGraph(
   srcDir: string,
   tsconfigPath?: string,
+  roots: readonly string[] = [srcDir],
 ): StaticImportGraph {
   const resolvedSrcDir = resolve(srcDir)
-  const files = listSourceFiles(resolvedSrcDir)
+  const files = [
+    ...new Set(roots.flatMap((root) => listSourceFiles(resolve(root)))),
+  ].sort((a, b) =>
+    compareCodePoints(
+      toPosixRelative(resolvedSrcDir, a),
+      toPosixRelative(resolvedSrcDir, b),
+    ),
+  )
   const fileSet = new Set(files)
   const aliases = readPathAliases(tsconfigPath)
   const context: ResolveContext = {
     aliases: aliases.aliases,
     aliasBaseDir: aliases.baseDir,
     files: fileSet,
-    srcDir: resolvedSrcDir,
   }
   const staticImporters = new Map<string, Set<string>>()
   const staticImports = new Map<string, Set<string>>()
@@ -191,6 +207,22 @@ export function buildStaticImportGraph(
     dynamicImports,
     externalImports,
   }
+}
+
+/**
+ * The `src` and `app` directories of each project root: where a project keeps
+ * its sources by convention. Missing ones list no files.
+ */
+export function conventionalSourceRoots(
+  ...projectRoots: readonly string[]
+): string[] {
+  return [
+    ...new Set(
+      projectRoots.flatMap((root) =>
+        ['src', 'app'].map((name) => resolve(root, name)),
+      ),
+    ),
+  ]
 }
 
 export function buildCanonicalMap(
@@ -663,7 +695,7 @@ export function listSourceFiles(
 }
 
 export function isSourceFile(filename: string): boolean {
-  return jsFileRegex.test(filename) && !testFileRegex.test(filename)
+  return SOURCE_FILE_REGEX.test(filename) && !testFileRegex.test(filename)
 }
 
 export function importedSpecifiers(
@@ -1126,7 +1158,6 @@ function resolveImport(
     const resolvedFile = resolveFile(candidateBase)
     if (!resolvedFile) continue
     if (!context.files.has(resolvedFile)) continue
-    if (!isInsideDir(context.srcDir, resolvedFile)) continue
     return resolvedFile
   }
 
@@ -1150,7 +1181,17 @@ export interface CreateModuleResolverOptions {
   toId?: (path: string) => string
   readonly allowPackage?: (specifier: string) => boolean
   readonly onPackageManifest?: (path: string) => void
+  /**
+   * The package `exports` conditions the bundler resolves an import with,
+   * such as `browser` or `development`. `default` always applies. Where a
+   * package lists several that apply, its own order decides, as in Node and
+   * every bundler.
+   */
+  readonly conditions?: readonly string[]
 }
+
+/** The conditions of an import when the bundler does not say which */
+const DEFAULT_CONDITIONS = ['import', 'module', 'node']
 
 /**
  * Resolve the imports of extracted files like the bundler: relative paths,
@@ -1163,6 +1204,7 @@ export function createModuleResolver({
   toId = (path) => path,
   allowPackage,
   onPackageManifest,
+  conditions = DEFAULT_CONDITIONS,
 }: CreateModuleResolverOptions = {}): (
   specifier: string,
   importer: string,
@@ -1187,7 +1229,7 @@ export function createModuleResolver({
       return cached.path
     }
     let manifest = ''
-    const path = resolvePackage(specifier, from, (found) => {
+    const path = resolvePackage(specifier, from, conditions, (found) => {
       manifest = found
       onPackageManifest?.(found)
     })
@@ -1245,12 +1287,10 @@ function fileStamp(path: string): string | undefined {
   }
 }
 
-const sourceExtensions = [...jsExtensions, '.cjs']
-
 /** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */
 function resolveSourceFile(base: string): string | undefined {
   const candidates = sourceExtensions.includes(extname(base))
-    ? [base]
+    ? sourceFileCandidates(base)
     : [
         ...jsExtensions.map((extension) => `${base}${extension}`),
         ...jsExtensions.map((extension) => join(base, `index${extension}`)),
@@ -1259,12 +1299,10 @@ function resolveSourceFile(base: string): string | undefined {
   return found && resolve(found)
 }
 
-/** Conditions of package `exports`, in the order a bundler prefers them */
-const packageConditions = ['import', 'module', 'default', 'require', 'node']
-
 function resolvePackage(
   specifier: string,
   importer: string,
+  conditions: readonly string[],
   onPackageManifest?: (path: string) => void,
 ): string | undefined {
   const parts = specifier.split('/')
@@ -1282,6 +1320,7 @@ function resolvePackage(
     packageDir,
     manifest,
     ['.', ...parts.slice(nameLength)].join('/'),
+    conditions,
   )
   return found && realpathSync(found)
 }
@@ -1296,9 +1335,14 @@ function resolvePackageEntry(
   dir: string,
   manifest: Record<string, unknown>,
   subpath: string,
+  conditions: readonly string[],
 ): string | undefined {
   if (manifest.exports !== undefined) {
-    const target = exportsTarget(manifest.exports, subpath)
+    // The resolver cannot tell an import from a `require`, so a package that
+    // exports only to `require` still resolves for a CommonJS source.
+    const target =
+      exportsTarget(manifest.exports, subpath, conditions) ??
+      exportsTarget(manifest.exports, subpath, requireConditions(conditions))
     return target === undefined
       ? undefined
       : resolveSourceFile(join(dir, target))
@@ -1310,16 +1354,27 @@ function resolvePackageEntry(
   return resolveSourceFile(join(dir, main ?? 'index'))
 }
 
-function exportsTarget(exports: unknown, subpath: string): string | undefined {
+/** `conditions` as a `require` call resolves them */
+function requireConditions(conditions: readonly string[]): string[] {
+  return conditions.map((condition) =>
+    condition === 'import' ? 'require' : condition,
+  )
+}
+
+function exportsTarget(
+  exports: unknown,
+  subpath: string,
+  conditions: readonly string[],
+): string | undefined {
   const subpaths =
     isRecord(exports) && !Array.isArray(exports)
       ? Object.keys(exports).filter((key) => key.startsWith('.'))
       : []
   if (subpaths.length === 0) {
-    return subpath === '.' ? conditionTarget(exports) : undefined
+    return subpath === '.' ? conditionTarget(exports, conditions) : undefined
   }
   const map = exports as Record<string, unknown>
-  if (subpath in map) return conditionTarget(map[subpath])
+  if (subpath in map) return conditionTarget(map[subpath], conditions)
   for (const key of subpaths) {
     const [prefix, suffix = ''] = key.split('*')
     if (
@@ -1332,21 +1387,33 @@ function exportsTarget(exports: unknown, subpath: string): string | undefined {
         prefix.length,
         subpath.length - suffix.length,
       )
-      return conditionTarget(map[key])?.replaceAll('*', matched)
+      return conditionTarget(map[key], conditions)?.replaceAll('*', matched)
     }
   }
   return undefined
 }
 
-function conditionTarget(value: unknown): string | undefined {
+/**
+ * The target of the first branch, in the package's own order, whose
+ * condition is `default` or one of `conditions` and that leads to a target
+ */
+function conditionTarget(
+  value: unknown,
+  conditions: readonly string[],
+): string | undefined {
   if (typeof value === 'string') return value
   if (Array.isArray(value)) {
-    return value.map(conditionTarget).find(Boolean)
+    return value
+      .map((entry) => conditionTarget(entry, conditions))
+      .find(Boolean)
   }
   if (!isRecord(value)) return undefined
-  return packageConditions
-    .filter((condition) => condition in value)
-    .map((condition) => conditionTarget(value[condition]))
+  return Object.entries(value)
+    .filter(
+      ([condition]) =>
+        condition === 'default' || conditions.includes(condition),
+    )
+    .map(([, branch]) => conditionTarget(branch, conditions))
     .find(Boolean)
 }
 function resolveAliasCandidates(
@@ -1377,8 +1444,9 @@ function resolveAliasCandidates(
 function resolveFile(candidateBase: string): string | undefined {
   const ext = extname(candidateBase)
   if (ext) {
-    if (!jsExtensions.includes(ext)) return undefined
-    return isFile(candidateBase) ? resolve(candidateBase) : undefined
+    if (!sourceExtensions.includes(ext)) return undefined
+    const found = sourceFileCandidates(candidateBase).find(isFile)
+    return found && resolve(found)
   }
 
   for (const jsExtension of jsExtensions) {

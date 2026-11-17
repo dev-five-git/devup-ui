@@ -20,7 +20,7 @@ const { default: loader } = await import(${builtPluginEntry('next-plugin', 'load
 const { default: cssLoader } = await import(${builtPluginEntry('next-plugin', 'css-loader.mjs')});
 const config = DevupUI({}, { atomHoist: 2, cssDir, distDir: join(root, 'df') });
 const rules = config.turbopack.rules;
-const jsOptions = rules['*.{tsx,ts,jsx,js,mjs}'].loaders[0].options;
+const jsOptions = rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'].loaders[0].options;
 const cssOptions = rules['./df/devup-ui/*.css'][0].options;
 const invoke = (fn, options, request) => new Promise((resolve, reject) => {
   fn.call({ resourcePath: request.resourcePath, getOptions: () => options, addDependency() {},
