@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import type { ViteConditionConfig } from '@devup-ui/plugin-utils'
 import type { BuildOptions } from 'vite'
 
 import {
@@ -16,16 +17,19 @@ export type ReservationEnvironment = {
   >
 }
 
-export type ReservationConfig = ReservationEnvironment & {
-  readonly command?: 'build' | 'serve'
-  readonly base?: string
-  readonly root?: string
-  readonly publicDir?: string | false
-  readonly env?: Readonly<Record<string, string | number | boolean | undefined>>
-  readonly define?: Readonly<Record<string, unknown>>
-  readonly environments?: Readonly<Record<string, ReservationEnvironment>>
-  readonly configFileDependencies?: readonly string[]
-}
+export type ReservationConfig = ReservationEnvironment &
+  ViteConditionConfig & {
+    readonly command?: 'build' | 'serve'
+    readonly base?: string
+    readonly root?: string
+    readonly publicDir?: string | false
+    readonly env?: Readonly<
+      Record<string, string | number | boolean | undefined>
+    >
+    readonly define?: Readonly<Record<string, unknown>>
+    readonly environments?: Readonly<Record<string, ReservationEnvironment>>
+    readonly configFileDependencies?: readonly string[]
+  }
 
 export function environmentInputs(
   environment: ReservationEnvironment,
