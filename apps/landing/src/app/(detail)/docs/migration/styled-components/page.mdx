@@ -105,6 +105,8 @@ const Card = styled.div`
 }
 ```
 
+Because those reads are CSS variables, a `theme` prop on one element (`<Card theme={{ brand: 'teal' }} />`) cannot change them, so it is a build error on a component whose styles read the theme: wrap the element in a `ThemeProvider` with that theme instead. A component that does not read the theme drops the prop, as before.
+
 Nested themes flatten with a hyphen, so `theme.colors.line` and `--colors-line` always agree. The object form resolves identically:
 
 ```tsx

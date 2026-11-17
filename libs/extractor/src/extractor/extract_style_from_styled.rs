@@ -330,6 +330,13 @@ impl StyledDefinition<'_> {
         self.reads.whole || self.reads.names.iter().any(|read| read == name)
     }
 
+    /// Whether the styles and attrs of this component read the `theme` prop by
+    /// name, which reads become CSS variables of the page's theme
+    #[must_use]
+    pub fn reads_theme(&self) -> bool {
+        self.reads.names.iter().any(|read| read == "theme")
+    }
+
     /// Whether an element using this component keeps passing the prop `name`:
     /// what its styles read, what it passes on, and what React or the
     /// component itself takes
