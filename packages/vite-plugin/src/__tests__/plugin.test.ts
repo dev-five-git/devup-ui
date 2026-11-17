@@ -130,6 +130,7 @@ interface ViteTestPlugin {
   ) => ViteConfig
   configResolved: (config?: {
     command?: 'serve' | 'build'
+    build?: { watch?: object | null }
     root?: string
     plugins?: readonly object[]
   }) => Promise<void>
@@ -1479,22 +1480,115 @@ describe('devupUIVitePlugin', () => {
     }
   })
 
-  it('should reset data files when load error', async () => {
-    writeFileSpy.mockResolvedValueOnce(undefined)
-    getThemeInterfaceSpy.mockReturnValue('interface code')
+  it('should fail the build when the theme cannot be loaded', async () => {
     existsSyncSpy.mockReturnValue(true)
+    const error = new Error('unreadable devup.json')
     readFileSpy.mockImplementation(() => {
-      throw new Error('error')
+      throw error
     })
     const plugin = createPlugin({})
-    await plugin.configResolved()
-    expect(registerThemeSpy).toHaveBeenCalledWith({})
-    expect(writeFileSpy).toHaveBeenCalledWith(
-      join('df', '.gitignore'),
-      '*',
-      'utf-8',
+
+    await expect(plugin.configResolved({ command: 'build' })).rejects.toBe(
+      error,
+    )
+
+    expect(registerThemeSpy).not.toHaveBeenCalledWith({})
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it('should fail the build when the theme cannot be registered', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    readFileSpy.mockResolvedValue(
+      JSON.stringify({ theme: { colors: { default: { card: '#fff' } } } }),
+    )
+    const clash = new Error(
+      "theme: color token 'card' and shadow token 'card' both become the CSS variable --card",
+    )
+    registerThemeSpy.mockImplementationOnce(() => {
+      throw clash
+    })
+    const plugin = createPlugin({})
+
+    await expect(plugin.configResolved({ command: 'build' })).rejects.toBe(
+      clash,
     )
   })
+
+  it.each([
+    ['the dev server', { command: 'serve' }],
+    ['vite build --watch', { command: 'build', build: { watch: {} } }],
+  ])(
+    'should report a theme error and keep %s running on an empty theme',
+    async (_name, config) => {
+      writeFileSpy.mockResolvedValueOnce(undefined)
+      getThemeInterfaceSpy.mockReturnValue('interface code')
+      existsSyncSpy.mockReturnValue(true)
+      const error = new Error('error')
+      readFileSpy.mockImplementation(() => {
+        throw error
+      })
+      const plugin = createPlugin({})
+      await plugin.configResolved(config)
+      expect(console.error).toHaveBeenCalledWith(error)
+      expect(registerThemeSpy).toHaveBeenCalledWith({})
+      expect(writeFileSpy).toHaveBeenCalledWith(
+        join('df', '.gitignore'),
+        '*',
+        'utf-8',
+      )
+    },
+  )
+
+  it.each([
+    ['an Error', new Error('bad token'), 'bad token', true],
+    ['an Error without a stack', new Error('bad token'), 'bad token', false],
+    ['a thrown string', 'bad token', 'bad token', true],
+  ])(
+    'should show the overlay instead of reloading when a devup.json update throws %s',
+    async (_name, thrown, message, keepStack) => {
+      if (thrown instanceof Error && !keepStack) thrown.stack = undefined
+      existsSyncSpy.mockReturnValue(true)
+      readFileSpy.mockResolvedValue(
+        JSON.stringify({ theme: { colors: { default: {} } } }),
+      )
+      registerThemeSpy.mockImplementation((theme: object) => {
+        if (Object.keys(theme).length > 0) throw thrown
+      })
+      const send = mock()
+      const environment = createHotUpdateEnvironment('client')
+      const plugin = createPlugin({})
+
+      await plugin.handleHotUpdate({
+        file: 'devup.json',
+        server: {
+          moduleGraph: {
+            invalidateModule: mock(),
+            getModulesByFile: () => undefined,
+          },
+          ws: { send },
+        },
+        modules: [],
+        timestamp: 1,
+      })
+      await plugin.hotUpdate.call(
+        { environment },
+        { file: 'devup.json', modules: [], timestamp: 2 },
+      )
+
+      const overlay = {
+        type: 'error',
+        err: {
+          message,
+          stack: keepStack ? expect.any(String) : '',
+          plugin: 'devup-ui',
+        },
+      }
+      expect(send).toHaveBeenCalledWith(overlay)
+      expect(send).not.toHaveBeenCalledWith({ type: 'full-reload' })
+      expect(environment.hot.send).toHaveBeenCalledWith(overlay)
+      expect(console.error).toHaveBeenCalledWith(thrown)
+    },
+  )
 
   it('should watch change', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
@@ -1930,6 +2024,38 @@ describe('devupUIVitePlugin', () => {
     expect(await plugin.transform('code', 'devup-ui.tsx')).toEqual(
       options.extractCss ? { code: 'long code' } : undefined,
     )
+  })
+
+  it('extracts MDX in a post transform, after the MDX plugin compiled it', async () => {
+    // Given
+    codeExtractSpy.mockReturnValue(createCodeExtractResult({ code: 'mdx' }))
+    const [plugin, , mdxPlugin] = DevupUI({
+      engine: 'wasm',
+    }) as unknown as [
+      ViteTestPlugin,
+      ViteTestRestorePlugin,
+      Pick<ViteTestPlugin, 'name' | 'transform'> & { enforce: 'post' },
+    ]
+    activePlugins.push(plugin)
+    expect(mdxPlugin).toEqual({
+      name: 'devup-ui:mdx',
+      sharedDuringBuild: true,
+      enforce: 'post',
+      transform: expect.any(Function),
+    })
+    // When / Then: only the post transform takes MDX, and it takes only MDX
+    expect(await plugin.transform('compiled', 'docs/page.mdx')).toBeUndefined()
+    expect(
+      await mdxPlugin.transform('compiled', 'docs/page.tsx'),
+    ).toBeUndefined()
+    expect(
+      await mdxPlugin.transform('compiled', 'docs/page.mdx?import'),
+    ).toEqual({ code: 'mdx' })
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+    expect(codeExtractSpy.mock.calls[0]?.slice(0, 2)).toEqual([
+      'docs/page.mdx',
+      'compiled',
+    ])
   })
 
   it.each(

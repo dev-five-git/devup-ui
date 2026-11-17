@@ -2299,6 +2299,116 @@ const { own } = UI
 export const a = <UI.Box>{own}</UI.Box>
 ```
 
+## Runtime-only options
+
+`StyleSheetManager` and `CacheProvider` are inert under the aliases, so an option that changes the CSS or the props they would produce is a located error instead of being dropped. Options such as `target`, `nonce`, `key` or `prepend` only steer runtime insertion and stay accepted.
+
+### StyleSheetManager option dropped at runtime
+
+**API:** styled-components. **Message pattern:**
+
+```text
+`stylisPlugins` of `StyleSheetManager` from `styled-components` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { 'styled-components': false }` and build with styled-components
+```
+
+`shouldForwardProp` (`filters at runtime the props every styled component passes on`) and `namespace` (`prefixes every selector at runtime`) report the same shape, as does a JSX spread on the manager (`takes spread props, so whether they set ... cannot be known at build time`).
+
+**Trigger:**
+
+{/* probe: style-sheet-manager before */}
+
+```tsx-error
+import { StyleSheetManager } from 'styled-components';
+export const App = ({ children }) => (
+  <StyleSheetManager stylisPlugins={[rtlPlugin]} shouldForwardProp={isPropValid}>{children}</StyleSheetManager>
+);
+```
+
+**Why:** Devup UI writes every rule at build time and has no stylis pass, so the manager's plugins and prop filter would silently do nothing.
+
+**Fix:** Write the CSS the plugin would produce, such as logical properties instead of an RTL plugin, and give each styled component its own `shouldForwardProp` through `.withConfig()`.
+
+{/* probe: style-sheet-manager after */}
+
+```tsx
+import { styled } from 'styled-components'
+export const Card = styled.div.withConfig({
+  shouldForwardProp: (name) => name !== 'tone',
+})({ marginInlineStart: 8 })
+```
+
+### createCache stylisPlugins
+
+**API:** Emotion. **Message pattern:**
+
+```text
+`stylisPlugins` of `createCache()` from `@emotion/cache` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion
+```
+
+Reported while `@emotion/react` or `@emotion/styled` is aliased, as their `CacheProvider` takes the cache.
+
+**Trigger:**
+
+{/* probe: create-cache before */}
+
+```tsx-error
+import createCache from '@emotion/cache';
+import { CacheProvider } from '@emotion/react';
+const cache = createCache({ key: 'rtl', stylisPlugins: [rtlPlugin] });
+export const App = ({ children }) => <CacheProvider value={cache}>{children}</CacheProvider>;
+```
+
+**Why:** `CacheProvider` is inert, so the plugins would never run.
+
+**Fix:** Write the CSS the plugin would produce. A cache without `stylisPlugins` is accepted.
+
+{/* probe: create-cache after */}
+
+```tsx
+import createCache from '@emotion/cache'
+import { CacheProvider } from '@emotion/react'
+const cache = createCache({ key: 'app' })
+export const App = ({ children }) => (
+  <CacheProvider value={cache}>{children}</CacheProvider>
+)
+```
+
+### createCache options that cannot be read
+
+**API:** Emotion. **Message pattern:**
+
+```text
+<what>, so whether the options of `createCache()` set `stylisPlugins`, which Devup UI does not compile, cannot be known at build time. Fix: `import createCache from '@emotion/cache'` and call it with an object literal of options, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion
+```
+
+`<what>` is one of:
+
+- `` `createCache()` from `@emotion/cache` takes options that are not an object literal ``
+- `` `createCache()` from `@emotion/cache` takes spread options ``
+- `` `createCache()` from `@emotion/cache` takes an option of a computed key ``
+- `` `createCache` from `@emotion/cache` is used other than by calling it ``
+- `` `@emotion/cache` is loaded other than by an import of its default export `` (a namespace or named import, `require()`, `import()` or a re-export)
+
+**Trigger:**
+
+{/* probe: create-cache-options before */}
+
+```tsx-error
+import createCache from '@emotion/cache';
+export const cache = createCache(options);
+```
+
+**Why:** The build must see every key of the options to know that none of them is `stylisPlugins`.
+
+**Fix:** Pass the options as an object literal.
+
+{/* probe: create-cache-options after */}
+
+```tsx
+import createCache from '@emotion/cache'
+export const cache = createCache({ key: 'app' })
+```
+
 ## vanilla-extract
 
 ### Recipes value import

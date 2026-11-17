@@ -36,7 +36,7 @@ import {
   type WasmImportAliases,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
-import { type Compiler } from 'webpack'
+import { type Compiler, type RuleSetRule } from 'webpack'
 
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
@@ -147,6 +147,12 @@ export class DevupUIWebpackPlugin {
   /** The files the project's Tailwind CSS is read from */
   tailwindFiles: string[] = []
 
+  /**
+   * Why the theme is empty in watch mode: every compilation reports it until
+   * devup.json loads again.
+   */
+  themeError: unknown = undefined
+
   writeDataFiles() {
     try {
       const config = loadDevupConfigSync(this.options.devupFile)
@@ -163,9 +169,15 @@ export class DevupUIWebpackPlugin {
         ),
         { encoding: 'utf-8' },
       )
+      this.themeError = undefined
     } catch (error) {
+      // A one-shot build fails on a theme it cannot load or register: an
+      // empty theme would ship unstyled output. A watcher keeps running, since
+      // devup.json may be mid-edit, and reports the error until it is fixed.
+      if (!this.options.watch) throw error
       console.error(error)
       this.compiler.registerTheme({})
+      this.themeError = error
     }
     if (!existsSync(this.options.cssDir))
       mkdirSync(this.options.cssDir, { recursive: true })
@@ -472,7 +484,15 @@ export class DevupUIWebpackPlugin {
     if (this.options.watch) {
       compiler.hooks.thisCompilation.tap(
         'DevupUIWebpackPluginWatchCss',
-        (compilation) => reconcileWatchCss(compilation, this.compiler),
+        (compilation) => {
+          if (this.themeError !== undefined)
+            compilation.errors.push(
+              new compiler.webpack.WebpackError(
+                `[devup-ui] ${this.themeError instanceof Error ? this.themeError.message : String(this.themeError)}`,
+              ),
+            )
+          reconcileWatchCss(compilation, this.compiler)
+        },
       )
       let lastModifiedTime: string | null = null
       compiler.hooks.watchRun.tapPromise('DevupUIWebpackPlugin', async () => {
@@ -600,33 +620,34 @@ export class DevupUIWebpackPlugin {
       })
     }
 
-    compiler.options.module.rules.push(
-      {
-        test: SOURCE_FILE_REGEX,
-        exclude: createNodeModulesExcludeRegex(
-          this.options.include,
-          '.mdx.[tj]sx?$',
-        ),
-        enforce: 'pre',
-        use: [
-          {
-            loader: createRequire(import.meta.url).resolve(
-              '@devup-ui/webpack-plugin/loader',
-            ),
-            options: {
-              package: this.options.package,
-              engine: this.options.engine,
-              cssDir: this.options.cssDir,
-              sheetFile: this.sheetFile,
-              classMapFile: this.classMapFile,
-              fileMapFile: this.fileMapFile,
-              watch: this.options.watch,
-              singleCss: this.options.singleCss,
-              importAliases: this.importAliases,
-            },
+    const sourceRule = {
+      test: SOURCE_FILE_REGEX,
+      exclude: createNodeModulesExcludeRegex(
+        this.options.include,
+        '.mdx.[tj]sx?$',
+      ),
+      enforce: 'pre',
+      use: [
+        {
+          loader: createRequire(import.meta.url).resolve(
+            '@devup-ui/webpack-plugin/loader',
+          ),
+          options: {
+            package: this.options.package,
+            engine: this.options.engine,
+            cssDir: this.options.cssDir,
+            sheetFile: this.sheetFile,
+            classMapFile: this.classMapFile,
+            fileMapFile: this.fileMapFile,
+            watch: this.options.watch,
+            singleCss: this.options.singleCss,
+            importAliases: this.importAliases,
           },
-        ],
-      },
+        },
+      ],
+    } satisfies RuleSetRule
+    compiler.options.module.rules.push(
+      sourceRule,
       {
         test: this.options.cssDir,
         enforce: 'pre',
@@ -641,6 +662,14 @@ export class DevupUIWebpackPlugin {
             },
           },
         ],
+      },
+      // MDX compiles to JavaScript in a normal-phase loader such as
+      // `@mdx-js/loader`: a `post` loader extracts what it compiled.
+      {
+        ...sourceRule,
+        test: /\.mdx$/i,
+        exclude: createNodeModulesExcludeRegex(this.options.include),
+        enforce: 'post',
       },
     )
   }

@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/styled_theme_prop_tests.rs
+expression: compile(code)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import { forwardRef as __devupForwardRef } from "react";
+const C = __devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== "$" && k !== "theme"))} ref={__devupRef} as={forwardedAs} className={className ? `a-a ${className}` : "a-a"} style={style} />);
+export const A = () => <C />;
+
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })
