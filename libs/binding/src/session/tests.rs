@@ -101,6 +101,35 @@ fn sessions_keep_their_own_numbering_settings_and_sheet() {
 
 #[test]
 #[serial]
+fn the_license_banner_setting_belongs_to_one_session() {
+    let _clean = clean();
+    // Given: session 0 turned the banner off and both sessions hold styles
+    crate::set_license_banner(false);
+    extract("zero.tsx", "red");
+    let session = create_session();
+    // When: the other session runs
+    let css = with_session(session, || {
+        // Then: it starts with the banner on and emits it
+        assert!(crate::is_license_banner());
+        extract("other.tsx", "blue");
+        get_css(None, false)
+    });
+    assert!(css.is_ok_and(|css| css.starts_with("/*! devup-ui v")));
+    // And: session 0 keeps its own setting once it is live again
+    assert!(!crate::is_license_banner());
+    assert!(get_css(None, false).starts_with(".a{color:red}"));
+    // And: turning it off in the other session stays there
+    assert_eq!(
+        with_session(session, || crate::set_license_banner(false)),
+        Ok(())
+    );
+    crate::set_license_banner(true);
+    assert_eq!(with_session(session, crate::is_license_banner), Ok(false));
+    assert!(crate::is_license_banner());
+}
+
+#[test]
+#[serial]
 fn removing_a_file_forgets_it_only_in_the_live_session() {
     let _clean = clean();
     // Given: two sessions each extracted global CSS from the same filename

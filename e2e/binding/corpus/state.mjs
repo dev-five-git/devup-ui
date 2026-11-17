@@ -68,6 +68,7 @@ add('distinct-resets-and-resolver-teardown', (h) => {
     h.call('registerTheme', theme)
     h.call('registerShorthands', { insetX: ['left', 'right'] })
     h.call('setDebug', true)
+    h.call('setLicenseBanner', false)
     h.call('setPrefix', 'dirty-')
     h.call('setAtomHoist', 2)
     h.call('setModuleResolver', (...args) => {
