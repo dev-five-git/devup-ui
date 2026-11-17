@@ -29,7 +29,7 @@ pub(super) fn collect(
     let parsed = oxc_parser::Parser::new(
         &allocator,
         code,
-        oxc_span::SourceType::from_path(filename)
+        crate::parsing::path_source_type(filename)
             .unwrap_or_else(|_| oxc_span::SourceType::ts())
             .with_module(true),
     )
