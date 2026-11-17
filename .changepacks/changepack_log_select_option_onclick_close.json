@@ -1,0 +1,1 @@
+{"changes":{"packages/components/package.json":"Patch"},"note":"Close the Select list and return focus to the trigger when a SelectOption with its own onClick is chosen; the handler still replaces the value update.","date":"2026-11-15T00:00:00.000Z"}

@@ -102,6 +102,8 @@ This results in:
 
 Use `null` to skip a breakpoint and keep the previous value:
 
+{/* conformance */}
+
 ```tsx
 <Box bg={['red', null, 'green', null, 'purple']} />
 ```
@@ -111,6 +113,24 @@ This results in:
 - **0-767px**: red (index 0, then null inherits)
 - **768-1279px**: green (index 2, then null inherits)
 - **1280px+**: purple
+
+Each defined breakpoint gets its own class, and a skipped one emits nothing:
+
+```css
+.a {
+  background: red;
+}
+@media (min-width: 768px) {
+  .b {
+    background: green;
+  }
+}
+@media (min-width: 1280px) {
+  .c {
+    background: purple;
+  }
+}
+```
 
 ## Shorter Arrays
 
@@ -179,12 +199,27 @@ Or use responsive typography from `devup.json`:
 
 Combine responsive arrays with pseudo selectors:
 
+{/* conformance */}
+
 ```tsx
 // Different hover colors per breakpoint
 const example = <Box _hover={{ bg: ['blue', null, 'purple'] }} />
 
 // Alternative syntax
 const example2 = <Box _hover={[{ bg: 'blue' }, null, { bg: 'purple' }]} />
+```
+
+Both forms emit the same classes:
+
+```css
+.a:hover {
+  background: blue;
+}
+@media (min-width: 768px) {
+  .b:hover {
+    background: purple;
+  }
+}
 ```
 
 ## Common Patterns

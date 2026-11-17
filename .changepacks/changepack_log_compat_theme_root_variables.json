@@ -1,0 +1,1 @@
+{"changes":{"packages/react/package.json":"Patch"},"note":"The outermost compat ThemeProvider also declares its theme's CSS variables on :root, in a <style> element rendered with the markup, so createGlobalStyle and <Global> rules on html, body or :root read the theme. Nested providers still scope only their subtree.","date":"2026-11-15T00:00:00.000Z"}
