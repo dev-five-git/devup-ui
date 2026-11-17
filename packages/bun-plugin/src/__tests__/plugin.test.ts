@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
@@ -660,7 +661,9 @@ describe('CommonJS under the runtime', () => {
     const imported = join(root, 'imported.cts')
     await Bun.write(required, "exports.kind = 'required'")
     await Bun.write(imported, "export = { kind: 'imported' as string }")
-    expect(require(required)).toEqual({ kind: 'required' })
+    expect(createRequire(import.meta.url)(required)).toEqual({
+      kind: 'required',
+    })
     const module: Record<string, unknown> = await import(imported)
     expect(module.default).toEqual({ kind: 'imported' })
     expect(module.kind).toBe('imported')
