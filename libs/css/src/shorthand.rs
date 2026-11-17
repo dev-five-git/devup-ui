@@ -65,6 +65,13 @@ fn normalize_property(property: &str) -> Option<String> {
     (property == expected).then_some(canonical)
 }
 
+/// Whether `property` names a CSS property as a style key may spell it:
+/// kebab-case, camelCase, vendor-prefixed or a custom property
+#[must_use]
+pub fn is_css_property(property: &str) -> bool {
+    normalize_property(property).is_some()
+}
+
 /// Validate every target before producing a normalized registry.
 ///
 /// # Errors

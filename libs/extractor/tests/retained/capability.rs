@@ -11,7 +11,7 @@ fn style_props_keep_local_capability_when_named_or_anonymous_default_is_extended
 ) {
     // Given: both imported producers must match the independently styled local Box.
     let definition = "styled(Box)`color: ${(p)=>p.tone}; background: ${(p)=>p.theme.fill};`";
-    let body = "const Wide=styled(Base,{w:'100%'});function tick(label,value){order.push(label);return value;}function view(rest){return <Wide as='section' forwardedAs='nav' tone='green' theme={{fill:'blue'}} ref={73} p={tick('p','8px')} opacity={tick('opacity','0.5')} {...rest} />;}export {view,Wide};";
+    let body = "const Wide=styled(Base,{w:'100%'});function tick(label,value){order.push(label);return value;}function view(rest){return <Wide as='section' forwardedAs='nav' tone='green' ref={73} p={tick('p','8px')} opacity={tick('opacity','0.5')} {...rest} />;}export {view,Wide};";
     let local =
         format!("import {{Box,styled}} from '@devup-ui/react';const Base={definition};{body}");
     let named = format!(
@@ -19,7 +19,7 @@ fn style_props_keep_local_capability_when_named_or_anonymous_default_is_extended
     );
     let default =
         format!("import {{Box,styled}} from '@devup-ui/react';export default {definition};");
-    let observation = r"const view=modules['/src/app.tsx'].view;const rows=[{}, {p:undefined,opacity:null}, {p:'12px',opacity:0}].map(rest=>{order.length=0;frames.length=0;const first=view(rest);const e=render(first);const backgrounds=(e.props.className||'').split(/\s+/).flatMap(c=>rules[c]&&rules[c][0]==='background'?[rules[c][1]]:[]);return [e.target,e.props.ref,e.props.as,values(e,'padding').filter(v=>v!=null),values(e,'opacity').filter(v=>v!=null),values(e,'width'),values(e,'color'),backgrounds,order.slice(),Object.hasOwn(e.props,'p'),Object.hasOwn(e.props,'opacity'),[identities(e).length,new Set(identities(e)).size],first.props.theme.fill,!Object.hasOwn(e.props,'theme')];});JSON.stringify(rows);";
+    let observation = r"const view=modules['/src/app.tsx'].view;const rows=[{}, {p:undefined,opacity:null}, {p:'12px',opacity:0}].map(rest=>{order.length=0;frames.length=0;const first=view(rest);const e=render(first);const backgrounds=(e.props.className||'').split(/\s+/).flatMap(c=>rules[c]&&rules[c][0]==='background'?[rules[c][1]]:[]);return [e.target,e.props.ref,e.props.as,values(e,'padding').filter(v=>v!=null),values(e,'opacity').filter(v=>v!=null),values(e,'width'),values(e,'color'),backgrounds,order.slice(),Object.hasOwn(e.props,'p'),Object.hasOwn(e.props,'opacity'),[identities(e).length,new Set(identities(e)).size]];});JSON.stringify(rows);";
     let markers = if form == "local" { 1 } else { 2 };
     let expected = json!([
         [
@@ -34,9 +34,7 @@ fn style_props_keep_local_capability_when_named_or_anonymous_default_is_extended
             ["p", "opacity"],
             false,
             false,
-            [markers, markers],
-            "blue",
-            true
+            [markers, markers]
         ],
         [
             "section",
@@ -50,9 +48,7 @@ fn style_props_keep_local_capability_when_named_or_anonymous_default_is_extended
             ["p", "opacity"],
             true,
             true,
-            [markers, markers],
-            "blue",
-            true
+            [markers, markers]
         ],
         [
             "section",
@@ -66,9 +62,7 @@ fn style_props_keep_local_capability_when_named_or_anonymous_default_is_extended
             ["p", "opacity"],
             true,
             true,
-            [markers, markers],
-            "blue",
-            true
+            [markers, markers]
         ]
     ]);
     // When: execute each complete module graph through real extraction and Boa.

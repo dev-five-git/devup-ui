@@ -598,6 +598,7 @@ dependencies = [
  "css",
  "extractor",
  "serde_json",
+ "serial_test",
  "sheet",
 ]
 

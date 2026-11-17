@@ -18,3 +18,6 @@ sheet = { path = "../sheet" }
 css = { path = "../css" }
 serde_json = "1.0.154"
 bimap = { version = "0.6.3", features = ["serde"] }
+
+[dev-dependencies]
+serial_test = "4.0.1"

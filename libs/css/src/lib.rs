@@ -293,6 +293,18 @@ pub fn get_custom_shorthand_names() -> Vec<String> {
     registry.map_or_else(Vec::new, |registry| registry.keys().cloned().collect())
 }
 
+/// Whether `property` is a style property as a style object key writes it: a
+/// Devup UI or configured shorthand, or a CSS property
+#[must_use]
+pub fn is_style_property(property: &str) -> bool {
+    GLOBAL_STYLE_PROPERTY.contains_key(property)
+        || is_enum_property(property)
+        || shorthand::is_css_property(property)
+        || CUSTOM_SHORTHANDS
+            .read()
+            .is_ok_and(|shorthands| shorthands.contains_key(property))
+}
+
 /// `selector` with `params` on the last pseudo-class or pseudo-element that
 /// takes them and has none yet, wherever nesting put it: a group form reads
 /// `:is(...):nth-child(2n) &`, and a parent's selector may follow it
@@ -1575,6 +1587,37 @@ mod tests {
             disassemble_property("insetX").collect::<Vec<_>>(),
             ["inset-x"]
         );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case("bg", true)]
+    #[case("p", true)]
+    #[case("positioning", true)]
+    #[case("fontSize", true)]
+    #[case("font-size", true)]
+    #[case("WebkitLineClamp", true)]
+    #[case("--brand", true)]
+    #[case("span", false)]
+    #[case("h1, h2", false)]
+    #[case("colr", false)]
+    #[case("insetX", false)]
+    #[serial]
+    fn test_is_style_property(#[case] property: &str, #[case] expected: bool) {
+        let _state = test_state::TestStateGuard::new();
+        assert_eq!(is_style_property(property), expected);
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_style_property_reads_custom_shorthands()
+    -> Result<(), shorthand::InvalidShorthandTarget> {
+        let _state = test_state::TestStateGuard::new();
+        set_custom_shorthands(BTreeMap::from([(
+            "insetX".to_string(),
+            vec!["left".to_string()],
+        )]))?;
+        assert!(is_style_property("insetX"));
         Ok(())
     }
 }
