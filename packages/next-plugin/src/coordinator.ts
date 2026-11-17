@@ -104,14 +104,19 @@ interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
   css?: string
 }
 
-/** Copy every WASM-backed getter once, then release its Rust allocation. */
+/**
+ * Copy every WASM-backed getter once, then release its Rust allocation. The
+ * engine serializes `css` only when it is read, so a caller that never uses it
+ * passes `withCss = false`.
+ */
 export function takeExtractOutput(
   output: ReturnType<DevupWasm['codeExtract']>,
+  withCss = true,
 ): ExtractOutputSnapshot {
   try {
     return {
       code: output.code,
-      css: output.css,
+      css: withCss ? output.css : undefined,
       cssFile: output.cssFile,
       map: output.map,
       updatedBaseStyle: output.updatedBaseStyle,

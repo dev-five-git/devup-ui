@@ -39,7 +39,9 @@ import {
 } from './coordinator'
 import {
   removeStalePortFile,
+  removeStaleStateDirs,
   resolveCoordinatorPortFile,
+  resolveStateDir,
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
@@ -268,12 +270,16 @@ export function DevupUI(
     )
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
-    const sheetFile = join(distDir, 'sheet.json')
-    const classMapFile = join(distDir, 'classMap.json')
-    const fileMapFile = join(distDir, 'fileMap.json')
-    const canonicalMapFile = join(distDir, 'canonicalMap.json')
+    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
+    // Another live `next dev`/`next build` on this distDir keeps its state;
+    // this process then writes its own (see resolveStateDir).
+    const stateDir = resolveStateDir(distDir, coordinatorPortFile)
+    const sheetFile = join(stateDir, 'sheet.json')
+    const classMapFile = join(stateDir, 'classMap.json')
+    const fileMapFile = join(stateDir, 'fileMap.json')
+    const canonicalMapFile = join(stateDir, 'canonicalMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
-    const setupHandoffFile = join(distDir, 'setup.bin')
+    const setupHandoffFile = join(stateDir, 'setup.bin')
     // Next loads next.config twice for a production Turbopack build in isolated
     // module contexts, but both evaluations share the same process. Hand the
     // completed first setup to exactly one different module instance so the
@@ -333,6 +339,8 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+    removeStaleStateDirs(distDir)
+    if (stateDir !== distDir) mkdirSync(stateDir, { recursive: true })
 
     // The engine is shared by every Next app in this process; this app works
     // on an engine session of its own, so another app's setup or extraction
@@ -364,7 +372,13 @@ export function DevupUI(
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM
     // starts empty and CSS for cached files would be missing.
-    restoreSessionState(wasm, [sheetFile, classMapFile, fileMapFile])
+    // Always restore from the shared `distDir` state: a process writing its
+    // own state dir still starts from what the cache was built against.
+    restoreSessionState(wasm, [
+      join(distDir, 'sheet.json'),
+      join(distDir, 'classMap.json'),
+      join(distDir, 'fileMap.json'),
+    ])
     // After the restore: dropping a state that does not import resets these.
     setPrefix(prefix ?? null)
     setDebug(debug)
@@ -392,8 +406,6 @@ export function DevupUI(
     const { theme, files: themeFiles } = registerProjectTheme()
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
-
-    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
     // Collapse and legacy whole-file hoisting remain independent of the deferred
     // Turbopack atom reservation. Never install atom reach/threshold without it.
@@ -551,6 +563,7 @@ export function DevupUI(
             true,
             importAliases as unknown as Record<string, string | null>,
           ),
+          false,
         )
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt
@@ -713,11 +726,12 @@ export function DevupUI(
         },
       ],
       // Must cover every extension the import-graph pre-pass lists AND the
-      // webpack rule matches (tsx|ts|jsx|js|mjs). Omitting one (e.g. jsx)
-      // means those files are never extracted: their Box/styled markup hits
-      // the runtime stubs ("Cannot run on the runtime") and the coordinator
-      // waits on graph members that never POST /extract.
-      '*.{tsx,ts,jsx,js,mjs}': {
+      // webpack rule matches (SOURCE_EXTENSIONS of plugin-utils). Omitting
+      // one (e.g. mts) means those files are never extracted: their
+      // Box/styled markup hits the runtime stubs ("Cannot run on the
+      // runtime") and the coordinator waits on graph members that never
+      // POST /extract.
+      '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
         loaders: [
           {
             loader: '@devup-ui/next-plugin/loader',
@@ -773,12 +787,16 @@ export function DevupUI(
   let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
+    // Next's project directory, which it also hands webpack as `context`: the
+    // webpack plugin resolves the relative options against it, not the cwd
+    const root = _options.dir ?? process.cwd()
     options.cssDir ??= resolve(
+      root,
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
     if (!_options.dev && productionPrewarmFiles === undefined) {
-      const cwd = process.cwd()
+      const cwd = root
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)

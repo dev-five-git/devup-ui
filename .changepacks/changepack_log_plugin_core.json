@@ -1,0 +1,12 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Compile `.mts`, `.cts` and `.cjs` modules in every plugin, Turbopack and the import graph, and resolve `./a.js`, `./a.mjs` and `./a.cjs` imports to their TypeScript sources. Resolve package `exports` in the package's own order with the conditions of the bundler: Vite's `resolve.conditions`, the ESM conditions of webpack and Rspack per environment, and the target and `conditions` of Bun. Atom hoisting in webpack and Rsbuild plans over the `src` and `app` directories of the working directory and of the bundler root, not `src` alone. Bun keeps the modules whose values a file inlines in its module graph, so changing one rebuilds the file, and bundles the project's own `.js` and `.cjs` modules. No new build errors.",
+  "date": "2026-11-15T00:00:00.000Z"
+}
