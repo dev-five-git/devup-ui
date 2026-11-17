@@ -17,7 +17,6 @@ function Crown({ shown }: { shown: boolean }) {
       aria-hidden
       aspectRatio="1"
       bg="#FFC100"
-      data-benchmark="crown"
       maskImage="url(/icons/crown.svg)"
       maskRepeat="no-repeat"
       maskSize="contain"
@@ -62,7 +61,7 @@ export function DevupUICard({
         <Text color="$text" typography="h5">
           Devup UI
         </Text>
-        <Text color="$text" data-benchmark="version" typography="textL">
+        <Text color="$text" typography="textL">
           {version}
         </Text>
       </VStack>
@@ -77,7 +76,6 @@ export function DevupUICard({
               backgroundClip="text"
               bg="linear-gradient(270deg, #6BB1F2 0%, #8235CA 100%)"
               color="transparent"
-              data-benchmark="time"
               typography="h4"
             >
               {buildTime}
@@ -94,7 +92,6 @@ export function DevupUICard({
               backgroundClip="text"
               bg="linear-gradient(270deg, #6BB1F2 0%, #8235CA 100%)"
               color="transparent"
-              data-benchmark="size"
               typography="h4"
             >
               {buildSize}

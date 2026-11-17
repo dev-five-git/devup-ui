@@ -401,6 +401,10 @@ jobs:
   landing-next-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Render the frozen e2e/fixtures/benchmark-results.json, so a benchmark
+      # refresh on main never changes a screenshot. This build is never deployed.
+      LANDING_BENCHMARK_DATA: fixture
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -879,9 +883,13 @@ jobs:
           # changepacks compares the change against a local main, which a pull request checkout does not have
           git fetch --no-tags origin main:refs/heads/main
           bunx @changepacks/cli@latest check --format json
+      # The e2e builds render the frozen e2e/fixtures/benchmark-results.json, so
+      # a benchmark refresh on main never changes a screenshot. The site is
+      # deployed from a separate build of the live benchmark-results.json below.
       - name: Build Landing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANDING_BENCHMARK_DATA: fixture
         run: |
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
@@ -915,6 +923,7 @@ jobs:
       - name: Build Landing (singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANDING_BENCHMARK_DATA: fixture
         run: |
           rm -rf apps/landing/dist apps/landing/.next apps/landing/.vinext apps/landing/df
           DEVUP_SINGLE_CSS=1 bun run --filter landing build
@@ -927,6 +936,15 @@ jobs:
           name: playwright-report-singlecss
           path: playwright-report/
           retention-days: 1
+      # The same singleCss build as above, with the live benchmark numbers.
+      - name: Build Landing for deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf apps/landing/dist apps/landing/.next apps/landing/.vinext apps/landing/df
+          DEVUP_SINGLE_CSS=1 bun run --filter landing build
+          grep -q 'data-benchmark-source="live"' apps/landing/dist/client/index.html
       - name: Upload the site for deployment
         uses: actions/upload-pages-artifact@v5
         with:

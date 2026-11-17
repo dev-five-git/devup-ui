@@ -1,9 +1,0 @@
-/*
- * The landing benchmark numbers come from benchmark-results.json, which CI
- * rewrites after every merge to main (benchmark-refresh.js). Screenshots keep
- * the layout of those elements but not their text, so a refresh never changes
- * a baseline.
- */
-[data-benchmark] {
-  visibility: hidden !important;
-}

@@ -1,13 +1,12 @@
 import { css, Flex, Text, VStack } from '@devup-ui/react'
 
-import results from '../../../../benchmark-results.json'
 import { BenchBox } from './BenchBox'
+import { BENCHMARK_SOURCE, benchmarkResults as results } from './benchmark-data'
 import { DevupUICard } from './DevupUICard'
 import { OtherCard } from './OtherCard'
 
-// The numbers come from the checked benchmark-results.json, which CI rewrites
-// after every merge to main (benchmark-refresh.js), so the page shows the same
-// run as the READMEs. e2e screenshots hide every `data-benchmark` element.
+// The numbers come from benchmark-data.ts: the live benchmark-results.json, or
+// the frozen e2e fixture in the e2e builds.
 const WEBPACK = new Map(
   results.rows
     .filter((row) => row.table === 'webpack')
@@ -60,6 +59,7 @@ export function Bench() {
   return (
     <VStack
       alignItems="center"
+      data-benchmark-source={BENCHMARK_SOURCE}
       overflow="hidden"
       py={['40px', null, '50px', null, '60px']}
       w="100%"
@@ -79,7 +79,7 @@ export function Bench() {
           <Text as="h2" color="$title" m="0" typography="h4">
             Comparison Benchmarks
           </Text>
-          <Text color="$text" data-benchmark="run" typography="textL">
+          <Text color="$text" typography="textL">
             Next.js {results.run.next} cold build, median of {results.samples}{' '}
             (GitHub Actions{' '}
             <a className={link} href={results.run.url}>
