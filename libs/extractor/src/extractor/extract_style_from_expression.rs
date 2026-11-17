@@ -1,7 +1,7 @@
 use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
-    css_utils::{css_to_style, css_to_style_literal, theme_var_reference},
+    css_utils::{css_to_style, css_to_style_literal, descendants, theme_var_reference},
     extract_style::{
         extract_dynamic_style::ExtractDynamicStyle,
         extract_static_style::{ExtractStaticStyle, ThemeTokenResolution},
@@ -15,6 +15,7 @@ use crate::{
     },
 };
 use css::{
+    DisassembleProperty,
     at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property, get_enum_property_map, get_enum_property_value, is_enum_property,
     is_special_property::is_special_property,
@@ -22,7 +23,7 @@ use css::{
     style_selector::{
         AtRuleKind, StyleSelector, is_selector_name, optimize_selector, split_selector_list,
     },
-    theme_tokens::{get_responsive_theme_token, get_typography_keys, is_responsive_theme_token},
+    theme_tokens::{get_responsive_theme_token, get_typography_keys},
     utils::to_kebab_case,
 };
 use oxc_allocator::{CloneIn, GetAllocator};
@@ -341,11 +342,12 @@ pub(super) fn extract_projected<'a>(
                         }
                         ObjectPropertyKind::ObjectProperty(prop) => {
                             if let Some(name) = get_str_by_property_key(&prop.key)
-                                && !is_special_property(&name)
+                                && (!is_special_property(&name)
+                                    || is_object_selector_key(&name, &prop.value))
                             {
                                 // The upfront authored walk already checks every root key,
                                 // including the literal spreads flattened above.
-                                let mut properties = disassemble_property(&name);
+                                let mut properties = style_key_properties(&name, &prop.value);
                                 while let Some(disassembled) = properties.next() {
                                     let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
@@ -645,15 +647,11 @@ pub(super) fn extract_projected<'a>(
                             ThemeTokenResolution::CssVariable,
                         )
                     }
-                } else if is_responsive_theme_token(&value) {
-                    create_static_styles(
-                        name,
-                        &value,
-                        &[level],
-                        selector,
-                        ThemeTokenResolution::FirstValue,
-                    )
                 } else {
+                    // A responsive array slot keeps one class at its own level, yet a
+                    // `$token` there still reads `var(--token)`: the theme redefines
+                    // the variable per breakpoint and per theme variant, so the slot
+                    // shows the token's value wherever its media query applies.
                     create_static_styles(
                         name,
                         &value,
@@ -1118,7 +1116,7 @@ pub(super) fn extract_projected<'a>(
                         props.push(error);
                         continue;
                     }
-                    let mut properties = disassemble_property(&key_name);
+                    let mut properties = style_key_properties(&key_name, &o.value);
                     while let Some(name) = properties.next() {
                         let name: &str = &name;
                         let mut sibling = (properties.len() != 0)
@@ -1458,6 +1456,65 @@ fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Nested {
         nest_underscore_name(parent, key)
     } else {
         Nested::Under(StyleSelector::nest_selector(parent, &format!("& {key}")))
+    }
+}
+
+/// Keys of style objects that Devup UI and the libraries it reads give an
+/// object value without making them selectors
+const OBJECT_VALUED_KEYS: [&str; 9] = [
+    "as",
+    "css",
+    "params",
+    "props",
+    "selectors",
+    "styleOrder",
+    "styleVars",
+    "typography",
+    "vars",
+];
+
+/// A style object key with an object value that names no style property is a
+/// nested selector, as Emotion and styled-components read `span: {...}` or
+/// `'h1, h2': {...}`; a string value keeps a misspelled property a property
+pub(crate) fn is_object_selector_key(key: &str, value: &Expression<'_>) -> bool {
+    matches!(unwrap_syntax_only(value), Expression::ObjectExpression(_))
+        && !key.starts_with(['_', '@'])
+        && !OBJECT_VALUED_KEYS.contains(&key)
+        && !css::is_style_property(key)
+}
+
+/// What a style object key declares: its properties, or for a nested
+/// selector each selector of its list written relative to the element as the
+/// key of its own rule
+pub(crate) fn style_key_properties(key: &str, value: &Expression<'_>) -> DisassembleProperty {
+    if is_object_selector_key(key, value) {
+        DisassembleProperty::Custom(
+            split_selector_list(key)
+                .into_iter()
+                .map(relative_object_key)
+                .collect::<Vec<_>>()
+                .into_iter(),
+        )
+    } else {
+        disassemble_property(key)
+    }
+}
+
+/// A selector of a style object key as Emotion and styled-components read it,
+/// keeping Devup UI's names: a pseudo-class, pseudo-element or media
+/// shorthand name (`hover`, `before`, `print`) is that selector as in the
+/// `selectors` prop, an attribute applies to the element, and any other
+/// selector without `&` selects descendants (`span`, `h1`, `.child`), while
+/// `_` and `@` keys keep their meaning
+fn relative_object_key(part: &str) -> String {
+    if part.starts_with(['_', '@']) {
+        part.to_string()
+    } else if is_name(part) && is_selector_name(&to_kebab_case(part)) {
+        format!("_{part}")
+    } else if part.starts_with('[') {
+        format!("&{part}")
+    } else {
+        descendants(part)
     }
 }
 

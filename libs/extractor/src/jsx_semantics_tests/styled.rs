@@ -62,7 +62,7 @@ fn the_component_keeps_rendering_its_theme_attrs_and_ref() {
     assert!(
         output
             .code
-            .contains("const Card = __devupForwardRef(({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }, __devupRef) =>"),
+            .contains("const Card = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }, __devupRef) =>"),
         "{}",
         output.code
     );

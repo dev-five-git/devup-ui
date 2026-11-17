@@ -1,4 +1,4 @@
-import { existsSync, writeFile, writeFileSync } from 'node:fs'
+import { existsSync, statSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
@@ -77,6 +77,16 @@ export interface CoordinatorOptions {
    * open. Defaults to 60000. Exposed for tests; the plugin omits it.
    */
   maxWaitMs?: number
+  /**
+   * Development only: the files the registered theme was read from, and how
+   * to register it again. Before each `/css` and `/extract` the coordinator
+   * re-registers the theme once one of those files changed, since Next does
+   * not reload next.config for devup.json. `reload` returns the new file list.
+   */
+  theme?: {
+    files: string[]
+    reload: () => string[]
+  }
 }
 
 export interface PrewarmedOutput {
@@ -133,6 +143,8 @@ export function takeExtractOutput(
 // for the same file are collapsed into 1 effective write.
 const writeChain = new Map<string, Promise<void>>()
 const latestContent = new Map<string, string>()
+/** The content of the write running for each path */
+const writingContent = new Map<string, string>()
 
 function safeWrite(path: string, content: string): Promise<void> {
   // Always record the most recent content for this path so a queued write
@@ -155,9 +167,12 @@ function safeWrite(path: string, content: string): Promise<void> {
           return
         }
         latestContent.delete(path)
-        writeFile(path, final, 'utf-8', (err) =>
-          err ? reject(err) : resolve(),
-        )
+        writingContent.set(path, final)
+        writeFile(path, final, 'utf-8', (err) => {
+          writingContent.delete(path)
+          if (err) reject(err)
+          else resolve()
+        })
       }),
   )
 
@@ -165,10 +180,20 @@ function safeWrite(path: string, content: string): Promise<void> {
   return next
 }
 
-// Best-effort drain of every pending write. Used on coordinator close so the
-// build process does not exit with stale files mid-flight.
+/** Wait for every pending serialized write to settle. */
 function flushPendingWrites(): Promise<void> {
   return Promise.allSettled([...writeChain.values()]).then(() => undefined)
+}
+
+/**
+ * Write the newest content of every path whose write is queued or still
+ * running, synchronously: `close` runs from `process.on('exit')`, where
+ * nothing asynchronous completes. Outside of `exit` the queued writes still
+ * run afterwards and write the same newest content again.
+ */
+function writePendingSync(): void {
+  for (const [path, content] of new Map([...writingContent, ...latestContent]))
+    writeFileSync(path, content, 'utf-8')
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -178,6 +203,35 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
     req.on('error', reject)
   })
+}
+
+interface ThemeWatch {
+  files: string[]
+  stamp: string
+  reload: () => string[]
+}
+
+/** What changes when a theme input is edited, added or deleted. */
+function themeStamp(files: string[]): string {
+  return files
+    .map((file) => {
+      try {
+        const stats = statSync(file)
+        return `${stats.mtimeMs}:${stats.size}`
+      } catch {
+        return 'missing'
+      }
+    })
+    .join('|')
+}
+
+/** Register the app's theme again when one of its input files has changed. */
+function refreshTheme(state: CoordinatorState): void {
+  const { themeWatch } = state
+  if (!themeWatch || themeStamp(themeWatch.files) === themeWatch.stamp) return
+  // A throwing reload keeps the old stamp, so the next request retries.
+  const files = themeWatch.reload()
+  state.themeWatch = { ...themeWatch, files, stamp: themeStamp(files) }
 }
 
 // Extraction tracking for waitForIdle.
@@ -231,6 +285,8 @@ interface CoordinatorState {
   // POSIX). When populated, base-css completion is deterministic; empty falls
   // back to the idle heuristic. See CoordinatorOptions.expectedBaseFiles.
   expectedBaseFiles: Set<string>
+  // The files the app's theme was read from, under `next dev`
+  themeWatch: ThemeWatch | undefined
 }
 
 function createState(options: CoordinatorOptions): CoordinatorState {
@@ -248,6 +304,10 @@ function createState(options: CoordinatorOptions): CoordinatorState {
     bucketToMembers: buildBucketToMembers(options.canonicalMap),
     canonicalMap: options.canonicalMap,
     expectedBaseFiles: new Set(options.expectedBaseFiles),
+    themeWatch: options.theme && {
+      ...options.theme,
+      stamp: themeStamp(options.theme.files),
+    },
   }
 }
 
@@ -516,6 +576,14 @@ export function startCoordinator(options: CoordinatorOptions): {
       const shouldWait = url.searchParams.get('waitForIdle') === 'true'
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
 
+      try {
+        refreshTheme(state)
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end(error instanceof Error ? error.message : String(error))
+        return
+      }
+
       if (shouldWait) {
         if (fileNum != null && fileNumToBucket.has(fileNum)) {
           // Deterministic: block until every member of this collapsed bucket
@@ -562,6 +630,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
+        refreshTheme(state)
         const repeated = extractedSources.has(filename)
         extractedSources.set(filename, resourcePath)
 
@@ -790,11 +859,6 @@ export function startCoordinator(options: CoordinatorOptions): {
   let closed = false
   return {
     close: () => {
-      // Fire-and-forget drain of any in-flight serialized writes so the
-      // last-written CSS reflects the final sheet state, even though
-      // `close` itself returns synchronously (it is invoked from
-      // `process.on('exit', ...)` where awaiting is not possible).
-      void flushPendingWrites()
       coordinatorServer.close()
       if (closed) return
       closed = true
@@ -802,6 +866,9 @@ export function startCoordinator(options: CoordinatorOptions): {
         app.server = null
         removeOwnPortFile(coordinatorPortFile)
       }
+      // The last CSS and state on disk must hold the final sheet, though
+      // `close` cannot await the writes still pending
+      writePendingSync()
       releaseApp(app)
     },
   }
@@ -819,4 +886,5 @@ export const resetCoordinator = () => {
   apps.clear()
   writeChain.clear()
   latestContent.clear()
+  writingContent.clear()
 }

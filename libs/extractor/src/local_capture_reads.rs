@@ -66,6 +66,7 @@ fn generated_reserved(name: &str) -> bool {
             | "__devupValue"
             | "__devupMixin"
             | "__devupForwardRef"
+            | "__devupStyled"
             | "__devupRefProps"
             | "__devupRef"
             | "__devupDom"
