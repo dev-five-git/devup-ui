@@ -1,7 +1,7 @@
 use super::style_inputs::StyleInputs;
 use crate::{
     ExtractStyleProp,
-    composition::shorthands::LaterDeclarations,
+    composition::shorthands::{LaterRuns, Part, in_source_order},
     css_utils::{css_to_style, css_to_style_literal, descendants, theme_var_reference},
     extract_style::{
         extract_dynamic_style::ExtractDynamicStyle,
@@ -87,56 +87,85 @@ fn literal_truthiness(expression: &Expression<'_>) -> Option<bool> {
 /// Merge the object literals spread into `object` in place, a later property
 /// replacing an earlier one of the same key as in the object JavaScript builds
 pub(crate) fn flatten_spreads<'a>(ast_builder: &AstBuilder<'a>, object: &mut ObjectExpression<'a>) {
+    flatten_spreads_in_runs(ast_builder, object);
+}
+
+/// [`flatten_spreads`], returning for each property left the run it was
+/// written in: the properties between two spreads share a run, and those an
+/// object spread gives keep runs of their own, as the spread was a boundary
+fn flatten_spreads_in_runs<'a>(
+    ast_builder: &AstBuilder<'a>,
+    object: &mut ObjectExpression<'a>,
+) -> Vec<usize> {
+    let mut runs = vec![0; object.properties.len()];
     if !object.properties.iter().any(|property| {
         matches!(property, ObjectPropertyKind::SpreadProperty(spread)
             if matches!(unwrap_syntax_only(&spread.argument), Expression::ObjectExpression(_)))
     }) {
-        return;
+        return runs;
     }
+    runs.clear();
     let properties = std::mem::replace(
         &mut object.properties,
         oxc_allocator::Vec::new_in(ast_builder),
     );
+    let mut run = 0;
     for property in properties {
         match property {
             ObjectPropertyKind::SpreadProperty(mut spread) => {
                 if let Expression::ObjectExpression(inner) =
                     unwrap_syntax_only_mut(&mut spread.argument)
                 {
-                    flatten_spreads(ast_builder, inner);
+                    let inner_runs = flatten_spreads_in_runs(ast_builder, inner);
                     let spread_properties = std::mem::replace(
                         &mut inner.properties,
                         oxc_allocator::Vec::new_in(ast_builder),
                     );
-                    for property in spread_properties {
-                        push_replacing(&mut object.properties, property);
+                    let first = run + 1;
+                    run = first + inner_runs.last().copied().unwrap_or_default();
+                    for (property, inner_run) in spread_properties.into_iter().zip(inner_runs) {
+                        push_replacing(
+                            &mut object.properties,
+                            &mut runs,
+                            property,
+                            first + inner_run,
+                        );
                     }
                 } else {
                     object
                         .properties
                         .push(ObjectPropertyKind::SpreadProperty(spread));
+                    runs.push(run);
                 }
+                run += 1;
             }
             property @ ObjectPropertyKind::ObjectProperty(_) => {
-                push_replacing(&mut object.properties, property);
+                push_replacing(&mut object.properties, &mut runs, property, run);
             }
         }
     }
+    runs
 }
 
 fn push_replacing<'a>(
     properties: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    runs: &mut Vec<usize>,
     property: ObjectPropertyKind<'a>,
+    run: usize,
 ) {
     if let ObjectPropertyKind::ObjectProperty(added) = &property
         && let Some(key) = get_str_by_property_key(&added.key)
-    {
-        properties.retain(|existing| {
-            !matches!(existing, ObjectPropertyKind::ObjectProperty(existing)
+        && let Some(index) = properties.iter().position(|existing| {
+            matches!(existing, ObjectPropertyKind::ObjectProperty(existing)
                 if get_str_by_property_key(&existing.key).as_deref() == Some(key.as_ref()))
-        });
+        })
+    {
+        // An object literal holds each key once, so one earlier property at most
+        properties.remove(index);
+        runs.remove(index);
     }
     properties.push(property);
+    runs.push(run);
 }
 
 pub(crate) fn unreadable_key<'a>(key: &PropertyKey<'_>, prop: bool) -> ExtractStyleProp<'a> {
@@ -326,11 +355,11 @@ pub(super) fn extract_projected<'a>(
         let mut props = None;
         return match expression {
             Expression::ObjectExpression(obj) => {
-                flatten_spreads(ast_builder, obj);
+                let runs = flatten_spreads_in_runs(ast_builder, obj);
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
-                // Read from the last declaration, so the ones read so far are
-                // the later ones
-                let mut later = LaterDeclarations::default();
+                // Read from the last property, so the ones read so far are the
+                // later ones; only a spread orders them
+                let mut later = LaterRuns::default();
                 let mut tag = None;
                 projection.root();
                 for idx in (0..obj.properties.len()).rev() {
@@ -381,7 +410,10 @@ pub(super) fn extract_projected<'a>(
                                             LiteralHandling::ExpandResponsiveThemeToken,
                                             prepare,
                                         );
-                                        props_styles.extend(later.before(styles));
+                                        props_styles.extend(later.member(
+                                            (inputs.argument_of(prop.span), runs[idx]),
+                                            styles,
+                                        ));
                                         tag = _tag.or(tag);
                                     }
                                 }
@@ -401,7 +433,7 @@ pub(super) fn extract_projected<'a>(
                                 LiteralHandling::ExpandResponsiveThemeToken,
                                 prepare,
                             );
-                            props_styles.extend(later.before(styles));
+                            props_styles.extend(later.spread(styles));
                             tag = _tag.or(tag);
                             false
                         }
@@ -1068,9 +1100,9 @@ pub(super) fn extract_projected<'a>(
                 }
             }
             Expression::ObjectExpression(obj) => {
-                flatten_spreads(ast_builder, obj);
-                // Each declaration's styles, in source order
-                let mut props: Vec<Vec<ExtractStyleProp<'a>>> = vec![];
+                let runs = flatten_spreads_in_runs(ast_builder, obj);
+                // Each property's or spread's styles, in source order
+                let mut props: Vec<Part<'a>> = vec![];
                 let selector = match super::selector_params::resolve(inputs, obj, selector) {
                     Ok(selector) => selector,
                     Err(error) => {
@@ -1081,11 +1113,11 @@ pub(super) fn extract_projected<'a>(
                     }
                 };
 
-                for p in &mut obj.properties {
+                for (p, &run) in obj.properties.iter_mut().zip(&runs) {
                     let o = match p {
                         ObjectPropertyKind::ObjectProperty(o) => o,
                         ObjectPropertyKind::SpreadProperty(spread) => {
-                            props.push(
+                            props.push(Part::Spread(
                                 projection
                                     .extract(
                                         inputs,
@@ -1096,7 +1128,7 @@ pub(super) fn extract_projected<'a>(
                                         prepare,
                                     )
                                     .styles,
-                            );
+                            ));
                             continue;
                         }
                     };
@@ -1107,7 +1139,10 @@ pub(super) fn extract_projected<'a>(
                     else {
                         let error = unreadable_key(&o.key, false);
                         projection.record(ast_builder, &error);
-                        props.push(vec![error]);
+                        props.push(Part::Property(
+                            (inputs.argument_of(o.span), run),
+                            vec![error],
+                        ));
                         continue;
                     };
                     if key_name == "params" {
@@ -1118,7 +1153,10 @@ pub(super) fn extract_projected<'a>(
                         o.key.span().start,
                     ) {
                         projection.record(ast_builder, &error);
-                        props.push(vec![error]);
+                        props.push(Part::Property(
+                            (inputs.argument_of(o.span), run),
+                            vec![error],
+                        ));
                         continue;
                     }
                     let mut properties = style_key_properties(&key_name, &o.value);
@@ -1126,7 +1164,8 @@ pub(super) fn extract_projected<'a>(
                         let name: &str = &name;
                         let mut sibling = (properties.len() != 0)
                             .then(|| o.value.clone_in_with_semantic_ids(ast_builder.allocator()));
-                        props.push(
+                        props.push(Part::Property(
+                            (inputs.argument_of(o.span), run),
                             projection
                                 .extract(
                                     inputs,
@@ -1137,11 +1176,11 @@ pub(super) fn extract_projected<'a>(
                                     prepare,
                                 )
                                 .styles,
-                        );
+                        ));
                     }
                 }
                 ExtractResult {
-                    styles: crate::composition::shorthands::in_source_order(props),
+                    styles: in_source_order(props),
                     ..ExtractResult::default()
                 }
             }
