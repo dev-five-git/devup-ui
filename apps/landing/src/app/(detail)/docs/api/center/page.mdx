@@ -13,6 +13,8 @@ It has a `display: flex` style with `justify-content: center` and `align-items: 
 
 ## How to use
 
+{/* conformance */}
+
 ```tsx
 import { Box, Center } from '@devup-ui/react'
 
@@ -34,7 +36,7 @@ function App() {
   return (
     <div className="e f g">
       <div className="a b c"></div>
-      <div className="a b c d"></div>
+      <div className="a d b c"></div>
       <div className="a b c"></div>
     </div>
   )
@@ -54,14 +56,17 @@ function App() {
 .d {
   display: flex;
 }
-.e {
-  display: flex;
-}
-.f {
-  justify-content: center;
-}
-.g {
-  align-items: center;
+/* The component's own defaults sit in a lower cascade layer, so props override them */
+@layer b {
+  .e {
+    display: flex;
+  }
+  .f {
+    justify-content: center;
+  }
+  .g {
+    align-items: center;
+  }
 }
 ```
 

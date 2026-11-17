@@ -864,6 +864,12 @@ jobs:
           RUSTUP_TOOLCHAIN: 1.99.1
       - name: Regression test (bun-plugin preload race)
         run: bun run --filter @devup-ui/bun-plugin test:regression
+      # Rust coverage excludes every wasm-bindgen wrapper, so the WASM ABI is
+      # checked here instead: the public corpus must match the native addon
+      # byte for byte, every invalid argument shape must be rejected, and the
+      # step summary reports which exports and positions were reached.
+      - name: WASM ABI coverage
+        run: bun run test:wasm-abi
       - name: Format Rollback
         run: |
           rm -rf .rustfmt.toml

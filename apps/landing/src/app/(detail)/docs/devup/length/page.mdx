@@ -44,6 +44,25 @@ Use length tokens with the `$` prefix on any length-accepting prop:
 
 Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes.
 
+{/* conformance: theme */}
+
+```tsx
+<Box gap="$gutter" />
+```
+
+`gutter` is defined at indexes 0 and 2, so the prop gets a class for each, both reading the token's CSS variable (the theme defines `--gutter` per breakpoint):
+
+```css
+.a {
+  gap: var(--gutter);
+}
+@media (min-width: 768px) {
+  .b {
+    gap: var(--gutter);
+  }
+}
+```
+
 ## Responsive Array Behavior
 
 When a `$token` appears inside a responsive array, it does **not** expand — the array itself defines the breakpoints:
