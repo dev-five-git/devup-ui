@@ -1735,6 +1735,119 @@ describe('coordinator per-bucket completion', () => {
   })
 })
 
+describe('coordinator transform cache', () => {
+  function extractResult(code: string, dependencies: string[] = []) {
+    return {
+      code,
+      map: undefined,
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: false,
+      dependencies,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }
+  }
+
+  async function start() {
+    const coordinator = startCoordinator(makeOptions())
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    return { coordinator, port }
+  }
+
+  async function extract(
+    port: number,
+    code: string,
+    resourcePath = join(process.cwd(), 'src', 'A.tsx'),
+  ) {
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({ filename: 'src/A.tsx', code, resourcePath }),
+    )
+    return { status: res.status, ...JSON.parse(res.body) }
+  }
+
+  it('answers the second compile of an unchanged module without WASM', async () => {
+    getCssSpy.mockReturnValue('css')
+    exportSheetSpy.mockReturnValue('{}')
+    exportClassMapSpy.mockReturnValue('{}')
+    exportFileMapSpy.mockReturnValue('{}')
+    codeExtractSpy.mockImplementation((_filename: string, code: string) =>
+      extractResult(`out:${code}`),
+    )
+    const { coordinator, port } = await start()
+
+    // Server and client graphs compile the same source.
+    expect((await extract(port, 'v1')).code).toBe('out:v1')
+    const writes = writeFileSpy.mock.calls.length
+    expect(await extract(port, 'v1')).toMatchObject({
+      status: 200,
+      code: 'out:v1',
+      cssFile: 'devup-ui-1.css',
+    })
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+    // Nothing changed, so nothing is written again.
+    expect(writeFileSpy.mock.calls.length).toBe(writes)
+
+    // An edit extracts again, and so does going back: the sheet then holds
+    // the edit's styles, not the first source's.
+    await extract(port, 'v2')
+    await extract(port, 'v1')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
+
+    // The CSS directory is part of the output.
+    await extract(port, 'v1', join(process.cwd(), 'src', 'nested', 'A.tsx'))
+    expect(codeExtractSpy).toHaveBeenCalledTimes(4)
+
+    coordinator.close()
+  })
+
+  it('extracts again once a file the extraction read changes', async () => {
+    const tokens = join(tmpDir, 'cache-tokens.ts')
+    const later = join(tmpDir, 'cache-later.ts')
+    await Bun.write(tokens, 'export const a = 1')
+    codeExtractSpy.mockImplementation(() =>
+      extractResult('out', [tokens, later]),
+    )
+    const { coordinator, port } = await start()
+
+    await extract(port, 'src')
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+
+    await Bun.write(tokens, 'export const a = 22')
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    // A dependency that did not exist and now does counts as a change too.
+    await Bun.write(later, 'export const b = 1')
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
+
+    coordinator.close()
+  })
+
+  it('never answers from a cache entry an extraction error replaced', async () => {
+    codeExtractSpy.mockImplementation(() => extractResult('out'))
+    const { coordinator, port } = await start()
+
+    await extract(port, 'src')
+    codeExtractSpy.mockImplementationOnce(() => {
+      throw new Error('parse error')
+    })
+    // Same filename, new source that fails.
+    expect((await extract(port, 'broken')).status).toBe(500)
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
+
+    coordinator.close()
+  })
+})
+
 describe('coordinator theme reload', () => {
   async function start(theme: CoordinatorOptions['theme']) {
     const coordinator = startCoordinator(makeOptions({ theme }))
@@ -1791,6 +1904,50 @@ describe('coordinator theme reload', () => {
     await Bun.write(extended, '{}')
     expect((await extract(port)).status).toBe(200)
     expect(reload).toHaveBeenCalledTimes(2)
+
+    coordinator.close()
+  })
+
+  it('extracts an unchanged module again once the theme reloads', async () => {
+    codeExtractSpy.mockImplementation(() => ({
+      code: 'code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      dependencies: [],
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }))
+    getCssSpy.mockReturnValue('css')
+    const devupFile = join(tmpDir, 'theme-cached.json')
+    await Bun.write(devupFile, '{}')
+    // A source that exists, so a repeated extraction keeps its cache entry
+    const resourcePath = join(tmpDir, 'theme-cached.tsx')
+    await Bun.write(resourcePath, 'c')
+    const reload = mock(() => [devupFile])
+    const { coordinator, port } = await start({ files: [devupFile], reload })
+    const extractSource = () =>
+      httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({ filename: 'src/A.tsx', code: 'c', resourcePath }),
+      )
+
+    await extractSource()
+    await extractSource()
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+
+    // The cached output was made under the old theme, so it goes
+    await Bun.write(devupFile, '{"theme":{"colors":{"primary":"red"}}}')
+    expect((await httpRequest(port, 'GET', '/css')).status).toBe(200)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect((await extractSource()).status).toBe(200)
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    // and the new theme's output is cached again
+    await extractSource()
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
 
     coordinator.close()
   })
@@ -1894,6 +2051,57 @@ describe('coordinator deleted sources', () => {
     await flushCoordinatorWrites()
     expect(removeFile.mock.calls.length).toBe(3)
     expect(writeFileSpy).not.toHaveBeenCalled()
+    coordinator.close()
+  })
+
+  it('extracts a deleted file again when it comes back unchanged', async () => {
+    // Given: two cached extractions, one of whose files is then deleted
+    using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+    const deleted = new Set<string>()
+    using _existsSync = spyOn(fs, 'existsSync').mockImplementation(
+      (path) => !deleted.has(String(path)),
+    )
+    codeExtractSpy.mockImplementation(() => ({
+      code: 'code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }))
+    getCssSpy.mockReturnValue('base')
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classes')
+    exportFileMapSpy.mockReturnValue('files')
+    const coordinator = startCoordinator(makeOptions())
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    const extract = (filename: string) =>
+      httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({
+          filename,
+          code: 'c',
+          resourcePath: join(tmpDir, filename),
+        }),
+      )
+    await extract('src/Gone.tsx')
+    await extract('src/App.tsx')
+    deleted.add(join(tmpDir, 'src/Gone.tsx'))
+    await extract('src/App.tsx')
+    expect(removeFile.mock.calls).toEqual([['src/Gone.tsx']])
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    // When: the file is restored with the same source
+    deleted.clear()
+    await extract('src/Gone.tsx')
+
+    // Then: its styles left the sheet, so it is extracted again
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
     coordinator.close()
   })
 })

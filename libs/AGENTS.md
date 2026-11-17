@@ -6,14 +6,14 @@ CSS extraction engine. Parses JS/TS with Oxc, extracts styles, generates optimiz
 
 ```
 libs/
-├── extractor/          # Main extraction (9k lines)
+├── extractor/          # Main extraction (~165k lines incl. tests)
 │   ├── src/lib.rs      # Entry + comprehensive tests
 │   ├── src/visit.rs    # AST visitor (DevupVisitor)
 │   └── src/extract_style/  # Style value extraction
-├── sheet/              # CSS output (3.3k lines)
+├── sheet/              # CSS output (~8.5k lines)
 │   ├── src/lib.rs      # StyleSheet struct
 │   └── src/theme.rs    # Theme system
-└── css/                # Utilities (3k lines)
+└── css/                # Utilities (~9.3k lines)
     ├── src/lib.rs      # Class naming, optimization
     └── src/constant.rs # Property mappings
 ```
@@ -44,7 +44,7 @@ devup-ui-wasm (WASM exports)
 
 ## CONVENTIONS
 
-- **Oxc** for parsing (NOT swc) - version `0.106.0`
+- **Oxc** for parsing (NOT swc) - version `0.158.0` (see `extractor/Cargo.toml`)
 - **insta** for snapshot tests - `assert_debug_snapshot!`
 - **rstest** for parameterized tests - `#[rstest]` `#[case]`
 - **serial_test** when touching globals - `#[serial]`
