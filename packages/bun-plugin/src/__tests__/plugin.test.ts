@@ -751,8 +751,17 @@ describe('CommonJS under the runtime', () => {
     expect(css.join('')).toMatch(/color:\s*olive/)
     const output = result.outputs.find(({ path }) => path.endsWith('.js'))
     if (!output) throw new Error('Expected a bundle')
-    const bundle: Record<string, unknown> = await import(output.path)
-    expect(bundle).toEqual({
+    // Run the bundle in its own process, so its code stays out of coverage
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        '-e',
+        `console.log(JSON.stringify(await import(${JSON.stringify(output.path)})))`,
+      ],
+      { cwd: root, stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(child.stderr.toString()).toBe('')
+    expect(JSON.parse(child.stdout.toString())).toEqual({
       cjs: { cls: expect.any(String) },
       cts: { cls: expect.any(String) },
     })
