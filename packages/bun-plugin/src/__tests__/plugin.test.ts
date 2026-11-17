@@ -439,6 +439,78 @@ describe('registered Bun hooks', () => {
     })
   }
 
+  describe('included packages', () => {
+    function sourceFilter() {
+      const hook = loads.find(({ options }) => options.namespace === undefined)
+      if (!hook) throw new Error('No source load hook registered')
+      return hook.options.filter
+    }
+
+    it('compiles the published .js of an included package', async () => {
+      const path = join(root, 'node_modules', 'my-lib', 'dist', 'index.js')
+      await Bun.write(
+        path,
+        "import { css } from '@devup-ui/react'; export const className = css({ color: 'navy' })",
+      )
+      await register({ engine: 'wasm', include: ['my-lib'] })
+      const result = await load(path)
+      if (!result || !('contents' in result))
+        throw new Error('Expected transformed source contents')
+      expect(result.loader).toBe('js')
+      expect(result.contents).not.toContain('css(')
+      expect(writeSync).toHaveBeenCalledWith(
+        expect.stringContaining('devup-ui.css'),
+        expect.stringContaining('navy'),
+        'utf-8',
+      )
+    })
+
+    it.each([
+      ['my-lib', '/app/node_modules/my-lib/index.js'],
+      ['my-lib', 'C:\\app\\node_modules\\my-lib\\dist\\index.js'],
+      [
+        'my-lib',
+        '/app/node_modules/.bun/my-lib@1.0.0/node_modules/my-lib/index.js',
+      ],
+      [
+        'my-lib',
+        '/app/node_modules/.pnpm/my-lib@1.0.0/node_modules/my-lib/index.js',
+      ],
+      ['@scope/ui', '/app/node_modules/@scope/ui/dist/index.js'],
+      ['@scope/ui', 'C:\\app\\node_modules\\@scope\\ui\\index.js'],
+      ['foo.bar', '/app/node_modules/foo.bar/index.js'],
+      ['foo+bar', '/app/node_modules/foo+bar/index.js'],
+    ])('loads .js of include %s at %s', async (name, path) => {
+      await register({ engine: 'wasm', include: [name] })
+      expect(sourceFilter().test(path)).toBe(true)
+    })
+
+    it.each([
+      ['my-lib', '/app/node_modules/my-lib-extra/index.js'],
+      ['my-lib', '/app/node_modules/@scope/my-lib/index.js'],
+      ['my-lib', '/app/node_modules/my-lib/node_modules/dep/index.js'],
+      ['my-lib', '/app/node_modules/other/my-lib/index.js'],
+      ['my-lib', '/app/my-lib/index.js'],
+      ['my-lib', '/app/node_modules/my-lib/index.json'],
+      ['foo.bar', '/app/node_modules/fooXbar/index.js'],
+      ['@scope/ui', '/app/node_modules/@scope/ui-kit/index.js'],
+    ])('leaves .js outside include %s at %s to Bun', async (name, path) => {
+      await register({ engine: 'wasm', include: [name] })
+      expect(sourceFilter().test(path)).toBe(false)
+    })
+
+    it('loads no package .js but Devup UI without include', async () => {
+      await register({ engine: 'wasm' })
+      expect(sourceFilter().test('/app/node_modules/my-lib/index.js')).toBe(
+        false,
+      )
+      expect(
+        sourceFilter().test('/app/node_modules/@devup-ui/react/dist/index.js'),
+      ).toBe(true)
+      expect(sourceFilter().test('/app/src/App.tsx')).toBe(true)
+    })
+  })
+
   it('returns source without style imports unchanged', async () => {
     const path = join(root, 'plain.ts')
     await Bun.write(path, 'export const value = 42')
