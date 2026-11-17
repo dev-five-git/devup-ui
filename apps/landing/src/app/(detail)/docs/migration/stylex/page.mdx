@@ -128,7 +128,9 @@ As StyleX requires, variables usually live in a `.stylex.ts` file and are import
 // tokens.stylex.ts
 export const colors = stylex.defineVars({ primary: 'blue' })
 export const spacing = stylex.defineConsts({ gap: '8px' })
+```
 
+```tsx
 // Button.tsx
 import { colors, spacing } from './tokens.stylex'
 
@@ -173,7 +175,7 @@ The bindings read as their names in `create()`, and a dashed ident on a property
 
 ## Value helpers
 
-`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value in `create()` (and registers `@property` in `defineVars()`), and `include()` merges another namespace's classes. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
+`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value in `create()` (and registers `@property` in `defineVars()`), and `include()` merges another namespace's keys where the spread is written. A key written after the `include()` overrides the included one: `{ ...stylex.include(base.root), color: 'blue' }` keeps only the blue class for `color`, and a later `include()` likewise overrides the keys before it. This is resolved at build time, including when the namespace is passed to `props()`. A dynamic (arrow function) namespace has no keys to merge, so its classes are only added before the namespace's own. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
 
 ## Unsupported APIs
 

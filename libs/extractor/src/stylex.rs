@@ -320,6 +320,42 @@ pub struct StylexIncludeRef {
     pub var_name: String,
     pub member_name: String,
     pub offset: u32,
+    /// How many keys of the namespace are written before the `include()`
+    pub position: usize,
+}
+
+/// The keys of a namespace with its `include()`s merged in where they are
+/// written: a key written later replaces the same key from before, as `StyleX`
+/// merges them.
+pub fn merge_included_keys(
+    own: Vec<(String, String)>,
+    included: Vec<(usize, Vec<(String, String)>)>,
+) -> Vec<(String, String)> {
+    let mut merged: Vec<(String, String)> = Vec::new();
+    let mut included = included.into_iter().peekable();
+    for (index, own) in own.into_iter().map(Some).chain([None]).enumerate() {
+        while let Some((_, keys)) = included.next_if(|(position, _)| *position <= index) {
+            keys.into_iter().for_each(|key| put_key(&mut merged, key));
+        }
+        if let Some(own) = own {
+            put_key(&mut merged, own);
+        }
+    }
+    merged
+}
+
+fn put_key(merged: &mut Vec<(String, String)>, key: (String, String)) {
+    merged.retain(|(existing, _)| *existing != key.0);
+    merged.push(key);
+}
+
+/// The class names `keys` give, in order
+pub fn joined_key_classes(keys: &[(String, String)]) -> String {
+    keys.iter()
+        .map(|(_, class)| class.as_str())
+        .filter(|class| !class.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Whether `callee` is a member of the `types` the package gives, as
