@@ -56,7 +56,7 @@ pub struct Output {
     map: Option<String>,
     css_file: Option<String>,
     updated_base_style: bool,
-    css: Option<String>,
+    css: Option<binding_core::LazyCss>,
     dependencies: Vec<String>,
 }
 
@@ -134,7 +134,7 @@ impl Output {
     #[wasm_bindgen(getter, js_name = "css")]
     #[must_use]
     pub fn css(&self) -> Option<String> {
-        self.css.clone()
+        self.css.as_ref().map(binding_core::LazyCss::get)
     }
 
     /// Files read through the module resolver, for the bundler to watch

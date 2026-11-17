@@ -204,6 +204,20 @@ The selected compiler serves configuration, reservation, transforms and delayed
 watch/build callbacks together. Neither engine supports concurrent independent
 builds in the same process.
 
+## Project root
+
+Relative `devupFile`, `distDir` and `cssDir` paths, and the `tsconfig.json` the
+plugin reads, resolve against Rsbuild's root (`api.context.rootPath`), not
+against the directory the build is started from. A build that a monorepo tool
+(turbo, nx, ...) runs from a parent directory reads `<root>/devup.json` and
+writes `<root>/df`, as a build run from the project itself does. Builds run from
+the project root are unchanged.
+
+When `devupFile` is not set and the project root has no `devup.json` but the
+working directory does, that file is still read and a one-time warning is
+printed. Move `devup.json` into the project root, or set `devupFile` to the file
+you want, to resolve it.
+
 ## Custom Shorthands
 
 ```ts
