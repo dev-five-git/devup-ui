@@ -5,8 +5,11 @@ mod retained;
 #[path = "styled_retarget.rs"]
 mod retarget;
 pub use retarget::with_component;
+#[path = "styled_identity.rs"]
+mod identity;
 #[path = "styled_residual.rs"]
 mod residual;
+pub use identity::{read_identity, with_component_id};
 #[path = "styled_stages.rs"]
 mod stages;
 use super::style_order_projection::{AuthoredStyles, extract_with_order};
@@ -29,9 +32,8 @@ use crate::{
     styled_reads::{Forward, Reads, withheld as props_withheld},
     utils::{
         STYLE_OBJECT, build_time_error, call_with_values, expression_to_code,
-        get_string_by_literal_expression, merge_object_expressions, readable_code,
-        unreadable_styles, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
-        wrap_direct_call,
+        merge_object_expressions, readable_code, unreadable_styles, unwrap_syntax_only,
+        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -1381,30 +1383,6 @@ fn option_properties<'b, 'a>(
             }
             _ => None,
         })
-}
-
-/// The stable classes Emotion's `target` and styled-components' `componentId`
-/// options give a component, which other CSS selects it by, with the errors
-/// of those the build cannot read
-pub fn read_identity(options: &[&Expression<'_>]) -> (Vec<String>, Vec<(u32, String)>) {
-    let mut classes = Vec::new();
-    let mut errors = Vec::new();
-    for property in option_properties(options, &["target", "componentId"]) {
-        match get_string_by_literal_expression(&property.value)
-            .filter(|class| !class.is_empty() && !class.contains(char::is_whitespace))
-        {
-            Some(class) => classes.push(class.into_owned()),
-            None => errors.push((
-                property.value.span().start,
-                build_time_error(
-                    "styled",
-                    &readable_code(&property.value),
-                    "`target` and `componentId` name the stable class the component gives; write one class name as a string",
-                ),
-            )),
-        }
-    }
-    (classes, errors)
 }
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";

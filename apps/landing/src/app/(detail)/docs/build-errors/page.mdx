@@ -483,6 +483,36 @@ export const Card = styled.div.withConfig({
 })({ color: 'red' })
 ```
 
+### Unreadable styled identity option
+
+**API:** styled. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+`styled()` cannot use `<code>` at build time: styled-components throws on a `componentId` that is not a string; write it as a string
+`styled()` cannot use `<code>` at build time: styled-components throws on a truthy `displayName` that is not a string beside a `componentId`; write it as a string
+```
+
+**Trigger:**
+
+```tsx-error
+import styled from 'styled-components'
+export const Card = styled.div.withConfig({ componentId: makeId() })`
+  color: red;
+`
+```
+
+**Why:** Emotion's `target` and styled-components' `componentId` (prefixed with `displayName` when both are set) become classes on the element, so the build must know their text. Any literal Emotion accepts compiles, `''` included, which adds no class; styled-components throws on a `componentId` that is not a string, and on a truthy `displayName` that is not one beside it.
+
+**Fix:** Write the option as a literal, a string for `componentId` and `displayName`.
+
+```tsx
+import styled from 'styled-components'
+export const Card = styled.div.withConfig({ componentId: 'card' })`
+  color: red;
+`
+```
+
 ### Invalid selector in styled()
 
 **API:** styled. **Message pattern:**

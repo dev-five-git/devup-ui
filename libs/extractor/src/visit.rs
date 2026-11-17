@@ -40,7 +40,7 @@ use crate::extractor::{
     extract_style_from_styled::{
         FORWARD_REF, Naming, STYLED_MARKING, StyledBindings, StyledDefinition, StyledExtraction,
         extended, extract_style_from_styled, read_forward, read_identity, take_styled_modifiers,
-        with_component,
+        with_component, with_component_id,
     },
     rule_array_evaluation::{self, composes_array_under_condition},
     styled_capability::StyledCapability,
@@ -3714,7 +3714,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(error) = forward_error {
             self.errors.push(error);
         }
-        let (identity, identity_errors) = read_identity(&options);
+        let (identity, identity_errors) = read_identity(&options, &|identifier| {
+            self.bindings.symbol(identifier).is_none()
+        });
         self.errors.extend(identity_errors);
         self.chained_attrs(it);
         let mut refused_array_controllers = Vec::new();
@@ -3812,7 +3814,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .pending_marker
                 .take_if(|(at, _)| *at == start)
                 .map_or_default(|(_, markers)| self.marker_classes(&markers));
-            markers.extend(identity);
+            markers.extend(identity.classes);
             let inherited = extended(it).and_then(|base| {
                 self.definition_of(base)
                     .filter(|definition| definition.extendable())
@@ -3855,7 +3857,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if definition.is_some() {
                 self.forwards_refs = true;
             }
-            *it = expression;
+            *it = match identity.component_id {
+                Some(id) if definition.is_some() => with_component_id(&self.ast, expression, &id),
+                _ => expression,
+            };
             self.pending_styled = definition.map(|mut definition| {
                 definition.takes_styles = takes_styles;
                 (start, definition, takes_styles)

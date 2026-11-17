@@ -54,7 +54,27 @@ fn compile(source: &str) -> String {
 )]
 #[case::identity_errors(
     "identity_errors",
-    "import styled from '@emotion/styled';\nexport const A = styled('div', { target: make() })`color: red;`;\nexport const B = styled('div', { target: 'two words' })`color: red;`;\nexport const C = styled.div.withConfig({ componentId: '' })`color: red;`;"
+    "import styled from '@emotion/styled';\nimport sc from 'styled-components';\nexport const A = styled('div', { target: make() })`color: red;`;\nexport const B = sc.div.withConfig({ componentId: 1 })`color: red;`;\nexport const C = sc.div.withConfig({ componentId: null })`color: red;`;\nexport const D = sc.div.withConfig({ componentId: id })`color: red;`;\nexport const E = sc.div.withConfig({ displayName: name, componentId: 'e' })`color: red;`;\nexport const F = sc.div.withConfig({ displayName: 5, componentId: 'f' })`color: red;`;\nexport const G = styled('div', { target: [...parts] })`color: red;`;\nexport const H = styled('div', { target: { toString: () => 'h' } })`color: red;`;\nexport const I = styled('div', { target: { ...parts } })`color: red;`;"
+)]
+#[case::emotion_target_values(
+    "emotion_target_values",
+    "import styled from '@emotion/styled';\nexport const Empty = styled('div', { target: '' })`color: red;`;\nexport const Blank = styled('div', { target: ' \\t ' })`color: red;`;\nexport const Words = styled('div', { target: ' two  words ' })`color: red;`;\nexport const Wrapped = styled(Base, { target: '' })`color: red;`;\nexport const Num = styled('div', { target: 0 })`color: red;`;\nexport const Null = styled('div', { target: null })`color: red;`;\nexport const Bool = styled('div', { target: false })`color: red;`;\nexport const Missing = styled('div', { target: undefined })`color: red;`;\nexport const Nan = styled('div', { target: NaN })`color: red;`;\nexport const Inf = styled('div', { target: Infinity })`color: red;`;\nexport const List = styled('div', { target: ['a', , null, undefined, 1, ['b', 'c']] })`color: red;`;\nexport const Plain = styled('div', { target: {} })`color: red;`;\nexport const Template = styled('div', { target: `tpl` as const })`color: red;`;"
+)]
+#[case::emotion_target_shadowed(
+    "emotion_target_shadowed",
+    "import styled from '@emotion/styled';\nconst undefined = 'x';\nexport const A = styled('div', { target: undefined })`color: red;`;"
+)]
+#[case::component_id_values(
+    "component_id_values",
+    "import styled from 'styled-components';\nexport const Empty = styled.div.withConfig({ componentId: '' })`color: red;`;\nexport const Other = styled.div.withConfig({ componentId: '' })`color: blue;`;\nexport const Blank = styled.div.withConfig({ componentId: '  ' })`color: red;`;\nexport const Words = styled.div.withConfig({ componentId: 'two words' })`color: red;`;\nexport const Wrapped = styled(Base).withConfig({ componentId: '' })`color: red;`;\nexport const Missing = styled.div.withConfig({ componentId: undefined })`color: red;`;\nexport const Last = styled.div.withConfig({ componentId: 'first' }).withConfig({ componentId: 'last' })`color: red;`;"
+)]
+#[case::component_id_display_name(
+    "component_id_display_name",
+    "import styled from 'styled-components';\nexport const Named = styled.div.withConfig({ displayName: 'My Card!', componentId: 'cid' })`color: red;`;\nexport const EmptyName = styled.div.withConfig({ displayName: '', componentId: 'cid' })`color: red;`;\nexport const FalsyName = styled.div.withConfig({ displayName: 0, componentId: 'cid' })`color: red;`;\nexport const NoName = styled.div.withConfig({ displayName: undefined, componentId: 'cid' })`color: red;`;\nexport const EmptyId = styled.div.withConfig({ displayName: name, componentId: '' })`color: red;`;"
+)]
+#[case::component_id_extension(
+    "component_id_extension",
+    "import styled from 'styled-components';\nexport const A = styled.div.withConfig({ componentId: 'idA' })`color: red;`;\nexport const B = styled(A)`color: blue;`;\nexport const C = styled(A).withConfig({ componentId: '' })`color: blue;`;\nexport const E = styled.div.withConfig({ componentId: '' })`color: red;`;\nexport const D = styled(E).withConfig({ componentId: 'idD' })`color: blue;`;"
 )]
 #[case::template_label(
     "template_label",

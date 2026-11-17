@@ -1,0 +1,25 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import { forwardRef as __devupForwardRef } from "react";
+function __devupOmit0(__devupOmitted) {
+	return Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k[0] !== "$" && k !== "theme"));
+}
+const __devupStyled = (c) => (c.styledComponentId = "devup", c);
+export const Empty = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--c a-a ${className}` : "a--c a-a"} style={style} />));
+export const Blank = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a ${className}` : "a--a a-a"} style={style} />));
+export const Words = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--l two words a-a ${className}` : "a--l two words a-a"} style={style} />));
+export const Wrapped = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = Base, forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== "$"))} ref={__devupRef} as={forwardedAs} className={className ? `a--m a-a ${className}` : "a--m a-a"} style={style} />));
+export const Num = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--i 0 a-a ${className}` : "a--i 0 a-a"} style={style} />));
+export const Null = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--h null a-a ${className}` : "a--h null a-a"} style={style} />));
+export const Bool = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--b false a-a ${className}` : "a--b false a-a"} style={style} />));
+export const Missing = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--f a-a ${className}` : "a--f a-a"} style={style} />));
+export const Nan = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--g NaN a-a ${className}` : "a--g NaN a-a"} style={style} />));
+export const Inf = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--d Infinity a-a ${className}` : "a--d Infinity a-a"} style={style} />));
+export const List = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--e a,,,,1,b,c a-a ${className}` : "a--e a,,,,1,b,c a-a"} style={style} />));
+export const Plain = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--j [object Object] a-a ${className}` : "a--j [object Object] a-a"} style={style} />));
+export const Template = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--k tpl a-a ${className}` : "a--k tpl a-a"} style={style} />));
+
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })

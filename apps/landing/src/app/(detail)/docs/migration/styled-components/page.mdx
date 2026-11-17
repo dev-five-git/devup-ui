@@ -49,7 +49,7 @@ A styled callback cannot return a class name known only at runtime (`styled.div(
 
 Inside a template, an interpolation standing where a declaration would is a mixin: `${mixin}` and `${(p) => p.active && mixin}` compose their class with the component's. A literal or constant is written into the CSS wherever it stands — a value, a CSS snippet, a selector. Any other interpolation in a selector or a property name is a build error, as are runtime values in `css`, `keyframes` and global styles, which have no element to set a CSS variable on.
 
-`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props. In `.withConfig()`, `shouldForwardProp` is evaluated at build time, and `componentId` — like Emotion's `target` option — becomes a stable class on the element, which a component extending it renders too, so CSS written elsewhere can select it. It must be one class name written as a string; anything else is a build error. `displayName` and Emotion's `label` only name the component for debugging and are ignored, as is a `label:` declaration in CSS text:
+`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props. In `.withConfig()`, `shouldForwardProp` is evaluated at build time, and `componentId` gives the element the classes styled-components gives it, so CSS written elsewhere can select it: the id, or `displayName-componentId` when both are set (with `displayName` escaped as styled-components escapes it), split at whitespace. An empty or blank id adds no class. A component extending it renders those classes too, and the component's `styledComponentId` is that id. Emotion's `target` option likewise adds `String(target)` to the classes, split the same way, so `''` adds none and `undefined` leaves the option unset. When several `.withConfig()` calls set an option, the last one wins. A value only the runtime knows is a build error, as is a `componentId` that is not a string, which styled-components throws on. Apart from that id, `displayName` and Emotion's `label` only name the component for debugging and are ignored, as is a `label:` declaration in CSS text:
 
 ```tsx
 const Button = styled.button
@@ -154,7 +154,7 @@ A styled component compiles to a function component, whose `defaultProps` React 
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
 | Component selectors (`${Child}`)         | a marker class on the selected component                                         |
-| `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`; `componentId` a class   |
+| `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`; `componentId` classes   |
 
 ## Limitations
 
