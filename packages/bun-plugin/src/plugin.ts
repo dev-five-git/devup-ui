@@ -52,9 +52,38 @@ export interface DevupUIBunPluginOptions {
    * `false` in `Bun.build`.
    */
   debug?: boolean
+  /**
+   * Packages whose published `.js` files are compiled as well, as in the
+   * other plugins: a library that ships Devup UI components uncompiled.
+   * Each name matches that whole package (`pkg` is not `pkg-extra` or
+   * `@scope/pkg`), not the dependencies in its own `node_modules`.
+   */
+  include?: readonly string[]
 }
 
 type SourceLoader = 'tsx' | 'ts' | 'jsx' | 'js'
+
+const SEPARATOR = '[\\/\\\\]'
+
+/**
+ * The files the plugin loads: TypeScript (`.mts` and `.cts` included) and JSX
+ * sources anywhere, `.js` under Devup UI, and `.js` of the packages in
+ * `include`. An included package is the directory right under the innermost
+ * `node_modules` (pnpm and Bun stores included), matched the way
+ * `createNodeModulesExcludeRegex` matches it.
+ */
+function createSourceFilter(include: readonly string[]): RegExp {
+  const sources = `\\.(?:[mc]?ts|tsx|jsx|mjs)$|${SEPARATOR}@devup-ui${SEPARATOR}.*\\.js$`
+  if (include.length === 0) return new RegExp(sources)
+  const names = include
+    .map((name) =>
+      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', SEPARATOR),
+    )
+    .join('|')
+  return new RegExp(
+    `${sources}|${SEPARATOR}node_modules${SEPARATOR}(?!.*${SEPARATOR}node_modules${SEPARATOR})(?:${names})${SEPARATOR}.*\\.js$`,
+  )
+}
 
 /**
  * The `exports` conditions Bun resolves an import with: those of its target
@@ -335,9 +364,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       }
       // Load source files from packages directory (file namespace)
       build.onLoad(
-        {
-          filter: /\.(?:[mc]?ts|tsx|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
-        },
+        { filter: createSourceFilter(options.include ?? []) },
         loadSource,
       )
       // A bundle also takes the project's own `.js` and `.cjs` modules. Bun

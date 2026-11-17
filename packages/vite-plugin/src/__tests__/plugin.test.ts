@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import * as os from 'node:os'
@@ -187,6 +188,20 @@ interface ViteTestPlugin {
     >,
   ) => Promise<void>
   resolveId: (source: string, importer?: string) => string | undefined
+  outputOptions: (options: {
+    assetFileNames?: string | ((info: AssetNameInfo) => string)
+    entryFileNames?: string
+  }) =>
+    | {
+        assetFileNames: (info: AssetNameInfo) => string
+        entryFileNames?: string
+      }
+    | undefined
+}
+
+interface AssetNameInfo {
+  name?: string
+  names?: string[]
 }
 
 interface ViteTestRestorePlugin {
@@ -342,6 +357,7 @@ describe('devupUIVitePlugin', () => {
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
+      outputOptions: expect.any(Function),
       generateBundle: expect.any(Function),
       configResolved: expect.any(Function),
       buildApp: expect.any(Function),
@@ -807,6 +823,78 @@ describe('devupUIVitePlugin', () => {
       await createPlugin({}).generateBundle({}, bundle)
 
       expect(bundle['vendor.css'].source).toEqual('app styles')
+    })
+
+    describe('asset file names', () => {
+      const sheetHash = (sheet: string, length = 8) =>
+        createHash('sha256').update(sheet).digest('base64url').slice(0, length)
+
+      it('hashes a devup sheet from the finished sheet, not the loaded one', () => {
+        getCssSpy.mockImplementation(
+          (fileNum: number | null) => `sheet:${fileNum}`,
+        )
+        const plugin = createPlugin({})
+        const output = plugin.outputOptions({
+          assetFileNames: 'assets/[name]-[hash][extname]',
+          entryFileNames: '[name].js',
+        })
+
+        expect(output?.entryFileNames).toBe('[name].js')
+        expect(output?.assetFileNames({ names: ['devup-ui-3.css'] })).toBe(
+          `assets/[name]-${sheetHash('sheet:3')}[extname]`,
+        )
+        expect(output?.assetFileNames({ names: ['devup-ui.css'] })).toBe(
+          `assets/[name]-${sheetHash('sheet:null')}[extname]`,
+        )
+        expect(
+          output?.assetFileNames({ names: ['other.css', 'devup-ui-4.css'] }),
+        ).toBe(`assets/[name]-${sheetHash('sheet:4')}[extname]`)
+      })
+
+      it('changes the name when the finished sheet changes', () => {
+        const plugin = createPlugin({})
+        const output = plugin.outputOptions({})
+        getCssSpy.mockReturnValue('.a{color:red}')
+        const red = output?.assetFileNames({ names: ['devup-ui-0.css'] })
+        getCssSpy.mockReturnValue('.a{color:green}')
+        const green = output?.assetFileNames({ names: ['devup-ui-0.css'] })
+
+        expect(red).toBe(`assets/[name]-${sheetHash('.a{color:red}')}[extname]`)
+        expect(green).toBe(
+          `assets/[name]-${sheetHash('.a{color:green}')}[extname]`,
+        )
+      })
+
+      it('honors a hash length and a name function, and the legacy name', () => {
+        getCssSpy.mockReturnValue('sheet')
+        const plugin = createPlugin({})
+        const output = plugin.outputOptions({
+          assetFileNames: (info) =>
+            `static/${info.name ?? 'none'}-[hash:12]-[hash][extname]`,
+        })
+
+        expect(output?.assetFileNames({ name: 'devup-ui-2.css' })).toBe(
+          `static/devup-ui-2.css-${sheetHash('sheet', 12)}-${sheetHash('sheet')}[extname]`,
+        )
+      })
+
+      it('leaves every other asset to the original option', () => {
+        const plugin = createPlugin({})
+        const output = plugin.outputOptions({
+          assetFileNames: 'assets/[name]-[hash][extname]',
+        })
+
+        expect(output?.assetFileNames({ names: ['vendor-devup-ui.css'] })).toBe(
+          'assets/[name]-[hash][extname]',
+        )
+        expect(output?.assetFileNames({})).toBe('assets/[name]-[hash][extname]')
+        expect(getCssSpy).not.toHaveBeenCalled()
+      })
+
+      it('keeps the output options when css extraction is off', () => {
+        const plugin = createPlugin({ extractCss: false })
+        expect(plugin.outputOptions({})).toBeUndefined()
+      })
     })
 
     it('ignores the load-time snapshot so output does not depend on module order', async () => {

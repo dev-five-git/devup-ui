@@ -64,12 +64,14 @@ Class names are short in `Bun.build` and readable under the runtime; pass
 
 `.ts`, `.mts`, `.cts`, `.tsx`, `.jsx` and `.mjs` files are compiled wherever
 they are, `node_modules` included, and `.js` files inside `@devup-ui`
-packages. `.mts` and `.cts` files are read as TypeScript.
+packages and the packages you list in `include`, as in the other plugins.
+`.mts` and `.cts` files are read as TypeScript.
 
 `Bun.build` also compiles every `.js` and `.cjs` file outside `node_modules`:
 those of your own project, and those of a linked workspace package Bun resolves
 to its real path. A `.js` or `.cjs` file inside `node_modules` is left to Bun,
-except the `.js` files of `@devup-ui` packages.
+except the `.js` files of `@devup-ui` packages and of the packages in
+`include`.
 
 Under the runtime, the `.js` and `.cjs` files of your own project are not
 compiled: Devup UI code in one reaches the runtime placeholders
@@ -84,6 +86,21 @@ reason, a `.cts` file loaded under the runtime must be written with `import`
 and `export`: one written with `module.exports` or `export =` loses its
 exports. `Bun.build` reads returned CommonJS as CommonJS, so this applies to
 the runtime only.
+
+## Libraries
+
+List a library that ships Devup UI components as compiled `.js` in `include`:
+
+```ts
+DevupUI({ include: ['my-design-system'] })
+// or, under the runtime
+await register({ include: ['my-design-system'] })
+```
+
+Each name matches that whole package (`my-lib` is not `my-lib-extra` or
+`@scope/my-lib`), including in pnpm and Bun stores, but not the dependencies
+in its own `node_modules`. Under the runtime its `.js` files are read as ES
+modules, as above, so list only packages that publish ES modules there.
 
 ## Compiler Engine
 
