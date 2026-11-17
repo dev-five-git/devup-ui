@@ -10,6 +10,8 @@ import {
   type DevupCompiler,
   planAtomHoist,
   reservationGraph,
+  SOURCE_FILE_REGEX,
+  viteImportConditions,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 
@@ -59,7 +61,7 @@ export function createViteReservation(
       )
         return
       if (
-        !/\.(tsx|ts|js|mjs|jsx)$/i.test(path) &&
+        !SOURCE_FILE_REGEX.test(path.toLowerCase()) &&
         !explicitInputs.has(path) &&
         !dependencies.some((dependency) => resolve(dependency) === path) &&
         !options.relevant?.(path)
@@ -80,9 +82,11 @@ export function createViteReservation(
       const watched = new Set<string>()
       const roots = new Set<string>()
       let cwd: string | undefined
+      let conditions: readonly string[] | undefined
       for (const { config, environment } of environments.values()) {
         const root = config.root ?? process.cwd()
         cwd ??= root
+        conditions ??= viteImportConditions(config)
         for (const name of ['src', 'app']) {
           const path = resolve(root, name)
           watched.add(path)
@@ -105,6 +109,7 @@ export function createViteReservation(
         createModuleResolver({
           cwd: cwd ?? process.cwd(),
           toId: (path) => path.replaceAll('\\', '/'),
+          conditions,
         }),
       )
       slots.reserve(
@@ -116,6 +121,7 @@ export function createViteReservation(
           package: options.package,
           importAliases: options.importAliases,
           toId: (path) => path.replaceAll('\\', '/'),
+          conditions,
         },
         {
           beforeReserve(inventory) {

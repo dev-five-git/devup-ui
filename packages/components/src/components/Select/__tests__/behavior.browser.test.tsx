@@ -276,3 +276,72 @@ describe('SelectTrigger asChild', () => {
     ).toThrow('SelectTrigger with asChild requires a single element')
   })
 })
+
+describe('SelectOption onClick', () => {
+  it('closes the list and returns focus to the trigger while the handler replaces the value update', () => {
+    const onClick = mock()
+    const onChange = mock()
+    const { container } = render(
+      <Select onChange={onChange} type="radio">
+        <SelectTrigger>Pick</SelectTrigger>
+        <SelectContainer>
+          <SelectOption onClick={onClick} value="a">
+            A
+          </SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const trigger = container.querySelector<HTMLElement>(
+      '[aria-haspopup=listbox]',
+    )!
+
+    fireEvent.click(trigger)
+    fireEvent.click(container.querySelector('[data-value=a]')!)
+
+    expect(onClick).toHaveBeenCalledWith('a', expect.any(Object))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(container.querySelector('[role=listbox]')).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('closes the list on Enter as well', () => {
+    const onClick = mock()
+    const { container } = render(
+      <Select>
+        <SelectTrigger>Pick</SelectTrigger>
+        <SelectContainer>
+          <SelectOption onClick={onClick} value="a">
+            A
+          </SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+
+    fireEvent.click(container.querySelector('[aria-haspopup=listbox]')!)
+    fireEvent.keyDown(container.querySelector('[data-value=a]')!, {
+      key: 'Enter',
+    })
+
+    expect(onClick).toHaveBeenCalledWith('a', undefined)
+    expect(container.querySelector('[role=listbox]')).not.toBeInTheDocument()
+  })
+
+  it('keeps a checkbox list open', () => {
+    const onClick = mock()
+    const { container } = render(
+      <Select defaultOpen type="checkbox">
+        <SelectTrigger>Pick</SelectTrigger>
+        <SelectContainer>
+          <SelectOption onClick={onClick} value="a">
+            A
+          </SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+
+    fireEvent.click(container.querySelector('[data-value=a]')!)
+
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[role=listbox]')).toBeInTheDocument()
+  })
+})

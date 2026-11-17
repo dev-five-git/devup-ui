@@ -37,16 +37,18 @@ pub fn reserve_class_slots(
         import_aliases: import_aliases_from_js(import_aliases, 5)?,
         ..ExtractOption::default()
     };
-    let resolver = MODULE_RESOLVER.with_borrow(Clone::clone).map(|resolver| {
-        let state = Rc::new(RefCell::new(ResolverState::default()));
-        for input in &inputs {
-            state.borrow_mut().add_source(&input.filename, &input.code);
-        }
-        move |specifier: &str, importer: &str| {
-            let request = state.borrow().request(specifier, importer)?;
-            call_module_resolver(&resolver, request, &state)
-        }
-    });
+    let resolver = MODULE_RESOLVER
+        .with_borrow(devup_ui_binding_core::PerSession::live)
+        .map(|resolver| {
+            let state = Rc::new(RefCell::new(ResolverState::default()));
+            for input in &inputs {
+                state.borrow_mut().add_source(&input.filename, &input.code);
+            }
+            move |specifier: &str, importer: &str| {
+                let request = state.borrow().request(specifier, importer)?;
+                call_module_resolver(&resolver, request, &state)
+            }
+        });
     reserve_class_slots_internal(
         &inputs,
         option,

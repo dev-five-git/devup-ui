@@ -5,8 +5,10 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
+  buildStaticImportGraph,
   computeFileReach,
   computeReachableFiles,
+  conventionalSourceRoots,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -15,6 +17,7 @@ import {
   type CustomShorthands,
   type DevupCompiler,
   type DevupUIBasePluginOptions,
+  esmImportConditions,
   getFileNumByFilename,
   type ImportAliases,
   isMissingDirectory,
@@ -24,7 +27,10 @@ import {
   normalizeShorthands,
   planAtomHoist,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   setupWarning,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -79,11 +85,17 @@ async function writeDataFiles(
   >,
   compiler: DevupCompiler,
   watching: boolean,
-): Promise<{ tailwindFiles: string[]; themeError: unknown }> {
+): Promise<{
+  tailwindFiles: string[]
+  configFiles: string[]
+  themeError: unknown
+}> {
   let tailwindFiles: string[] = []
   let themeError: unknown
+  // devup.json and every config it `extends`, read or not
+  const inputs = new Set([resolve(options.devupFile)])
   try {
-    const config = await loadDevupConfig(options.devupFile)
+    const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
 
     // Watched even when the theme fails, so fixing the Tailwind CSS reloads it
@@ -116,7 +128,7 @@ async function writeDataFiles(
       compiler.getCss(null, false),
     )
   }
-  return { tailwindFiles, themeError }
+  return { tailwindFiles, configFiles: [...inputs], themeError }
 }
 
 /**
@@ -133,9 +145,9 @@ export const DevupUI = ({
   include = [],
   package: libPackage = '@devup-ui/react',
   extractCss = true,
-  distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
-  devupFile = 'devup.json',
+  distDir: distDirOption = 'df',
+  cssDir: cssDirOption,
+  devupFile: devupFileOption,
   debug = false,
   singleCss = false,
   prefix,
@@ -148,10 +160,6 @@ export const DevupUI = ({
   const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
-  const importAliases = mergeImportAliases(
-    userImportAliases,
-    readJsxImportSource(),
-  )
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )
@@ -165,6 +173,19 @@ export const DevupUI = ({
       api.onCloseBuild?.(endBuild)
       compiler.setDebug(debug)
       compiler.setPrefix(prefix ?? null)
+      // The relative options and the tsconfig belong to the Rsbuild root, not
+      // to the directory a monorepo tool starts the build from
+      const projectRoot = api.context.rootPath
+      const distDir = resolveProjectPath(projectRoot, distDirOption)
+      const cssDir =
+        cssDirOption === undefined
+          ? resolve(projectRoot, distDirOption, 'devup-ui')
+          : resolveProjectPath(projectRoot, cssDirOption)
+      const devupFile = resolveDevupFile(projectRoot, devupFileOption)
+      const importAliases = mergeImportAliases(
+        userImportAliases,
+        readJsxImportSource(projectRoot),
+      )
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
@@ -176,7 +197,7 @@ export const DevupUI = ({
 
       // `rsbuild dev` outlives a broken devup.json; every compilation reports
       // it until it loads again
-      let { tailwindFiles, themeError } = await writeDataFiles(
+      let { tailwindFiles, configFiles, themeError } = await writeDataFiles(
         {
           package: libPackage,
           cssDir,
@@ -189,8 +210,9 @@ export const DevupUI = ({
       )
       if (!extractCss) return
 
-      // The project's Tailwind CSS defines what a Tailwind class compiles to:
-      // read it again when it changes, and compile every module again
+      // devup.json, the configs it extends and the project's Tailwind CSS
+      // define the theme: read them again when one changes, is added or is
+      // deleted, and compile every module again
       api.modifyRspackConfig((config) => {
         config.plugins ??= []
         config.plugins.push({
@@ -207,7 +229,7 @@ export const DevupUI = ({
               async () => {
                 const current = (
                   await Promise.all(
-                    tailwindFiles.map((file) =>
+                    [...configFiles, ...tailwindFiles].map((file) =>
                       stat(file).then(
                         (stats) => stats.mtimeMs,
                         () => 0,
@@ -216,17 +238,18 @@ export const DevupUI = ({
                   )
                 ).join()
                 if (stamp !== undefined && stamp !== current) {
-                  ;({ tailwindFiles, themeError } = await writeDataFiles(
-                    {
-                      package: libPackage,
-                      cssDir,
-                      devupFile,
-                      distDir,
-                      singleCss,
-                    },
-                    compiler,
-                    true,
-                  ))
+                  ;({ tailwindFiles, configFiles, themeError } =
+                    await writeDataFiles(
+                      {
+                        package: libPackage,
+                        cssDir,
+                        devupFile,
+                        distDir,
+                        singleCss,
+                      },
+                      compiler,
+                      true,
+                    ))
                 }
                 stamp = current
               },
@@ -244,28 +267,41 @@ export const DevupUI = ({
       // absolute keys (keyBy: 'absolute') and the extraction filename is
       // POSIX-normalized to match.
       const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
-      compiler.setModuleResolver(
+      const moduleResolver = (conditions?: readonly string[]) =>
         createModuleResolver({
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
-        }),
-      )
+          conditions,
+        })
+      compiler.setModuleResolver(moduleResolver())
+      // Each environment resolves imports with its own `exports` conditions
+      const environmentResolvers = new Map<
+        string,
+        ReturnType<typeof moduleResolver>
+      >()
+      // The `src` and `app` directories of the Rsbuild root, scanned once for
+      // the canonical map and the routes
+      const sourceGraph = (srcDir: string) =>
+        buildStaticImportGraph(
+          srcDir,
+          resolve(srcDir, 'tsconfig.json'),
+          conventionalSourceRoots(projectRoot),
+        )
       if (atomMode) {
         try {
-          const root = process.cwd()
-          const srcDir = resolve(root, 'src')
-          const tsconfigPath = resolve(root, 'tsconfig.json')
+          const root = projectRoot
+          const graph = sourceGraph(root)
           const canonicalMap = buildCanonicalMap({
-            srcDir,
-            tsconfigPath,
+            srcDir: root,
             cwd: root,
             keyBy: 'absolute',
+            graph,
           })
           compiler.importCanonicalMap(canonicalMap)
           const fileReach = computeFileReach({
-            srcDir,
-            tsconfigPath,
+            srcDir: root,
             cwd: root,
             keyBy: 'absolute',
+            graph,
           })
           const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
           if (plan) {
@@ -278,7 +314,7 @@ export const DevupUI = ({
           }
         } catch (error) {
           // Best-effort; on failure atom hoisting stays off (identity).
-          if (!isMissingDirectory(error, resolve(process.cwd(), 'src')))
+          if (!isMissingDirectory(error, resolve(projectRoot, 'src')))
             console.warn(
               setupWarning(
                 'Rsbuild import graph',
@@ -302,17 +338,18 @@ export const DevupUI = ({
         compiler,
       )
       const entryFiles = new Set<string>()
-      // Extract the source files under `src` that the entries reach, in path
-      // order, the same way the transform does, so that a stylesheet built on
-      // its first import already holds the styles of every one. Best-effort:
-      // a stylesheet still missing styles is rebuilt by another pass.
+      // Extract the source files under `src` and `app` that the entries
+      // reach, in path order, the same way the transform does, so that a
+      // stylesheet built on its first import already holds the styles of every
+      // one. Best-effort: a stylesheet still missing styles is rebuilt by
+      // another pass.
       const prewarm = () => {
         try {
           const root = api.context.rootPath
           for (const file of computeReachableFiles({
-            srcDir: resolve(root, 'src'),
-            tsconfigPath: resolve(root, 'tsconfig.json'),
+            srcDir: root,
             entries: [...entryFiles],
+            graph: sourceGraph(root),
           })) {
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
@@ -376,6 +413,10 @@ export const DevupUI = ({
       api.modifyRspackConfig((config, { environment }) => {
         for (const request of staticEntries(environment.entry))
           entryFiles.add(resolve(api.context.rootPath, request))
+        environmentResolvers.set(
+          environment.name,
+          moduleResolver(esmImportConditions(config.resolve)),
+        )
         config.plugins ??= []
         config.plugins.push({
           apply(compiler: Rspack.Compiler) {
@@ -499,9 +540,14 @@ export const DevupUI = ({
         code,
         resourcePath,
         addDependency,
+        addMissingDependency,
+        environment,
       }) => {
         if (excludeRegex.test(resourcePath)) return code
         for (const file of tailwindFiles) addDependency(file)
+        for (const file of configFiles)
+          if (existsSync(file)) addDependency(file)
+          else addMissingDependency(file)
         // The stylesheet import is emitted relative to the importing file, as
         // in the next/webpack/vite loaders. An absolute cssDir would bake this
         // checkout's path into the emitted module, so byte-identical sources
@@ -524,6 +570,8 @@ export const DevupUI = ({
         const extractName = atomMode
           ? resourcePath.replaceAll('\\', '/')
           : resourcePath
+        const environmentResolver = environmentResolvers.get(environment.name)
+        if (environmentResolver) compiler.setModuleResolver(environmentResolver)
         const {
           code: retCode,
           map,
@@ -568,7 +616,7 @@ export const DevupUI = ({
           map,
         }
       }
-      api.transform({ test: /\.(tsx|ts|js|mjs|jsx)$/ }, extractModule)
+      api.transform({ test: SOURCE_FILE_REGEX }, extractModule)
       // MDX compiles to JavaScript in a normal-phase loader such as
       // `@mdx-js/loader`: a `post` transform extracts what it compiled.
       api.transform({ test: /\.mdx$/i, order: 'post' }, extractModule)

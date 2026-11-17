@@ -851,15 +851,19 @@ describe('coordinator', () => {
 
     try {
       // Request CSS with waitForIdle=true but no extractions ever happen
-      // (totalExtractions === 0), so it should timeout and return CSS anyway
+      // (totalExtractions === 0): the wait times out and refuses to answer
+      // with CSS it cannot prove complete.
       const res = await httpRequest(
         port,
         'GET',
         '/css?importMainCss=false&waitForIdle=true',
       )
 
-      expect(res.status).toBe(200)
-      expect(res.body).toBe('timeout-css')
+      expect(res.status).toBe(500)
+      expect(res.body).toBe(
+        '[devup-ui] coordinator: base CSS is incomplete (not complete after 60000ms); refusing to serve partial CSS.',
+      )
+      expect(getCssSpy).not.toHaveBeenCalled()
     } finally {
       dateNowSpy.mockRestore()
     }
@@ -1469,40 +1473,38 @@ describe('coordinator per-bucket completion', () => {
     coordinator.close()
   })
 
-  // T3: a bucket member that never arrives -> the per-bucket wait fails open
-  // after maxWaitMs (serves whatever exists) instead of hanging the build.
-  it('fails open and serves partial CSS when a bucket member never extracts', async () => {
+  // T3: a bucket member that never arrives -> the per-bucket wait gives up
+  // after maxWaitMs with an error naming the member, instead of hanging the
+  // build or serving the chunk without that member's rules.
+  it('fails the request instead of serving partial CSS when a bucket member never extracts', async () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
     getCssSpy.mockReturnValue('partial-css')
-    const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
-    try {
-      // m1 is a member of the bucket but is never POSTed to /extract.
-      const canonicalMap = { 'src/m1.tsx': 'src/bucket.tsx' }
-      const { coordinator, port } = await startAndGetPort(
-        makeOptions({ canonicalMap, idleThresholdMs: 100, maxWaitMs: 150 }),
-      )
-      // Extract only the bucket root; src/m1.tsx stays missing forever.
-      await extract(port, 'src/bucket.tsx')
+    // m1 is a member of the bucket but is never POSTed to /extract.
+    const canonicalMap = { 'src/m1.tsx': 'src/bucket.tsx' }
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({ canonicalMap, idleThresholdMs: 100, maxWaitMs: 150 }),
+    )
+    // Extract only the bucket root; src/m1.tsx stays missing forever.
+    await extract(port, 'src/bucket.tsx')
+    getCssSpy.mockClear()
 
-      const t0 = Date.now()
-      const res = await httpRequest(
-        port,
-        'GET',
-        '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-      )
-      const elapsed = Date.now() - t0
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
 
-      // Resolves via the hard timeout (fail open) rather than hanging.
-      expect(res.status).toBe(200)
-      expect(res.body).toBe('partial-css')
-      expect(elapsed).toBeGreaterThanOrEqual(150)
-      expect(warnSpy).toHaveBeenCalled()
-      expect(getCssSpy).toHaveBeenCalledWith(1, true)
+    // Resolves via the hard timeout rather than hanging, and says why.
+    expect(res.status).toBe(500)
+    expect(res.body).toBe(
+      '[devup-ui] coordinator: bucket "src/bucket.tsx" is incomplete (not complete after 150ms); refusing to serve partial CSS. Files not extracted: src/m1.tsx.',
+    )
+    expect(elapsed).toBeGreaterThanOrEqual(150)
+    expect(getCssSpy).not.toHaveBeenCalled()
 
-      coordinator.close()
-    } finally {
-      warnSpy.mockRestore()
-    }
+    coordinator.close()
   })
 
   // T4: base css resolves DETERMINISTICALLY once every route-reachable runtime
@@ -1636,49 +1638,39 @@ describe('coordinator per-bucket completion', () => {
     coordinator.close()
   })
 
-  // T7: legacy callers that do not prewarm still fail open after the quiet
-  // window when a graph member never reports, rather than hanging forever.
-  // Production plugin builds take the deterministic prewarmed path instead.
-  it('serves a bucket via the quiet exit when a member is never compiled', async () => {
+  // T7: when a known member never reports and extraction goes quiet, the wait
+  // gives up early with an error naming it. Production plugin builds take the
+  // deterministic prewarmed path instead and never get here.
+  it('fails a bucket after the quiet window when a member is never compiled', async () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
     getCssSpy.mockReturnValue('bucket-css')
-    const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
-    try {
-      const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
-      try {
-        const canonicalMap = { 'src/phantom.tsx': 'src/bucket.tsx' }
-        const { coordinator, port } = await startAndGetPort(
-          makeOptions({ canonicalMap, quietMs: 100, maxWaitMs: 10_000 }),
-        )
-        await extract(port, 'src/bucket.tsx')
+    const canonicalMap = { 'src/phantom.tsx': 'src/bucket.tsx' }
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({ canonicalMap, quietMs: 100, maxWaitMs: 10_000 }),
+    )
+    await extract(port, 'src/bucket.tsx')
 
-        const t0 = Date.now()
-        const res = await httpRequest(
-          port,
-          'GET',
-          '/css?fileNum=1&importMainCss=true&waitForIdle=true',
-        )
-        const elapsed = Date.now() - t0
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
 
-        expect(res.status).toBe(200)
-        expect(res.body).toBe('bucket-css')
-        // Resolved by the quiet exit (~100ms), NOT the 10s wall-clock backstop.
-        expect(elapsed).toBeLessThan(5000)
-        expect(infoSpy).toHaveBeenCalled()
-        expect(warnSpy).not.toHaveBeenCalled()
+    expect(res.status).toBe(500)
+    expect(res.body).toBe(
+      '[devup-ui] coordinator: bucket "src/bucket.tsx" is incomplete (no extraction for 100ms); refusing to serve partial CSS. Files not extracted: src/phantom.tsx.',
+    )
+    // Ended by the quiet window (~100ms), NOT the 10s wall-clock backstop.
+    expect(elapsed).toBeLessThan(5000)
 
-        coordinator.close()
-      } finally {
-        warnSpy.mockRestore()
-      }
-    } finally {
-      infoSpy.mockRestore()
-    }
+    coordinator.close()
   })
 
-  // T8: the same legacy quiet fallback applies to an expected base file when
-  // the caller did not seed prewarmed completion state.
-  it('serves base css via the quiet exit when an expectedBaseFile is never compiled', async () => {
+  // T8: the same quiet window ends a base wait whose expected file never
+  // reports when the caller did not seed prewarmed completion state.
+  it('fails base css after the quiet window when an expectedBaseFile is never compiled', async () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
     getCssSpy.mockReturnValue('base-css')
     const { coordinator, port } = await startAndGetPort(
@@ -1698,17 +1690,19 @@ describe('coordinator per-bucket completion', () => {
     )
     const elapsed = Date.now() - t0
 
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
+    expect(res.status).toBe(500)
+    expect(res.body).toBe(
+      '[devup-ui] coordinator: base CSS is incomplete (no extraction for 100ms); refusing to serve partial CSS. Files not extracted: src/phantom.tsx.',
+    )
     // Quiet exit (~100ms), not the 10s backstop.
     expect(elapsed).toBeLessThan(5000)
 
     coordinator.close()
   })
 
-  // T6: a phantom expectedBaseFile that never extracts fails open via the
-  // dormant maxWaitMs backstop instead of hanging the build forever.
-  it('fails open on a phantom expectedBaseFile via maxWaitMs', async () => {
+  // T6: a phantom expectedBaseFile that never extracts ends the wait via the
+  // dormant maxWaitMs backstop with an error instead of hanging the build.
+  it('fails a phantom expectedBaseFile via maxWaitMs', async () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
     getCssSpy.mockReturnValue('base-css')
     const { coordinator, port } = await startAndGetPort(
@@ -1727,9 +1721,124 @@ describe('coordinator per-bucket completion', () => {
     )
     const elapsed = Date.now() - t0
 
-    expect(res.status).toBe(200)
-    expect(res.body).toBe('base-css')
+    expect(res.status).toBe(500)
+    expect(res.body).toBe(
+      '[devup-ui] coordinator: base CSS is incomplete (not complete after 150ms); refusing to serve partial CSS. Files not extracted: src/phantom.tsx.',
+    )
     expect(elapsed).toBeGreaterThanOrEqual(150)
+
+    coordinator.close()
+  })
+})
+
+describe('coordinator transform cache', () => {
+  function extractResult(code: string, dependencies: string[] = []) {
+    return {
+      code,
+      map: undefined,
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: false,
+      dependencies,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }
+  }
+
+  async function start() {
+    const coordinator = startCoordinator(makeOptions())
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    return { coordinator, port }
+  }
+
+  async function extract(
+    port: number,
+    code: string,
+    resourcePath = join(process.cwd(), 'src', 'A.tsx'),
+  ) {
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({ filename: 'src/A.tsx', code, resourcePath }),
+    )
+    return { status: res.status, ...JSON.parse(res.body) }
+  }
+
+  it('answers the second compile of an unchanged module without WASM', async () => {
+    getCssSpy.mockReturnValue('css')
+    exportSheetSpy.mockReturnValue('{}')
+    exportClassMapSpy.mockReturnValue('{}')
+    exportFileMapSpy.mockReturnValue('{}')
+    codeExtractSpy.mockImplementation((_filename: string, code: string) =>
+      extractResult(`out:${code}`),
+    )
+    const { coordinator, port } = await start()
+
+    // Server and client graphs compile the same source.
+    expect((await extract(port, 'v1')).code).toBe('out:v1')
+    const writes = writeFileSpy.mock.calls.length
+    expect(await extract(port, 'v1')).toMatchObject({
+      status: 200,
+      code: 'out:v1',
+      cssFile: 'devup-ui-1.css',
+    })
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+    // Nothing changed, so nothing is written again.
+    expect(writeFileSpy.mock.calls.length).toBe(writes)
+
+    // An edit extracts again, and so does going back: the sheet then holds
+    // the edit's styles, not the first source's.
+    await extract(port, 'v2')
+    await extract(port, 'v1')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
+
+    // The CSS directory is part of the output.
+    await extract(port, 'v1', join(process.cwd(), 'src', 'nested', 'A.tsx'))
+    expect(codeExtractSpy).toHaveBeenCalledTimes(4)
+
+    coordinator.close()
+  })
+
+  it('extracts again once a file the extraction read changes', async () => {
+    const tokens = join(tmpDir, 'cache-tokens.ts')
+    const later = join(tmpDir, 'cache-later.ts')
+    await Bun.write(tokens, 'export const a = 1')
+    codeExtractSpy.mockImplementation(() =>
+      extractResult('out', [tokens, later]),
+    )
+    const { coordinator, port } = await start()
+
+    await extract(port, 'src')
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+
+    await Bun.write(tokens, 'export const a = 22')
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    // A dependency that did not exist and now does counts as a change too.
+    await Bun.write(later, 'export const b = 1')
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
+
+    coordinator.close()
+  })
+
+  it('never answers from a cache entry an extraction error replaced', async () => {
+    codeExtractSpy.mockImplementation(() => extractResult('out'))
+    const { coordinator, port } = await start()
+
+    await extract(port, 'src')
+    codeExtractSpy.mockImplementationOnce(() => {
+      throw new Error('parse error')
+    })
+    // Same filename, new source that fails.
+    expect((await extract(port, 'broken')).status).toBe(500)
+    await extract(port, 'src')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
 
     coordinator.close()
   })
@@ -1791,6 +1900,50 @@ describe('coordinator theme reload', () => {
     await Bun.write(extended, '{}')
     expect((await extract(port)).status).toBe(200)
     expect(reload).toHaveBeenCalledTimes(2)
+
+    coordinator.close()
+  })
+
+  it('extracts an unchanged module again once the theme reloads', async () => {
+    codeExtractSpy.mockImplementation(() => ({
+      code: 'code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      dependencies: [],
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }))
+    getCssSpy.mockReturnValue('css')
+    const devupFile = join(tmpDir, 'theme-cached.json')
+    await Bun.write(devupFile, '{}')
+    // A source that exists, so a repeated extraction keeps its cache entry
+    const resourcePath = join(tmpDir, 'theme-cached.tsx')
+    await Bun.write(resourcePath, 'c')
+    const reload = mock(() => [devupFile])
+    const { coordinator, port } = await start({ files: [devupFile], reload })
+    const extractSource = () =>
+      httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({ filename: 'src/A.tsx', code: 'c', resourcePath }),
+      )
+
+    await extractSource()
+    await extractSource()
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+
+    // The cached output was made under the old theme, so it goes
+    await Bun.write(devupFile, '{"theme":{"colors":{"primary":"red"}}}')
+    expect((await httpRequest(port, 'GET', '/css')).status).toBe(200)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect((await extractSource()).status).toBe(200)
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    // and the new theme's output is cached again
+    await extractSource()
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
 
     coordinator.close()
   })
@@ -1894,6 +2047,57 @@ describe('coordinator deleted sources', () => {
     await flushCoordinatorWrites()
     expect(removeFile.mock.calls.length).toBe(3)
     expect(writeFileSpy).not.toHaveBeenCalled()
+    coordinator.close()
+  })
+
+  it('extracts a deleted file again when it comes back unchanged', async () => {
+    // Given: two cached extractions, one of whose files is then deleted
+    using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+    const deleted = new Set<string>()
+    using _existsSync = spyOn(fs, 'existsSync').mockImplementation(
+      (path) => !deleted.has(String(path)),
+    )
+    codeExtractSpy.mockImplementation(() => ({
+      code: 'code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }))
+    getCssSpy.mockReturnValue('base')
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classes')
+    exportFileMapSpy.mockReturnValue('files')
+    const coordinator = startCoordinator(makeOptions())
+    await new Promise((r) => setTimeout(r, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    const extract = (filename: string) =>
+      httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({
+          filename,
+          code: 'c',
+          resourcePath: join(tmpDir, filename),
+        }),
+      )
+    await extract('src/Gone.tsx')
+    await extract('src/App.tsx')
+    deleted.add(join(tmpDir, 'src/Gone.tsx'))
+    await extract('src/App.tsx')
+    expect(removeFile.mock.calls).toEqual([['src/Gone.tsx']])
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    // When: the file is restored with the same source
+    deleted.clear()
+    await extract('src/Gone.tsx')
+
+    // Then: its styles left the sheet, so it is extracted again
+    expect(codeExtractSpy).toHaveBeenCalledTimes(3)
     coordinator.close()
   })
 })

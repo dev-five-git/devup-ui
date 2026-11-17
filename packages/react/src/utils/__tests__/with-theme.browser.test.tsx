@@ -17,12 +17,12 @@ describe('withTheme', () => {
   it('injects the theme the nearest provider gives and forwards refs', () => {
     const Themed = withTheme(Swatch)
     const ref = createRef<HTMLDivElement>()
-    const { container } = render(
+    render(
       <ThemeProvider theme={{ brand: 'red' }}>
         <Themed ref={ref} />
       </ThemeProvider>,
     )
-    expect(container.textContent).toBe('red')
+    expect(ref.current?.textContent).toBe('red')
     expect(ref.current?.tagName).toBe('DIV')
     expect(Themed.displayName).toBe('WithTheme(Swatch)')
   })
@@ -78,7 +78,7 @@ describe('ThemeConsumer', () => {
         <ThemeConsumer>{(theme) => String(theme.brand)}</ThemeConsumer>
       </ThemeProvider>,
     )
-    expect(container.textContent).toBe('green')
+    expect(container.querySelector('div')?.textContent).toBe('green')
     expect(
       render(<ThemeConsumer>{(theme) => JSON.stringify(theme)}</ThemeConsumer>)
         .container.textContent,

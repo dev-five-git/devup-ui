@@ -232,6 +232,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           true,
           importAliases,
         ),
+        false,
       )
       const {
         code,
