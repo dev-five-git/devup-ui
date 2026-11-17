@@ -4,7 +4,7 @@ import { createRef, forwardRef } from 'react'
 
 import { ThemeProvider } from '../../components/ThemeProvider'
 import type { StyledTheme } from '../theme-vars'
-import { ThemeConsumer, withTheme } from '../with-theme'
+import { hoistStatics, ThemeConsumer, withTheme } from '../with-theme'
 
 const Swatch = forwardRef<HTMLDivElement, { theme?: StyledTheme }>(
   function Swatch({ theme }, ref) {
@@ -33,6 +33,34 @@ describe('withTheme', () => {
       render(<Themed theme={{ brand: 'blue' }} />).container.textContent,
     ).toBe('blue')
     expect(render(<Themed />).container.textContent).toBe('undefined')
+  })
+
+  it('hoists the statics that are not React’s', () => {
+    const Item = () => null
+    const symbol = Symbol('static')
+    const List = Object.assign(() => null, {
+      Item,
+      [symbol]: 1,
+      propTypes: {},
+      defaultProps: { theme: {} },
+      displayName: 'List',
+    })
+    Object.defineProperty(List, 'hidden', { value: 2, enumerable: false })
+    const Themed = withTheme(List)
+    expect(Reflect.get(Themed, 'Item')).toBe(Item)
+    expect(Reflect.get(Themed, symbol)).toBe(1)
+    expect(Reflect.get(Themed, 'hidden')).toBe(2)
+    expect(Reflect.get(Themed, 'propTypes')).toBeUndefined()
+    expect(Reflect.get(Themed, 'defaultProps')).toBeUndefined()
+    expect(Themed.displayName).toBe('WithTheme(List)')
+  })
+
+  it('keeps what the wrapper defines itself', () => {
+    const target = { render: 'own', own: 'target' }
+    expect(hoistStatics(target, { own: 'source' })).toEqual({
+      render: 'own',
+      own: 'target',
+    })
   })
 
   it('names anonymous components', () => {

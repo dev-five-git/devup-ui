@@ -53,6 +53,7 @@ mod safety_tests;
 mod imported_css_root;
 
 mod change_presence;
+mod stylesheet_exports;
 
 #[derive(Clone, Debug)]
 enum Constant {
@@ -734,6 +735,7 @@ fn inline_in<'a>(
         option,
         exports: FxHashMap::default(),
         loading: Vec::new(),
+        read: BTreeSet::new(),
     };
     let mut symbols: FxHashMap<SymbolId, Constant> = FxHashMap::default();
     let copy_symbols: FxHashSet<_> = declarations
@@ -993,7 +995,7 @@ fn inline_in<'a>(
         .visit_program(program);
         reads_math
     };
-    inlined.dependencies = modules.exports.into_keys().collect();
+    inlined.dependencies = modules.files();
     let callbacks = bound_style_callbacks::rewrite(ast_builder, program, scoping, &option.package);
     inlined.errors.extend(callbacks.errors);
     let mut captures = callbacks.captures;
@@ -1130,6 +1132,7 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
                 option,
                 exports: FxHashMap::default(),
                 loading: Vec::new(),
+                read: BTreeSet::new(),
             }),
         }
     }
@@ -1146,7 +1149,7 @@ impl<'p, 'a, 'r> ChangeCheck<'p, 'a, 'r> {
 
     /// The modules read for the values of imports
     pub(crate) fn dependencies(&self) -> BTreeSet<String> {
-        self.modules.borrow().exports.keys().cloned().collect()
+        self.modules.borrow().files()
     }
 
     /// The paths in what `name` holds that the module hands on where the
@@ -1492,9 +1495,16 @@ struct Modules<'r> {
     option: &'r ExtractOption,
     exports: FxHashMap<String, Rc<FxHashMap<String, Constant>>>,
     loading: Vec<String>,
+    /// Files the stylesheets read for their exports read in turn
+    read: BTreeSet<String>,
 }
 
 impl Modules<'_> {
+    /// Every file what the modules export was read from
+    fn files(&self) -> BTreeSet<String> {
+        self.exports.keys().chain(&self.read).cloned().collect()
+    }
+
     fn exports(
         &mut self,
         specifier: &str,
@@ -1519,7 +1529,19 @@ impl Modules<'_> {
             return Err(ChainReason::Cycle);
         }
         self.loading.push(module.path.clone());
-        let exports = Rc::new(self.read(&module.path, &module.code));
+        let code = match stylesheet_exports::compiled(
+            &module.path,
+            &module.code,
+            self.option,
+            self.resolver,
+        ) {
+            Some(output) => {
+                self.read.extend(output.dependencies);
+                output.code
+            }
+            None => module.code,
+        };
+        let exports = Rc::new(self.read(&module.path, &code));
         self.loading.pop();
         self.exports.insert(module.path, exports.clone());
         Ok(exports)

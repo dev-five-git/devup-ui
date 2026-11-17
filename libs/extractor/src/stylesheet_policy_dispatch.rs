@@ -30,7 +30,7 @@ pub(crate) fn imports_plain(
     resolver: Option<&ModuleResolver>,
 ) -> bool {
     let allocator = Allocator::default();
-    let Ok(source_type) = SourceType::from_path(filename) else {
+    let Ok(source_type) = crate::parsing::path_source_type(filename) else {
         return false;
     };
     let parsed = Parser::new(&allocator, code, source_type).parse();
@@ -93,7 +93,7 @@ impl<'s> Dispatch<'s> {
 
     fn plan(&mut self, code: &str, filename: &str, is_static: &dyn Fn(&str) -> bool) -> Plan {
         let allocator = Allocator::default();
-        let Ok(source_type) = SourceType::from_path(filename) else {
+        let Ok(source_type) = crate::parsing::path_source_type(filename) else {
             return Plan::Run;
         };
         let parsed = Parser::new(&allocator, code, source_type).parse();

@@ -29,7 +29,6 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 const root = ${JSON.stringify(root)};
-const original = process.cwd();
 const sources = {
   'src/shared.tsx': 'import { Box } from "@devup-ui/react"; export const Shared = () => <Box color="red" p={4} />;',
   'src/app/a/page.tsx': 'import { Box } from "@devup-ui/react"; import { Shared } from "../../shared"; export default function A() { return <><Shared /><Box opacity={0.25} /></>; }',
@@ -46,8 +45,6 @@ mkdirSync(cssDir, { recursive: true });
 writeFileSync(join(root, 'devup.json'), '{}');
 writeFileSync(join(root, 'tsconfig.json'), '{}');
 writeFileSync(join(root, 'package.json'), '{"name":"atom-hoist-fixture","private":true}');
-process.chdir(root);
-try {
 ${setup}
   const outputs = {};
   for (const file of ${reverse} ? [...files].reverse() : files) {
@@ -115,13 +112,11 @@ ${setup}
     sheets: Object.fromEntries(Object.entries(sheets).sort().map(([name, css]) => [name, clean(css)])),
   }));
   await finish();
-} finally {
-  process.chdir(original);
-}
 process.exit(0);
 `,
       ],
-      { encoding: 'utf8', timeout: 30_000, env: process.env },
+      // The fixture is the cwd from the start, as for a real build.
+      { cwd: root, encoding: 'utf8', timeout: 30_000, env: process.env },
     ).trim()
   try {
     return [run(false), run(true), run(false)] as const

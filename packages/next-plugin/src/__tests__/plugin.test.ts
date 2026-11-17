@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import type { StaticImportGraph } from '@devup-ui/plugin-utils'
@@ -22,6 +23,7 @@ import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
   resetTurboSetupCacheForTesting,
+  restoreSessionState,
 } from '../plugin'
 import {
   loadWasm,
@@ -254,14 +256,16 @@ describe('DevupUINextPlugin', () => {
   })
 
   it('prewarms and serves actual default Turbo extraction through native state', () => {
+    // The child starts inside the fixture, as Next does, instead of changing
+    // its directory after the plugin modules have loaded.
+    const root = fs.mkdtempSync(join(tmpdir(), 'devup-next-native-'))
     const child = spawnSync(
       process.execPath,
       [
         '-e',
         `
       import assert from 'node:assert/strict';
-      import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-      import { tmpdir } from 'node:os';
+      import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
       import { join } from 'node:path';
       import { DevupUI } from ${JSON.stringify(new URL('../plugin.ts', import.meta.url).href)};
       import loader from ${JSON.stringify(new URL('../loader.ts', import.meta.url).href)};
@@ -270,7 +274,8 @@ describe('DevupUINextPlugin', () => {
       import { loadCompiler } from ${JSON.stringify(new URL('../../../plugin-utils/src/index.ts', import.meta.url).href)};
       const native = loadCompiler('native'), wasm = loadCompiler('wasm');
       const primedWasm = loadWasm('wasm'); // Resolve the old loader dependency at its installed location.
-      const cwd = process.cwd(), root = mkdtempSync(join(tmpdir(), 'devup-next-native-'));
+      const root = ${JSON.stringify(root)};
+      assert.equal(realpathSync.native(process.cwd()), realpathSync.native(root));
       try {
         mkdirSync(join(root, 'src/app'), { recursive: true });
         writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { jsx: 'react-jsx' }, include: ['src'] }));
@@ -278,7 +283,6 @@ describe('DevupUINextPlugin', () => {
         const source = "import {Box} from '@devup-ui/react'; import {tone} from '../tokens'; export default function Page(){return <Box color={tone}/>;}";
         const resourcePath = join(root, 'src/app/page.tsx');
         writeFileSync(resourcePath, source);
-        process.chdir(root);
         native.resetStateForTesting(); wasm.resetStateForTesting();
         withModuleResolver(primedWasm); // Match normal fixed-cwd supplier resolution after fixture setup.
         const before = { native: native.getCss(null, false), wasm: wasm.getCss(null, false) };
@@ -297,17 +301,18 @@ describe('DevupUINextPlugin', () => {
       } finally {
         await flushCoordinatorWrites(); resetCoordinator();
         native.resetStateForTesting(); wasm.resetStateForTesting();
-        process.chdir(cwd); rmSync(root, { recursive: true, force: true });
       }
     `,
       ],
       {
+        cwd: root,
         encoding: 'utf8',
         timeout: 12000,
         env: { ...process.env, NODE_ENV: 'production', TURBOPACK: '1' },
         windowsHide: true,
       },
     )
+    fs.rmSync(root, { recursive: true, force: true })
     console.info(child.stdout)
     expect(child.error).toBeUndefined()
     expect(child.signal).toBeNull()
@@ -761,12 +766,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -814,12 +814,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -910,12 +905,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -1059,14 +1049,32 @@ export const box = style({ color: 'red' })`
         throw new Error('unreadable')
       })
       const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
       try {
         expect(DevupUI({}).turbopack?.rules).toBeDefined()
         expect(profileSpy).toHaveBeenCalledWith(
           expect.stringContaining('"failed":true'),
         )
+        expect(warnSpy).toHaveBeenCalledWith(
+          '[devup-ui] Turbopack import graph failed: unreadable. Classes are not merged across files only one module imports, and the production stylesheet waits for extraction to go quiet instead of for every compiled file.',
+        )
       } finally {
         profileSpy.mockRestore()
+        warnSpy.mockRestore()
         graphSpy.mockRestore()
+      }
+    })
+    it.each([
+      [{}, false],
+      [{ debug: true }, true],
+    ])('sets debug class names from %j', (options, debug) => {
+      process.env.TURBOPACK = '1'
+      const setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
+      try {
+        DevupUI({}, options)
+        expect(setDebugSpy).toHaveBeenCalledWith(debug)
+      } finally {
+        setDebugSpy.mockRestore()
       }
     })
     it('should create theme.d.ts file', async () => {
@@ -1174,13 +1182,67 @@ export const box = style({ color: 'red' })`
           include: ['@acme/ui'],
         })
         collectSpy.mockImplementation(() => {
-          throw new Error('scan boom')
+          throw 'scan boom'
         })
-        DevupUI({}, {})
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          DevupUI({}, {})
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack file numbering failed: scan boom. Stylesheet file numbers follow the order Turbopack compiles files in, so they can differ between builds of the same source.',
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
       } finally {
         collectSpy.mockRestore()
         seedSpy.mockRestore()
       }
+    })
+    describe('restoreSessionState', () => {
+      const files = ['sheet.json', 'classMap.json', 'fileMap.json'] as const
+      const engine = () => ({
+        importSheet: mock(),
+        importClassMap: mock(),
+        importFileMap: mock(),
+        resetBuildState: mock(),
+      })
+
+      it('imports nothing unless every file reads', () => {
+        readFileSyncSpy.mockImplementation((path: string) => {
+          if (path === 'fileMap.json') throw new Error('ENOENT')
+          return '{}'
+        })
+        const restored = engine()
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).not.toHaveBeenCalled()
+        expect(restored.importClassMap).not.toHaveBeenCalled()
+        expect(restored.importFileMap).not.toHaveBeenCalled()
+      })
+
+      it('imports nothing when one file is corrupt', () => {
+        readFileSyncSpy.mockImplementation((path: string) =>
+          path === 'classMap.json' ? '{"a":' : '{}',
+        )
+        const restored = engine()
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).not.toHaveBeenCalled()
+      })
+
+      it('drops a state that does not import', () => {
+        readFileSyncSpy.mockImplementation((path: string) =>
+          JSON.stringify({ path }),
+        )
+        const restored = engine()
+        restored.importClassMap.mockImplementation(() => {
+          throw new Error('older release')
+        })
+        restoreSessionState(restored, files)
+        expect(restored.importSheet).toHaveBeenCalledWith({
+          path: 'sheet.json',
+        })
+        expect(restored.importFileMap).not.toHaveBeenCalled()
+        expect(restored.resetBuildState).toHaveBeenCalledTimes(1)
+      })
     })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'

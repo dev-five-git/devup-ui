@@ -63,3 +63,16 @@ panic = "abort"
 [profile.native]
 inherits = "release"
 opt-level = 3
+
+# Boa parses and compiles JavaScript recursively. Unoptimized, its frames are
+# large enough that the nesting of an instrumented stylesheet (a call in a
+# chained call) overflows the 2 MiB stack of a test thread, so debug and test
+# builds optimize Boa. Release builds are unaffected.
+[profile.dev.package.boa_parser]
+opt-level = 1
+
+[profile.dev.package.boa_engine]
+opt-level = 1
+
+[profile.dev.package.boa_ast]
+opt-level = 1

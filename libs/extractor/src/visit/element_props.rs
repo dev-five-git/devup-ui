@@ -1,6 +1,6 @@
 use crate::extractor::ExtractResult;
 use crate::extractor::extract_style_from_expression::{
-    LiteralHandling, extract_style_from_expression, extract_with_policy,
+    LiteralHandling, extract_style_from_expression, extract_with_policy, is_object_selector_key,
 };
 use crate::extractor::style_inputs::StyleInputs;
 use crate::utils::{
@@ -286,6 +286,32 @@ pub(super) fn retains_target(
     }
 }
 
+/// The styles of a prop holding an object under a name that is no style
+/// property, which style the element as the attribute does
+fn attribute_styles<'a>(
+    inputs: StyleInputs<'_, 'a>,
+    names: css::DisassembleProperty,
+    value: &Expression<'a>,
+    prepare: &mut impl FnMut(&mut Expression<'a>),
+) -> ExtractResult<'a> {
+    let mut result = ExtractResult::default();
+    for name in names {
+        result.styles.extend(
+            extract_with_policy::<false>(
+                inputs,
+                Some(&name),
+                &mut value.clone_in_with_semantic_ids(inputs.ast.allocator()),
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+                prepare,
+            )
+            .styles,
+        );
+    }
+    result
+}
+
 /// Extract only authored properties and the conditional rules starting at
 /// `branches`; opaque spreads never enter the style extractor.
 pub(super) fn extract_props<'a>(
@@ -333,25 +359,33 @@ pub(super) fn extract_props<'a>(
             .cloned()
             .collect();
         let partial = allowed.len() < names.len();
+        // A prop keeps the meaning its attribute has, where a style object
+        // key holding an object would nest a selector
+        let attribute = is_object_selector_key(&key, &property.value)
+            .then(|| (disassemble_property(&key), property.value.take_in(ast)));
         written.extend(names.into_iter().map(Cow::Owned));
         let property = object.properties.remove(index);
         if allowed.is_empty() {
             continue;
         }
-        let mut single = Expression::new_object_expression(
-            SPAN,
-            oxc_allocator::Vec::from_array_in([property], ast),
-            ast,
-        );
-        let mut extracted = extract_with_policy::<false>(
-            inputs,
-            None,
-            &mut single,
-            0,
-            &None,
-            LiteralHandling::ExpandResponsiveThemeToken,
-            prepare,
-        );
+        let mut extracted = if let Some((names, value)) = attribute {
+            attribute_styles(inputs, names, &value, prepare)
+        } else {
+            let mut single = Expression::new_object_expression(
+                SPAN,
+                oxc_allocator::Vec::from_array_in([property], ast),
+                ast,
+            );
+            extract_with_policy::<false>(
+                inputs,
+                None,
+                &mut single,
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+                prepare,
+            )
+        };
         if partial {
             extracted
                 .styles

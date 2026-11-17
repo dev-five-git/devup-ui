@@ -18,13 +18,36 @@ describe('ThemeProvider', () => {
     expect(container).toMatchSnapshot()
   })
 
-  it('should render without a theme', () => {
+  it('should render no element without a theme', () => {
     const { container } = render(
       <ThemeProvider>
         <span>child</span>
       </ThemeProvider>,
     )
-    expect(container).toMatchSnapshot()
+    expect(container.innerHTML).toBe('<span>child</span>')
+  })
+
+  it('declares only the variables a nested theme changes', () => {
+    const { container } = render(
+      <ThemeProvider theme={{ brand: 'red', accent: 'blue' }}>
+        <ThemeProvider theme={{ accent: 'green' }}>
+          <span>child</span>
+        </ThemeProvider>
+      </ThemeProvider>,
+    )
+    expect(container.innerHTML).toBe(
+      '<div style="display: contents; --brand: red; --accent: blue;"><div style="display: contents; --accent: green;"><span>child</span></div></div>',
+    )
+  })
+
+  it('throws on a theme whose paths share a variable', () => {
+    expect(() =>
+      render(
+        <ThemeProvider theme={{ a: { b: 'red' }, 'a-b': 'blue' }}>
+          <span>child</span>
+        </ThemeProvider>,
+      ),
+    ).toThrow('it gives the same CSS variable `--a-b` as `a.b`')
   })
 
   it('merges a nested theme object and calls a nested theme function', () => {
