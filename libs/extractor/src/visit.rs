@@ -58,9 +58,9 @@ use crate::prop_modify_utils::{
 use crate::scope::{Bindings, NAMESPACE_STYLED};
 use crate::style_collector::StyleCollector;
 use crate::stylex::{
-    StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
-    css_variable_block, css_variable_rules, define_vars_variable, unsupported_stylex_error,
-    variable_values,
+    StylexDynamicInfo, StylexFunction, StylexIncludeRef, StylexNamespaceValue, create_theme_class,
+    css_variable_block, css_variable_rules, define_vars_variable, joined_key_classes,
+    merge_included_keys, unsupported_stylex_error, variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
@@ -2841,6 +2841,47 @@ impl<'a> DevupVisitor<'a> {
         Some(())
     }
 
+    /// Each top-level key of a static namespace and the classes its styles get
+    fn stylex_key_classes(
+        &self,
+        styles: &mut [ExtractStyleProp<'a>],
+        groups: Vec<(String, usize)>,
+    ) -> Vec<(String, String)> {
+        let mut offset = 0;
+        let mut keys = Vec::with_capacity(groups.len());
+        for (key, count) in groups {
+            let class = gen_class_names(
+                &self.ast,
+                &mut styles[offset..offset + count],
+                None,
+                self.split_filename.as_deref(),
+            );
+            offset += count;
+            let class = match class {
+                Some(Expression::StringLiteral(class)) => class
+                    .value
+                    .as_str()
+                    .map_or_else(String::new, str::to_string),
+                _ => String::new(),
+            };
+            keys.push((key, class));
+        }
+        keys
+    }
+
+    /// The keys of the namespace an `include()` reads; none when they are not
+    /// known, as for a dynamic namespace
+    fn stylex_included_keys(
+        &self,
+        visible: &FxHashMap<String, SymbolId>,
+        include: &StylexIncludeRef,
+    ) -> Option<Vec<(String, String)>> {
+        self.stylex_keys
+            .get(visible.get(&include.var_name)?)?
+            .get(&include.member_name)
+            .cloned()
+    }
+
     /// The classes each key of the namespace `expr` reads gives; none for a
     /// value `StyleX` skips
     fn stylex_keyed(&self, expr: &Expression<'a>) -> Option<Vec<(String, String)>> {
@@ -3798,32 +3839,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             for (ns_name, mut styles, css_vars, include_refs, groups) in namespaces {
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
-                if include_refs.is_empty() && css_vars.is_none() {
-                    let mut offset = 0;
-                    let mut keys = Vec::with_capacity(groups.len());
-                    for (key, count) in groups {
-                        let class = gen_class_names(
-                            &self.ast,
-                            &mut styles[offset..offset + count],
-                            None,
-                            self.split_filename.as_deref(),
-                        );
-                        offset += count;
-                        let class = match class {
-                            Some(Expression::StringLiteral(class))
-                                if class.value.as_str().is_some() =>
-                            {
-                                class
-                                    .value
-                                    .as_str()
-                                    .map_or_else(String::new, str::to_string)
-                            }
-                            _ => String::new(),
-                        };
-                        keys.push((key, class));
-                    }
-                    key_map.insert(ns_name.clone(), keys);
-                }
+                let own_keys = css_vars
+                    .is_none()
+                    .then(|| self.stylex_key_classes(&mut styles, groups));
                 self.styles
                     .extend(styles.into_iter().flat_map(ExtractStyleProp::into_extract));
 
@@ -3835,7 +3853,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     _ => String::new(),
                 };
 
-                // Resolve include() references — prepend included classNames
+                // Resolve include() references: merge their keys where they are written,
+                // else prepend the included classNames
+                let mut included_keys = Some(Vec::with_capacity(include_refs.len()));
                 for inc_ref in &include_refs {
                     let Some(ns_value) = visible
                         .get(&inc_ref.var_name)
@@ -3852,6 +3872,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         ));
                         continue;
                     };
+                    included_keys = included_keys
+                        .zip(self.stylex_included_keys(&visible, inc_ref))
+                        .map(|(mut included, keys)| {
+                            included.push((inc_ref.position, keys));
+                            included
+                        });
                     let included_class = match ns_value {
                         StylexNamespaceValue::Static(s) => s.clone(),
                         StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
@@ -3863,6 +3889,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             class_name_str = format!("{included_class} {class_name_str}");
                         }
                     }
+                }
+                if let Some((own, included)) = own_keys.zip(included_keys) {
+                    let keys = merge_included_keys(own, included);
+                    if !include_refs.is_empty() {
+                        class_name_str = joined_key_classes(&keys);
+                    }
+                    key_map.insert(ns_name.clone(), keys);
                 }
 
                 let ns_value = if let Some(vars) = css_vars {

@@ -15,7 +15,9 @@ describe('useStyledTheme', () => {
         <Read />
       </ThemeProvider>,
     )
-    expect(container.textContent).toBe('{"colors":{"brand":"red"}}')
+    expect(container.querySelector('span')?.textContent).toBe(
+      '{"colors":{"brand":"red"}}',
+    )
   })
 
   it('returns an empty object without a provider', () => {

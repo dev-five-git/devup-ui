@@ -8,24 +8,21 @@ import { AnchorScroll } from '@/components/AnchorScroll'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { SearchModal } from '@/components/SearchModal'
-import {
-  installStaticExportRscTransport,
-  STATIC_EXPORT_DEPLOYMENT_ID,
-} from '@/utils/static-export-rsc-transport'
+import { disableLinkAutoPrefetch } from '@/utils/disable-link-auto-prefetch'
 
 function escapeScriptClosingTag(script: string) {
   return script.replace(/<\/script/giu, '\\u003c/script')
 }
 
-const staticExportRscTransport = escapeScriptClosingTag(
-  `(${installStaticExportRscTransport.toString()})(${JSON.stringify(STATIC_EXPORT_DEPLOYMENT_ID)})`,
+const linkAutoPrefetchPolicy = escapeScriptClosingTag(
+  `(${disableLinkAutoPrefetch.toString()})()`,
 )
 
-// The transport only exists to feed vinext's navigation runtime from `.rsc`
-// artifacts on a plain static host. The CI-only Next build emits no such
-// artifacts, so installing it there would turn every RSC prefetch into a 404
-// that the acceptance suite (rightly) fails on.
-const needsStaticExportRscTransport =
+// vinext's static export already maps every RSC navigation to the `.txt`
+// payload it writes, so the static host needs no fetch transport. Only
+// vinext's automatic link prefetching is held back; the CI-only Next build
+// has no vinext runtime to configure.
+const needsLinkAutoPrefetchPolicy =
   process.env.NODE_ENV === 'production' &&
   process.env.LANDING_BUILD_MODE !== 'next'
 
@@ -129,9 +126,9 @@ export function SiteLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
-        {needsStaticExportRscTransport && (
-          <script data-vinext-static-rsc-transport="">
-            {staticExportRscTransport}
+        {needsLinkAutoPrefetchPolicy && (
+          <script data-vinext-link-prefetch-policy="">
+            {linkAutoPrefetchPolicy}
           </script>
         )}
         <script>{googleTagManagerScript}</script>
