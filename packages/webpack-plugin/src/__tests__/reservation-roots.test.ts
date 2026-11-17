@@ -151,8 +151,9 @@ for (const project of ['', 'project']) {
       expect(receipt.final.residual).toBe(0)
       expect(receipt.final.css).toContain('green')
       expect(receipt.entryCalls).toBe(receipt.compilations)
+      // Rows are ids relative to the compiler context, the project root.
       expect(receipt.reservations.flatMap((batch) => batch.rows)).toContain(
-        project ? 'project/app/entry.js' : 'app/entry.js',
+        'app/entry.js',
       )
     } finally {
       rmSync(root, { recursive: true, force: true })

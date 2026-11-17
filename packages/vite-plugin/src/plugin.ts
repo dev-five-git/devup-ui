@@ -22,9 +22,13 @@ import {
   mergeImportAliases,
   normalizeShorthands,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   seedFileNumbers,
   setupWarning,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
+  viteImportConditions,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import type {
@@ -50,9 +54,6 @@ import { createServerWatch } from './server-watch'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
-
-/** Modules the `pre` transform extracts as they are written */
-const SOURCE_FILE_RE = /\.(tsx|ts|js|mjs|jsx)$/i
 
 /**
  * MDX documents, extracted by a `post` transform: the extractor reads what an
@@ -351,9 +352,9 @@ function themeUpdate(themeError: unknown) {
 
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
-  devupFile = 'devup.json',
-  distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
+  devupFile: devupFileOption,
+  distDir: distDirOption = 'df',
+  cssDir: cssDirOption,
   extractCss = true,
   debug = false,
   include = [],
@@ -407,18 +408,41 @@ export function DevupUI({
     compiler.setPrefix(prefix ?? null)
   }
   if (ownsEngine) configureEngine()
-  const importAliases = mergeImportAliases(
+  // The relative options and the tsconfig belong to the project root, which
+  // is known once the config resolves; until then the working directory
+  let distDir = distDirOption
+  let cssDir = cssDirOption ?? resolve(distDirOption, 'devup-ui')
+  let devupFile = devupFileOption ?? 'devup.json'
+  let importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
   )
+  function locate(root: string) {
+    distDir = resolveProjectPath(root, distDirOption)
+    cssDir =
+      cssDirOption === undefined
+        ? resolve(root, distDirOption, 'devup-ui')
+        : resolveProjectPath(root, cssDirOption)
+    devupFile = resolveDevupFile(root, devupFileOption)
+    importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(root),
+    )
+  }
   const reservation = createViteReservation(compiler, {
     package: libPackage,
     include,
-    importAliases,
+    get importAliases() {
+      return importAliases
+    },
     singleCss,
     atomHoist,
-    cssDir,
-    distDir,
+    get cssDir() {
+      return cssDir
+    },
+    get distDir() {
+      return distDir
+    },
     relevant: (file) =>
       isConfigFile(file) ||
       isTailwindFile(file) ||
@@ -682,10 +706,12 @@ export function DevupUI({
       resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
+      locate(projectRoot)
       // Vite ids are POSIX absolute paths
       compiler.setModuleResolver(
         createModuleResolver({
           cwd: projectRoot,
+          conditions: viteImportConditions(config),
           toId: (path) => path.replaceAll('\\', '/'),
         }),
       )
@@ -951,7 +977,7 @@ export function DevupUI({
     },
     enforce: 'pre',
     async transform(code, id) {
-      if (!SOURCE_FILE_RE.test(id.split('?')[0])) return
+      if (!SOURCE_FILE_REGEX.test(id.split('?')[0].toLowerCase())) return
       return extractModule.call(this, code, id)
     },
     async generateBundle(_options, bundle) {
