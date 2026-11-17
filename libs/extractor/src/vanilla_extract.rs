@@ -514,27 +514,38 @@ fn sandbox_error(
 
 type ImportedRuns = FxHashMap<String, (usize, String, String, CollectedStyles)>;
 
-#[derive(Debug)]
-pub(crate) struct CacheGuard {
+/// The stylesheet runs and stripped TypeScript one engine session cached on
+/// the calling thread: the runs carry that session's file numbers, so two
+/// sessions never share them.
+#[derive(Debug, Default)]
+pub struct ExtractorCaches {
     imported: ImportedRuns,
     stripped: FxHashMap<String, (String, Rc<Stripped>)>,
-    same_thread: std::marker::PhantomData<Rc<()>>,
 }
+
+impl ExtractorCaches {
+    /// Exchange these caches with the calling thread's live ones.
+    pub fn swap_live(&mut self) {
+        IMPORTED_RUNS.with_borrow_mut(|runs| std::mem::swap(runs, &mut self.imported));
+        STRIPPED.with_borrow_mut(|stripped| std::mem::swap(stripped, &mut self.stripped));
+    }
+}
+
+/// Empty caches until dropped, when the outer ones return.
+#[derive(Debug)]
+pub(crate) struct CacheGuard(ExtractorCaches);
 
 impl Default for CacheGuard {
     fn default() -> Self {
-        Self {
-            imported: IMPORTED_RUNS.with_borrow_mut(std::mem::take),
-            stripped: STRIPPED.with_borrow_mut(std::mem::take),
-            same_thread: std::marker::PhantomData,
-        }
+        let mut outer = ExtractorCaches::default();
+        outer.swap_live();
+        Self(outer)
     }
 }
 
 impl Drop for CacheGuard {
     fn drop(&mut self) {
-        IMPORTED_RUNS.with_borrow_mut(|runs| *runs = std::mem::take(&mut self.imported));
-        STRIPPED.with_borrow_mut(|stripped| *stripped = std::mem::take(&mut self.stripped));
+        self.0.swap_live();
     }
 }
 

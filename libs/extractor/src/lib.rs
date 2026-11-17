@@ -157,6 +157,7 @@ mod utf16_boundary_tests;
 mod util_type;
 mod utils;
 mod vanilla_extract;
+pub use vanilla_extract::ExtractorCaches;
 #[cfg(test)]
 mod vanilla_extract_theme_import_tests;
 mod visit;

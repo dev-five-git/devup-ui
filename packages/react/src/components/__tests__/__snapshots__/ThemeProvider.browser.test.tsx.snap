@@ -2,6 +2,9 @@
 
 exports[`ThemeProvider should declare css variables without affecting layout 1`] = `
 "<div>
+  <style>
+    :root{--brand:red;--colors-accent:blue}
+  </style>
   <div style="display: contents; --brand: red; --colors-accent: blue;">
     <span>
       child

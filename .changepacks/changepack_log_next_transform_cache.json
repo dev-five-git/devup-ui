@@ -1,0 +1,1 @@
+{"changes":{"packages/next-plugin/package.json":"Patch"},"note":"Answer a repeated Turbopack extraction of an unchanged module (the server and client compiles of one file) from the coordinator's per-file transform cache instead of running the engine again","date":"2026-11-15T00:00:00.000Z"}

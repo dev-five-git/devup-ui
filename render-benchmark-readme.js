@@ -1,5 +1,6 @@
-// Writes the benchmark section of README.md and README_ko.md from one checked
-// result file, so both languages publish the same run and the same numbers.
+// Writes the benchmark section of README.md, README_ko.md and the package
+// READMEs that npm publishes from one checked result file, so every copy shows
+// the same run and the same numbers.
 // Every row is the median of the same number of cold samples, shown with its
 // range. `benchmark-check.js --write-results` refreshes the file from a run.
 //
@@ -20,7 +21,18 @@ const list = (samples) => samples.map(seconds).join(', ')
 
 const TEXT = {
   en: {
-    file: 'README.md',
+    files: [
+      'README.md',
+      ...[
+        'react',
+        'components',
+        'reset-css',
+        'next-plugin',
+        'vite-plugin',
+        'rsbuild-plugin',
+        'webpack-plugin',
+      ].map((name) => `packages/${name}/README.md`),
+    ],
     intro: ({ run, samples }) =>
       `[Latest CI benchmark](${run.url}) (commit \`${run.commit}\`, Devup UI ${run.devupUi}) on \`${run.runner}\` with Next.js ${run.next}. Every row is the median of ${samples} cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, \`benchmark-results.json\`.`,
     sizes:
@@ -45,7 +57,7 @@ const TEXT = {
     },
   },
   ko: {
-    file: 'README_ko.md',
+    files: ['README_ko.md'],
     intro: ({ run, samples }) =>
       `[최신 CI 벤치마크](${run.url}) (커밋 \`${run.commit}\`, Devup UI ${run.devupUi})는 \`${run.runner}\`에서 Next.js ${run.next}로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build ${samples}회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 \`benchmark-results.json\`에서 생성합니다.`,
     sizes:
@@ -107,6 +119,7 @@ function table(text, rows) {
 function section(text) {
   return [
     START,
+    '',
     text.intro(results),
     '',
     text.sizes,
@@ -126,21 +139,23 @@ function section(text) {
 
 let stale = false
 for (const text of Object.values(TEXT)) {
-  const current = readFileSync(text.file, 'utf8').replaceAll('\r\n', '\n')
-  const start = current.indexOf(START)
-  const end = current.indexOf(END)
-  if (start === -1 || end === -1)
-    throw new Error(`${text.file} has no ${START} ... ${END} block`)
-  const next =
-    current.slice(0, start) + section(text) + current.slice(end + END.length)
-  if (next === current) continue
-  if (process.argv.includes('--check')) {
-    console.error(
-      `${text.file} differs from benchmark-results.json: run \`bun render-benchmark-readme.js\``,
-    )
-    stale = true
-  } else {
-    writeFileSync(text.file, next)
+  for (const file of text.files) {
+    const current = readFileSync(file, 'utf8').replaceAll('\r\n', '\n')
+    const start = current.indexOf(START)
+    const end = current.indexOf(END)
+    if (start === -1 || end === -1)
+      throw new Error(`${file} has no ${START} ... ${END} block`)
+    const next =
+      current.slice(0, start) + section(text) + current.slice(end + END.length)
+    if (next === current) continue
+    if (process.argv.includes('--check')) {
+      console.error(
+        `${file} differs from benchmark-results.json: run \`bun render-benchmark-readme.js\``,
+      )
+      stale = true
+    } else {
+      writeFileSync(file, next)
+    }
   }
 }
 if (stale) process.exit(1)
