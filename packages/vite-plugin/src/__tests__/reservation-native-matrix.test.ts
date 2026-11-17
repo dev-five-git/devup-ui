@@ -180,9 +180,14 @@ for (const scenario of [
                 row.updatedBaseStyle,
               ])
               .sort()
-          assert.deepEqual(outputs(ab), outputs(ba))
-          if (scenario !== 'environments')
-            assert.deepEqual(ab.assets, ba.assets)
+          // An environment whose sheets changed after the app build is built
+          // again, and only in one order: compare what was extracted, once
+          const unique = (rows: ReturnType<typeof outputs>) =>
+            scenario === 'environments'
+              ? [...new Set(rows.map((row) => JSON.stringify(row)))]
+              : rows
+          assert.deepEqual(unique(outputs(ab)), unique(outputs(ba)))
+          assert.deepEqual(ab.assets, ba.assets)
           assert.equal(ab.css, ba.css)
           if (scenario === 'history') {
             const rows = (value: typeof ab) =>

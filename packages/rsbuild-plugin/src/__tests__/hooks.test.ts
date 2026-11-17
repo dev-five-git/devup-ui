@@ -37,6 +37,7 @@ interface TransformContext {
   resourcePath: string
   environment: Environment
   addDependency: (path: string) => void
+  addMissingDependency: (path: string) => void
 }
 
 type Transform = (context: TransformContext) => unknown
@@ -80,7 +81,14 @@ function fakeApi(root: string) {
     },
     transform: ({ test }: { test: unknown }, handler: Transform) => {
       const css = typeof test === 'string'
-      order.push(css ? 'transform(cssDir)' : 'transform(source)')
+      const mdx = test instanceof RegExp && test.test('page.mdx')
+      order.push(
+        css
+          ? 'transform(cssDir)'
+          : mdx
+            ? 'transform(mdx)'
+            : 'transform(source)',
+      )
       transforms.push({ css, handler })
     },
   }
@@ -166,6 +174,7 @@ async function extract(
     resourcePath: join(root, 'src', 'App.tsx'),
     environment,
     addDependency: () => {},
+    addMissingDependency: () => {},
   })
 }
 
@@ -197,6 +206,7 @@ describe('hook registration', () => {
       'modifyRspackConfig',
       'modifyRsbuildConfig',
       'transform(source)',
+      'transform(mdx)',
     ])
   })
 
@@ -241,6 +251,7 @@ describe('CSS revisions', () => {
           resourcePath: path,
           environment: web,
           addDependency: () => {},
+          addMissingDependency: () => {},
         }),
       )
     expect(serve()).toContain(`.${first}{color:red}`)
@@ -274,12 +285,14 @@ describe('CSS revisions', () => {
       resourcePath: path,
       environment: web,
       addDependency: () => {},
+      addMissingDependency: () => {},
     })
     hooks.css({
       code: '',
       resourcePath: path,
       environment: node,
       addDependency: () => {},
+      addMissingDependency: () => {},
     })
     // Only the web build has seen the sheet change since it served it
     await extract(hooks, app('tan'))
@@ -288,6 +301,7 @@ describe('CSS revisions', () => {
       resourcePath: path,
       environment: node,
       addDependency: () => {},
+      addMissingDependency: () => {},
     })
 
     const passes = builds.map((build) => {
