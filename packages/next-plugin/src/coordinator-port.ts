@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 /**
@@ -63,6 +69,41 @@ export function resolveCoordinatorPortFile(distDir: string): string {
   return foreignLiveOwner(shared) === undefined
     ? shared
     : join(distDir, `coordinator.${process.pid}.port`)
+}
+
+/**
+ * The directory this process writes its coordinator state to (sheet, class
+ * and file maps, canonical map, setup handoff).
+ *
+ * The process holding the shared port file keeps `distDir`, so the next
+ * `next dev` restores from it. A process that had to take its own port file
+ * because another live one holds `distDir` writes to `state.<pid>` instead:
+ * two coordinators writing one set of state files would leave a mix of both
+ * builds for the next restore.
+ */
+export function resolveStateDir(distDir: string, portFile: string): string {
+  return portFile === join(distDir, 'coordinator.port')
+    ? distDir
+    : join(distDir, `state.${process.pid}`)
+}
+
+/** Remove the `state.<pid>` directories of processes that have exited. */
+export function removeStaleStateDirs(distDir: string): void {
+  let entries: string[]
+  try {
+    entries = readdirSync(distDir)
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    const pid = /^state\.(\d+)$/.exec(entry)?.[1]
+    if (pid === undefined || isProcessAlive(Number(pid))) continue
+    try {
+      rmSync(join(distDir, entry), { recursive: true, force: true })
+    } catch {
+      // Still locked (Windows); a later start retries.
+    }
+  }
 }
 
 /** Remove the file unless a different live process owns it. */
