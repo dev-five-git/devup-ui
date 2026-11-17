@@ -36,6 +36,7 @@ import type {
   UserConfig,
 } from 'vite'
 
+import { assetNames, hashSheetAssetNames } from './asset-names'
 import { createCompiledDependencies } from './compiled-dependencies'
 import { createViteReservation } from './reservation'
 import { createServerWatch } from './server-watch'
@@ -48,6 +49,19 @@ import { createServerWatch } from './server-watch'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
+
+/** Modules the `pre` transform extracts as they are written */
+const SOURCE_FILE_RE = /\.(tsx|ts|js|mjs|jsx)$/i
+
+/**
+ * MDX documents, extracted by a `post` transform: the extractor reads what an
+ * MDX plugin such as `@mdx-js/rollup` compiled them to, never raw MDX
+ */
+const MDX_FILE_RE = /\.mdx$/i
+
+type TransformContext = ThisParameterType<
+  Extract<NonNullable<Plugin['transform']>, (...args: never[]) => unknown>
+>
 
 const SOURCE_DIR_CANDIDATES = ['src', 'app']
 
@@ -277,7 +291,9 @@ async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
   inputs: Set<string>,
   publishTailwind: (files: string[]) => void,
-): Promise<void> {
+  watching: boolean,
+): Promise<unknown> {
+  let themeError: unknown
   try {
     const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
@@ -292,8 +308,13 @@ async function writeDataFiles(
       'utf-8',
     )
   } catch (error) {
+    // A one-shot build fails on a theme it cannot load or register: an empty
+    // theme would ship unstyled output. A watcher keeps running, since
+    // devup.json may be mid-edit, and reports the error until it is fixed.
+    if (!watching) throw error
     console.error(error)
     compiler.registerTheme({})
+    themeError = error
   }
   // Sequential: writing into cssDir concurrently with its own mkdir loses the
   // race on a cold start (no `df/`) and fails the build with ENOENT.
@@ -305,6 +326,25 @@ async function writeDataFiles(
       join(options.cssDir, 'devup-ui.css'),
       compiler.getCss(null, false),
     )
+  }
+  return themeError
+}
+
+/**
+ * The dev server's answer to a devup.json update: a reload, or the error
+ * overlay when the theme failed, since a reload would hide it.
+ */
+function themeUpdate(themeError: unknown) {
+  if (themeError === undefined) return { type: 'full-reload' as const }
+  const error =
+    themeError instanceof Error ? themeError : new Error(String(themeError))
+  return {
+    type: 'error' as const,
+    err: {
+      message: error.message,
+      stack: error.stack ?? '',
+      plugin: 'devup-ui',
+    },
   }
 }
 
@@ -435,7 +475,7 @@ export function DevupUI({
   let refreshTail = Promise.resolve()
   const isConfigFile = (file: string) =>
     configFiles.has(resolve(file)) || activeConfigFiles.has(resolve(file))
-  async function refreshConfig() {
+  async function refreshConfig(watching: boolean): Promise<unknown> {
     configState.generation++
     configState.refreshing++
     const previous = refreshTail
@@ -445,7 +485,7 @@ export function DevupUI({
     try {
       await previous
       activeConfigFiles = inputs
-      await writeDataFiles(
+      const themeError = await writeDataFiles(
         compiler,
         {
           package: libPackage,
@@ -459,9 +499,11 @@ export function DevupUI({
           activeTailwindFiles = files
           watchConfigInputs?.()
         },
+        watching,
       )
       if (singleCss)
         await writeCssFile('devup-ui.css', compiler.getCss(null, false))
+      return themeError
     } finally {
       configFiles = inputs
       tailwindFiles = activeTailwindFiles
@@ -477,11 +519,138 @@ export function DevupUI({
     [...tailwindFiles, ...activeTailwindFiles].some(
       (tailwindFile) => resolve(tailwindFile) === resolve(file),
     )
+  /** The finished sheet of the first devup-ui CSS file among `names`. */
+  function getFinishedSheet(names: readonly string[]): string | undefined {
+    const cssName = names
+      .map(getDevupCssChunkName)
+      .find((name) => name !== undefined)
+    return cssName === undefined
+      ? undefined
+      : compiler.getCss(getFileNumByFilename(cssName), false)
+  }
   function writeCssFile(fileName: string, css: string): Promise<void> {
     if (writtenCss.get(fileName) === css) return Promise.resolve()
     writtenCss.set(fileName, css)
     sheetRevisions.set(fileName, (sheetRevisions.get(fileName) ?? 0) + 1)
     return stateWriter.write(join(cssDir, fileName), css, 'utf-8')
+  }
+  /** Extract the module `id` the transform hook accepted */
+  async function extractModule(
+    this: TransformContext,
+    code: string,
+    id: string,
+  ) {
+    const session = extractionSession
+    if (!extractCss) return
+
+    const fileName = id.split('?')[0]
+    if (excludeRegex.test(fileName)) {
+      return
+    }
+    await reservation.reserve()
+
+    const file = resolve(fileName)
+    let input = latestInputs.get(file)
+    if (isServe && input?.code !== code) {
+      input = { code }
+      latestInputs.set(file, input)
+    }
+    const capture = input && {
+      session,
+      file,
+      input,
+      ownership: getBuildOwnership().generation,
+      reservation: reservation.revision,
+      config: configState.generation,
+    }
+    const eligible = capture && currentCapture(capture)
+    const cached = eligible ? session.flights.get(id) : undefined
+    if (cached && currentCapture(cached.capture)) {
+      compiledDependencies.update(
+        this.environment?.name ?? 'client',
+        id,
+        cached.dependencies,
+      )
+      for (const dependency of cached.dependencies)
+        this.addWatchFile(dependency)
+      await cached.ready
+      return cached.result
+    }
+
+    let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
+    if (!rel.startsWith('./')) rel = `./${rel}`
+
+    const {
+      code: extractedCode,
+      css = '',
+      map,
+      cssFile,
+      updatedBaseStyle,
+      dependencies = [],
+      // import main css in code
+    } = (() => {
+      using output = compiler.codeExtract(
+        fileName,
+        code,
+        libPackage,
+        rel,
+        singleCss,
+        true,
+        false,
+        importAliases,
+      )
+      return {
+        code: output.code,
+        css: output.css,
+        map: output.map,
+        cssFile: output.cssFile,
+        updatedBaseStyle: output.updatedBaseStyle,
+        dependencies: output.dependencies,
+      }
+    })()
+    compiledDependencies.update(
+      this.environment?.name ?? 'client',
+      id,
+      dependencies,
+    )
+    for (const dependency of dependencies) this.addWatchFile(dependency)
+    const promises: Promise<void>[] = []
+
+    if (updatedBaseStyle) {
+      // update base style
+      promises.push(writeCssFile('devup-ui.css', compiler.getCss(null, false)))
+    }
+
+    if (cssFile) {
+      const fileNum = getFileNumByFilename(cssFile)
+      const prevCss = cssMap.get(fileNum)
+      if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
+      // `css` is only set when this transform added styles to the sheet.
+      if (css) promises.push(writeCssFile(basename(cssFile), css))
+    }
+    const result = { code: extractedCode, map }
+    if (!eligible) {
+      await Promise.all(promises)
+      return result
+    }
+    const flight: ExtractionFlight = {
+      capture,
+      result,
+      dependencies: [...dependencies],
+      ready: Promise.all(promises).then(
+        () => {
+          if (session.flights.get(id) === flight && !currentCapture(capture))
+            session.flights.delete(id)
+        },
+        (error: unknown) => {
+          if (session.flights.get(id) === flight) session.flights.delete(id)
+          throw error
+        },
+      ),
+    }
+    session.flights.set(id, flight)
+    await flight.ready
+    return result
   }
   // A deleted source file is never transformed again, so its styles stay in
   // the sheet until the engine forgets the file. Every sheet written so far
@@ -524,7 +693,8 @@ export function DevupUI({
         createCompatTypes(importAliases),
         'utf-8',
       )
-      await refreshConfig()
+      // A dev server or `vite build --watch` outlives a broken devup.json
+      await refreshConfig(isServe || !!config?.build?.watch)
 
       try {
         // Numbers come from the sorted paths of every file the build can
@@ -623,6 +793,16 @@ export function DevupUI({
     apply() {
       return true
     },
+    // Build only: the dev server names no assets.
+    outputOptions(options) {
+      if (!extractCss) return
+      return {
+        ...options,
+        assetFileNames: hashSheetAssetNames(options.assetFileNames, (info) =>
+          getFinishedSheet(assetNames(info)),
+        ),
+      }
+    },
     closeBundle() {
       rotateExtractionSession()
       closing = true
@@ -636,7 +816,7 @@ export function DevupUI({
       if (change?.event === 'delete') await own(removeSource)(id)
       if (isConfigFile(id) || (isTailwindFile(id) && existsSync(id))) {
         try {
-          await own(refreshConfig)()
+          await own(refreshConfig)(true)
         } catch (error) {
           console.error(error)
         }
@@ -674,7 +854,7 @@ export function DevupUI({
         return
       }
 
-      await own(refreshConfig)()
+      const themeError = await own(refreshConfig)(true)
 
       const invalidatedModules = new Set<EnvironmentModuleNode>()
       // A Tailwind class compiles from the definitions of the Tailwind CSS, so
@@ -694,7 +874,7 @@ export function DevupUI({
           true,
         )
       }
-      environment.hot.send({ type: 'full-reload' })
+      environment.hot.send(themeUpdate(themeError))
       return []
     },
     // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
@@ -716,7 +896,7 @@ export function DevupUI({
         return
       }
 
-      await own(refreshConfig)()
+      const themeError = await own(refreshConfig)(true)
 
       const invalidatedModules = new Set<ModuleNode>()
       for (const mod of isTailwind
@@ -734,7 +914,7 @@ export function DevupUI({
           true,
         )
       }
-      server.ws.send({ type: 'full-reload' })
+      server.ws.send(themeUpdate(themeError))
       return []
     },
     resolveId(id, importer) {
@@ -763,120 +943,8 @@ export function DevupUI({
     },
     enforce: 'pre',
     async transform(code, id) {
-      const session = extractionSession
-      if (!extractCss) return
-
-      const fileName = id.split('?')[0]
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
-      if (excludeRegex.test(fileName)) {
-        return
-      }
-      await reservation.reserve()
-
-      const file = resolve(fileName)
-      let input = latestInputs.get(file)
-      if (isServe && input?.code !== code) {
-        input = { code }
-        latestInputs.set(file, input)
-      }
-      const capture = input && {
-        session,
-        file,
-        input,
-        ownership: getBuildOwnership().generation,
-        reservation: reservation.revision,
-        config: configState.generation,
-      }
-      const eligible = capture && currentCapture(capture)
-      const cached = eligible ? session.flights.get(id) : undefined
-      if (cached && currentCapture(cached.capture)) {
-        compiledDependencies.update(
-          this.environment?.name ?? 'client',
-          id,
-          cached.dependencies,
-        )
-        for (const dependency of cached.dependencies)
-          this.addWatchFile(dependency)
-        await cached.ready
-        return cached.result
-      }
-
-      let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
-      if (!rel.startsWith('./')) rel = `./${rel}`
-
-      const {
-        code: extractedCode,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-        dependencies = [],
-        // import main css in code
-      } = (() => {
-        using output = compiler.codeExtract(
-          fileName,
-          code,
-          libPackage,
-          rel,
-          singleCss,
-          true,
-          false,
-          importAliases,
-        )
-        return {
-          code: output.code,
-          css: output.css,
-          map: output.map,
-          cssFile: output.cssFile,
-          updatedBaseStyle: output.updatedBaseStyle,
-          dependencies: output.dependencies,
-        }
-      })()
-      compiledDependencies.update(
-        this.environment?.name ?? 'client',
-        id,
-        dependencies,
-      )
-      for (const dependency of dependencies) this.addWatchFile(dependency)
-      const promises: Promise<void>[] = []
-
-      if (updatedBaseStyle) {
-        // update base style
-        promises.push(
-          writeCssFile('devup-ui.css', compiler.getCss(null, false)),
-        )
-      }
-
-      if (cssFile) {
-        const fileNum = getFileNumByFilename(cssFile)
-        const prevCss = cssMap.get(fileNum)
-        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
-        // `css` is only set when this transform added styles to the sheet.
-        if (css) promises.push(writeCssFile(basename(cssFile), css))
-      }
-      const result = { code: extractedCode, map }
-      if (!eligible) {
-        await Promise.all(promises)
-        return result
-      }
-      const flight: ExtractionFlight = {
-        capture,
-        result,
-        dependencies: [...dependencies],
-        ready: Promise.all(promises).then(
-          () => {
-            if (session.flights.get(id) === flight && !currentCapture(capture))
-              session.flights.delete(id)
-          },
-          (error: unknown) => {
-            if (session.flights.get(id) === flight) session.flights.delete(id)
-            throw error
-          },
-        ),
-      }
-      session.flights.set(id, flight)
-      await flight.ready
-      return result
+      if (!SOURCE_FILE_RE.test(id.split('?')[0])) return
+      return extractModule.call(this, code, id)
     },
     async generateBundle(_options, bundle) {
       if (!extractCss) return
@@ -926,6 +994,16 @@ export function DevupUI({
       },
     },
   }
+  // An MDX plugin runs in the normal or `pre` phase; this one runs after it.
+  const mdxPlugin: Plugin = {
+    name: 'devup-ui:mdx',
+    sharedDuringBuild: true,
+    enforce: 'post',
+    transform: own(async function (this: TransformContext, code, id) {
+      if (!MDX_FILE_RE.test(id.split('?')[0])) return
+      return extractModule.call(this, code, id)
+    }),
+  }
   return [
     {
       ...plugin,
@@ -934,5 +1012,6 @@ export function DevupUI({
       transform: own(plugin.transform),
     },
     restorePlugin,
+    mdxPlugin,
   ]
 }
