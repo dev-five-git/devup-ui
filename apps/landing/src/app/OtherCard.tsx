@@ -41,7 +41,7 @@ export function OtherCard({
             {title}
           </Text>
         </Link>
-        <Text color="$captionBold" typography="textL">
+        <Text color="$captionBold" data-benchmark="version" typography="textL">
           {version}
         </Text>
       </VStack>
@@ -50,7 +50,7 @@ export function OtherCard({
           <Text color="$captionBold" typography="textSbold">
             Build Time
           </Text>
-          <Text color="$caption" typography="h5">
+          <Text color="$caption" data-benchmark="value" typography="h5">
             {buildTime}
           </Text>
         </VStack>
@@ -58,7 +58,7 @@ export function OtherCard({
           <Text color="$captionBold" typography="textSbold">
             Build Size
           </Text>
-          <Text color="$caption" typography="h5">
+          <Text color="$caption" data-benchmark="value" typography="h5">
             {buildSize}
           </Text>
         </VStack>
