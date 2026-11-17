@@ -1433,6 +1433,16 @@ impl<'a> DevupVisitor<'a> {
         self.emotion_styled = names;
     }
 
+    /// The compiled styled `component`: one made with Emotion's `styled`
+    /// takes `withComponent` wherever it goes, as Emotion's components do
+    fn emitted_styled(&mut self, component: Expression<'a>, emotion: bool) -> Expression<'a> {
+        if !emotion {
+            return component;
+        }
+        self.forwards_refs = Some(WITH_COMPONENT_MARKING);
+        with_runtime_component(&self.ast, component)
+    }
+
     /// Whether the styled factory `factory` reads Emotion's `styled`, whose
     /// component selector picks out the component alone, not its extensions
     fn emotion_factory(&self, factory: &Expression<'_>) -> bool {
@@ -3937,21 +3947,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 },
             );
             *it = match definition {
-                Some(_) => {
-                    let component = with_statics(
+                Some(_) => self.emitted_styled(
+                    with_statics(
                         &self.ast,
                         expression,
                         identity.component_id.as_deref(),
                         base,
-                    );
-                    // Emotion's components take `withComponent` wherever they go
-                    if emotion {
-                        self.forwards_refs = Some(WITH_COMPONENT_MARKING);
-                        with_runtime_component(&self.ast, component)
-                    } else {
-                        component
-                    }
-                }
+                    ),
+                    emotion,
+                ),
                 None => expression,
             };
             self.pending_styled = definition.map(|definition| {
