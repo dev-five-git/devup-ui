@@ -18,6 +18,7 @@ import {
 } from 'bun:test'
 
 import * as coordinatorModule from '../coordinator'
+import * as coordinatorPortModule from '../coordinator-port'
 import cssLoader, { resetInit as resetCssInit } from '../css-loader'
 import {
   DevupUI,
@@ -1375,10 +1376,12 @@ export const box = style({ color: 'red' })`
       const prevClassMap = { a: 0 }
       const prevFileMap = { 'src/App.tsx': 0 }
 
-      readFileSyncSpy
-        .mockReturnValueOnce(JSON.stringify(prevSheet)) // sheetFile
-        .mockReturnValueOnce(JSON.stringify(prevClassMap)) // classMapFile
-        .mockReturnValueOnce(JSON.stringify(prevFileMap)) // fileMapFile
+      const files: Record<string, string> = {
+        [join('df', 'sheet.json')]: JSON.stringify(prevSheet),
+        [join('df', 'classMap.json')]: JSON.stringify(prevClassMap),
+        [join('df', 'fileMap.json')]: JSON.stringify(prevFileMap),
+      }
+      readFileSyncSpy.mockImplementation((path: string) => files[path] ?? '{}')
 
       DevupUI({})
 
@@ -1390,6 +1393,56 @@ export const box = style({ color: 'red' })`
 
       // Verify stale port file was deleted before starting coordinator
       expect(unlinkSyncSpy).toHaveBeenCalledWith(join('df', 'coordinator.port'))
+    })
+    it('writes its own state next to another live process on the same distDir', () => {
+      process.env.TURBOPACK = '1'
+      const stateDir = join('df', `state.${process.pid}`)
+      const portSpy = spyOn(
+        coordinatorPortModule,
+        'resolveCoordinatorPortFile',
+      ).mockReturnValue(join('df', `coordinator.${process.pid}.port`))
+      const staleSpy = spyOn(
+        coordinatorPortModule,
+        'removeStaleStateDirs',
+      ).mockReturnValue(undefined)
+      const prevSheet = { css: { a: 'color:red' } }
+      readFileSyncSpy.mockImplementation((path: string) =>
+        path === join('df', 'sheet.json') ? JSON.stringify(prevSheet) : '{}',
+      )
+      try {
+        const config = DevupUI({})
+
+        expect(staleSpy).toHaveBeenCalledWith('df')
+        expect(mkdirSyncSpy).toHaveBeenCalledWith(stateDir, { recursive: true })
+        // It still restores what the shared state holds...
+        expect(importSheetSpy).toHaveBeenCalledWith(prevSheet)
+        // ...but writes only its own files.
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            coordinatorPortFile: join('df', `coordinator.${process.pid}.port`),
+            sheetFile: join(stateDir, 'sheet.json'),
+            classMapFile: join(stateDir, 'classMap.json'),
+            fileMapFile: join(stateDir, 'fileMap.json'),
+          }),
+        )
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(stateDir, 'canonicalMap.json'),
+          expect.any(String),
+        )
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(stateDir, 'setup.bin'),
+          expect.anything(),
+        )
+        const rule = config.turbopack?.rules?.['*.{tsx,ts,jsx,js,mjs}'] as {
+          loaders: { options: { sheetFile: string } }[]
+        }
+        expect(rule.loaders[0].options.sheetFile).toBe(
+          join(stateDir, 'sheet.json'),
+        )
+      } finally {
+        portSpy.mockRestore()
+        staleSpy.mockRestore()
+      }
     })
     it('should handle missing state files gracefully on first run', () => {
       process.env.TURBOPACK = '1'
