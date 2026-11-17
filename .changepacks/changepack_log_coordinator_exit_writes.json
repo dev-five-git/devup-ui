@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "When the Turbopack coordinator closes, at process exit included, it writes the newest CSS, sheet and class/file maps still waiting to be written synchronously. Before, it only started an asynchronous flush that `exit` never let finish, so the last writes could be lost",
+  "date": "2026-11-15T00:00:00.000Z"
+}

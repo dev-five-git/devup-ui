@@ -248,3 +248,34 @@ fn dynamic_component_factories_retain_a_separate_eager_target_for_each_instance(
         r#"["article","section","article",["article","section"]]"#
     );
 }
+
+#[test]
+#[serial]
+fn styled_components_carry_the_mark_is_styled_component_reads() {
+    // Given: two styled components, one extending the other.
+    let source = format!(
+        "{IMPORT}const Card=styled('div')({{color:'red'}});const Wide=styled(Card)({{width:1}});"
+    );
+    let output = compile("test.ts", &source, true);
+    let arena = Allocator::default();
+    let mut program = parse(&arena, "test.ts", &output);
+    program
+        .body
+        .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
+    let code = Codegen::new().build(&program).code;
+    // When: the module runs with a forwardRef returning an object, as React's does.
+    let script = format!(
+        "const __devupForwardRef=render=>({{render}});{code}\nJSON.stringify([Card.styledComponentId,Wide.styledComponentId,typeof Card.render,typeof Wide.render]);"
+    );
+    let result = Context::default()
+        .eval(Source::from_bytes(&script))
+        .unwrap_or_else(|error| panic!("{error}: {script}"));
+    // Then: both components carry the mark next to their renderer.
+    assert_eq!(
+        result
+            .as_string()
+            .unwrap_or_else(|| panic!("observation"))
+            .to_std_string_escaped(),
+        r#"["devup","devup","function","function"]"#
+    );
+}

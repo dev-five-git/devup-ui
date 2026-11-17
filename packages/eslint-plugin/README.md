@@ -54,3 +54,26 @@ typed-spread diagnostic; unclassified expressions remain the build's decision.
 ## What counts as a style
 
 The rules follow the build: the style props of Devup UI components, the arguments of `css`, `globalCss`, `keyframes` and `createGlobalStyle`, and the same through the import aliases the build compiles by default: `@emotion/react`, `@emotion/styled`, `styled-components` and `@vanilla-extract/css` (`styled`, `Global`, `style`, `globalStyle`). Props the component passes through (`data-*`, `aria-*`, handlers, `props`, `styleVars`), `.attrs()` arguments and plain data elsewhere are left alone. Vanilla-extract stylesheets (`.css.ts`, `.css.js`) are run as they are by the build, so the style rules skip them.
+
+The rules follow the build: the style props of Devup UI components, the arguments of `css`, `globalCss`, `keyframes` and `createGlobalStyle`, and the same through the import aliases the build compiles by default: `@emotion/react`, `@emotion/styled`, `styled-components` and `@vanilla-extract/css` (`styled`, `Global`, `style`, `globalStyle`). Props the component passes through (`data-*`, `aria-*`, handlers, `props`, `styleVars`), `.attrs()` arguments and plain data elsewhere are left alone. Vanilla-extract stylesheets (`.css.ts`, `.css.js`) are run as they are by the build, so the style rules skip them.
+
+## Build options
+
+When the build plugin is given `package` or `importAliases`, give the rules the same values in the shared settings, so they read the same imports as the build:
+
+```js
+// eslint.config.mjs
+export default [
+  ...devupUi.configs.recommended,
+  {
+    settings: {
+      '@devup-ui': {
+        package: '@acme/ui',
+        importAliases: { '@acme/styled': 'styled', '@emotion/styled': false },
+      },
+    },
+  },
+]
+```
+
+The values merge with the default aliases as the build merges them: a string reads the default export as that export, `true` reads the named exports and `false` turns a default alias off. A value the build plugin would not take stops the lint run with the path of that setting.

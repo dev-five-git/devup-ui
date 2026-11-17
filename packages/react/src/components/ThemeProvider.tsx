@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useContext } from 'react'
+import { useContext, useMemo } from 'react'
 
 import { StyledThemeContext } from '../utils/theme-context'
 import type { StyledTheme } from '../utils/theme-vars'
@@ -30,23 +30,40 @@ export function resolveTheme(
 }
 
 /**
- * The variables scope to the subtree on a `display: contents` element. The
- * outermost provider also declares them on `:root`, so global styles on
- * `html`, `body` or `:root` (`createGlobalStyle`, `<Global>`) read the theme
- * too. That rule is an ordinary `<style>` element, so server rendering sends
- * it with the markup, a theme change updates it and unmounting removes it.
+ * Gives `theme` to `useTheme`, `withTheme` and `ThemeConsumer` through
+ * context, and declares the CSS variables styles read on a `display:
+ * contents` element. CSS variables need an element to live on, so a
+ * provider given a `theme` renders one, declaring only the variables that
+ * differ from the outer provider's; a provider without one adds no element.
+ * Whether the element exists follows only the `theme` prop being given, so a
+ * changing theme never remounts the subtree.
+ *
+ * The outermost provider also declares the whole theme on `:root`, so global
+ * styles on `html`, `body` or `:root` (`createGlobalStyle`, `<Global>`) read
+ * it too. That rule is an ordinary `<style>` element, so server rendering
+ * sends it with the markup, a theme change updates it and unmounting removes
+ * it.
  */
 export function ThemeProvider({ theme, children }: ThemeProviderProps) {
   const outer = useContext(StyledThemeContext)
-  const resolved = resolveTheme(theme, outer)
+  const resolved = useMemo(() => resolveTheme(theme, outer), [theme, outer])
+  const style = useMemo(
+    () => themeToCssVariables(resolved, outer),
+    [resolved, outer],
+  )
+  const rootRule = useMemo(
+    () =>
+      outer === undefined && resolved !== undefined
+        ? themeToRootRule(resolved)
+        : undefined,
+    [resolved, outer],
+  )
   return (
     <StyledThemeContext.Provider value={resolved}>
-      {outer === undefined && resolved !== undefined && (
-        <style
-          dangerouslySetInnerHTML={{ __html: themeToRootRule(resolved) }}
-        />
+      {rootRule !== undefined && (
+        <style dangerouslySetInnerHTML={{ __html: rootRule }} />
       )}
-      <div style={themeToCssVariables(resolved)}>{children}</div>
+      {theme === undefined ? children : <div style={style}>{children}</div>}
     </StyledThemeContext.Provider>
   )
 }

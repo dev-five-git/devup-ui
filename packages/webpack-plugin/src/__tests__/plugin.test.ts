@@ -148,6 +148,7 @@ interface MockCompiler {
   watchMode?: boolean
   webpack: {
     DefinePlugin: ReturnType<typeof mock>
+    WebpackError: typeof Error
     Compilation: { PROCESS_ASSETS_STAGE_REPORT: number }
   }
   hooks: {
@@ -277,6 +278,7 @@ function createCompiler(): MockCompiler {
     },
     webpack: {
       DefinePlugin: mock(),
+      WebpackError: Error,
       Compilation: { PROCESS_ASSETS_STAGE_REPORT: 5000 },
     },
     hooks: {
@@ -601,7 +603,7 @@ describe('devupUIWebpackPlugin', () => {
 
     const compiler = createCompiler()
     await plugin.apply(asCompiler(compiler))
-    expect(compiler.options.module.rules.length).toBe(2)
+    expect(compiler.options.module.rules.length).toBe(3)
 
     const sourceRule = compiler.options.module.rules[0]
     assert(
@@ -610,6 +612,28 @@ describe('devupUIWebpackPlugin', () => {
         'exclude' in sourceRule,
     )
     expect(sourceRule.exclude).toEqual(options.include.output)
+  })
+
+  it('extracts MDX in a post loader, after the MDX loader compiled it', async () => {
+    const plugin = new DevupUIWebpackPlugin({
+      engine: 'wasm',
+      include: ['lib'],
+    })
+    existsSyncSpy.mockReturnValue(false)
+
+    const compiler = createCompiler()
+    await plugin.apply(asCompiler(compiler))
+
+    const [sourceRule, , mdxRule] = compiler.options.module.rules
+    assert(typeof sourceRule === 'object' && sourceRule !== null)
+    expect(mdxRule).toEqual({
+      test: /\.mdx$/i,
+      exclude: new RegExp(
+        '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor|lib)(?:[\\/\\\\]|$))',
+      ),
+      enforce: 'post',
+      use: 'use' in sourceRule ? sourceRule.use : undefined,
+    })
   })
 
   it.each(
@@ -642,6 +666,67 @@ describe('devupUIWebpackPlugin', () => {
     expect(importClassMapSpy).toHaveBeenCalledWith({})
     expect(importFileMapSpy).toHaveBeenCalledWith({})
   })
+
+  it('fails a one-shot build on a theme error', () => {
+    const clash = new Error(
+      "theme: color token 'card' and shadow token 'card' both become the CSS variable --card",
+    )
+    registerThemeSpy.mockImplementationOnce(() => {
+      throw clash
+    })
+    const plugin = new DevupUIWebpackPlugin({ engine: 'wasm' })
+    const compiler = createCompiler()
+
+    expect(() => plugin.apply(asCompiler(compiler))).toThrow(clash)
+
+    expect(registerThemeSpy).toHaveBeenCalledTimes(1)
+    expect(consoleErrorSpy).not.toHaveBeenCalled()
+    expect(compiler.options.module.rules).toEqual([])
+  })
+
+  it.each([
+    ['an Error', new Error('bad token'), '[devup-ui] bad token'],
+    ['a thrown string', 'bad token', '[devup-ui] bad token'],
+  ])(
+    'reports a theme error that is %s in every watch compilation until devup.json loads again',
+    async (_name, thrown, message) => {
+      registerThemeSpy.mockImplementationOnce(() => {
+        throw thrown
+      })
+      existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
+      statSpy.mockResolvedValueOnce(createStats(1))
+      statSpy.mockResolvedValueOnce(createStats(2))
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
+      const compiler = createCompiler()
+
+      plugin.apply(asCompiler(compiler))
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(thrown)
+      expect(registerThemeSpy).toHaveBeenLastCalledWith({})
+      const setup = compiler.hooks.thisCompilation.tap.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPluginWatchCss',
+      )?.[1] as (compilation: object) => void
+      const compile = () => {
+        const compilation = {
+          errors: [] as Error[],
+          hooks: { finishModules: { tapPromise: mock() } },
+        }
+        setup(compilation)
+        return compilation.errors.map((error) => error.message)
+      }
+      expect(compile()).toEqual([message])
+      expect(compile()).toEqual([message])
+
+      const watchRun = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPlugin',
+      )?.[1] as () => Promise<void>
+      await watchRun()
+      await watchRun()
+
+      expect(plugin.themeError).toBeUndefined()
+      expect(compile()).toEqual([])
+    },
+  )
 
   describe('Tailwind CSS definitions', () => {
     const tailwindFile = resolve('styles/tailwind.css')

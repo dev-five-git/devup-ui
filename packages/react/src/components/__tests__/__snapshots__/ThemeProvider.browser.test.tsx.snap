@@ -12,13 +12,3 @@ exports[`ThemeProvider should declare css variables without affecting layout 1`]
   </div>
 </div>"
 `;
-
-exports[`ThemeProvider should render without a theme 1`] = `
-"<div>
-  <div style="display: contents;">
-    <span>
-      child
-    </span>
-  </div>
-</div>"
-`;

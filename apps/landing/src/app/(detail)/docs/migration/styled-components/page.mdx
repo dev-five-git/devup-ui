@@ -28,13 +28,18 @@ const G = styled(motion.div)`
   color: red;
 `
 const H = styled(forwardRef(Field))({ bg: 'red' })
+const I = styled['div']`
+  color: red;
+`
 ```
 
-Any base renders: a tag, a component, a member such as `motion.div`, or any other value, read once where the component is declared. `null`, numbers, booleans and `undefined` never render, so they are build errors, as is a `styled` left uncompiled (`styled('div')` never given styles, `styled.div` exported bare): its import is removed, and that code would throw at runtime.
+Any base renders: a tag, a component, a member such as `motion.div`, or any other value, read once where the component is declared. A tag may also be read as a literal key, `styled['div']` or ``styled[`div`]``, which builds what `styled.div` does, `.attrs` and `.withConfig` included; a key the build cannot read (`styled[tag]`) or one `styled.` could not spell (`styled['my-element']`) is a build error. `null`, numbers, booleans and `undefined` never render, so they are build errors, as is a `styled` left uncompiled (`styled('div')` never given styles, `styled.div` exported bare): its import is removed, and that code would throw at runtime.
 
 A `keyframes` or `css` result held in a `const` of the same file is a build-time value, so `` css`animation: ${fadeIn} 1s;` `` and `styled.div({ ['.' + card + ':hover &']: { margin: 0 } })` work. In CSS text a class standing where a declaration would is a mixin, composed with the component's class. One imported from another module is not: its name is only known once that file is built, so declare it where it is used.
 
 Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and its `shouldForwardProp` is evaluated at build time. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
+
+A key holding an object that names no style property is a nested selector, as in the libraries: `{ span: { color: 'blue' } }` is `.a span{color:blue}`, `{ 'h1, h2': { margin: 0 } }` gives `.b h1` and `.b h2`, a key starting with `:`, `::` or `[` applies to the component, and `&` says where the component goes. A pseudo-class or pseudo-element name written alone, such as `hover` or `before`, is that selector as in Devup UI's [`selectors`](/docs/api/selector) rather than a `<hover>` element, and a Devup UI shorthand such as `p` stays a property, so write `'& p'` to select paragraphs.
 
 A style argument can be conditional — `cond && { ... }`, `cond ? { ... } : { ... }`, `value || { ... }` or `value ?? { ... }`, in `styled` as in `css`. Each property it sets becomes a per-property ternary over what came before (`color: cond ? 'blue' : 'red'`), so the result does not depend on the order atomic classes land in the stylesheet; a conditional class joins as `cond ? cls : ''`, and the left side of `||` / `??` joins only when it is a string, as the libraries skip other values. Classes passed beside rule objects compose in `styled` as in `css`.
 
@@ -85,7 +90,7 @@ const heading = <Heading $tone="teal" $track="hero" id="intro" />
 
 ## Theme interpolation
 
-`ThemeProvider` redefines CSS variables on a `display: contents` wrapper, so it scopes the theme to its subtree without touching layout. The outermost provider also declares them on `:root`, so `createGlobalStyle` rules on `html` or `body` read the theme too. Interpolations that read the theme are resolved at build time — no runtime lookup:
+`ThemeProvider` redefines the CSS variables its theme changes on a `display: contents` `<div>`, so it scopes the theme to its subtree without touching layout (the element still counts for `>` selectors and inside `<table>` or `<select>`; see [limitations](/docs/limitations)). The outermost provider also declares the whole theme on `:root`, so `createGlobalStyle` rules on `html` or `body` read the theme too. Interpolations that read the theme are resolved at build time — no runtime lookup:
 
 ```tsx
 const Card = styled.div`
@@ -102,6 +107,8 @@ const Card = styled.div`
   border: 1px solid var(--colors-line);
 }
 ```
+
+Because those reads are CSS variables, a `theme` prop on one element (`<Card theme={{ brand: 'teal' }} />`) cannot change them, so it is a build error on a component whose styles read the theme: wrap the element in a `ThemeProvider` with that theme instead. A component that does not read the theme drops the prop, as before.
 
 Nested themes flatten with a hyphen, so `theme.colors.line` and `--colors-line` always agree. The object form resolves identically:
 
@@ -141,7 +148,7 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `createGlobalStyle`, `Global`            | extracted, render nothing                                                        |
 | `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
 | `CacheProvider`                          | renders its children; the cache it configures has nothing to hold                |
-| `isStyledComponent`                      | always `false`                                                                   |
+| `isStyledComponent`                      | `true` for components compiled from `styled`, marked with `styledComponentId`    |
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
 | Component selectors (`${Child}`)         | a marker class on the selected component                                         |
@@ -149,4 +156,4 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 
 ## Limitations
 
-Composition only the runtime sees — a `className` from props, an external class, a `styled()` base the build cannot read — follows CSS specificity and stylesheet order rather than the order you wrote. Styled components and classes defined in another module are not read as build-time values, stylis plugins are not applied, and test utilities and React Native targets are not supported. A component of your own that takes the `css` prop must pass on both `className` and `style`. See [Supported Syntax & Limitations](/docs/limitations) for the full list.
+Composition only the runtime sees — a `className` from props, an external class, a `styled()` base the build cannot read — follows CSS specificity and stylesheet order rather than the order you wrote. Styled components and classes defined in another module are not read as build-time values, `stylisPlugins` given to `StyleSheetManager` or `createCache()` and `StyleSheetManager`'s `shouldForwardProp` and `namespace` are build errors, and test utilities and React Native targets are not supported. A component of your own that takes the `css` prop must pass on both `className` and `style`. See [Supported Syntax & Limitations](/docs/limitations) for the full list.

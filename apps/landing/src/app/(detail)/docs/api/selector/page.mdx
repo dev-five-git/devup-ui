@@ -227,6 +227,36 @@ const example = (
 
 Nested rules in `styled` and `css` templates follow styled-components and Emotion: `.child { }` and `> p { }` select descendants, `:hover { }` and `::before { }` apply to the component, and a rule nested in a selector list applies under each of its selectors.
 
+## Nested Selectors in Style Objects
+
+Style objects follow Emotion and styled-components too. In `css()`, `globalCss()`, `styled.div({ ... })`, `styled(Component)({ ... })`, the `css` prop and the Emotion and styled-components imports, a key whose value is an object and that names no style property is a nested selector. It reads like a `selectors` key, except that a name selecting no pseudo-class becomes a descendant rather than a build error:
+
+- an element name, as `span`, or a selector list, as `'h1, h2'`, selects descendants, one rule per selector of the list
+- a pseudo-class, pseudo-element or media shorthand name, as `hover`, `before` or `print`, is that selector, as in `selectors`
+- a key starting with `:`, `::` or `[` applies to the element itself, and `&` says where the element goes
+
+```tsx
+const title = css({
+  color: 'red',
+  span: { color: 'blue' },
+  'h1, h2': { m: 0 },
+  hover: { color: 'green' },
+  '&.active': { fontWeight: 'bold' },
+})
+// .a{color:red}
+// .b span{color:blue}
+// .c h1{margin:0}
+// .d h2{margin:0}
+// .e:hover{color:green}
+// .f.active{font-weight:bold}
+
+globalCss({ body: { color: 'black', a: { color: 'blue' } } })
+// body{color:black}
+// body a{color:blue}
+```
+
+A key that is a style property keeps its meaning even when it holds an object: `p` is Devup UI's `padding` shorthand, so `p: { ... }` does not select paragraphs; write `'& p'` for them. A key holding a string, as a misspelled `colr: 'red'`, stays a declaration. JSX props are not style objects: `<Box span={...} />` passes `span` to the element as before; use `selectors` or the `css` prop to nest a selector there.
+
 ## Media Shorthands
 
 These props wrap their styles in a fixed media query. They accept responsive arrays and nest in either direction with selectors and other at-rules.
