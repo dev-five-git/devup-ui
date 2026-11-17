@@ -13,6 +13,7 @@ mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 mod property_names;
+pub mod property_order;
 pub mod quoted;
 pub mod rm_css_comment;
 pub mod selector_params;
