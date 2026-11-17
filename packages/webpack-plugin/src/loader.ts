@@ -13,6 +13,8 @@ import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
 
 export interface DevupUILoaderOptions {
   readonly engine?: DevupEngine
+  /** The project root extraction ids are relative to; the cwd when absent */
+  readonly root?: string
   package: string
   cssDir: string
   sheetFile: string
@@ -41,15 +43,23 @@ function parseSourceMap(sourceMap: string | undefined): LoaderSourceMap {
 const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
 )
-let moduleResolver: ReturnType<typeof createModuleResolver> | undefined
+const moduleResolvers = new Map<
+  string,
+  ReturnType<typeof createModuleResolver>
+>()
 
-/** Resolve imports to the cwd-relative ids this loader extracts files under */
-function setCwdModuleResolver(
+/** Resolve imports to the root-relative ids this loader extracts files under */
+function setRootModuleResolver(
   compiler: Pick<DevupCompiler, 'setModuleResolver'>,
+  root: string,
 ): void {
-  moduleResolver ??= createModuleResolver({
-    toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
-  })
+  let moduleResolver = moduleResolvers.get(root)
+  if (!moduleResolver) {
+    moduleResolver = createModuleResolver({
+      toId: (path) => relative(root, path).replaceAll('\\', '/'),
+    })
+    moduleResolvers.set(root, moduleResolver)
+  }
   compiler.setModuleResolver(moduleResolver)
 }
 
@@ -64,6 +74,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       fileMapFile,
       singleCss,
       engine,
+      root = process.cwd(),
       importAliases = {},
     } = this.getOptions()
     const callback = this.async()
@@ -83,10 +94,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
       // this, single-importer collapse and atom hoisting silently no-op on
       // Windows. No-op on POSIX.
-      const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
+      const relativePath = relative(root, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setCwdModuleResolver(compiler)
+      setRootModuleResolver(compiler, root)
       const output: DevupCompilerOutput = compiler.codeExtract(
         relativePath,
         source.toString(),
@@ -102,11 +113,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         'code' | 'css' | 'map' | 'cssFile' | 'updatedBaseStyle' | 'dependencies'
       >
       try {
+        const cssFile = output.cssFile
         snapshot = {
           code: output.code,
-          css: output.css,
+          // The engine serializes the CSS only when it is read; watch mode
+          // never writes it
+          css: cssFile && !watch ? output.css : undefined,
           map: output.map,
-          cssFile: output.cssFile,
+          cssFile,
           updatedBaseStyle: output.updatedBaseStyle,
           dependencies: output.dependencies,
         }
@@ -122,7 +136,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         dependencies,
       } = snapshot
       for (const dependency of dependencies) {
-        this.addDependency(resolve(dependency))
+        this.addDependency(resolve(root, dependency))
       }
       const sourceMap = parseSourceMap(map)
       const promises: Promise<void>[] = []

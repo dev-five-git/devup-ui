@@ -159,6 +159,7 @@ mod utf16_boundary_tests;
 mod util_type;
 mod utils;
 mod vanilla_extract;
+pub use vanilla_extract::ExtractorCaches;
 #[cfg(test)]
 mod vanilla_extract_theme_import_tests;
 mod visit;
@@ -16206,7 +16207,10 @@ export const a = (m) => <Box {prop} />"
     #[case("stylex.props(s.red, (cond).x)", "[cond.x]")]
     #[case("stylex.props(s.red, ...rest)", "rest")]
     #[case("stylex.props(s.red, s.fn(1))", "--")]
-    #[case("stylex.props(s.red, s.inc)", "color-0-red--255")]
+    #[case(
+        "stylex.props(s.red, s.inc)",
+        "result = { className: \"margin-0-1px--255 color-0-green--255\" }"
+    )]
     #[case("stylex.props(on && s.reset)", "{ className: \"\" }")]
     #[case("stylex.props([s.red, rest])", "[rest].flat(Infinity)")]
     #[serial]
@@ -16224,6 +16228,57 @@ const s = stylex.create({{
   inc: {{ ...stylex.include(s0.a), color: 'green' }},
 }})
 export const result = {call}"
+        ));
+        assert!(code.contains(expected), "{expected}\n{code}");
+    }
+
+    #[rstest]
+    #[case::later_declaration_wins(
+        "{ ...stylex.include(s0.a), color: 'blue' }",
+        "\"x\": \"margin-0-1px--255 color-0-blue--255\""
+    )]
+    #[case::later_include_wins(
+        "{ color: 'blue', ...stylex.include(s0.a) }",
+        "\"x\": \"color-0-red--255 margin-0-1px--255\""
+    )]
+    #[case::later_include_over_earlier(
+        "{ ...stylex.include(s0.a), ...stylex.include(s0.b) }",
+        "\"x\": \"margin-0-1px--255 color-0-green--255\""
+    )]
+    #[case::nested_include(
+        "{ ...stylex.include(s1.c), margin: '2px' }",
+        "\"x\": \"color-0-red--255 opacity-0-_d_5--255 margin-0-2px--255\""
+    )]
+    #[case::condition_key_replaced(
+        "{ ...stylex.include(s0.h), ':hover': { opacity: 1 } }",
+        "\"x\": \"opacity-0-1-_a__c_hover-255\""
+    )]
+    #[case::props_resolves_keys(
+        "{ ...stylex.include(s0.a), color: 'blue' }",
+        "p = { className: \"margin-0-1px--255 color-0-green--255\" }"
+    )]
+    #[case::dynamic_include_keeps_classes(
+        "{ ...stylex.include(s0.f), color: 'blue' }",
+        "\"x\": \"height-0---255 color-0-blue--255\""
+    )]
+    #[serial]
+    fn test_stylex_include_later_declarations_override(
+        #[case] namespace: &str,
+        #[case] expected: &str,
+    ) {
+        let code = readable_code(&format!(
+            "import stylex from '@stylexjs/stylex'
+const s0 = stylex.create({{
+  a: {{ color: 'red', margin: '1px' }},
+  b: {{ color: 'green' }},
+  h: {{ ':hover': {{ color: 'red' }} }},
+  f: (h) => ({{ height: h }}),
+}})
+const s1 = stylex.create({{ c: {{ ...stylex.include(s0.a), opacity: 0.5 }} }})
+const s = stylex.create({{
+  x: {namespace},
+}})
+export const p = stylex.props(s.x, s0.b)"
         ));
         assert!(code.contains(expected), "{expected}\n{code}");
     }

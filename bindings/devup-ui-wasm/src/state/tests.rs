@@ -52,7 +52,7 @@ fn reset_returns_fresh_extraction_when_engine_is_dirty() {
     reset_state_for_testing();
     assert_eq!(export_sheet_internal().unwrap(), empty_sheet);
     assert_eq!(get_default_theme().unwrap(), None);
-    assert!(MODULE_RESOLVER.with_borrow(Option::is_none));
+    assert!(MODULE_RESOLVER.with_borrow(|resolver| resolver.live().is_none()));
     assert_eq!(get_prefix(), None);
     assert!(!is_debug());
     assert_eq!(css::atom_hoist::atom_hoist_threshold(), None);

@@ -443,6 +443,110 @@ describe('devupUIWebpackPlugin', () => {
     },
   )
 
+  describe('project root', () => {
+    const context = resolve('apps', 'web')
+
+    function applyAt(
+      compilerContext: string | undefined,
+      options: ConstructorParameters<typeof DevupUIWebpackPlugin>[0] = {},
+    ) {
+      const compiler = createCompiler()
+      compiler.options.context = compilerContext
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', ...options })
+      plugin.apply(asCompiler(compiler))
+      const [sourceRule] = compiler.options.module.rules as {
+        use: { options: { root: string; sheetFile: string } }[]
+      }[]
+      compiler.hooks.shutdown.tap.mock.calls[0][1]()
+      return { plugin, loader: sourceRule.use[0].options }
+    }
+
+    it("resolves the relative options against webpack's context", () => {
+      const { plugin, loader } = applyAt(context, {
+        include: ['lib'],
+        productionPrewarmFiles: ['src/b.tsx', join(context, 'src', 'a.tsx')],
+      })
+
+      expect(plugin.options).toMatchObject({
+        devupFile: join(context, 'devup.json'),
+        distDir: join(context, 'df'),
+        cssDir: join(context, 'df', 'devup-ui'),
+        productionPrewarmFiles: ['src/a.tsx', 'src/b.tsx'],
+      })
+      expect(plugin.sheetFile).toBe(join(context, 'df', 'sheet.json'))
+      expect(loader.root).toBe(context)
+      expect(loader.sheetFile).toBe(join(context, 'df', 'sheet.json'))
+      expect(mkdirSyncSpy).toHaveBeenCalledWith(join(context, 'df'), {
+        recursive: true,
+      })
+      expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(
+        join(context, 'devup.json'),
+      )
+    })
+
+    it('resolves relative user paths against the context and keeps absolute ones', () => {
+      const cssDir = resolve('elsewhere', 'css')
+      const { plugin } = applyAt(context, {
+        devupFile: 'theme/devup.json',
+        distDir: 'out',
+        cssDir,
+      })
+
+      expect(plugin.options).toMatchObject({
+        devupFile: join(context, 'theme', 'devup.json'),
+        distDir: join(context, 'out'),
+        cssDir,
+      })
+    })
+
+    it('keeps the paths as given when the context is the cwd', () => {
+      const { plugin, loader } = applyAt(process.cwd(), {
+        productionPrewarmFiles: ['src/a.tsx'],
+      })
+
+      expect(plugin.options).toMatchObject({
+        devupFile: 'devup.json',
+        distDir: 'df',
+        cssDir: resolve('df', 'devup-ui'),
+        productionPrewarmFiles: ['src/a.tsx'],
+      })
+      expect(plugin.sheetFile).toBe(join('df', 'sheet.json'))
+      expect(loader.root).toBe(process.cwd())
+    })
+
+    it('falls back to the devup.json of the cwd with a warning', () => {
+      const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+      existsSyncSpy.mockImplementation(
+        (path: string) => path === resolve('devup.json'),
+      )
+      try {
+        const fallbackContext = resolve('apps', 'fallback')
+        const { plugin } = applyAt(fallbackContext)
+
+        expect(plugin.options.devupFile).toBe(resolve('devup.json'))
+        expect(plugin.options.distDir).toBe(join(fallbackContext, 'df'))
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0]?.[0]).toContain('devupFile')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('forgets deleted sources under their names relative to the context', async () => {
+      const compiler = createCompiler()
+      compiler.options.context = context
+      new DevupUIWebpackPlugin({ engine: 'wasm', watch: true }).apply(
+        asCompiler(compiler),
+      )
+      using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(false)
+      Object.assign(compiler, {
+        removedFiles: new Set([join(context, 'src', 'a.tsx')]),
+      })
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+      expect(removeFile.mock.calls).toEqual([['src/a.tsx']])
+    })
+  })
+
   it.each([false, true])(
     'forgets deleted sources at watchRun with watch=%s',
     async (watch) => {
@@ -541,7 +645,10 @@ describe('devupUIWebpackPlugin', () => {
       const plugin = new DevupUIWebpackPlugin({ ...options, engine: 'wasm' })
       await plugin.writeDataFiles()
 
-      expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(options.devupFile)
+      expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(
+        options.devupFile,
+        expect.any(Set),
+      )
       expect(registerThemeSpy).toHaveBeenCalledWith(
         _options.readFile?.theme ?? {},
       )
@@ -658,13 +765,61 @@ describe('devupUIWebpackPlugin', () => {
     readFileSyncSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    statSpy.mockReturnValue(createStats(1))
+    statSpy.mockResolvedValue(createStats(1))
     existsSyncSpy.mockReturnValue(true)
     plugin.apply(asCompiler(compiler))
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
     expect(importSheetSpy).toHaveBeenCalledWith({})
     expect(importClassMapSpy).toHaveBeenCalledWith({})
     expect(importFileMapSpy).toHaveBeenCalledWith({})
+  })
+
+  it('watches the configs devup.json extends and reloads when one changes', async () => {
+    const base = resolve('themes/base.json')
+    loadDevupConfigSyncSpy.mockImplementation(
+      (path: string, inputs?: Set<string>) => {
+        inputs?.add(resolve(path))
+        inputs?.add(base)
+        return {}
+      },
+    )
+    existsSyncSpy.mockImplementation(
+      (path: string) => path === resolve('devup.json') || path === base,
+    )
+    const stamps = new Map([
+      [resolve('devup.json'), 1],
+      [base, 1],
+    ])
+    statSpy.mockImplementation(async (path: string) =>
+      createStats(stamps.get(path) ?? 0),
+    )
+    const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', watch: true })
+    const compiler = createCompiler()
+    plugin.apply(asCompiler(compiler))
+    expect(plugin.configFiles).toEqual([resolve('devup.json'), base])
+
+    const add = mock()
+    compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+      fileDependencies: { add },
+      missingDependencies: { add: mock() },
+    })
+    expect(add).toHaveBeenCalledWith(base)
+
+    const watchRun = compiler.hooks.watchRun.tapPromise.mock.calls.find(
+      ([name]) => name === 'DevupUIWebpackPlugin',
+    )?.[1] as () => Promise<void>
+    await watchRun()
+    loadDevupConfigSyncSpy.mockClear()
+    await watchRun()
+    expect(loadDevupConfigSyncSpy).not.toHaveBeenCalled()
+
+    // Editing the base theme reloads; so does deleting it
+    stamps.set(base, 2)
+    await watchRun()
+    expect(loadDevupConfigSyncSpy).toHaveBeenCalledTimes(1)
+    stamps.delete(base)
+    await watchRun()
+    expect(loadDevupConfigSyncSpy).toHaveBeenCalledTimes(2)
   })
 
   it('fails a one-shot build on a theme error', () => {
@@ -733,7 +888,10 @@ describe('devupUIWebpackPlugin', () => {
 
     function mockTailwindCss() {
       existsSyncSpy.mockImplementation(
-        (path: string) => path === 'devup.json' || path === tailwindFile,
+        (path: string) =>
+          path === 'devup.json' ||
+          path === resolve('devup.json') ||
+          path === tailwindFile,
       )
       loadDevupConfigSyncSpy.mockReturnValue({
         tailwind: { css: 'styles/tailwind.css' },
@@ -820,7 +978,8 @@ describe('devupUIWebpackPlugin', () => {
     const compiler = createCompiler()
 
     existsSyncSpy.mockImplementation((path: string) => {
-      if (path === plugin.options.devupFile) return options.existsDevupFile
+      if (path === resolve(plugin.options.devupFile))
+        return options.existsDevupFile
       if (path === plugin.options.distDir) return options.existsDistDir
       if (path === plugin.options.cssDir) return options.existsCssDir
       if (path === join(plugin.options.distDir, 'sheet.json'))
@@ -884,23 +1043,20 @@ describe('devupUIWebpackPlugin', () => {
       expect(compiler.hooks.watchRun.tapPromise).toHaveBeenCalled()
 
       await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
-      if (options.existsDevupFile) {
-        expect(statSpy).toHaveBeenCalledWith(plugin.options.devupFile)
-        await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
-      } else {
-        expect(statSpy).not.toHaveBeenCalled()
-      }
+      // A devup.json that does not exist yet is watched for being added
+      expect(statSpy).toHaveBeenCalledWith(resolve(plugin.options.devupFile))
+      await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
     } else expect(compiler.hooks.watchRun.tapPromise).toHaveBeenCalledTimes(1)
-    if (options.existsDevupFile) {
-      expect(compiler.hooks.afterCompile.tap).toHaveBeenCalled()
-      const add = mock()
-      compiler.hooks.afterCompile.tap.mock.calls[0][1]({
-        fileDependencies: {
-          add,
-        },
-      })
-      expect(add).toHaveBeenCalledWith(resolve(plugin.options.devupFile))
-    } else expect(compiler.hooks.afterCompile.tap).not.toHaveBeenCalled()
+    expect(compiler.hooks.afterCompile.tap).toHaveBeenCalled()
+    const add = mock()
+    const addMissing = mock()
+    compiler.hooks.afterCompile.tap.mock.calls[0][1]({
+      fileDependencies: { add },
+      missingDependencies: { add: addMissing },
+    })
+    expect(options.existsDevupFile ? add : addMissing).toHaveBeenCalledWith(
+      resolve(plugin.options.devupFile),
+    )
     if (options.existsCssDir) {
       expect(mkdirSpy).not.toHaveBeenCalledWith(plugin.options.cssDir, {
         recursive: true,
@@ -1142,8 +1298,8 @@ describe('devupUIWebpackPlugin', () => {
         'src/child.tsx': 'src/parent.tsx',
       })
       computeReachableFilesSpy.mockReturnValue([
-        resolve(process.cwd(), 'src', 'parent.tsx'),
-        resolve(process.cwd(), 'src', 'child.tsx'),
+        resolve('/project', 'src', 'parent.tsx'),
+        resolve('/project', 'src', 'child.tsx'),
       ])
       readFileSyncSpy.mockReturnValue('source')
       const setModuleResolverSpy = spyOn(
@@ -1165,8 +1321,8 @@ describe('devupUIWebpackPlugin', () => {
         plugin.apply(asCompiler(compiler))
         compiler.hooks.run.tap.mock.calls[0][1]()
         expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-          srcDir: resolve(process.cwd(), 'src'),
-          tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+          srcDir: resolve('/project', 'src'),
+          tsconfigPath: resolve('/project', 'tsconfig.json'),
           entries: [
             resolve('/project', './src/parent'),
             resolve('/project', './src/other'),
@@ -1188,7 +1344,7 @@ describe('devupUIWebpackPlugin', () => {
             import.meta.path,
           )
           expect(resolved).toMatchObject({
-            path: relative(process.cwd(), import.meta.path).replaceAll(
+            path: relative(resolve('/project'), import.meta.path).replaceAll(
               '\\',
               '/',
             ),

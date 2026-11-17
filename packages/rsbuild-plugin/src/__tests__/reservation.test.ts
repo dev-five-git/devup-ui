@@ -64,7 +64,8 @@ it.each([false, true])(
           { request: './a.js', context: resolve('external') },
         ])
         expect(discovery).toMatchObject({
-          cwd: process.cwd(),
+          cwd: resolve('other'),
+          tsconfigPath: resolve('other', 'tsconfig.json'),
           include: ['included-ui'],
           package: '@devup-ui/react',
           importAliases: {},

@@ -15,7 +15,9 @@ import {
   computeCompiledFiles,
   createCompatTypes,
   createNodeModulesExcludeRegex,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
+  type DevupCompiler,
   type DevupUIBasePluginOptions,
   extractedNeedles,
   findTailwindCss,
@@ -25,6 +27,7 @@ import {
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
+  type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
 
@@ -172,6 +175,54 @@ export function restoreSessionState(
   }
 }
 
+interface SharedSlotOptions {
+  libPackage: string
+  include: string[]
+  importAliases: WasmImportAliases
+  cssDir: string
+  singleCss: boolean
+}
+
+/**
+ * Reserve the class slots files share, in path order, with the filenames and
+ * CSS directories the coordinator extracts them with.
+ */
+function reserveSharedSlots(
+  wasm: Pick<DevupCompiler, 'reserveClassSlots'>,
+  { libPackage, include, importAliases, cssDir, singleCss }: SharedSlotOptions,
+): void {
+  const cwd = process.cwd()
+  try {
+    createSharedSlotReservation(wasm).reserve(
+      {
+        roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+        include,
+        cwd,
+        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        package: libPackage,
+        importAliases,
+        toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+      },
+      {
+        singleCss,
+        importMainCssInCode: false,
+        importMainCssInCss: true,
+        cssDir: ({ physicalPath }) =>
+          `./${relative(dirname(physicalPath), cssDir).replaceAll('\\', '/')}`,
+      },
+    )
+  } catch (error) {
+    // Best-effort; shared slots fall back to arrival order.
+    console.warn(
+      setupWarning(
+        'shared class-slot reservation',
+        error,
+        'Classes several files share take their names in the order `next dev` extracts them, so they can differ between dev sessions.',
+      ),
+    )
+  }
+}
+
 /**
  * Devup UI Next Plugin
  * @param config
@@ -269,7 +320,7 @@ export function DevupUI(
     }
     if (requestedAtomHoist) {
       console.warn(
-        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names, while existing shared slots remain arrival-ordered.',
+        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names.',
       )
     }
     if (!existsSync(distDir))
@@ -432,6 +483,18 @@ export function DevupUI(
         ),
       )
     }
+    // A class shared by several files takes the next free slot of whichever
+    // file extracts it first. `next dev` extracts in Turbopack's request
+    // order, so reserve those slots in path order before any loader runs.
+    // One-shot builds already extract in path order through the prewarm below.
+    if (watch)
+      reserveSharedSlots(wasm, {
+        libPackage,
+        include,
+        importAliases,
+        cssDir,
+        singleCss,
+      })
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:
     // a CSS request can itself hold up the next extraction wave. In one-shot
@@ -484,6 +547,7 @@ export function DevupUI(
             true,
             importAliases as unknown as Record<string, string | null>,
           ),
+          false,
         )
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt
@@ -705,12 +769,16 @@ export function DevupUI(
   let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
+    // Next's project directory, which it also hands webpack as `context`: the
+    // webpack plugin resolves the relative options against it, not the cwd
+    const root = _options.dir ?? process.cwd()
     options.cssDir ??= resolve(
+      root,
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
     if (!_options.dev && productionPrewarmFiles === undefined) {
-      const cwd = process.cwd()
+      const cwd = root
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
