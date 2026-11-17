@@ -68,6 +68,16 @@ unwind. Binding tests compose these with sheet/resolver snapshots. Keep a named
 guard on its creating thread and retain `#[serial]`: guards clean up but do not
 serialize concurrent tests. Cleanup does not run for panic=abort.
 
+## Sessions
+
+`createSession()` returns the id of a new engine session with a clean state, and
+`selectSession(id)` makes it live: every later call reads and changes that
+session's state, resolver included, until another is selected. Session 0 is
+live from the start, so a single app needs neither. Two apps in one process
+each select their own session before each call. `dropSession(id)` forgets a
+session (dropping the live one makes session 0 live), and the full test reset
+forgets every session but 0.
+
 ## Errors
 
 A source the build cannot compile makes `codeExtract` throw an `Error`. Its

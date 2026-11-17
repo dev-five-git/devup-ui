@@ -1,8 +1,15 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 
 import {
   formatPortFile,
@@ -10,7 +17,9 @@ import {
   parsePortFile,
   removeOwnPortFile,
   removeStalePortFile,
+  removeStaleStateDirs,
   resolveCoordinatorPortFile,
+  resolveStateDir,
   unreachableCoordinatorError,
 } from '../coordinator-port'
 
@@ -90,6 +99,51 @@ describe('coordinator port file', () => {
     expect(message).toContain('127.0.0.1:4321')
     expect(message).toContain(`owner pid ${DEAD_PID} (not running)`)
     expect(message).toContain('restart the dev server or build')
+  })
+
+  it('writes state beside distDir only for a process with its own port file', () => {
+    expect(resolveStateDir('df', join('df', 'coordinator.port'))).toBe('df')
+    expect(
+      resolveStateDir('df', join('df', `coordinator.${process.pid}.port`)),
+    ).toBe(join('df', `state.${process.pid}`))
+  })
+
+  it('removes the state dirs of exited processes and keeps live ones', () => {
+    const dir = tmp()
+    for (const name of [
+      `state.${DEAD_PID}`,
+      `state.${process.pid}`,
+      `state.${LIVE_FOREIGN_PID}`,
+      'state.other',
+    ])
+      mkdirSync(join(dir, name))
+    writeFileSync(join(dir, `state.${DEAD_PID}`, 'sheet.json'), '{}')
+
+    removeStaleStateDirs(dir)
+
+    expect(readdirSync(dir).sort()).toEqual(
+      [
+        `state.${process.pid}`,
+        `state.${LIVE_FOREIGN_PID}`,
+        'state.other',
+      ].sort(),
+    )
+    // A missing distDir (first run) is nothing to clean.
+    expect(() => removeStaleStateDirs(join(dir, 'missing'))).not.toThrow()
+  })
+
+  it('leaves a state dir it cannot remove for a later start', () => {
+    const dir = tmp()
+    mkdirSync(join(dir, `state.${DEAD_PID}`))
+    const rmSpy = spyOn(fs, 'rmSync').mockImplementation(() => {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+    })
+    try {
+      expect(() => removeStaleStateDirs(dir)).not.toThrow()
+    } finally {
+      rmSpy.mockRestore()
+    }
+    expect(readdirSync(dir)).toEqual([`state.${DEAD_PID}`])
   })
 
   it('recognises connection failures, including aggregated ones', () => {

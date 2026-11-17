@@ -42,6 +42,33 @@ add('reservation-malformed-second-row-arity-nonmutation', (h) => {
     h.call('reserveClassSlots', value, pkg, false, false, false, {})
   h.call('reserveClassSlots', rows, pkg, false, false, false, { bad: 7 })
 })
+add('sessions-keep-apart-until-dropped', (h) => {
+  h.call('setPrefix', 'zero-')
+  h.extract(source)
+  const session = h.call('createSession').value.value
+  h.call('selectSession', session)
+  h.call('registerTheme', theme)
+  h.extract(box('color="blue"'), { filename: 'src/second.tsx' })
+  h.call('selectSession', 0)
+  h.extract(source)
+  h.call('selectSession', 7)
+  h.call('dropSession', 0)
+  h.call('selectSession', session)
+  h.call('dropSession', session)
+  h.call('dropSession', session)
+})
+add('remove-file-stays-in-its-session', (h) => {
+  h.extract(source, { single: false })
+  const session = h.call('createSession').value.value
+  h.call('selectSession', session)
+  h.extract(box('color="blue"'), { single: false })
+  h.call('selectSession', 0)
+  h.call('removeFile', file)
+  h.call('removeFile', file)
+  h.call('selectSession', session)
+  h.call('removeFile', file)
+  h.call('dropSession', session)
+})
 add('remove-file-drops-its-own-styles', (h) => {
   h.call('importCanonicalMap', { 'src/child.tsx': 'src/root.tsx' })
   h.extract(source, { single: false })
