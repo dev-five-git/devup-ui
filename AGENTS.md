@@ -1,8 +1,11 @@
 # DEVUP UI - PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-01-07
-**Commit:** 06887f92
+**Generated:** 2026-11-15
+**Commit:** 1160bf64
 **Branch:** main
+
+Line counts below are approximate snapshots and go stale quickly; check the
+files themselves before relying on them.
 
 ## OVERVIEW
 
@@ -13,7 +16,7 @@ Zero-runtime CSS-in-JS preprocessor. Rust core (Oxc parser) → WASM → TypeScr
 ```
 devup-ui/
 ├── libs/               # Rust core - CSS extraction engine (SEE libs/AGENTS.md)
-│   ├── extractor/      # JSX→CSS transformation (9k lines)
+│   ├── extractor/      # JSX→CSS transformation (~165k lines incl. tests)
 │   ├── sheet/          # CSS generation + theming
 │   └── css/            # Utilities, selectors, optimization
 ├── bindings/           # WASM bridge (SEE bindings/devup-ui-wasm/AGENTS.md)
@@ -47,11 +50,11 @@ devup-ui/
 
 | Module | File | Lines | Role |
 |--------|------|-------|------|
-| extractor | `lib.rs` | 9,094 | Main extraction + tests |
-| sheet | `lib.rs` | 1,821 | CSS output generation |
-| theme | `theme.rs` | 1,526 | Color/typography/length/shadow system |
-| css_utils | `css_utils.rs` | 1,239 | Template literal parsing |
-| visit | `visit.rs` | 669 | AST visitor pattern |
+| extractor | `lib.rs` | ~24,800 | Main extraction + tests |
+| sheet | `lib.rs` | ~4,600 | CSS output generation |
+| theme | `theme.rs` | ~3,000 | Color/typography/length/shadow system |
+| css_utils | `css_utils.rs` | ~2,000 | Template literal parsing |
+| visit | `visit.rs` | ~5,900 | AST visitor pattern |
 
 ### TypeScript Packages
 
