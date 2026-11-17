@@ -22,12 +22,22 @@ pub struct AtomModeGuard {
 
 impl AtomModeGuard {
     pub fn new(single_css: bool) -> Self {
-        let previous = SUPPRESSED.with(|state| state.replace(state.get() || single_css));
+        Self::exact(is_suppressed() || single_css)
+    }
+
+    /// Suppress atom mode exactly when `suppressed`, whatever encloses the guard.
+    pub fn exact(suppressed: bool) -> Self {
+        let previous = SUPPRESSED.with(|state| state.replace(suppressed));
         Self {
             previous,
             thread_bound: PhantomData,
         }
     }
+}
+
+/// Whether a guard suppresses atom mode on this thread.
+pub fn is_suppressed() -> bool {
+    SUPPRESSED.with(Cell::get)
 }
 
 impl Drop for AtomModeGuard {
@@ -156,6 +166,24 @@ mod tests {
         assert!(is_hoisted_bucket("shared"));
         set_atom_hoist(None);
         restore_atom_plan(None);
+    }
+
+    #[test]
+    #[serial]
+    fn exact_suppression_ignores_the_enclosing_mode() {
+        // Given
+        set_atom_hoist(Some(2));
+        let _outer = AtomModeGuard::new(true);
+        // When
+        {
+            let _inner = AtomModeGuard::exact(false);
+            // Then
+            assert!(!is_suppressed());
+            assert!(is_atom_hoist());
+        }
+        assert!(is_suppressed());
+        assert!(!is_atom_hoist());
+        set_atom_hoist(None);
     }
 
     #[test]

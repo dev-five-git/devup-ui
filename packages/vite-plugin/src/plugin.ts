@@ -22,6 +22,8 @@ import {
   mergeImportAliases,
   normalizeShorthands,
   readJsxImportSource,
+  resolveDevupFile,
+  resolveProjectPath,
   seedFileNumbers,
   setupWarning,
   tailwindCssFiles,
@@ -38,6 +40,7 @@ import type {
 
 import { assetNames, hashSheetAssetNames } from './asset-names'
 import { createCompiledDependencies } from './compiled-dependencies'
+import { createEnvironmentSheets } from './environment-sheets'
 import { createViteReservation } from './reservation'
 import { createServerWatch } from './server-watch'
 
@@ -350,9 +353,9 @@ function themeUpdate(themeError: unknown) {
 
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
-  devupFile = 'devup.json',
-  distDir = 'df',
-  cssDir = resolve(distDir, 'devup-ui'),
+  devupFile: devupFileOption,
+  distDir: distDirOption = 'df',
+  cssDir: cssDirOption,
   extractCss = true,
   debug = false,
   include = [],
@@ -408,24 +411,50 @@ export function DevupUI({
     compiler.setLicenseBanner(licenseBanner)
   }
   if (ownsEngine) configureEngine()
-  const importAliases = mergeImportAliases(
+  // The relative options and the tsconfig belong to the project root, which
+  // is known once the config resolves; until then the working directory
+  let distDir = distDirOption
+  let cssDir = cssDirOption ?? resolve(distDirOption, 'devup-ui')
+  let devupFile = devupFileOption ?? 'devup.json'
+  let importAliases = mergeImportAliases(
     userImportAliases,
     readJsxImportSource(),
   )
+  function locate(root: string) {
+    distDir = resolveProjectPath(root, distDirOption)
+    cssDir =
+      cssDirOption === undefined
+        ? resolve(root, distDirOption, 'devup-ui')
+        : resolveProjectPath(root, cssDirOption)
+    devupFile = resolveDevupFile(root, devupFileOption)
+    importAliases = mergeImportAliases(
+      userImportAliases,
+      readJsxImportSource(root),
+    )
+  }
   const reservation = createViteReservation(compiler, {
     package: libPackage,
     include,
-    importAliases,
+    get importAliases() {
+      return importAliases
+    },
     singleCss,
     atomHoist,
-    cssDir,
-    distDir,
+    get cssDir() {
+      return cssDir
+    },
+    get distDir() {
+      return distDir
+    },
     relevant: (file) =>
       isConfigFile(file) ||
       isTailwindFile(file) ||
       compiledDependencies.hasSupplier(file),
   })
   const cssMap = new Map()
+  const environmentSheets = createEnvironmentSheets((fileNum) =>
+    compiler.getCss(fileNum, false),
+  )
   const compiledDependencies = createCompiledDependencies()
   let stopWatching: (() => void) | undefined
   let watcherSession: ExtractionSession | undefined
@@ -680,6 +709,7 @@ export function DevupUI({
       resolvedConfig = config
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
+      locate(projectRoot)
       // Vite ids are POSIX absolute paths
       compiler.setModuleResolver(
         createModuleResolver({
@@ -940,7 +970,11 @@ export function DevupUI({
         const fileNum = getFileNumByFilename(fileName)
         const css = compiler.getCss(fileNum, false)
         cssMap.set(fileNum, css)
-        return css
+        // The bundler emits two assets whose sources match as one file, so two
+        // sheets that are equal when loaded (empty ones, say) would share a
+        // file and `generateBundle` would give it one sheet. Name each sheet in
+        // its source to keep them apart; `generateBundle` replaces the source.
+        return isServe ? css : `/*! ${fileName} */${css}`
       }
     },
     enforce: 'pre',
@@ -952,6 +986,7 @@ export function DevupUI({
       if (!extractCss) return
       const writesOutput = this.environment?.config.build?.write !== false
       const cssFiles = new Set<string>()
+      const sheets = environmentSheets.emit(this.environment?.name ?? 'client')
 
       // `load` can only snapshot the sheet as it stood when the module was
       // pulled in, and module order varies per build, so the emitted asset was
@@ -964,8 +999,10 @@ export function DevupUI({
         const cssName = getDevupCssChunkName(asset.name)
         if (!cssName) continue
         if (!('source' in asset)) continue
-        const source = compiler.getCss(getFileNumByFilename(cssName), false)
+        const fileNum = getFileNumByFilename(cssName)
+        const source = compiler.getCss(fileNum, false)
         asset.source = source
+        sheets.set(fileNum, source)
         cssFiles.add(file)
       }
 
@@ -1015,5 +1052,6 @@ export function DevupUI({
     },
     restorePlugin,
     mdxPlugin,
+    environmentSheets.plugin,
   ]
 }

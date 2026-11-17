@@ -42,6 +42,6 @@ fn numbered_css_selects_its_file_when_other_files_exist() -> Result<(), String> 
     let selected = devup_ui_binding_core::get_css(Some(7), false);
 
     // Then: only the same file CSS returned by that transform is selected.
-    assert_eq!(Some(selected), red.css);
+    assert_eq!(Some(selected), red.css.map(|css| css.get()));
     Ok(())
 }

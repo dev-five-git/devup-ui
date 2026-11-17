@@ -22,7 +22,8 @@ export function createWebpackReservation(
   }: Pick<Compiler['options'], 'context' | 'entry'>) => {
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
-    const toId = (path: string) => relative(cwd, path).replaceAll('\\', '/')
+    // The loaders extract files under ids relative to the project root
+    const toId = (path: string) => relative(root, path).replaceAll('\\', '/')
     compiler.setModuleResolver(createModuleResolver({ toId }))
     slots.invalidate()
     slots.reserve(
@@ -42,8 +43,8 @@ export function createWebpackReservation(
                 requests.map((request) => ({ request, context: root })),
               ),
         include: options.include,
-        cwd,
-        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        cwd: root,
+        tsconfigPath: resolve(root, 'tsconfig.json'),
         package: options.package,
         importAliases,
         toId,
