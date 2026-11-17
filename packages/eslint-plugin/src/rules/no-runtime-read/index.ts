@@ -46,7 +46,7 @@ function buildsComponent(
     case AST_NODE_TYPES.MemberExpression:
       return (
         parent.object === node &&
-        !parent.computed &&
+        (!parent.computed || isLiteralKey(parent.property)) &&
         buildsComponent(parent, importStorage)
       )
     case AST_NODE_TYPES.CallExpression:
@@ -60,6 +60,14 @@ function buildsComponent(
     default:
       return false
   }
+}
+/** Whether a computed key is a string the build reads as written: `styled['div']` builds what `styled.div` does */
+function isLiteralKey(key: TSESTree.Expression | TSESTree.PrivateIdentifier) {
+  return (
+    (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') ||
+    (key.type === AST_NODE_TYPES.TemplateLiteral &&
+      key.expressions.length === 0)
+  )
 }
 /** Whether `identifier` is in a type, which the build erases */
 function inType(identifier: TSESTree.Node) {

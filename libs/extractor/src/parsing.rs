@@ -12,8 +12,25 @@ mod hybrid_tests;
 
 /// Accept JavaScript JSX without changing the path's TypeScript or module dialect.
 pub(super) fn source_type(filename: &str) -> Result<SourceType, UnknownExtension> {
-    SourceType::from_path(filename)
-        .map(|source_type| source_type.with_jsx(source_type.is_javascript()))
+    path_source_type(filename).map(|source_type| source_type.with_jsx(source_type.is_javascript()))
+}
+
+/// How the file at `path` parses, by its extension.
+///
+/// An `.mdx` file reaches the extractor as what an MDX compiler
+/// (`@mdx-js/loader`, `@mdx-js/rollup`, `@next/mdx`) made of it: an ES
+/// module of JavaScript that may keep JSX, never the MDX syntax itself.
+pub(super) fn path_source_type(path: &str) -> Result<SourceType, UnknownExtension> {
+    if is_mdx(path) {
+        return Ok(SourceType::jsx());
+    }
+    SourceType::from_path(path)
+}
+
+fn is_mdx(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mdx"))
 }
 
 fn parse_physical<'a>(
@@ -200,6 +217,49 @@ mod tests {
         assert!(output.code.contains("<div className="));
         assert!(!output.code.contains("<Box"));
         assert_eq!(output.styles.len(), 2);
+        assert!(has_devup_ui(filename, source, "@devup-ui/react"));
+    }
+
+    #[rstest]
+    #[case("docs/page.mdx")]
+    #[case("docs/PAGE.MDX")]
+    fn reads_mdx_as_compiled_javascript(#[case] filename: &str) {
+        // Given the path of an MDX file, which arrives already compiled.
+        // When its source type is taken from the path.
+        let actual = source_type(filename).unwrap();
+        // Then it parses as a JavaScript module that may keep JSX.
+        assert!(actual.is_javascript());
+        assert!(actual.is_module());
+        assert!(actual.is_jsx());
+    }
+
+    #[rstest]
+    #[case(
+        "docs/page.mdx",
+        "import {jsx as _jsx, jsxs as _jsxs} from 'react/jsx-runtime';\nimport { Box } from '@devup-ui/react';\nfunction _createMdxContent(props) {\n  const _components = { h1: 'h1', ...props.components };\n  return _jsxs(_components.h1, { children: ['Title', _jsx(Box, { bg: 'maroon', p: '13px', children: 'proof' })] });\n}\nexport default function MDXContent(props = {}) {\n  return _createMdxContent(props);\n}"
+    )]
+    #[case(
+        "docs/page.mdx",
+        "import {jsxDEV as _jsxDEV} from 'react/jsx-dev-runtime';\nimport { Box } from '@devup-ui/react';\nexport default function MDXContent() {\n  return _jsxDEV(Box, { bg: 'maroon', p: '13px', children: 'proof' }, undefined, false, undefined, this);\n}"
+    )]
+    #[case(
+        "docs/page.mdx",
+        "import { Box } from '@devup-ui/react';\nexport default function MDXContent() {\n  return <><h1>Title</h1><Box bg=\"maroon\" p=\"13px\">proof</Box></>;\n}"
+    )]
+    #[serial]
+    fn extracts_compiled_mdx(#[case] filename: &str, #[case] source: &str) {
+        // Given what an MDX compiler makes of a document using Box: calls of
+        // the JSX runtime, or JSX kept with the `jsx` option.
+        reset_class_map();
+        reset_file_map();
+
+        // When the compiled module is extracted under its `.mdx` filename.
+        let output = extract(filename, source, ExtractOption::default()).unwrap();
+
+        // Then Box is compiled to a class like in any other module.
+        assert_eq!(output.styles.len(), 2, "{}", output.code);
+        assert!(!output.code.contains("Box"), "{}", output.code);
+        assert!(output.code.contains("className"), "{}", output.code);
         assert!(has_devup_ui(filename, source, "@devup-ui/react"));
     }
 

@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/object_selector_keys_tests.rs
+expression: rules(source)
+---
+{
+    "Some(Selector(\"& h1\")) 0 margin: 0",
+    "Some(Selector(\"& h2\")) 0 margin: 0",
+}

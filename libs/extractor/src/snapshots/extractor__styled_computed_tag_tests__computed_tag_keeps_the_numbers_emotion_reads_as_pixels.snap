@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/styled_computed_tag_tests.rs
+expression: "format!(\"{compiled:#?}\")"
+---
+Ok(
+    (
+        "import \"@devup-ui/react/devup-ui-0.css\";\nimport { forwardRef as __devupForwardRef } from \"react\";\nexport const S = __devupForwardRef(({ style, className, as: DevupAs = \"div\", forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== \"$\" && k !== \"theme\"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a a-a a-b ${className}` : \"a--a a-a a-b\"} style={style} />);\n",
+        {
+            "Static(ExtractStaticStyle { property: \"padding\", value: \"4px\", level: 0, selector: None, style_order: None, layer: None })",
+            "Static(ExtractStaticStyle { property: \"z-index\", value: \"2\", level: 0, selector: None, style_order: None, layer: None })",
+        },
+    ),
+)

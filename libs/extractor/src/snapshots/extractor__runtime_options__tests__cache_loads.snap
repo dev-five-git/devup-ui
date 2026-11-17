@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/runtime_options.rs
+expression: "errors(code, names)"
+---
+[
+    (
+        0,
+        "`@emotion/cache` is loaded other than by an import of its default export, so whether the options of `createCache()` set `stylisPlugins`, which Devup UI does not compile, cannot be known at build time. Fix: `import createCache from '@emotion/cache'` and call it with an object literal of options, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion",
+    ),
+    (
+        42,
+        "`@emotion/cache` is loaded other than by an import of its default export, so whether the options of `createCache()` set `stylisPlugins`, which Devup UI does not compile, cannot be known at build time. Fix: `import createCache from '@emotion/cache'` and call it with an object literal of options, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion",
+    ),
+    (
+        124,
+        "`@emotion/cache` is loaded other than by an import of its default export, so whether the options of `createCache()` set `stylisPlugins`, which Devup UI does not compile, cannot be known at build time. Fix: `import createCache from '@emotion/cache'` and call it with an object literal of options, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion",
+    ),
+    (
+        151,
+        "`@emotion/cache` is loaded other than by an import of its default export, so whether the options of `createCache()` set `stylisPlugins`, which Devup UI does not compile, cannot be known at build time. Fix: `import createCache from '@emotion/cache'` and call it with an object literal of options, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion",
+    ),
+]

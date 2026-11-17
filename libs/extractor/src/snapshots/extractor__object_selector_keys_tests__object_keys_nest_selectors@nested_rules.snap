@@ -1,0 +1,11 @@
+---
+source: libs/extractor/src/object_selector_keys_tests.rs
+expression: rules(source)
+---
+{
+    "Some(At { kind: Media, query: \"(min-width:1px)\", selector: Some(\"& span\"), outer: [], file: None }) 0 color: gray",
+    "Some(Selector(\"& span em\")) 0 color: pink",
+    "Some(Selector(\"& span\")) 0 color: red",
+    "Some(Selector(\"& span\")) 2 color: blue",
+    "Some(Selector(\"& span:hover\")) 0 color: green",
+}
