@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/runtime_options.rs
+expression: "errors(code, names)"
+---
+[
+    (
+        150,
+        "`stylisPlugins` of `StyleSheetManager` from `styled-components` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { 'styled-components': false }` and build with styled-components",
+    ),
+    (
+        172,
+        "`shouldForwardProp` of `StyleSheetManager` from `styled-components` filters at runtime the props every styled component passes on, which Devup UI does not compile, so no prop would be filtered by it. Fix: pass `shouldForwardProp` to `.withConfig()` of each styled component, or set `importAliases: { 'styled-components': false }` and build with styled-components",
+    ),
+    (
+        198,
+        "`namespace` of `StyleSheetManager` from `styled-components` prefixes every selector at runtime, which Devup UI does not compile, so no selector would get the prefix. Fix: write the scope into the selectors, such as `#app &`, or set `importAliases: { 'styled-components': false }` and build with styled-components",
+    ),
+    (
+        302,
+        "`StyleSheetManager` from `styled-components` takes spread props, so whether they set `stylisPlugins`, `shouldForwardProp` or `namespace`, which Devup UI does not compile, cannot be known at build time. Fix: write its props out by name, or set `importAliases: { 'styled-components': false }` and build with styled-components",
+    ),
+]
