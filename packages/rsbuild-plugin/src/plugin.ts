@@ -78,16 +78,23 @@ async function writeDataFiles(
     'extractCss' | 'debug' | 'include'
   >,
   compiler: DevupCompiler,
-): Promise<{ tailwindFiles: string[]; configFiles: string[] }> {
+  watching: boolean,
+): Promise<{
+  tailwindFiles: string[]
+  configFiles: string[]
+  themeError: unknown
+}> {
   let tailwindFiles: string[] = []
+  let themeError: unknown
   // devup.json and every config it `extends`, read or not
   const inputs = new Set([resolve(options.devupFile)])
   try {
     const config = await loadDevupConfig(options.devupFile, inputs)
     const theme = config.theme ?? {}
 
-    compiler.registerTheme(withTailwindCss(theme, config))
+    // Watched even when the theme fails, so fixing the Tailwind CSS reloads it
     tailwindFiles = tailwindCssFiles(config)
+    compiler.registerTheme(withTailwindCss(theme, config))
     // Written even when empty, so tokens removed from the theme leave no
     // stale declarations behind.
     await writeFile(
@@ -96,8 +103,13 @@ async function writeDataFiles(
       'utf-8',
     )
   } catch (error) {
+    // A one-shot build fails on a theme it cannot load or register: an empty
+    // theme would ship unstyled output. A watcher keeps running, since
+    // devup.json may be mid-edit, and reports the error until it is fixed.
+    if (!watching) throw error
     console.error(error)
     compiler.registerTheme({})
+    themeError = error
   }
   // Sequential: writing into cssDir concurrently with its own mkdir loses the
   // race on a cold start (no `df/`) and fails the build with ENOENT.
@@ -110,7 +122,7 @@ async function writeDataFiles(
       compiler.getCss(null, false),
     )
   }
-  return { tailwindFiles, configFiles: [...inputs] }
+  return { tailwindFiles, configFiles: [...inputs], themeError }
 }
 
 /**
@@ -168,7 +180,9 @@ export const DevupUI = ({
         'utf-8',
       )
 
-      let { tailwindFiles, configFiles } = await writeDataFiles(
+      // `rsbuild dev` outlives a broken devup.json; every compilation reports
+      // it until it loads again
+      let { tailwindFiles, configFiles, themeError } = await writeDataFiles(
         {
           package: libPackage,
           cssDir,
@@ -177,6 +191,7 @@ export const DevupUI = ({
           singleCss,
         },
         compiler,
+        api.context.action === 'dev',
       )
       if (!extractCss) return
 
@@ -208,16 +223,18 @@ export const DevupUI = ({
                   )
                 ).join()
                 if (stamp !== undefined && stamp !== current) {
-                  ;({ tailwindFiles, configFiles } = await writeDataFiles(
-                    {
-                      package: libPackage,
-                      cssDir,
-                      devupFile,
-                      distDir,
-                      singleCss,
-                    },
-                    compiler,
-                  ))
+                  ;({ tailwindFiles, configFiles, themeError } =
+                    await writeDataFiles(
+                      {
+                        package: libPackage,
+                        cssDir,
+                        devupFile,
+                        distDir,
+                        singleCss,
+                      },
+                      compiler,
+                      true,
+                    ))
                 }
                 stamp = current
               },
@@ -387,6 +404,12 @@ export const DevupUI = ({
               reservation.reserve()
             })
             compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
+              if (themeError !== undefined)
+                compilation.errors.push(
+                  new compiler.rspack.WebpackError(
+                    `[devup-ui] ${themeError instanceof Error ? themeError.message : String(themeError)}`,
+                  ),
+                )
               const basePath = join(cssDir, 'devup-ui.css')
               const base = stylesheet(basePath)
               writeChanged(basePath, base)
