@@ -288,7 +288,7 @@ describe('DevupUINextPlugin', () => {
         withModuleResolver(primedWasm); // Match normal fixed-cwd supplier resolution after fixture setup.
         const before = { native: native.getCss(null, false), wasm: wasm.getCss(null, false) };
         const config = DevupUI({}, { singleCss: true, debug: false });
-        const options = config.turbopack.rules['*.{tsx,ts,jsx,js,mjs}'].loaders[0].options;
+        const options = config.turbopack.rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'].loaders[0].options;
         const code = await new Promise((resolve, reject) => loader.call({
           resourcePath, getOptions: () => options, addDependency() {},
           async: () => (error, code) => error ? reject(error) : resolve(code),
@@ -742,6 +742,17 @@ describe('DevupUINextPlugin', () => {
       }
     })
 
+    it('compiles every source extension the import graph lists under Turbopack', () => {
+      process.env.TURBOPACK = '1'
+      const rules = Object.keys(DevupUI({}).turbopack?.rules ?? {})
+      const glob = rules.find((rule) => rule.startsWith('*.{'))
+      expect(glob?.slice(3, -1).split(',').sort()).toEqual(
+        importGraphModule.SOURCE_EXTENSIONS.map((extension) =>
+          extension.slice(1),
+        ).sort(),
+      )
+    })
+
     it('should apply turbo config', async () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy
@@ -780,7 +791,7 @@ describe('DevupUINextPlugin', () => {
                 },
               },
             ],
-            '*.{tsx,ts,jsx,js,mjs}': {
+            '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
               loaders: [
                 {
                   loader: '@devup-ui/next-plugin/loader',
@@ -865,7 +876,7 @@ describe('DevupUINextPlugin', () => {
                 },
               },
             ],
-            '*.{tsx,ts,jsx,js,mjs}': {
+            '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
               condition: {
                 not: {
                   path: new RegExp(
@@ -958,7 +969,7 @@ describe('DevupUINextPlugin', () => {
                 },
               },
             ],
-            '*.{tsx,ts,jsx,js,mjs}': {
+            '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
               condition: {
                 not: {
                   path: new RegExp(
@@ -1595,7 +1606,9 @@ export const box = style({ color: 'red' })`
         expect(registerThemeSpy).toHaveBeenCalledWith({
           tailwindCss: '@import "tailwindcss";',
         })
-        const rule = config.turbopack?.rules?.['*.{tsx,ts,jsx,js,mjs}'] as {
+        const rule = config.turbopack?.rules?.[
+          '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'
+        ] as {
           loaders: { options: { themeFiles: string[] } }[]
         }
         expect(rule.loaders[0].options.themeFiles).toEqual([

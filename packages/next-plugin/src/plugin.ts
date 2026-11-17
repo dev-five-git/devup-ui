@@ -725,11 +725,12 @@ export function DevupUI(
         },
       ],
       // Must cover every extension the import-graph pre-pass lists AND the
-      // webpack rule matches (tsx|ts|jsx|js|mjs). Omitting one (e.g. jsx)
-      // means those files are never extracted: their Box/styled markup hits
-      // the runtime stubs ("Cannot run on the runtime") and the coordinator
-      // waits on graph members that never POST /extract.
-      '*.{tsx,ts,jsx,js,mjs}': {
+      // webpack rule matches (SOURCE_EXTENSIONS of plugin-utils). Omitting
+      // one (e.g. mts) means those files are never extracted: their
+      // Box/styled markup hits the runtime stubs ("Cannot run on the
+      // runtime") and the coordinator waits on graph members that never
+      // POST /extract.
+      '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
         loaders: [
           {
             loader: '@devup-ui/next-plugin/loader',

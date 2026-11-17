@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import * as pluginUtils from '@devup-ui/plugin-utils'
@@ -17,6 +18,7 @@ import {
 
 import { DevupUI as createPlugin } from '../plugin'
 
+const realExistsSync = fs.existsSync
 const wasm = pluginUtils.loadCompiler('wasm')
 const DevupUI = (options: Parameters<typeof createPlugin>[0] = {}) =>
   createPlugin({ ...options, engine: 'wasm' })
@@ -213,6 +215,7 @@ describe('DevupUIRsbuildPlugin', () => {
       const addDependency = mock()
       await transform.mock.calls[1][1]({
         addMissingDependency: mock(),
+        environment: { name: 'web' },
         code: "import { Box } from '@devup-ui/react'",
         resourcePath: 'src/App.tsx',
         addDependency,
@@ -220,6 +223,58 @@ describe('DevupUIRsbuildPlugin', () => {
       expect(addDependency).toHaveBeenCalledWith('/src/tokens.ts')
     } finally {
       setModuleResolverSpy.mockRestore()
+    }
+  })
+
+  it('resolves imports with the conditions of the environment it transforms for', async () => {
+    const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-rsbuild-conditions-'))
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      await Bun.write(
+        join(root, 'node_modules/split/package.json'),
+        JSON.stringify({
+          exports: { browser: './browser.js', node: './node.js' },
+        }),
+      )
+      await Bun.write(join(root, 'node_modules/split/browser.js'), 'browser')
+      await Bun.write(join(root, 'node_modules/split/node.js'), 'node')
+      const transform = mock()
+      const modifyRspackConfig = mock()
+      await DevupUI({ atomHoist: 0 }).setup(
+        createSetupContext({ transform, modifyRspackConfig }),
+      )
+      for (const [name, condition] of [
+        ['web', 'browser'],
+        ['server', 'node'],
+      ])
+        for (const [modify] of modifyRspackConfig.mock.calls)
+          modify(
+            { resolve: { conditionNames: [condition] } },
+            { environment: { name, entry: {} } },
+          )
+      codeExtractSpy.mockReturnValue(createCodeExtractResult())
+      const resolved = async (name: string) => {
+        await transform.mock.calls[1][1]({
+          environment: { name },
+          code: '',
+          resourcePath: join(root, 'App.tsx'),
+          addDependency: mock(),
+          addMissingDependency: mock(),
+        })
+        const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
+          specifier: string,
+          importer: string,
+        ) => { code: string } | undefined
+        return resolveModule('split', join(root, 'App.tsx'))?.code
+      }
+      expect(await resolved('web')).toBe('browser')
+      expect(await resolved('server')).toBe('node')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+      fs.rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -559,7 +614,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        test: pluginUtils.SOURCE_FILE_REGEX,
       },
       expect.any(Function),
     )
@@ -585,8 +640,7 @@ describe('DevupUIRsbuildPlugin', () => {
       createSetupContext({ transform, modifyRsbuildConfig: mock() }),
     )
     const source = transform.mock.calls.find(
-      ([descriptor]) =>
-        String(descriptor.test) === String(/\.(tsx|ts|js|mjs|jsx)$/),
+      ([descriptor]) => descriptor.test === pluginUtils.SOURCE_FILE_REGEX,
     )
     const mdx = transform.mock.calls.find(
       ([descriptor]) => descriptor.order === 'post',
@@ -610,7 +664,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        test: pluginUtils.SOURCE_FILE_REGEX,
       },
       expect.any(Function),
     )
@@ -626,6 +680,7 @@ describe('DevupUIRsbuildPlugin', () => {
       transform.mock.calls[1][1]({
         addDependency: mock(),
         addMissingDependency: mock(),
+        environment: { name: 'web' },
         code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
         resourcePath: 'src/App.tsx',
@@ -638,6 +693,7 @@ const App = () => <Box></Box>`,
       transform.mock.calls[1][1]({
         addDependency: mock(),
         addMissingDependency: mock(),
+        environment: { name: 'web' },
         code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
         resourcePath: 'node_modules/@wrong-ui/react/index.tsx',
@@ -669,6 +725,7 @@ export const a = <Box bg="red" />`
       transform.mock.calls[1][1]({
         addDependency: mock(),
         addMissingDependency: mock(),
+        environment: { name: 'web' },
         code: source,
         resourcePath: 'src/App.tsx',
       }),
@@ -701,6 +758,7 @@ export const a = <div css={{ color: 'red' }} />`
       transform.mock.calls[1][1]({
         addDependency: mock(),
         addMissingDependency: mock(),
+        environment: { name: 'web' },
         code: source,
         resourcePath: 'src/App.tsx',
       }),
@@ -730,7 +788,7 @@ export const a = <div css={{ color: 'red' }} />`
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        test: pluginUtils.SOURCE_FILE_REGEX,
       },
       expect.any(Function),
     )
@@ -746,6 +804,7 @@ export const a = <div css={{ color: 'red' }} />`
     const ret = await transform.mock.calls[1][1]({
       addDependency: mock(),
       addMissingDependency: mock(),
+      environment: { name: 'web' },
       code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
       resourcePath: 'src/App.tsx',
@@ -764,6 +823,7 @@ const App = () => <Box></Box>`,
     const ret1 = await transform.mock.calls[1][1]({
       addDependency: mock(),
       addMissingDependency: mock(),
+      environment: { name: 'web' },
       code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
       resourcePath: 'node_modules/@devup-ui/react/index.tsx',
@@ -816,6 +876,7 @@ const App = () => <Box></Box>`,
     const addDependency = mock()
     await transform.mock.calls[1][1]({
       addMissingDependency: mock(),
+      environment: { name: 'web' },
       code: "import { Box } from '@devup-ui/react'",
       resourcePath: 'src/App.tsx',
       addDependency,
@@ -878,6 +939,7 @@ const App = () => <Box></Box>`,
       const addDependency = mock()
       const addMissingDependency = mock()
       await transform.mock.calls[1][1]({
+        environment: { name: 'web' },
         code: "import { Box } from '@devup-ui/react'",
         resourcePath: 'src/App.tsx',
         addDependency,
@@ -1187,6 +1249,7 @@ const App = () => <Box></Box>`,
             modifyRsbuildConfig.mock.calls[0][0](config)
             await transform.mock.calls[1][1]({
               addMissingDependency: mock(),
+              environment: { name: 'web' },
               code: 'source',
               resourcePath,
               addDependency: mock(),
@@ -1223,6 +1286,36 @@ const App = () => <Box></Box>`,
           expect(getCssSpy).toHaveBeenLastCalledWith(3, true)
         },
       )
+    })
+
+    it('plans hoisting over one graph of the src and app roots of the Rsbuild root', async () => {
+      spies()
+      const project = fs.mkdtempSync(join(tmpdir(), 'devup-ui-rsbuild-roots-'))
+      try {
+        // The cwd's own `app` is not the project's: only the root's roots count
+        for (const path of ['app/page.tsx', 'web/app/b.tsx', 'web/src/a.tsx'])
+          await Bun.write(join(project, path), 'export {}')
+        existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
+        const cwd = spyOn(process, 'cwd').mockReturnValue(project)
+        try {
+          await DevupUI({ atomHoist: 2 }).setup(
+            createSetupContext({ context: { rootPath: join(project, 'web') } }),
+          )
+        } finally {
+          cwd.mockRestore()
+        }
+        const [{ graph }] = buildCanonicalMapSpy.mock.calls.at(-1) as [
+          { graph: { files: string[] } },
+        ]
+        expect(graph.files).toEqual(
+          ['web/app/b.tsx', 'web/src/a.tsx'].map((path) => join(project, path)),
+        )
+        expect(computeFileReachSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ graph, srcDir: join(project, 'web') }),
+        )
+      } finally {
+        fs.rmSync(project, { recursive: true, force: true })
+      }
     })
 
     it('composes collapse + hoist and folds reach onto the canonical bucket', async () => {
@@ -1333,6 +1426,7 @@ const App = () => <Box></Box>`,
       await transform.mock.calls[1][1]({
         addDependency: mock(),
         addMissingDependency: mock(),
+        environment: { name: 'web' },
         code: `import { Box } from '@devup-ui/react'\nconst A = () => <Box w="1px" />`,
         resourcePath: 'src/App.tsx',
       })
@@ -1507,6 +1601,7 @@ const App = () => <Box></Box>`,
         for (const name of [first, second]) {
           await transform.mock.calls[1][1]({
             addMissingDependency: mock(),
+            environment: { name: 'web' },
             code: 'source',
             resourcePath: resolve('src', `${name}.tsx`),
             addDependency: mock(),
@@ -1537,11 +1632,11 @@ const App = () => <Box></Box>`,
         },
       })
       expect(computeReachableFilesSpy).toHaveBeenCalledWith({
-        srcDir: resolve(process.cwd(), 'src'),
-        tsconfigPath: resolve(process.cwd(), 'tsconfig.json'),
+        srcDir: process.cwd(),
         entries: ['a', 'b', 'c', 'd'].map((name) =>
           resolve(process.cwd(), `./src/${name}.tsx`),
         ),
+        graph: expect.objectContaining({ files: expect.any(Array) }),
       })
       expect(codeExtractSpy).toHaveBeenCalledWith(
         resolve('src', 'App.tsx'),

@@ -7,6 +7,7 @@ import {
   type DevupCompiler,
   type DevupCompilerOutput,
   type DevupEngine,
+  esmImportConditions,
   loadCompiler,
 } from '@devup-ui/plugin-utils'
 import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
@@ -48,17 +49,23 @@ const moduleResolvers = new Map<
   ReturnType<typeof createModuleResolver>
 >()
 
-/** Resolve imports to the root-relative ids this loader extracts files under */
+/**
+ * Resolve imports to the root-relative ids this loader extracts files under,
+ * with the `exports` conditions the bundler resolves the same imports with
+ */
 function setRootModuleResolver(
   compiler: Pick<DevupCompiler, 'setModuleResolver'>,
   root: string,
+  conditions: readonly string[] | undefined,
 ): void {
-  let moduleResolver = moduleResolvers.get(root)
+  const key = JSON.stringify([root, conditions ?? null])
+  let moduleResolver = moduleResolvers.get(key)
   if (!moduleResolver) {
     moduleResolver = createModuleResolver({
+      conditions,
       toId: (path) => relative(root, path).replaceAll('\\', '/'),
     })
-    moduleResolvers.set(root, moduleResolver)
+    moduleResolvers.set(key, moduleResolver)
   }
   compiler.setModuleResolver(moduleResolver)
 }
@@ -97,7 +104,11 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(root, id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      setRootModuleResolver(compiler, root)
+      setRootModuleResolver(
+        compiler,
+        root,
+        esmImportConditions(this._compiler?.options.resolve),
+      )
       const output: DevupCompilerOutput = compiler.codeExtract(
         relativePath,
         source.toString(),

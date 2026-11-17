@@ -26,7 +26,9 @@ import {
   resolveProjectPath,
   seedFileNumbers,
   setupWarning,
+  SOURCE_FILE_REGEX,
   tailwindCssFiles,
+  viteImportConditions,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import type {
@@ -52,9 +54,6 @@ import { createServerWatch } from './server-watch'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
-
-/** Modules the `pre` transform extracts as they are written */
-const SOURCE_FILE_RE = /\.(tsx|ts|js|mjs|jsx)$/i
 
 /**
  * MDX documents, extracted by a `post` transform: the extractor reads what an
@@ -714,6 +713,7 @@ export function DevupUI({
       compiler.setModuleResolver(
         createModuleResolver({
           cwd: projectRoot,
+          conditions: viteImportConditions(config),
           toId: (path) => path.replaceAll('\\', '/'),
         }),
       )
@@ -979,7 +979,7 @@ export function DevupUI({
     },
     enforce: 'pre',
     async transform(code, id) {
-      if (!SOURCE_FILE_RE.test(id.split('?')[0])) return
+      if (!SOURCE_FILE_REGEX.test(id.split('?')[0].toLowerCase())) return
       return extractModule.call(this, code, id)
     },
     async generateBundle(_options, bundle) {
