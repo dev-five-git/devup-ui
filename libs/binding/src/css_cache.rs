@@ -83,6 +83,7 @@ impl Deref for SheetGuard<'_> {
 
 impl DerefMut for SheetGuard<'_> {
     fn deref_mut(&mut self) -> &mut StyleSheet {
+        crate::lazy_css::settle(&self.0);
         invalidate_css();
         &mut self.0
     }

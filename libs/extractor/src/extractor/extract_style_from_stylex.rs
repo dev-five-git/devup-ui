@@ -248,7 +248,7 @@ fn extract_stylex_namespace<'a>(
         let style_prop = match style_prop {
             ObjectPropertyKind::ObjectProperty(style_prop) => style_prop,
             ObjectPropertyKind::SpreadProperty(spread) => {
-                match include(spread, resolver) {
+                match include(spread, groups.len(), resolver) {
                     Some(Ok(include_ref)) => include_refs.push(include_ref),
                     Some(Err(error)) => errors.push(error),
                     None => errors.push(spread_error("stylex.create", spread)),
@@ -354,6 +354,7 @@ fn push_decomposed(styles: &mut Vec<ExtractStyleProp<'_>>, decomposed: Vec<Decom
 /// `include()` call
 fn include(
     spread: &SpreadElement<'_>,
+    position: usize,
     resolver: StylexResolver<'_>,
 ) -> Option<Result<StylexIncludeRef, (u32, String)>> {
     let Expression::CallExpression(call) = &spread.argument else {
@@ -370,6 +371,7 @@ fn include(
             var_name: ident.name.to_string(),
             member_name: member.property.name.to_string(),
             offset: spread.span.start,
+            position,
         }));
     }
     Some(Err((

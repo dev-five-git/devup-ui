@@ -4,10 +4,9 @@ import { extname, isAbsolute, relative, resolve } from 'node:path'
 import {
   createModuleResolver,
   parseImports,
+  SOURCE_FILE_REGEX,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
-
-const EXTRACTABLE_EXTENSION = /\.(?:tsx?|jsx?|mjs)$/
 
 function packageNameFromSpecifier(specifier: string): string | undefined {
   if (specifier.startsWith('#') || specifier.startsWith('node:')) {
@@ -98,7 +97,7 @@ export function collectProductionPrewarmFiles({
     const module = resolveModule(specifier, importer)
     if (!module) continue
     const filename = preferEsmFile(module.path)
-    if (!EXTRACTABLE_EXTENSION.test(filename) || visited.has(filename)) continue
+    if (!SOURCE_FILE_REGEX.test(filename) || visited.has(filename)) continue
     visited.add(filename)
     files.add(toKey(resolvedCwd, filename))
     const source =

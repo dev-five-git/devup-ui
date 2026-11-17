@@ -22,7 +22,10 @@ it('maps the physical inventory to the exact loader IDs, CSS directory and flags
         resolve('context', 'src'),
         resolve('context', 'app'),
       ])
-      expect(discovery.toId?.(input.physicalPath)).toBe('physical/A.js')
+      // The loader IDs are relative to webpack's context, the project root
+      expect(discovery.toId?.(input.physicalPath)).toBe('../physical/A.js')
+      expect(discovery.cwd).toBe(resolve('context'))
+      expect(discovery.tsconfigPath).toBe(resolve('context', 'tsconfig.json'))
       expect(discovery.include).toEqual(['@slot/ui'])
       expect(discovery.package).toBe('@devup-ui/react')
       expect(options.singleCss).toBe(true)

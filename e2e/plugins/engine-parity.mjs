@@ -398,7 +398,7 @@ function nextSelectors(value, engine, kind) {
       ? ['engine']
       : [
           `${prefix}./df/devup-ui/*.css/0/options/engine`,
-          `${prefix}*.{tsx,ts,jsx,js,mjs}/loaders/0/options/engine`,
+          `${prefix}*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}/loaders/0/options/engine`,
         ].sort(),
   )
   return value

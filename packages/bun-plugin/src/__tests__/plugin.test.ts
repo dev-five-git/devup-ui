@@ -16,7 +16,7 @@ import {
 } from 'bun:test'
 
 import { bunRegistration } from '../../../../bun.setup'
-import { DevupUI, register } from '../plugin'
+import { bunConditions, DevupUI, register } from '../plugin'
 import { captureBunHooks } from './captured-hooks.test-support'
 
 const selectCompiler = pluginUtils.loadCompiler
@@ -117,6 +117,32 @@ async function load(path: string, namespace = 'file') {
   })
 }
 
+describe('bunConditions', () => {
+  it('resolves with the conditions of the target and the configured ones', () => {
+    expect(bunConditions(undefined)).toEqual([
+      'import',
+      'module',
+      'bun',
+      'node',
+    ])
+    expect(bunConditions({})).toEqual(['import', 'module', 'browser'])
+    expect(bunConditions({ target: 'node', conditions: 'worker' })).toEqual([
+      'import',
+      'module',
+      'node',
+      'worker',
+    ])
+    expect(bunConditions({ target: 'bun', conditions: ['a', 'b'] })).toEqual([
+      'import',
+      'module',
+      'bun',
+      'node',
+      'a',
+      'b',
+    ])
+  })
+})
+
 describe('registered Bun hooks', () => {
   it('compiles default runtime input into native state without mutating WASM', async () => {
     const native = pluginUtils.loadCompiler()
@@ -201,7 +227,9 @@ describe('registered Bun hooks', () => {
     )
     exists.mockImplementation(realExists)
     const resolve = spyOn(nodePath, 'resolve').mockImplementation((...paths) =>
-      paths.length === 1 && paths[0] === 'src' ? root : realResolve(...paths),
+      paths.length === 2 && paths[0] === process.cwd() && paths[1] === 'src'
+        ? root
+        : realResolve(...paths),
     )
     try {
       await register({ engine: 'wasm' })
@@ -286,6 +314,52 @@ describe('registered Bun hooks', () => {
     }
     expect(outputs[1]).toEqual(outputs[0])
     expect(writeSync).not.toHaveBeenCalled()
+  })
+
+  it('bundles the project .js and .cjs modules and leaves packages to Bun', async () => {
+    const dir = join(root, 'local-scripts')
+    await Bun.write(
+      join(dir, 'entry.ts'),
+      "import { view } from './view.js'; import { lib } from 'lib'; export { view, lib }",
+    )
+    await Bun.write(
+      join(dir, 'view.js'),
+      "import { css } from '@devup-ui/react'; export const view = css({ color: 'orange' })",
+    )
+    await Bun.write(
+      join(dir, 'node_modules/lib/package.json'),
+      JSON.stringify({ name: 'lib', main: 'index.js' }),
+    )
+    await Bun.write(
+      join(dir, 'node_modules/lib/index.js'),
+      'export const lib = 1',
+    )
+    const result = await Bun.build({
+      entrypoints: [join(dir, 'entry.ts')],
+      target: 'bun',
+      outdir: join(dir, 'out'),
+      plugins: [DevupUI({ engine: 'wasm' })],
+    })
+    expect(result.success).toBe(true)
+    const outputs = await Promise.all(
+      result.outputs.map((output) => output.text()),
+    )
+    expect(outputs.join('')).toMatch(/color:\s*orange/)
+    expect(outputs.join('')).not.toContain('css(')
+  })
+
+  it('keeps the build-time dependencies of a source in its module graph', async () => {
+    await Bun.write(join(root, 'dep-tokens.ts'), "export const color = 'red'")
+    const path = join(root, 'dep-source.ts')
+    await Bun.write(
+      path,
+      "import { css } from '@devup-ui/react'; import { color } from './dep-tokens'; export const c = css({ color })",
+    )
+    await register({ engine: 'wasm' })
+    const result = await load(path)
+    if (!result || !('contents' in result))
+      throw new Error('Expected transformed source contents')
+    expect(result.contents).toEndWith('\nimport "./dep-tokens.ts";')
   })
 
   it('creates cold directories before writing configuration and CSS', async () => {
@@ -407,6 +481,8 @@ describe('registered Bun hooks', () => {
   for (const [extension, loader] of [
     ['tsx', 'tsx'],
     ['ts', 'ts'],
+    ['mts', 'ts'],
+    ['cts', 'ts'],
     ['jsx', 'jsx'],
     ['mjs', 'js'],
     ['js', 'js'],
@@ -436,6 +512,78 @@ describe('registered Bun hooks', () => {
       )
     })
   }
+
+  describe('included packages', () => {
+    function sourceFilter() {
+      const hook = loads.find(({ options }) => options.namespace === undefined)
+      if (!hook) throw new Error('No source load hook registered')
+      return hook.options.filter
+    }
+
+    it('compiles the published .js of an included package', async () => {
+      const path = join(root, 'node_modules', 'my-lib', 'dist', 'index.js')
+      await Bun.write(
+        path,
+        "import { css } from '@devup-ui/react'; export const className = css({ color: 'navy' })",
+      )
+      await register({ engine: 'wasm', include: ['my-lib'] })
+      const result = await load(path)
+      if (!result || !('contents' in result))
+        throw new Error('Expected transformed source contents')
+      expect(result.loader).toBe('js')
+      expect(result.contents).not.toContain('css(')
+      expect(writeSync).toHaveBeenCalledWith(
+        expect.stringContaining('devup-ui.css'),
+        expect.stringContaining('navy'),
+        'utf-8',
+      )
+    })
+
+    it.each([
+      ['my-lib', '/app/node_modules/my-lib/index.js'],
+      ['my-lib', 'C:\\app\\node_modules\\my-lib\\dist\\index.js'],
+      [
+        'my-lib',
+        '/app/node_modules/.bun/my-lib@1.0.0/node_modules/my-lib/index.js',
+      ],
+      [
+        'my-lib',
+        '/app/node_modules/.pnpm/my-lib@1.0.0/node_modules/my-lib/index.js',
+      ],
+      ['@scope/ui', '/app/node_modules/@scope/ui/dist/index.js'],
+      ['@scope/ui', 'C:\\app\\node_modules\\@scope\\ui\\index.js'],
+      ['foo.bar', '/app/node_modules/foo.bar/index.js'],
+      ['foo+bar', '/app/node_modules/foo+bar/index.js'],
+    ])('loads .js of include %s at %s', async (name, path) => {
+      await register({ engine: 'wasm', include: [name] })
+      expect(sourceFilter().test(path)).toBe(true)
+    })
+
+    it.each([
+      ['my-lib', '/app/node_modules/my-lib-extra/index.js'],
+      ['my-lib', '/app/node_modules/@scope/my-lib/index.js'],
+      ['my-lib', '/app/node_modules/my-lib/node_modules/dep/index.js'],
+      ['my-lib', '/app/node_modules/other/my-lib/index.js'],
+      ['my-lib', '/app/my-lib/index.js'],
+      ['my-lib', '/app/node_modules/my-lib/index.json'],
+      ['foo.bar', '/app/node_modules/fooXbar/index.js'],
+      ['@scope/ui', '/app/node_modules/@scope/ui-kit/index.js'],
+    ])('leaves .js outside include %s at %s to Bun', async (name, path) => {
+      await register({ engine: 'wasm', include: [name] })
+      expect(sourceFilter().test(path)).toBe(false)
+    })
+
+    it('loads no package .js but Devup UI without include', async () => {
+      await register({ engine: 'wasm' })
+      expect(sourceFilter().test('/app/node_modules/my-lib/index.js')).toBe(
+        false,
+      )
+      expect(
+        sourceFilter().test('/app/node_modules/@devup-ui/react/dist/index.js'),
+      ).toBe(true)
+      expect(sourceFilter().test('/app/src/App.tsx')).toBe(true)
+    })
+  })
 
   it('returns source without style imports unchanged', async () => {
     const path = join(root, 'plain.ts')
@@ -484,5 +632,64 @@ describe('registered Bun hooks', () => {
     )
     await register({ engine: 'wasm' })
     await expect(load(path)).rejects.toThrow(/invalid\.ts:\d+:\d+:/)
+  })
+})
+
+describe('project root', () => {
+  /** Run setup as `Bun.build` does, with `root` in its config */
+  async function setupBuild(buildRoot: string | undefined) {
+    const ends: (() => void)[] = []
+    const builder = {
+      config: { entrypoints: [], root: buildRoot },
+      onStart: () => builder,
+      onEnd: (end: () => void) => {
+        ends.push(end)
+        return builder
+      },
+      onResolve: () => builder,
+      onLoad: () => builder,
+    }
+    try {
+      await DevupUI({ engine: 'wasm' }).setup(
+        builder as unknown as Parameters<
+          ReturnType<typeof DevupUI>['setup']
+        >[0],
+      )
+    } finally {
+      // End the build session setup began
+      for (const end of ends) end()
+    }
+    return write.mock.calls.map(([path]) => String(path))
+  }
+
+  it('writes df under the root of Bun.build', async () => {
+    const buildRoot = nodePath.resolve('apps', 'web')
+    const written = await setupBuild(buildRoot)
+    expect(written).toContain(join(buildRoot, 'df', '.gitignore'))
+    expect(written).toContain(join(buildRoot, 'df', 'devup-ui', 'devup-ui.css'))
+  })
+
+  it('keeps writing df in the cwd without a root', async () => {
+    const written = await setupBuild(undefined)
+    expect(written).toContain(join('df', '.gitignore'))
+    expect(written).toContain(
+      nodePath.resolve('df', 'devup-ui', 'devup-ui.css'),
+    )
+  })
+
+  it('falls back to the devup.json of the cwd with a warning', async () => {
+    const warn = spyOn(console, 'warn').mockReturnValue(undefined)
+    const cwdFile = nodePath.resolve('devup.json')
+    exists.mockImplementation((path) => String(path) === cwdFile)
+    try {
+      const buildRoot = nodePath.resolve('apps', 'bun-fallback')
+      const written = await setupBuild(buildRoot)
+      expect(readConfig).toHaveBeenCalledWith(cwdFile, 'utf-8')
+      expect(written).toContain(join(buildRoot, 'df', '.gitignore'))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('devupFile')
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

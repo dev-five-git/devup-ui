@@ -110,3 +110,16 @@ export function themeToCssVariables(
   }
   return style as CSSProperties
 }
+
+/**
+ * Every variable of `theme` as one `:root` rule, for what no provider element
+ * can reach: global styles on `html`, `body` or `:root` read variables from
+ * their own ancestors, never from a descendant element. `<` is escaped so a
+ * value cannot close the `<style>` element that carries the rule.
+ */
+export function themeToRootRule(theme: StyledTheme): string {
+  const declarations = Object.entries(themeVariables(theme)).map(
+    ([name, value]) => `${name}:${String(value).replaceAll('<', '\\3c ')}`,
+  )
+  return `:root{${declarations.join(';')}}`
+}

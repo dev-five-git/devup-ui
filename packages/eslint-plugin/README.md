@@ -39,17 +39,23 @@ typed-spread diagnostic; unclassified expressions remain the build's decision.
 
 ## Rules
 
-| Rule                                                                           | Checks                                                                                                                                                                         | Fix |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- |
+| Rule                                                                           | Checks                                                                                                                                                                           | Fix |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
 | [`css-utils-literal-only`](src/rules/css-utils-literal-only/README.md)         | values of `css`, `globalCss`, `keyframes`, `createGlobalStyle` and `<Global styles>` are known at build time, and `.css.ts` stylesheets read no global that does not exist there | no  |
-| [`no-runtime-read`](src/rules/no-runtime-read/README.md)                       | what the build compiles away (`css`, `keyframes`, `styled`, `Box`...) is read only where it is called or rendered                                                              | no  |
-| [`no-unknown-style-spread`](src/rules/no-unknown-style-spread/README.md)       | opt-in typed guard for runtime-rooted spreads whose types can carry Devup styles; concrete DOM-only props remain allowed                                                        | no  |
-| [`no-duplicate-value`](src/rules/no-duplicate-value/README.md)                 | consecutive duplicate values of a responsive array                                                                                                                             | yes |
-| [`no-useless-responsive`](src/rules/no-useless-responsive/README.md)           | responsive arrays with a single value                                                                                                                                          | yes |
-| [`no-useless-tailing-nulls`](src/rules/no-useless-tailing-nulls/README.md)     | trailing `null`s of a responsive array                                                                                                                                         | yes |
-| [`no-typography-token-prefix`](src/rules/no-typography-token-prefix/README.md) | `$` before a `typography` key                                                                                                                                                  | yes |
-| [`prefer-media-shorthand`](src/rules/prefer-media-shorthand/README.md)         | `_media` entries and `@media` keys that have a shorthand prop                                                                                                                  | yes |
-| [`style-order-range`](src/rules/style-order-range/README.md)                   | `styleOrder` is a number from 1 to 254                                                                                                                                         | no  |
+| [`no-runtime-read`](src/rules/no-runtime-read/README.md)                       | what the build compiles away (`css`, `keyframes`, `styled`, `Box`...) is read only where it is called or rendered                                                                | no  |
+| [`no-unknown-style-spread`](src/rules/no-unknown-style-spread/README.md)       | opt-in typed guard for runtime-rooted spreads whose types can carry Devup styles; concrete DOM-only props remain allowed                                                         | no  |
+| [`no-duplicate-value`](src/rules/no-duplicate-value/README.md)                 | consecutive duplicate values of a responsive array                                                                                                                               | yes |
+| [`no-useless-responsive`](src/rules/no-useless-responsive/README.md)           | responsive arrays with a single value                                                                                                                                            | yes |
+| [`no-useless-tailing-nulls`](src/rules/no-useless-tailing-nulls/README.md)     | trailing `null`s of a responsive array                                                                                                                                           | yes |
+| [`no-typography-token-prefix`](src/rules/no-typography-token-prefix/README.md) | `$` before a `typography` key                                                                                                                                                    | yes |
+| [`prefer-media-shorthand`](src/rules/prefer-media-shorthand/README.md)         | `_media` entries and `@media` keys that have a shorthand prop                                                                                                                    | yes |
+| [`style-order-range`](src/rules/style-order-range/README.md)                   | `styleOrder` is a number from 1 to 254                                                                                                                                           | no  |
+
+Each rule's README shows only that rule's diagnostics. With a preset, one piece
+of code can be reported by several rules: `css({ w: [1] })` is correct for
+`css-utils-literal-only` but reported by `no-useless-responsive`, and
+`[1, 1, null]` is reported by both `no-duplicate-value` and
+`no-useless-tailing-nulls`.
 
 ## What counts as a style
 

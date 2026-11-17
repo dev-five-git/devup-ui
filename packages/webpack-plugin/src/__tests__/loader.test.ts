@@ -1,4 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
@@ -26,7 +28,10 @@ interface TestLoaderContext extends Pick<
   'async' | 'resourcePath' | 'addDependency'
 > {
   getOptions: () => Partial<DevupUILoaderOptions>
-  _compiler?: { __DEVUP_CACHE: string }
+  _compiler?: {
+    __DEVUP_CACHE: string
+    options?: { resolve: { conditionNames?: string[] } }
+  }
 }
 
 function createCodeExtractResult(
@@ -212,6 +217,100 @@ describe('devupUILoader', () => {
       setModuleResolverSpy.mockRestore()
     }
   })
+
+  it('resolves packages with the conditions of the compiler and keeps one resolver per set', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'devup-ui-loader-conditions-'))
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      mkdirSync(join(root, 'node_modules/split'), { recursive: true })
+      writeFileSync(
+        join(root, 'node_modules/split/package.json'),
+        JSON.stringify({
+          exports: { browser: './browser.js', node: './node.js' },
+        }),
+      )
+      writeFileSync(join(root, 'node_modules/split/browser.js'), 'browser')
+      writeFileSync(join(root, 'node_modules/split/node.js'), 'node')
+      codeExtractSpy.mockReturnValue(createCodeExtractResult())
+      const load = async (conditionNames: string[]) => {
+        const callback = mock()
+        devupUILoader.bind(
+          createLoaderContext(
+            { package: 'package', cssDir: 'cssDir', singleCss: true },
+            callback,
+            'index.tsx',
+            {
+              _compiler: {
+                __DEVUP_CACHE: '',
+                options: { resolve: { conditionNames } },
+              },
+            },
+          ),
+        )(Buffer.from('code'), 'index.tsx')
+        await waitFor(() => expect(callback).toHaveBeenCalled())
+        const resolveModule = setModuleResolverSpy.mock.calls.at(-1)?.[0] as (
+          specifier: string,
+          importer: string,
+        ) => { code: string } | undefined
+        return resolveModule
+      }
+      const browser = await load(['browser'])
+      expect(browser('split', join(root, 'App.tsx'))?.code).toBe('browser')
+      expect(await load(['browser'])).toBe(browser)
+      const node = await load(['node'])
+      expect(node('split', join(root, 'App.tsx'))?.code).toBe('node')
+    } finally {
+      setModuleResolverSpy.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('extracts under ids relative to the project root, not the cwd', async () => {
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      const root = nodePath.resolve('apps', 'web')
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ dependencies: ['src/tokens.ts'] }),
+      )
+      const callback = mock()
+      const t = createLoaderContext(
+        {
+          package: 'package',
+          root,
+          cssDir: join(root, 'df', 'devup-ui'),
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          watch: false,
+          singleCss: true,
+        },
+        callback,
+        join(root, 'src', 'Card.tsx'),
+      )
+      devupUILoader.bind(t)(Buffer.from('code'), 'Card.tsx')
+      await waitFor(() => expect(callback).toHaveBeenCalled())
+      expect(codeExtractSpy.mock.calls[0]?.[0]).toBe('src/Card.tsx')
+      expect(t.addDependency).toHaveBeenCalledWith(
+        join(root, 'src', 'tokens.ts'),
+      )
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string } | undefined
+      expect(resolveModule('./loader.test', import.meta.path)?.path).toBe(
+        nodePath.relative(root, import.meta.path).replaceAll('\\', '/'),
+      )
+    } finally {
+      setModuleResolverSpy.mockRestore()
+    }
+  })
+
   it.each(
     createTestMatrix({
       updatedBaseStyle: [true, false],
@@ -219,6 +318,7 @@ describe('devupUILoader', () => {
   )('should extract code with css', async (options) => {
     const _compiler = {
       __DEVUP_CACHE: '',
+      options: { resolve: {} },
     }
     const asyncCallback = mock()
     const t = createLoaderContext(

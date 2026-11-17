@@ -1,6 +1,6 @@
-import { existsSync, writeFile, writeFileSync } from 'node:fs'
+import { existsSync, statSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 
@@ -55,18 +55,29 @@ export interface CoordinatorOptions {
    */
   idleThresholdMs?: number
   /**
-   * Legacy fail-open window (ms) used when completion was not prewarmed and a
-   * graph member never reports. A quiet window cannot prove that Turbopack is
-   * finished scheduling loaders, so the production plugin avoids depending on
-   * this heuristic by extracting its complete route closure up front. Defaults
-   * to 10000. Exposed for tests; the plugin omits it.
+   * Quiet window (ms) after which a wait whose known files are still missing
+   * gives up with an error naming them, instead of serving partial CSS. The
+   * production plugin prewarms its whole route closure, so this only fires
+   * when that closure and the loaders disagree. Defaults to 10000. Exposed for
+   * tests; the plugin omits it.
    */
   quietMs?: number
   /**
-   * Hard timeout (ms) for both the idle and per-bucket waits before failing
-   * open. Defaults to 60000. Exposed for tests; the plugin omits it.
+   * Hard timeout (ms) for both the idle and per-bucket waits. A wait that hits
+   * it answers `/css` with an error rather than partial CSS. Defaults to 60000.
+   * Exposed for tests; the plugin omits it.
    */
   maxWaitMs?: number
+  /**
+   * Development only: the files the registered theme was read from, and how
+   * to register it again. Before each `/css` and `/extract` the coordinator
+   * re-registers the theme once one of those files changed, since Next does
+   * not reload next.config for devup.json. `reload` returns the new file list.
+   */
+  theme?: {
+    files: string[]
+    reload: () => string[]
+  }
 }
 
 export interface PrewarmedOutput {
@@ -83,14 +94,19 @@ interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
   css?: string
 }
 
-/** Copy every WASM-backed getter once, then release its Rust allocation. */
+/**
+ * Copy every WASM-backed getter once, then release its Rust allocation. The
+ * engine serializes `css` only when it is read, so a caller that never uses it
+ * passes `withCss = false`.
+ */
 export function takeExtractOutput(
   output: ReturnType<DevupWasm['codeExtract']>,
+  withCss = true,
 ): ExtractOutputSnapshot {
   try {
     return {
       code: output.code,
-      css: output.css,
+      css: withCss ? output.css : undefined,
       cssFile: output.cssFile,
       map: output.map,
       updatedBaseStyle: output.updatedBaseStyle,
@@ -187,6 +203,71 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 let server: Server | null = null
 
+// The latest extraction of each file. Next compiles a module that both the
+// server and the client graph import once per graph, with the same source,
+// and in no guaranteed order. Re-running WASM for the second copy only
+// rebuilds the same styles, so it answers from here instead. Keeping only the
+// latest source per file bounds the cache by the project's file count and
+// guarantees the sheet still holds exactly that source's styles.
+interface CachedExtract {
+  code: string
+  relCssDir: string
+  /** mtime and size of the files the extraction read through the resolver */
+  dependencies: string
+  output: ExtractOutputSnapshot
+}
+
+const transformCache = new Map<string, CachedExtract>()
+
+interface ThemeWatch {
+  files: string[]
+  stamp: string
+  reload: () => string[]
+}
+
+let themeWatch: ThemeWatch | undefined
+
+/**
+ * What changes when one of the files is edited, added or deleted: a theme
+ * input, or a file an extraction read through the resolver.
+ */
+function fileStamp(files: string[] = []): string {
+  return files
+    .map((file) => {
+      try {
+        const stats = statSync(resolve(file))
+        return `${stats.mtimeMs}:${stats.size}`
+      } catch {
+        return 'missing'
+      }
+    })
+    .join('|')
+}
+
+function cachedExtract(
+  filename: string,
+  code: string,
+  relCssDir: string,
+): ExtractOutputSnapshot | undefined {
+  const cached = transformCache.get(filename)
+  return cached?.code === code &&
+    cached.relCssDir === relCssDir &&
+    cached.dependencies === fileStamp(cached.output.dependencies)
+    ? cached.output
+    : undefined
+}
+
+/** Register the theme again when one of its input files has changed. */
+function refreshTheme(): void {
+  if (!themeWatch || fileStamp(themeWatch.files) === themeWatch.stamp) return
+  // Every cached extraction was made under the old theme. Even a reload that
+  // throws may have changed the registered theme, so drop them first.
+  transformCache.clear()
+  // A throwing reload keeps the old stamp, so the next request retries.
+  const files = themeWatch.reload()
+  themeWatch = { ...themeWatch, files, stamp: fileStamp(files) }
+}
+
 // Extraction tracking for waitForIdle.
 //
 // The CSS loader fetches the live sheet from `/css?waitForIdle=true`. In
@@ -214,10 +295,10 @@ let idleThresholdMs = 2500
 let quietMs = 10_000
 let maxWaitMs = 60_000
 
-// Legacy fail-open signal for callers that could not prewarm a deterministic
-// file set. It only observes extraction traffic; it is NOT a Turbopack
-// compilation-complete signal. Production builds seed `extractedFiles` with
-// their prewarmed route closure and therefore do not depend on this path.
+// Give-up signal for a wait whose known files never report. It only observes
+// extraction traffic; it is NOT a Turbopack compilation-complete signal, so it
+// ends the wait with an error, never with partial CSS. Production builds seed
+// `extractedFiles` with their prewarmed route closure and never reach it.
 function bundlerQuiet(now: number): boolean {
   return (
     totalExtractions > 0 &&
@@ -237,7 +318,27 @@ function baseFilesComplete(): boolean {
   return true
 }
 
-function waitForBase(): Promise<void> {
+function missingFiles(files: Iterable<string>): string[] {
+  return [...files].filter((file) => !extractedFiles.has(file))
+}
+
+/**
+ * Why a `/css` wait could not prove its CSS complete. The CSS loader fails the
+ * build with this message: Turbopack bundles the first `/css` answer as the
+ * stylesheet, so partial CSS would ship class names without their rules.
+ */
+function incompleteCssError(
+  target: string,
+  reason: string,
+  missing: string[],
+): string {
+  const files =
+    missing.length > 0 ? ` Files not extracted: ${missing.join(', ')}.` : ''
+  return `[devup-ui] coordinator: ${target} is incomplete (${reason}); refusing to serve partial CSS.${files}`
+}
+
+/** Resolves with an error message when the base sheet cannot be completed. */
+function waitForBase(): Promise<string | undefined> {
   const start = Date.now()
   return new Promise((resolve) => {
     const check = () => {
@@ -246,18 +347,30 @@ function waitForBase(): Promise<void> {
         // Last-resort backstop (see waitForBucket). Never fires on a healthy
         // build: either every expected file extracts, or the idle fallback
         // resolves first.
-        resolve()
+        resolve(
+          incompleteCssError(
+            'base CSS',
+            `not complete after ${maxWaitMs}ms`,
+            missingFiles(expectedBaseFiles),
+          ),
+        )
         return
       }
       // Primary, deterministic path.
       if (baseFilesComplete()) {
-        resolve()
+        resolve(undefined)
         return
       }
-      // Legacy fail-open for a caller that supplied expected files without
-      // prewarming them. The Next plugin's production path completes above.
+      // Expected files stopped arriving. The Next plugin's production path
+      // prewarms them and completes above, so this is a real gap.
       if (expectedBaseFiles.size > 0 && bundlerQuiet(now)) {
-        resolve()
+        resolve(
+          incompleteCssError(
+            'base CSS',
+            `no extraction for ${quietMs}ms`,
+            missingFiles(expectedBaseFiles),
+          ),
+        )
         return
       }
       // Fallback ONLY when no deterministic signal exists (no routes detected /
@@ -269,7 +382,7 @@ function waitForBase(): Promise<void> {
         pendingExtractStarts === 0 &&
         now - lastCompletedAt >= idleThresholdMs
       ) {
-        resolve()
+        resolve(undefined)
         return
       }
       setTimeout(check, 25)
@@ -317,33 +430,29 @@ function buildBucketToMembers(
   return map
 }
 
-function waitForBucket(bucket: string): Promise<void> {
+/** Resolves with an error message when the bucket cannot be completed. */
+function waitForBucket(bucket: string): Promise<string | undefined> {
   const members = bucketToMembers.get(bucket) ?? new Set([bucket])
   const start = Date.now()
   return new Promise((resolve) => {
     const check = () => {
-      let allExtracted = true
-      for (const member of members) {
-        if (!extractedFiles.has(member)) {
-          allExtracted = false
-          break
-        }
-      }
-      if (allExtracted) {
-        resolve()
+      const missing = missingFiles(members)
+      if (missing.length === 0) {
+        resolve(undefined)
         return
       }
       const now = Date.now()
-      // Legacy fail-open for a caller that did not seed the bucket through
-      // prewarming. Quiet time alone cannot distinguish an erased import from
-      // a later Turbopack extraction wave; production builds complete via the
-      // allExtracted branch above.
+      // Members stopped arriving. Quiet time alone cannot tell an erased
+      // import from a later Turbopack wave, so serving now could drop a late
+      // member's rules; production builds complete above via prewarming.
       if (bundlerQuiet(now)) {
-        const missing = [...members].filter((m) => !extractedFiles.has(m))
-        console.info(
-          `[devup-ui] coordinator: serving bucket "${bucket}" through the legacy quiet fallback; treating unreported member(s) as erased imports: ${missing.join(', ')}`,
+        resolve(
+          incompleteCssError(
+            `bucket "${bucket}"`,
+            `no extraction for ${quietMs}ms`,
+            missing,
+          ),
         )
-        resolve()
         return
       }
       if (now - start > maxWaitMs) {
@@ -352,11 +461,13 @@ function waitForBucket(bucket: string): Promise<void> {
         // within the whole window (a continuously busy build with a genuinely
         // missing member). Turbopack exposes no compilation-complete hook, so
         // a timer is the only available backstop against hanging forever.
-        const missing = [...members].filter((m) => !extractedFiles.has(m))
-        console.warn(
-          `[devup-ui] coordinator: bucket "${bucket}" not complete after ${maxWaitMs}ms; serving partial CSS (missing: ${missing.join(', ')})`,
+        resolve(
+          incompleteCssError(
+            `bucket "${bucket}"`,
+            `not complete after ${maxWaitMs}ms`,
+            missing,
+          ),
         )
-        resolve()
         return
       }
       setTimeout(check, 25)
@@ -409,6 +520,11 @@ export function startCoordinator(options: CoordinatorOptions): {
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   extractedSources.clear()
   fileNumToBucket.clear()
+  transformCache.clear()
+  themeWatch = options.theme && {
+    ...options.theme,
+    stamp: fileStamp(options.theme.files),
+  }
 
   // A deleted file is never extracted again, so its styles would stay in the
   // sheet; its importers are, once they stop importing it. A repeated
@@ -418,6 +534,8 @@ export function startCoordinator(options: CoordinatorOptions): {
     for (const [filename, resourcePath] of extractedSources) {
       if (existsSync(resourcePath)) continue
       extractedSources.delete(filename)
+      // Its styles leave the sheet, so the same source must extract again.
+      transformCache.delete(filename)
       if (removeFile(filename)) removed = true
     }
     if (!removed) return
@@ -448,16 +566,36 @@ export function startCoordinator(options: CoordinatorOptions): {
       const shouldWait = url.searchParams.get('waitForIdle') === 'true'
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
 
+      try {
+        refreshTheme()
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end(error instanceof Error ? error.message : String(error))
+        return
+      }
+
       if (shouldWait) {
-        if (fileNum != null && fileNumToBucket.has(fileNum)) {
-          // Deterministic: block until every member of this collapsed bucket
-          // has been extracted, then serve the complete chunk.
-          await waitForBucket(fileNumToBucket.get(fileNum)!)
-        } else {
-          // Base css (no fileNum) or a bucket no member has reported yet:
-          // wait for the deterministic route-reachable file set (idle fallback
-          // only when that set is unavailable).
-          await waitForBase()
+        const incomplete =
+          fileNum != null && fileNumToBucket.has(fileNum)
+            ? // Deterministic: block until every member of this collapsed
+              // bucket has been extracted, then serve the complete chunk.
+              await waitForBucket(fileNumToBucket.get(fileNum)!)
+            : // Base css (no fileNum) or a bucket no member has reported yet:
+              // wait for the deterministic route-reachable file set (idle
+              // fallback only when that set is unavailable).
+              await waitForBase()
+        if (incomplete !== undefined) {
+          // Only builds wait (`next dev` never asks to), and a build bundles
+          // this answer as its stylesheet: fail it rather than ship gaps.
+          res.writeHead(500, { 'Content-Type': 'text/plain' })
+          res.end(incomplete)
+          reportProfile('coordinator.css', {
+            durationMs: elapsedMs(cssStartedAt),
+            fileNum,
+            incomplete: true,
+            waitForIdle: shouldWait,
+          })
+          return
         }
       }
 
@@ -494,6 +632,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
+        refreshTheme()
         const repeated = extractedSources.has(filename)
         extractedSources.set(filename, resourcePath)
 
@@ -509,22 +648,37 @@ export function startCoordinator(options: CoordinatorOptions): {
         // Require exact source equality because Turbopack may hand a loader
         // code modified by an earlier transform.
         const prewarmed = prewarmedOutputs.get(filename)
-        const cacheHit = prewarmed?.source === code
         const extractStartedAt = profileStart()
-        const result = cacheHit
-          ? prewarmed
-          : takeExtractOutput(
-              extract(
-                filename,
-                code,
-                libPackage,
-                relCssDir,
-                singleCss,
-                false,
-                true,
-                importAliases,
-              ),
-            )
+        const cached =
+          prewarmed?.source === code
+            ? prewarmed
+            : cachedExtract(filename, code, relCssDir)
+        const cacheHit = cached !== undefined
+        let result: ExtractOutputSnapshot
+        if (cached) {
+          result = cached
+        } else {
+          // Whatever the engine kept of an earlier source is gone if this throws.
+          transformCache.delete(filename)
+          result = takeExtractOutput(
+            extract(
+              filename,
+              code,
+              libPackage,
+              relCssDir,
+              singleCss,
+              false,
+              true,
+              importAliases,
+            ),
+          )
+          transformCache.set(filename, {
+            code,
+            relCssDir,
+            dependencies: fileStamp(result.dependencies),
+            output: result,
+          })
+        }
         const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
@@ -751,6 +905,8 @@ export const resetCoordinator = () => {
   bucketToMembers = new Map()
   canonicalMapRef = {}
   expectedBaseFiles = new Set()
+  transformCache.clear()
+  themeWatch = undefined
   writeChain.clear()
   latestContent.clear()
   writingContent.clear()

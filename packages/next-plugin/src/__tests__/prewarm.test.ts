@@ -50,7 +50,7 @@ describe('collectProductionPrewarmFiles', () => {
     }
   }
 
-  it('includes all source candidates and ESM entries accepted by the loader', () => {
+  it('includes all source candidates and the ESM or CommonJS entries the loader accepts', () => {
     writePackage(
       '@devup-ui/reset-css',
       {
@@ -98,6 +98,7 @@ describe('collectProductionPrewarmFiles', () => {
       [
         'node_modules/@acme/ui/index.mjs',
         'node_modules/@devup-editor/editor/index.js',
+        'node_modules/@devup-ui/cjs-only/index.cjs',
         'node_modules/@devup-ui/reset-css/dist/index.mjs',
         'node_modules/design-system/index.js',
         'src/app/page.tsx',

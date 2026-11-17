@@ -14,6 +14,8 @@ It has a `display: flex` style with `flex-direction: column`.
 
 ## How to use
 
+{/* conformance */}
+
 ```tsx
 import { Box, VStack } from '@devup-ui/react'
 
@@ -35,7 +37,7 @@ function App() {
   return (
     <div className="e f">
       <div className="a b c"></div>
-      <div className="a b c d"></div>
+      <div className="a d b c"></div>
       <div className="a b c"></div>
     </div>
   )
@@ -55,11 +57,14 @@ function App() {
 .d {
   display: flex;
 }
-.e {
-  display: flex;
-}
-.f {
-  flex-direction: column;
+/* The component's own defaults sit in a lower cascade layer, so props override them */
+@layer b {
+  .e {
+    display: flex;
+  }
+  .f {
+    flex-direction: column;
+  }
 }
 ```
 

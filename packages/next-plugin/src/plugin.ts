@@ -15,16 +15,19 @@ import {
   computeCompiledFiles,
   createCompatTypes,
   createNodeModulesExcludeRegex,
+  createSharedSlotReservation,
   createThemeInterfaceArgs,
+  type DevupCompiler,
   type DevupUIBasePluginOptions,
   extractedNeedles,
+  findTailwindCss,
   loadDevupConfigSync,
   mergeImportAliases,
   normalizeShorthands,
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
-  withTailwindCss,
+  type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
 
@@ -35,7 +38,9 @@ import {
 } from './coordinator'
 import {
   removeStalePortFile,
+  removeStaleStateDirs,
   resolveCoordinatorPortFile,
+  resolveStateDir,
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
@@ -172,6 +177,54 @@ export function restoreSessionState(
   }
 }
 
+interface SharedSlotOptions {
+  libPackage: string
+  include: string[]
+  importAliases: WasmImportAliases
+  cssDir: string
+  singleCss: boolean
+}
+
+/**
+ * Reserve the class slots files share, in path order, with the filenames and
+ * CSS directories the coordinator extracts them with.
+ */
+function reserveSharedSlots(
+  wasm: Pick<DevupCompiler, 'reserveClassSlots'>,
+  { libPackage, include, importAliases, cssDir, singleCss }: SharedSlotOptions,
+): void {
+  const cwd = process.cwd()
+  try {
+    createSharedSlotReservation(wasm).reserve(
+      {
+        roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
+        include,
+        cwd,
+        tsconfigPath: resolve(cwd, 'tsconfig.json'),
+        package: libPackage,
+        importAliases,
+        toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+      },
+      {
+        singleCss,
+        importMainCssInCode: false,
+        importMainCssInCss: true,
+        cssDir: ({ physicalPath }) =>
+          `./${relative(dirname(physicalPath), cssDir).replaceAll('\\', '/')}`,
+      },
+    )
+  } catch (error) {
+    // Best-effort; shared slots fall back to arrival order.
+    console.warn(
+      setupWarning(
+        'shared class-slot reservation',
+        error,
+        'Classes several files share take their names in the order `next dev` extracts them, so they can differ between dev sessions.',
+      ),
+    )
+  }
+}
+
 /**
  * Devup UI Next Plugin
  * @param config
@@ -216,12 +269,16 @@ export function DevupUI(
     )
     const watch = process.env.NODE_ENV === 'development'
     const sourceMap = watch || config.productionBrowserSourceMaps === true
-    const sheetFile = join(distDir, 'sheet.json')
-    const classMapFile = join(distDir, 'classMap.json')
-    const fileMapFile = join(distDir, 'fileMap.json')
-    const canonicalMapFile = join(distDir, 'canonicalMap.json')
+    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
+    // Another live `next dev`/`next build` on this distDir keeps its state;
+    // this process then writes its own (see resolveStateDir).
+    const stateDir = resolveStateDir(distDir, coordinatorPortFile)
+    const sheetFile = join(stateDir, 'sheet.json')
+    const classMapFile = join(stateDir, 'classMap.json')
+    const fileMapFile = join(stateDir, 'fileMap.json')
+    const canonicalMapFile = join(stateDir, 'canonicalMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
-    const setupHandoffFile = join(distDir, 'setup.bin')
+    const setupHandoffFile = join(stateDir, 'setup.bin')
     // Next loads next.config twice for a production Turbopack build in isolated
     // module contexts, but both evaluations share the same process. Hand the
     // completed first setup to exactly one different module instance so the
@@ -269,7 +326,7 @@ export function DevupUI(
     }
     if (requestedAtomHoist) {
       console.warn(
-        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names, while existing shared slots remain arrival-ordered.',
+        '[devup-ui] Turbopack atomHoist is unavailable until shared class-slot reservation lands in #752; keeping per-file names.',
       )
     }
     if (!existsSync(distDir))
@@ -281,6 +338,8 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+    removeStaleStateDirs(distDir)
+    if (stateDir !== distDir) mkdirSync(stateDir, { recursive: true })
 
     const wasm = loadWasm(engine)
     const {
@@ -309,27 +368,40 @@ export function DevupUI(
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM
     // starts empty and CSS for cached files would be missing.
-    restoreSessionState(wasm, [sheetFile, classMapFile, fileMapFile])
+    // Always restore from the shared `distDir` state: a process writing its
+    // own state dir still starts from what the cache was built against.
+    restoreSessionState(wasm, [
+      join(distDir, 'sheet.json'),
+      join(distDir, 'classMap.json'),
+      join(distDir, 'fileMap.json'),
+    ])
     // After the restore: dropping a state that does not import resets these.
     setPrefix(prefix ?? null)
     setDebug(debug)
 
-    const devupConfig = loadDevupConfigSync(devupFile)
-
-    const theme: any = withTailwindCss(devupConfig.theme ?? {}, devupConfig)
     // Register current theme after importing previous state,
     // since importSheet replaces the entire sheet including its theme.
-    registerTheme(theme)
-    const themeInterface = getThemeInterface(
-      ...createThemeInterfaceArgs(libPackage),
-    )
-    // Written even when empty, so tokens removed from the theme leave no
-    // stale declarations behind.
-    writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
+    // Returns every file the theme was read from: devup.json, the configs it
+    // extends and the project's Tailwind CSS.
+    const registerProjectTheme = () => {
+      const inputs = new Set<string>()
+      const devupConfig = loadDevupConfigSync(devupFile, inputs)
+      const tailwind = findTailwindCss(devupConfig)
+      const theme: any = tailwind
+        ? { ...devupConfig.theme, tailwindCss: tailwind.css }
+        : (devupConfig.theme ?? {})
+      registerTheme(theme)
+      const themeInterface = getThemeInterface(
+        ...createThemeInterfaceArgs(libPackage),
+      )
+      // Written even when empty, so tokens removed from the theme leave no
+      // stale declarations behind.
+      writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
+      return { theme, files: [...inputs, ...(tailwind?.files ?? [])] }
+    }
+    const { theme, files: themeFiles } = registerProjectTheme()
     // disable turbo parallel
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
-
-    const coordinatorPortFile = resolveCoordinatorPortFile(distDir)
 
     // Collapse and legacy whole-file hoisting remain independent of the deferred
     // Turbopack atom reservation. Never install atom reach/threshold without it.
@@ -423,6 +495,18 @@ export function DevupUI(
         ),
       )
     }
+    // A class shared by several files takes the next free slot of whichever
+    // file extracts it first. `next dev` extracts in Turbopack's request
+    // order, so reserve those slots in path order before any loader runs.
+    // One-shot builds already extract in path order through the prewarm below.
+    if (watch)
+      reserveSharedSlots(wasm, {
+        libPackage,
+        include,
+        importAliases,
+        cssDir,
+        singleCss,
+      })
     // Turbopack can request a CSS module before it has scheduled every source
     // loader. Waiting for a quiet window is not a compilation-complete signal:
     // a CSS request can itself hold up the next extraction wave. In one-shot
@@ -475,6 +559,7 @@ export function DevupUI(
             true,
             importAliases as unknown as Record<string, string | null>,
           ),
+          false,
         )
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt
@@ -546,6 +631,11 @@ export function DevupUI(
       prewarmedFiles,
       prewarmedOutputs,
       sourceMap,
+      // Next does not reload next.config when devup.json changes, so under
+      // `next dev` the coordinator registers the theme again itself.
+      theme: watch
+        ? { files: themeFiles, reload: () => registerProjectTheme().files }
+        : undefined,
     })
 
     // Cleanup on exit
@@ -622,6 +712,7 @@ export function DevupUI(
             classMapFile,
             fileMapFile,
             themeFile: devupFile,
+            themeFiles,
             defaultSheet,
             defaultClassMap,
             defaultFileMap,
@@ -630,11 +721,12 @@ export function DevupUI(
         },
       ],
       // Must cover every extension the import-graph pre-pass lists AND the
-      // webpack rule matches (tsx|ts|jsx|js|mjs). Omitting one (e.g. jsx)
-      // means those files are never extracted: their Box/styled markup hits
-      // the runtime stubs ("Cannot run on the runtime") and the coordinator
-      // waits on graph members that never POST /extract.
-      '*.{tsx,ts,jsx,js,mjs}': {
+      // webpack rule matches (SOURCE_EXTENSIONS of plugin-utils). Omitting
+      // one (e.g. mts) means those files are never extracted: their
+      // Box/styled markup hits the runtime stubs ("Cannot run on the
+      // runtime") and the coordinator waits on graph members that never
+      // POST /extract.
+      '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
         loaders: [
           {
             loader: '@devup-ui/next-plugin/loader',
@@ -647,6 +739,7 @@ export function DevupUI(
               classMapFile,
               fileMapFile,
               themeFile: devupFile,
+              themeFiles,
               defaultSheet,
               defaultClassMap,
               defaultFileMap,
@@ -689,12 +782,16 @@ export function DevupUI(
   let productionPrewarmFiles: readonly string[] | undefined
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
+    // Next's project directory, which it also hands webpack as `context`: the
+    // webpack plugin resolves the relative options against it, not the cwd
+    const root = _options.dir ?? process.cwd()
     options.cssDir ??= resolve(
+      root,
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       _options.dev ? `devup-ui_${_options.buildId}` : 'devup-ui',
     )
     if (!_options.dev && productionPrewarmFiles === undefined) {
-      const cwd = process.cwd()
+      const cwd = root
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)

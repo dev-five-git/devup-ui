@@ -24,7 +24,8 @@ describe('createTheme', () => {
         <custom.GlobalStyle />
       </ThemeProvider>,
     )
-    expect(container.querySelector('style')?.textContent).toBe(
+    // The first style element is the provider's own :root rule
+    expect(container.querySelector('[style] > style')?.textContent).toBe(
       ':host{--ds-colors-primary:blue;}',
     )
     const { container: bare } = render(<theme.GlobalStyle />)
@@ -34,7 +35,7 @@ describe('createTheme', () => {
         <theme.GlobalStyle />
       </ThemeProvider>,
     )
-    expect(flat.querySelector('style')?.textContent).toBe(
+    expect(flat.querySelector('[style] > style')?.textContent).toBe(
       ':root{--sc-space:8;}',
     )
   })
