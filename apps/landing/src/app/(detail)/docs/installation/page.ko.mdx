@@ -76,6 +76,14 @@ export default defineConfig({
 })
 ```
 
+라이브러리 모드로 배포한 코드에는 Devup UI 컴포넌트가 그대로 남아 있고, 이 코드는 라이브러리를 사용하는 애플리케이션에서 컴파일됩니다. `node_modules` 안의 패키지는 `include`에 넣지 않으면 컴파일하지 않습니다. 따라서 애플리케이션 쪽에서 라이브러리를 `include`에 추가해야 합니다. 추가하지 않으면 컴포넌트가 컴파일되지 않은 채 남습니다.
+
+```ts
+DevupUI({
+  include: ['your-ui-library'],
+})
+```
+
 ### Rsbuild에서 Devup UI 사용하기
 
 Rsbuild를 사용한다면 Rsbuild 플러그인을 설치합니다.

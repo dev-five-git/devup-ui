@@ -1,4 +1,5 @@
 use super::*;
+use extractor::extract_style::extract_static_style::{ExtractStaticStyle, ThemeTokenResolution};
 
 fn token_theme(first: &str) -> Theme {
     serde_json::from_value(serde_json::json!({
@@ -24,7 +25,7 @@ fn token_sheet(atom: bool) -> StyleSheet {
 
 #[test]
 #[serial]
-fn first_value_refs_resolve_without_aliasing_responsive_variables() {
+fn array_slot_tokens_reference_the_responsive_variables() {
     // Given
     let source = r#"import {Box} from '@devup-ui/react'; export const A=<>
       <Box w="$space"/><Box w={["$space"]}/><Box boxShadow={["$card"]}/>
@@ -57,11 +58,11 @@ fn first_value_refs_resolve_without_aliasing_responsive_variables() {
         }
         for (refs, declaration) in classes.iter().zip([
             "width:var(--space)",
-            "width:1px",
-            "box-shadow:0 1px 2px black",
-            "box-shadow:0 3px 4px black",
+            "width:var(--space)",
+            "box-shadow:var(--card)",
+            "box-shadow:var(--lift)",
             "width:0",
-            "width:0",
+            "width:var(--zero)",
             "width:var(--missing)",
             "width:var(--nullable)",
         ]) {
@@ -73,8 +74,10 @@ fn first_value_refs_resolve_without_aliasing_responsive_variables() {
                 );
             }
         }
-        assert_ne!(classes[0][0], classes[1][0]);
-        assert_eq!(classes[4], classes[5]);
+        // An array slot reads the variable the theme redefines per breakpoint,
+        // so it shares the base class of the expanded literal
+        assert_eq!(classes[0][0], classes[1][0]);
+        assert_ne!(classes[4], classes[5]);
     }
     css::atom_hoist::set_atom_hoist(None);
     css::atom_hoist::restore_atom_plan(None);
@@ -82,20 +85,19 @@ fn first_value_refs_resolve_without_aliasing_responsive_variables() {
 }
 
 fn extract_first_value(sheet: &mut StyleSheet) -> String {
-    let output = extractor::extract(
+    // Extraction keeps `var(--token)` in array slots; build the first-value
+    // resolution directly to exercise how the sheet names it
+    let style = ExtractStaticStyle::new("width", "$space", 0, None)
+        .with_theme_token_resolution(ThemeTokenResolution::FirstValue);
+    let StyleProperty::ClassName(name) = style.extract(Some("test.tsx")) else {
+        panic!("a static style must extract a class name")
+    };
+    sheet.update_styles(
+        &FxHashSet::from_iter([ExtractStyleValue::Static(style)]),
         "test.tsx",
-        r#"import {Box} from '@devup-ui/react'; export const x=<Box w={["$space"]}/>;"#,
-        extractor::ExtractOption::default(),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
-    sheet.update_styles(&output.styles, "test.tsx", false);
-    output
-        .code
-        .split("className=\"")
-        .nth(1)
-        .and_then(|code| code.split('"').next())
-        .unwrap_or_else(|| panic!("{}", output.code))
-        .to_string()
+        false,
+    );
+    name
 }
 
 #[test]

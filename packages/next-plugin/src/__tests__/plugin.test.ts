@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import type { StaticImportGraph } from '@devup-ui/plugin-utils'
@@ -254,14 +255,16 @@ describe('DevupUINextPlugin', () => {
   })
 
   it('prewarms and serves actual default Turbo extraction through native state', () => {
+    // The child starts inside the fixture, as Next does, instead of changing
+    // its directory after the plugin modules have loaded.
+    const root = fs.mkdtempSync(join(tmpdir(), 'devup-next-native-'))
     const child = spawnSync(
       process.execPath,
       [
         '-e',
         `
       import assert from 'node:assert/strict';
-      import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-      import { tmpdir } from 'node:os';
+      import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
       import { join } from 'node:path';
       import { DevupUI } from ${JSON.stringify(new URL('../plugin.ts', import.meta.url).href)};
       import loader from ${JSON.stringify(new URL('../loader.ts', import.meta.url).href)};
@@ -270,7 +273,8 @@ describe('DevupUINextPlugin', () => {
       import { loadCompiler } from ${JSON.stringify(new URL('../../../plugin-utils/src/index.ts', import.meta.url).href)};
       const native = loadCompiler('native'), wasm = loadCompiler('wasm');
       const primedWasm = loadWasm('wasm'); // Resolve the old loader dependency at its installed location.
-      const cwd = process.cwd(), root = mkdtempSync(join(tmpdir(), 'devup-next-native-'));
+      const root = ${JSON.stringify(root)};
+      assert.equal(realpathSync.native(process.cwd()), realpathSync.native(root));
       try {
         mkdirSync(join(root, 'src/app'), { recursive: true });
         writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { jsx: 'react-jsx' }, include: ['src'] }));
@@ -278,7 +282,6 @@ describe('DevupUINextPlugin', () => {
         const source = "import {Box} from '@devup-ui/react'; import {tone} from '../tokens'; export default function Page(){return <Box color={tone}/>;}";
         const resourcePath = join(root, 'src/app/page.tsx');
         writeFileSync(resourcePath, source);
-        process.chdir(root);
         native.resetStateForTesting(); wasm.resetStateForTesting();
         withModuleResolver(primedWasm); // Match normal fixed-cwd supplier resolution after fixture setup.
         const before = { native: native.getCss(null, false), wasm: wasm.getCss(null, false) };
@@ -297,17 +300,18 @@ describe('DevupUINextPlugin', () => {
       } finally {
         await flushCoordinatorWrites(); resetCoordinator();
         native.resetStateForTesting(); wasm.resetStateForTesting();
-        process.chdir(cwd); rmSync(root, { recursive: true, force: true });
       }
     `,
       ],
       {
+        cwd: root,
         encoding: 'utf8',
         timeout: 12000,
         env: { ...process.env, NODE_ENV: 'production', TURBOPACK: '1' },
         windowsHide: true,
       },
     )
+    fs.rmSync(root, { recursive: true, force: true })
     console.info(child.stdout)
     expect(child.error).toBeUndefined()
     expect(child.signal).toBeNull()
@@ -762,12 +766,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -815,12 +814,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },
@@ -912,12 +906,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
-                      .join('|')
-                      .replaceAll(
-                        '/',
-                        '[\\/\\\\_]',
-                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
                   ),
                 },
               },

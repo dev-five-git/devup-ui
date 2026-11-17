@@ -56,6 +56,8 @@ pub mod module_reference;
 mod mutations;
 #[cfg(test)]
 mod numeric_template_tests;
+#[cfg(test)]
+mod object_selector_keys_tests;
 mod own_css_context;
 mod own_css_lower;
 mod own_css_merge;
@@ -81,11 +83,14 @@ mod responsive_selector_tests;
 mod retained_render_assertions;
 #[cfg(test)]
 mod retained_render_support;
+mod runtime_options;
 mod scope;
 #[cfg(test)]
 mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
+#[cfg(test)]
+mod styled_computed_tag_tests;
 
 mod peephole;
 mod source_map;
@@ -106,6 +111,8 @@ mod style_values;
 mod styled_reads;
 #[cfg(test)]
 mod styled_source_tests;
+#[cfg(test)]
+mod styled_theme_prop_tests;
 #[cfg(test)]
 mod stylesheet_coverage_contract_tests;
 #[cfg(test)]
@@ -129,6 +136,8 @@ mod stylesheet_gate_boundaries_tests;
 mod stylesheet_policy;
 #[cfg(test)]
 mod stylesheet_regression_tests;
+#[cfg(test)]
+mod stylesheet_stack_tests;
 mod stylex;
 mod tailwind;
 mod tailwind_children;
@@ -149,6 +158,8 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod vanilla_extract_calc;
+#[cfg(test)]
+mod vanilla_extract_theme_import_tests;
 mod visit;
 
 mod dead_properties;
@@ -498,6 +509,11 @@ fn extract_source(
         }
     }
     let mut errors = import_alias_visit::emotion_errors(code, filename, &option.import_aliases);
+    errors.extend(runtime_options::runtime_option_errors(
+        code,
+        filename,
+        &option.import_aliases,
+    ));
     errors.extend(vanilla_extract_calc::errors(
         code,
         filename,
@@ -15850,7 +15866,7 @@ const Button = styled.button({ bg: 'red' })
             .unwrap_or(body.len());
         let body = &body[..end];
         assert!(
-            body.starts_with(&format!("{declaration}__devupForwardRef(")),
+            body.starts_with(&format!("{declaration}__devupStyled(__devupForwardRef(")),
             "{body}"
         );
         body
@@ -23774,7 +23790,7 @@ const e = <Box bg='red' props={extraProps} />;"
         reset_file_map();
         let message = extract(
             "test.tsx",
-            "import { styled } from '@devup-ui/react';\nconst S = styled['div']`color: red;`;",
+            "import { styled } from '@devup-ui/react';\nconst S = styled[tag]`color: red;`;",
             ExtractOption::default(),
         )
         .err()
@@ -24485,6 +24501,28 @@ export const l = (on) => cx(on ? red : `x`, blue);"
             )
             .is_ok()
         );
+    }
+
+    // Options of `StyleSheetManager` and `createCache()` that change the CSS
+    // or the props, which the compat no-ops would drop, are located errors
+    #[test]
+    #[serial]
+    fn test_dropped_runtime_options_are_located_errors() {
+        let option = library_option();
+        let errors: Vec<(&str, String)> = [
+            "import { StyleSheetManager } from 'styled-components';\nexport const App = () => (\n  <StyleSheetManager stylisPlugins={[rtl]} shouldForwardProp={valid}>x</StyleSheetManager>\n);",
+            "import createCache from '@emotion/cache';\nimport { CacheProvider } from '@emotion/react';\nconst cache = createCache({ key: 'x', stylisPlugins: [rtl] });\nexport const App = () => <CacheProvider value={cache}>x</CacheProvider>;",
+            "import createCache from '@emotion/cache';\nimport { CacheProvider } from '@emotion/react';\nconst cache = createCache({ key: 'x' });\nexport const App = () => <CacheProvider value={cache}>x</CacheProvider>;",
+        ]
+        .into_iter()
+        .map(|code| {
+            reset_class_map();
+            reset_file_map();
+            let error = extract("App.tsx", code, option.clone()).err();
+            (code, error.map_or_else(String::new, |error| error.to_string()))
+        })
+        .collect();
+        assert_debug_snapshot!(errors);
     }
 
     #[test]

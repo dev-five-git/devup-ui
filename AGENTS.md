@@ -116,7 +116,7 @@ All React components throw `Error('Cannot run on the runtime')` - they're compil
 - Defined responsively like typography (arrays with `null` for skipped breakpoints)
 - Used with `$` prefix: `<Box w="$containerX" />`, `<Box boxShadow="$card" />`
 - `"$token"` and `{"$token"}` both expand to multiple breakpoint classes
-- `{["$token"]}` inside a responsive array stays single class (array defines breakpoints)
+- `{["$token"]}` inside a responsive array stays single class (array defines breakpoints), still `var(--token)`
 
 ### Plugin Pattern
 All plugins wrap bundler config:

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -36,11 +42,14 @@ it.each(['text/css', '*/*'])(
       })
       assert(bundle.success, bundle.logs.map(String).join('\n'))
 
-      // When: native Node owns Vite and HTTP, avoiding Bun's Windows fs identity.
+      // When: native Node owns Vite and HTTP, avoiding Bun's Windows fs identity,
+      // and starts inside the project the probe serves.
+      const project = join(root, 'project')
+      mkdirSync(project)
       const result = spawnSync(
         'node',
         [owner, '45000', join(root, 'probe.mjs'), accept],
-        { encoding: 'utf8', timeout: 60000, windowsHide: true },
+        { cwd: project, encoding: 'utf8', timeout: 60000, windowsHide: true },
       )
 
       // Then: all real HTTP assertions passed and the owned process tree drained.
