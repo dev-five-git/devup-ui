@@ -31,6 +31,9 @@ pub struct Identity {
     /// The `styledComponentId` styled-components gives it, when `componentId`
     /// names it
     pub component_id: Option<String>,
+    /// The `displayName` it takes: styled-components' `displayName`, or the
+    /// `label` Emotion names it by
+    pub display_name: Option<String>,
 }
 
 /// The property a component with Emotion targets holds itself without them
@@ -82,18 +85,30 @@ pub fn read_identity(
             Err(error) => errors.push(error),
         }
     }
+    identity.display_name = last_option(options, &["displayName", "label"])
+        .and_then(|name| literal(name, global))
+        .and_then(display_name);
     (identity, errors)
 }
 
+/// The `displayName` a string option gives the component, as both libraries
+/// assign it; without one the component keeps its own name
+fn display_name(value: Literal) -> Option<String> {
+    match value {
+        Literal::String(name) => Some(name),
+        Literal::Undefined | Literal::Other(..) => None,
+    }
+}
+
 /// `component` with the statics its identity gives it:
-/// `Object.assign(component, { styledComponentId: id, __devupBase: base })`
+/// `Object.assign(component, { styledComponentId: id, displayName: name, __devupBase: base })`
 pub fn with_statics<'a>(
     ast_builder: &AstBuilder<'a>,
     component: Expression<'a>,
-    id: Option<&str>,
+    (id, display_name): (Option<&str>, Option<&str>),
     base: Option<Expression<'a>>,
 ) -> Expression<'a> {
-    if id.is_none() && base.is_none() {
+    if id.is_none() && display_name.is_none() && base.is_none() {
         return component;
     }
     let mut statics = Expression::new_object_expression(
@@ -107,6 +122,14 @@ pub fn with_statics<'a>(
             statics,
             "styledComponentId",
             marker_class(ast_builder, id),
+        );
+    }
+    if let Some(name) = display_name {
+        statics = with_property(
+            ast_builder,
+            statics,
+            "displayName",
+            marker_class(ast_builder, name),
         );
     }
     if let Some(base) = base {
