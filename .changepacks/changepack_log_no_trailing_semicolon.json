@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "CSS blocks no longer end with a redundant `;` before `}`: StyleX `defineVars()`, `createTheme()`, typed-variable `@property`, `positionTry()` and `viewTransitionClass()` rules, and the variables the runtime `createTheme()` `GlobalStyle` declares, now separate declarations with `;` only between them, as the rest of the generated CSS already does. The CSS is equivalent and slightly smaller.",
+  "date": "2026-11-18T00:00:00.000Z"
+}

@@ -12,8 +12,8 @@ const s = {
 };
 export const p = { className: "a-c a-e" };
 
-Css(ExtractCss { file: "stylex.tsx", order: 1, css: "@position-try --a-a{position-anchor:--anchor;top:0;}" })
-Css(ExtractCss { file: "stylex.tsx", order: 2, css: "@position-try --a-b{bottom:0;}" })
+Css(ExtractCss { file: "stylex.tsx", order: 1, css: "@position-try --a-a{position-anchor:--anchor;top:0}" })
+Css(ExtractCss { file: "stylex.tsx", order: 2, css: "@position-try --a-b{bottom:0}" })
 Static(ExtractStaticStyle { property: "anchor-name", value: "--anchor", level: 0, selector: None, style_order: None, layer: None })
 Static(ExtractStaticStyle { property: "position-try-fallbacks", value: "--a-a", level: 0, selector: None, style_order: None, layer: None })
 Static(ExtractStaticStyle { property: "position-try-fallbacks", value: "--a-b", level: 0, selector: None, style_order: None, layer: None })

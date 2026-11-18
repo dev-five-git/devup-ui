@@ -294,11 +294,13 @@ pub fn css_variable_block(selector: &str, assignments: &[(String, String)]) -> S
     let mut css = String::new();
     css.push_str(selector);
     css.push('{');
-    for (name, value) in assignments {
+    for (index, (name, value)) in assignments.iter().enumerate() {
+        if index > 0 {
+            css.push(';');
+        }
         css.push_str(name);
         css.push(':');
         css.push_str(value);
-        css.push(';');
     }
     css.push('}');
     css

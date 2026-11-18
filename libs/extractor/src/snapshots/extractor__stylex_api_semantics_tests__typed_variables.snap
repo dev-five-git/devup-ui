@@ -10,6 +10,6 @@ export const v = {
 	"plain": "var(--a-c)"
 };
 
-Css(ExtractCss { file: "stylex.tsx", order: 1, css: "@property --a-a{syntax:\"<integer>\";inherits:true;initial-value:3;}" })
-Css(ExtractCss { file: "stylex.tsx", order: 2, css: "@property --a-b{syntax:\"<color>\";inherits:true;initial-value:red;}" })
-Css(ExtractCss { file: "stylex.tsx", order: 3, css: ":root{--a-a:3;--a-b:red;--a-c:x;}@media(prefers-color-scheme:dark){:root{--a-b:white;}}" })
+Css(ExtractCss { file: "stylex.tsx", order: 1, css: "@property --a-a{syntax:\"<integer>\";inherits:true;initial-value:3}" })
+Css(ExtractCss { file: "stylex.tsx", order: 2, css: "@property --a-b{syntax:\"<color>\";inherits:true;initial-value:red}" })
+Css(ExtractCss { file: "stylex.tsx", order: 3, css: ":root{--a-a:3;--a-b:red;--a-c:x}@media(prefers-color-scheme:dark){:root{--a-b:white}}" })
