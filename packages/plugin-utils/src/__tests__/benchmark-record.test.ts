@@ -411,6 +411,18 @@ describe('benchmark JSON', () => {
     )
   })
 
+  it('fits a last array of 80 columns on one line, as it takes no comma', () => {
+    // Exactly 80 columns, 81 when a comma follows
+    const values = [1.5, 2.25, 3.125, 38662174, 1512, 571629, 12345678, 1234]
+    const fits = { aaaaaaaaaaaaaaaa: values }
+    const split = { aaaaaaaaaaaaaaaa: values, b: 1 }
+    const line = `  "aaaaaaaaaaaaaaaa": [${values.join(', ')}]`
+
+    expect(line).toHaveLength(80)
+    expect(formatJson(fits)).toBe(`{\n${line}\n}\n`)
+    expect(formatJson(split).split('\n')[1]).toBe('  "aaaaaaaaaaaaaaaa": [')
+  })
+
   it('formats the checked files exactly as it writes them', () => {
     for (const file of ['benchmark-results.json', 'benchmark/history.json']) {
       const text = readFileSync(join(ROOT, file), 'utf8').replaceAll(
