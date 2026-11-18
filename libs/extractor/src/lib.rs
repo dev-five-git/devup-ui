@@ -24058,6 +24058,110 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
         ]));
     }
 
+    /// A `const` choosing among styles that only `css` props read compiles in
+    /// its declaration, each choice to the classes Emotion gives it
+    #[test]
+    #[serial]
+    fn test_emotion_css_prop_bound_choices() {
+        assert_debug_snapshot!(emotion_outputs(&[
+            (
+                "test.tsx",
+                "export function App({ on }) {\n  const rules = on ? { color: 'red' } : { color: 'blue' };\n  return <div css={rules} />;\n}"
+            ),
+            (
+                "test.tsx",
+                "export function App({ on }) {\n  const rules = on && { color: 'red' };\n  return <div css={rules} />;\n}"
+            ),
+            (
+                "test.tsx",
+                "export function App({ x, y }) {\n  const a = x || { color: 'red' };\n  const b = y ?? [{ color: 'blue' }, { margin: 0 }];\n  return <><div css={a} /><div css={b} /></>;\n}"
+            ),
+            (
+                "test.tsx",
+                "import { css } from '@emotion/react';\nconst base = css({ color: 'green' });\nexport function App({ a, b }) {\n  const rules = a ? base : b ? 'color: red;' : null;\n  return <><div css={rules} /><span css={rules} /></>;\n}"
+            ),
+            (
+                "test.tsx",
+                "export function App({ on }) {\n  const rules = on ? { margin: 1, lineHeight: 2 } : undefined;\n  return <div css={rules} className=\"external\" />;\n}"
+            ),
+            (
+                "test.tsx",
+                "export function App({ on }) {\n  const unread = on ? { color: 'red' } : { color: 'blue' };\n  return <div />;\n}"
+            ),
+        ]));
+    }
+
+    /// A binding the `css` prop reads that holds styles the build cannot
+    /// compile there is a build error, never a class
+    #[rstest]
+    #[case::also_read(
+        "export function App({ on }) {\n  const rules = on ? { color: 'red' } : { color: 'blue' };\n  console.log(rules);\n  return <div css={rules} />;\n}",
+        "it chooses among styles the build compiles only when `css` props alone read"
+    )]
+    #[case::reassigned(
+        "export function App({ on }) {\n  let rules = on ? { color: 'red' } : { color: 'blue' };\n  rules = { color: 'green' };\n  return <div css={rules} />;\n}",
+        "it chooses among styles the build compiles only when `css` props alone read"
+    )]
+    #[case::function_call(
+        "function make() {\n  return { color: 'red' };\n}\nexport function App() {\n  const rules = make();\n  return <div css={rules} />;\n}",
+        "the function returns a style object"
+    )]
+    #[case::arrow_call(
+        "const make = (on) => (on ? { color: 'red' } : null);\nexport function App({ on }) {\n  const rules = make(on);\n  return <div css={rules} />;\n}",
+        "the function returns a style object"
+    )]
+    #[case::function_expression_call(
+        "const make = function () {\n  if (Math.random()) return css({ color: 'blue' });\n  return [{ color: 'red' }];\n};\nexport function App() {\n  const rules = make();\n  return <div css={rules} />;\n}",
+        "the function returns a style object"
+    )]
+    #[case::arrow_block_call(
+        "const make = () => {\n  return { color: 'red' };\n};\nexport function App() {\n  const rules = make();\n  return <div css={rules} />;\n}",
+        "the function returns a style object"
+    )]
+    #[case::local_object(
+        "export function App({ on }) {\n  const local = { color: 'red' };\n  const rules = on ? local : undefined;\n  return <div css={rules} />;\n}",
+        "test.tsx:4:22: `css()` cannot use `local`"
+    )]
+    #[case::runtime_value(
+        "export function App({ on, c }) {\n  const rules = on ? { color: c } : { color: 'blue' };\n  return <div css={rules} />;\n}",
+        "test.tsx:3:22: `css()` cannot use `c`"
+    )]
+    #[serial]
+    fn test_emotion_css_prop_bound_choices_refused(#[case] code: &str, #[case] error: &str) {
+        let _state = test_state::TestStateGuard::new();
+        reset_class_map();
+        reset_file_map();
+        let code = format!("import {{ css }} from '@emotion/react';\n{code}");
+        let found = extract("test.tsx", &code, emotion_option())
+            .err()
+            .map_or_else(String::new, |found| found.to_string());
+        assert!(found.contains(error), "{found}");
+    }
+
+    /// A function of the module that returns a class, or one the build cannot
+    /// see, gives what the `css` prop composes as a class, as before
+    #[rstest]
+    #[case::returns_class(
+        "import { css } from '@emotion/react';\nconst make = () => css({ color: 'red' });\nexport function App() {\n  const rules = make();\n  return <div css={rules} />;\n}"
+    )]
+    #[case::nested_function(
+        "function make() {\n  const inner = () => ({ color: 'red' });\n  return inner;\n}\nexport function App() {\n  const rules = make();\n  return <div css={rules} />;\n}"
+    )]
+    #[case::nested_declaration(
+        "function make() {\n  function inner() {\n    return { color: 'red' };\n  }\n  return inner;\n}\nexport function App() {\n  const rules = make();\n  return <div css={rules} />;\n}"
+    )]
+    #[case::runtime_function(
+        "export function App({ make }) {\n  const rules = make();\n  return <div css={rules} />;\n}"
+    )]
+    #[serial]
+    fn test_emotion_css_prop_bound_calls_stay_classes(#[case] code: &str) {
+        let _state = test_state::TestStateGuard::new();
+        reset_class_map();
+        reset_file_map();
+        let output = extract("test.tsx", code, emotion_option()).unwrap();
+        assert!(output.code.contains("className={rules}"), "{}", output.code);
+    }
+
     #[test]
     #[serial]
     fn test_emotion_css_prop_on_every_element() {

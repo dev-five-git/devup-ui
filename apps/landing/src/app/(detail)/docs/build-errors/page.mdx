@@ -667,6 +667,61 @@ const BlueCard = styled(Card)({ color: 'blue' })
 export const App = () => <BlueCard />
 ```
 
+### css prop reads a choice of styles that other code also reads
+
+**API:** Emotion css prop. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it chooses among styles the build compiles only when `css` props alone read a `const` holding them: read it only as `css`, or write the choice in the prop
+```
+
+**Trigger:**
+
+```tsx-error
+import { css } from '@emotion/react';
+export function App({ on }) { const rules = on ? { color: 'red' } : { color: 'blue' }; console.log(rules); return <div css={rules} />; }
+```
+
+**Why:** A `const` that chooses among style objects with `? :`, `&&`, `||` or `??` compiles where it is declared: each object becomes the classes Emotion would give it, and the choice still runs at runtime. That is only safe when `css` props are the only readers. Other code would see class names instead of the objects. The same applies to a `let`.
+
+**Fix:** Read the binding only as `css`, or write the choice in the prop.
+
+```tsx
+export function App({ on }) {
+  const rules = on ? { color: 'red' } : { color: 'blue' }
+  return <div css={rules} />
+}
+```
+
+### css prop reads what a function returning styles gives
+
+**API:** Emotion css prop. **Message pattern:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it holds what a call gives, and the function returns a style object, which the build does not run the call to read: write the styles in the prop or in a `const` it reads, or return a class `css()` gives
+```
+
+**Trigger:**
+
+```tsx-error
+import { css } from '@emotion/react';
+function make() { return { color: 'red' }; }
+export function App() { const rules = make(); return <div css={rules} />; }
+```
+
+**Why:** The build does not run calls. A function of the module that returns an object or array literal gives styles, which a `css` prop cannot pass on as a class. A call the build cannot see into, such as a parameter or an import, is still passed on as a class.
+
+**Fix:** Write the styles in the prop or in a `const` it reads, or have the function return a class from `css()`.
+
+```tsx
+import { css } from '@emotion/react'
+const make = () => css({ color: 'red' })
+export function App() {
+  const rules = make()
+  return <div css={rules} />
+}
+```
+
 ### ClassNames child cannot be compiled
 
 **API:** Emotion css prop and ClassNames. **Message pattern:**

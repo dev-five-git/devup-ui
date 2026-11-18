@@ -7,7 +7,7 @@ use oxc_ast_visit::Visit;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{Bindings, NAMESPACE_STYLED, visits};
+use super::{Bindings, NAMESPACE_CSS, NAMESPACE_STYLED, visits};
 use crate::component::ExportVariableKind;
 use crate::stylex::StylexFunction;
 use crate::util_type::UtilType;
@@ -124,6 +124,9 @@ impl Bindings {
     /// The style function `callee` reads: `css`, `Devup.keyframes`, ...
     pub fn util(&self, callee: &Expression<'_>) -> Option<Rc<UtilType>> {
         match callee {
+            Expression::Identifier(identifier) if identifier.name == NAMESPACE_CSS => {
+                Some(Rc::new(UtilType::Css))
+            }
             Expression::Identifier(identifier) => self
                 .symbol(identifier)
                 .and_then(|symbol| self.util_imports.get(&symbol))
