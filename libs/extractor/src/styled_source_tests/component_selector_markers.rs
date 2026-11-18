@@ -113,3 +113,96 @@ fn expected_markers(expected: &[(&str, usize)]) -> Vec<String> {
         .map(|(name, index)| css::component_marker(name, *index, "test.tsx"))
         .collect()
 }
+
+const CHILD_MODULE: &str = "import styled from '@emotion/styled';\nexport const Child = styled.div`color: red;`;\nexport const Other = styled.span`color: blue;`;";
+
+fn child_module(specifier: &str, _: &str) -> Option<crate::ResolvedModule> {
+    (specifier == "./child").then(|| crate::ResolvedModule {
+        path: "/src/child.tsx".to_string(),
+        code: CHILD_MODULE.to_string(),
+    })
+}
+
+#[rstest]
+#[serial]
+#[case::exported("export const Child = styled.div`color: red;`;", &[("Child", 0)], &[])]
+#[case::exported_anonymous_default("export default styled.div`color: red;`;", &[("default", 0)], &[])]
+#[case::exported_and_selected_here(
+    "export const Child = styled.div`color: red;`;\nexport const Parent = styled.div`${Child} { color: blue; }`;",
+    &[("Child", 0), ("Parent", 1)],
+    &[("Child", 0)]
+)]
+#[case::private_selected(
+    "const Child = styled.div`color: red;`;\nconst Parent = styled.div`${Child} { color: blue; }`;\nexport const App = () => <Parent><Child /></Parent>;",
+    &[("Child", 1)],
+    &[("Child", 1)]
+)]
+#[case::shared_with_component_target(
+    "const Child = styled.div`color: red;`;\nconst Link = Child.withComponent('a');\nexport const Parent = styled.div`${Link} { color: blue; }`;\nexport const App = () => <Link />;",
+    &[("Parent", 1), ("Child", 2)],
+    &[("Child", 2)]
+)]
+fn extraction_lists_the_markers_it_gives_and_selects_by(
+    #[case] source: &str,
+    #[case] given: &[(&str, usize)],
+    #[case] selected: &[(&str, usize)],
+) {
+    // Given
+    reset_class_map();
+    reset_file_map();
+    let code = format!("{EMOTION}{source}");
+    // When
+    let output =
+        extract("test.tsx", &code, option()).unwrap_or_else(|error| panic!("{code}\n{error}"));
+    // Then
+    assert_eq!(
+        sorted(output.component_markers.given),
+        sorted(expected_markers(given)),
+        "{code}"
+    );
+    assert_eq!(
+        sorted(output.component_markers.selected),
+        sorted(expected_markers(selected)),
+        "{code}"
+    );
+}
+
+fn sorted(mut markers: Vec<String>) -> Vec<String> {
+    markers.sort();
+    markers
+}
+
+#[rstest]
+#[serial]
+#[case::named(
+    "import { Child } from './child';\nexport const Parent = styled.div`${Child} { color: green; }`;",
+    1
+)]
+#[case::namespace(
+    "import * as kit from './child';\nexport const Parent = styled.div`${kit.Child} { color: green; }`;",
+    1
+)]
+fn markers_of_imported_components_are_selected_by_the_importer(
+    #[case] source: &str,
+    #[case] selected: usize,
+) {
+    // Given
+    reset_class_map();
+    reset_file_map();
+    let code = format!("{EMOTION}{source}");
+    // When
+    let output =
+        crate::extract_with_modules("/src/parent.tsx", &code, option(), false, &child_module)
+            .unwrap_or_else(|error| panic!("{code}\n{error}"));
+    // Then
+    let markers = &output.component_markers;
+    assert_eq!(markers.selected.len(), selected, "{code}\n{markers:?}");
+    assert_eq!(markers.given.len(), 1, "{code}\n{markers:?}");
+    assert!(
+        markers
+            .selected
+            .iter()
+            .all(|marker| !markers.given.contains(marker)),
+        "{code}\n{markers:?}"
+    );
+}
