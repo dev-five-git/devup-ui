@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "Compile every source kind under the Bun runtime: `.mts`, `.cts`, and `.js` and `.cjs` files outside `node_modules` join `.ts`, `.tsx`, `.jsx` and `.mjs`. CommonJS keeps its exports: Bun does not run CommonJS an `onLoad` callback returns, so the runtime plugin runs the module itself and hands Bun an ES module exporting its `module.exports` to `require()` and `import`. Source loads are synchronous, so `require()` works on compiled files too.",
+  "date": "2026-11-17T00:00:00.000Z"
+}

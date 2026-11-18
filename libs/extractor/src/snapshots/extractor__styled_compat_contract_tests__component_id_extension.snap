@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import { forwardRef as __devupForwardRef } from "react";
+function __devupOmit0(__devupOmitted) {
+	return Object.fromEntries(Object.entries(__devupOmitted).filter(([k]) => k[0] !== "$" && k !== "theme"));
+}
+const __devupStyled = (c) => (c.styledComponentId = "devup", c);
+export const A = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--a idA a-a ${className}` : "a--a idA a-a"} style={style} />)), { styledComponentId: "idA" });
+export const B = __devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--b a--a idA a-b ${className}` : "a--b a--a idA a-b"} style={style} />));
+export const C = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--c a--a idA a-b ${className}` : "a--c a--a idA a-b"} style={style} />)), { styledComponentId: "" });
+export const E = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--e a-a ${className}` : "a--e a-a"} style={style} />)), { styledComponentId: "" });
+export const D = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...__devupOmit0(rest)} ref={__devupRef} as={forwardedAs} className={className ? `a--d idD a--e a-b ${className}` : "a--d idD a--e a-b"} style={style} />)), { styledComponentId: "idD" });
+
+Static(ExtractStaticStyle { property: "color", value: "blue", level: 0, selector: None, style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })

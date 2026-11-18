@@ -13,7 +13,7 @@ use crate::extract_style::style_property::StyleProperty;
 use css::style_selector::StyleSelector;
 use std::borrow::Cow;
 
-fn class_selector<'a>(
+pub(crate) fn class_selector<'a>(
     selector: Option<&'a StyleSelector>,
     layer: Option<&str>,
 ) -> Option<Cow<'a, str>> {

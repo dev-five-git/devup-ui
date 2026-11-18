@@ -34,6 +34,7 @@ declare module '@stylexjs/stylex' {
     stylex.StyleXVariableValue<T>
   export type StyleXVarGroup<K extends string = string> =
     stylex.StyleXVarGroup<K>
+  export type StyleXViewTransitionGroups = stylex.StyleXViewTransitionGroups
 
   export default stylex
 }

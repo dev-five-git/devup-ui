@@ -5,8 +5,14 @@ mod retained;
 #[path = "styled_retarget.rs"]
 mod retarget;
 pub use retarget::with_component;
+#[path = "styled_identity.rs"]
+mod identity;
 #[path = "styled_residual.rs"]
 mod residual;
+use identity::runtime_base;
+pub use identity::{
+    WITH_COMPONENT_MARKING, base_as, read_identity, with_runtime_component, with_statics,
+};
 #[path = "styled_stages.rs"]
 mod stages;
 use super::style_order_projection::{AuthoredStyles, extract_with_order};
@@ -38,7 +44,8 @@ use oxc_ast::{
     ast::{
         Argument, BindingPattern, BindingProperty, BindingRestElement, CallExpression, Expression,
         FormalParameter, FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
-        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectPropertyKind, PropertyKey, Str,
+        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectProperty, ObjectPropertyKind,
+        PropertyKey, Str,
     },
     builder::AstBuilder,
 };
@@ -115,6 +122,15 @@ pub struct StyledDefinition<'a> {
     /// gives too, as it renders this one
     markers: Vec<String>,
     inherited_markers: Vec<String>,
+    /// Emotion's `target` classes among its markers, which Emotion gives the
+    /// component alone: an extension renders its base without them
+    targets: Vec<String>,
+    /// Whether the compiled component takes `withComponent` at runtime, as
+    /// Emotion's components do
+    takes_with_component: bool,
+    /// Whether Emotion's `styled` made it, whose `withComponent` results
+    /// share its target
+    emotion: bool,
     bindings: Vec<(String, Expression<'a>)>,
     capability: Option<StyledCapability>,
     execution: Execution<'a>,
@@ -258,6 +274,9 @@ impl<'a> StyledDefinition<'a> {
             forward: self.forward.clone(),
             markers: self.markers.clone(),
             inherited_markers: self.inherited_markers.clone(),
+            targets: self.targets.clone(),
+            takes_with_component: self.takes_with_component,
+            emotion: self.emotion,
             capability: self.capability.clone(),
             execution: self.execution.clone_in(allocator),
             bindings: self
@@ -409,12 +428,6 @@ impl<'a> StyledDefinition<'a> {
             .map(|capability| &capability.classes)
     }
 
-    /// The classes other styles select the component by
-    #[must_use]
-    pub fn markers(&self) -> &[String] {
-        &self.markers
-    }
-
     /// This definition in the arena of another file
     #[must_use]
     pub fn clone_in<'b>(&self, allocator: &'b oxc_allocator::Allocator) -> StyledDefinition<'b> {
@@ -449,6 +462,9 @@ impl<'a> StyledDefinition<'a> {
             forward: self.forward.clone(),
             markers: self.markers.clone(),
             inherited_markers: self.inherited_markers.clone(),
+            targets: self.targets.clone(),
+            takes_with_component: self.takes_with_component,
+            emotion: self.emotion,
             bindings: self
                 .bindings
                 .iter()
@@ -488,6 +504,9 @@ impl<'a> StyledDefinition<'a> {
             )
     }
 
+    /// The definition giving `markers` and the markers of the component it
+    /// extends, but for that component's Emotion targets, as Emotion renders
+    /// an extension on its base without them
     fn with_markers(mut self, markers: &[String], inherited: Option<&Self>) -> Self {
         self.markers = markers.to_vec();
         self.inherited_markers = inherited
@@ -497,10 +516,79 @@ impl<'a> StyledDefinition<'a> {
                     .markers
                     .iter()
                     .chain(&definition.inherited_markers)
+                    .filter(|marker| !definition.targets.contains(marker))
             })
             .cloned()
             .collect();
         self
+    }
+
+    /// The definition giving `markers` and every marker of the component it
+    /// renders as another target, whose Emotion targets stay its own, as
+    /// `withComponent` keeps the options it was created with
+    fn with_retargeted_markers(self, markers: &[String], inherited: &Self) -> Self {
+        let mut definition = self.with_markers(markers, None);
+        definition.inherited_markers = inherited
+            .markers
+            .iter()
+            .chain(&inherited.inherited_markers)
+            .cloned()
+            .collect();
+        definition.targets.clone_from(&inherited.targets);
+        definition
+    }
+
+    /// The definition with `targets`, the Emotion targets among its markers
+    #[must_use]
+    pub fn with_targets(mut self, targets: Vec<String>) -> Self {
+        self.targets = targets;
+        self
+    }
+
+    /// Whether Emotion's `target` gives the component classes an extension
+    /// renders it without
+    #[must_use]
+    pub const fn has_targets(&self) -> bool {
+        !self.targets.is_empty()
+    }
+
+    /// The definition of a component that takes `withComponent` at runtime
+    /// when `takes`
+    #[must_use]
+    pub const fn taking_with_component(mut self, takes: bool) -> Self {
+        self.takes_with_component = takes;
+        self
+    }
+
+    /// Whether the compiled component takes `withComponent` at runtime
+    #[must_use]
+    pub const fn takes_with_component(&self) -> bool {
+        self.takes_with_component
+    }
+
+    /// The definition made, or not, with Emotion's `styled`
+    #[must_use]
+    pub const fn made_by_emotion(mut self, emotion: bool) -> Self {
+        self.emotion = emotion;
+        self
+    }
+
+    /// Whether Emotion's `styled` made it, so that its `withComponent`
+    /// results share its target
+    #[must_use]
+    pub const fn is_emotion(&self) -> bool {
+        self.emotion
+    }
+
+    /// The classes other styles select it by: its markers, or, for a
+    /// `withComponent` result sharing its component's target, those targets
+    #[must_use]
+    pub fn selectors(&self) -> &[String] {
+        if self.markers.is_empty() {
+            &self.targets
+        } else {
+            &self.markers
+        }
     }
 
     pub(crate) fn marker_classes(&self, ast: &AstBuilder<'a>) -> Option<Expression<'a>> {
@@ -679,6 +767,9 @@ impl<'a> Base<'a> {
             forward,
             markers: Vec::new(),
             inherited_markers: Vec::new(),
+            targets: Vec::new(),
+            takes_with_component: false,
+            emotion: false,
             capability: None,
             execution: Execution::Replay,
             bindings: bindings
@@ -786,6 +877,20 @@ fn tag_from_argument<'a>(
             ..Base::named(name)
         },
     ))
+}
+
+/// What a component renders by default for the runtime component `target`:
+/// itself without its Emotion targets when it holds them, as Emotion renders
+/// the base of an `__emotion_real` component; `undefined` stays itself, as a
+/// component delegating to the one it extends renders no base of its own
+fn rendered_base<'a>(ast_builder: &AstBuilder<'a>, target: &Expression<'a>) -> Expression<'a> {
+    let undefined =
+        matches!(target, Expression::Identifier(identifier) if identifier.name == "undefined");
+    if undefined {
+        target.clone_in(ast_builder.allocator())
+    } else {
+        runtime_base(ast_builder, target)
+    }
 }
 
 /// How JSX names `expression` as a component: a binding that is not a tag name,
@@ -1334,36 +1439,51 @@ pub fn take_styled_modifiers<'a>(
 /// the earlier, with the offset and code of one the build cannot evaluate
 pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u32, String)>) {
     let mut forward = None;
-    for options in options {
-        let Expression::ObjectExpression(object) = unwrap_syntax_only(options) else {
-            continue;
-        };
-        for property in &object.properties {
-            let ObjectPropertyKind::ObjectProperty(property) = property else {
-                continue;
-            };
-            if property.computed || !property.key.is_specific_static_name("shouldForwardProp") {
-                continue;
-            }
-            match Forward::read(&property.value) {
-                Some(own) => forward = combine_forward(forward.as_ref(), Some(own)),
-                None => {
-                    return (
-                        forward,
-                        Some((
-                            property.value.span().start,
-                            build_time_error(
-                                "styled",
-                                &readable_code(&property.value),
-                                SHOULD_FORWARD_PROP,
-                            ),
-                        )),
-                    );
-                }
+    for property in option_properties(options, &["shouldForwardProp"]) {
+        match Forward::read(&property.value) {
+            Some(own) => forward = combine_forward(forward.as_ref(), Some(own)),
+            None => {
+                return (
+                    forward,
+                    Some((
+                        property.value.span().start,
+                        build_time_error(
+                            "styled",
+                            &readable_code(&property.value),
+                            SHOULD_FORWARD_PROP,
+                        ),
+                    )),
+                );
             }
         }
     }
     (forward, None)
+}
+
+/// The written-out properties named one of `names` the options objects give,
+/// in the order they apply
+fn option_properties<'b, 'a>(
+    options: &'b [&'b Expression<'a>],
+    names: &'b [&str],
+) -> impl Iterator<Item = &'b ObjectProperty<'a>> {
+    options
+        .iter()
+        .filter_map(|options| match unwrap_syntax_only(options) {
+            Expression::ObjectExpression(object) => Some(&object.properties),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(move |property| match property {
+            ObjectPropertyKind::ObjectProperty(property)
+                if !property.computed
+                    && names
+                        .iter()
+                        .any(|name| property.key.is_specific_static_name(name)) =>
+            {
+                Some(&**property)
+            }
+            _ => None,
+        })
 }
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";
@@ -1865,7 +1985,7 @@ fn create_styled_component<'a>(
                                                 ast_builder,
                                             )
                                         },
-                                        |target| target.clone_in(ast_builder.allocator()),
+                                        |target| rendered_base(ast_builder, target),
                                     ),
                                     ast_builder,
                                 ),

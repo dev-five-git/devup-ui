@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+import "@devup-ui/react/devup-ui-0.css";
+export const named = "a-a";
+
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })

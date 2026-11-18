@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+compat.tsx:2:71: `<Global>` cannot use `theme.pick()` at build time: it may read the theme only as `theme.a.b` in a value, which becomes the CSS variable `var(--a-b)` the `ThemeProvider` sets

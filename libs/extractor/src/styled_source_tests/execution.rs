@@ -154,7 +154,10 @@ fn bound_target_is_evaluated_once_when_component_renders(#[case] factory: &str) 
     let mut program = parse(&arena, "test.js", &output);
     let calls = renders(&program);
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].target, Target::Component("DevupStyled".into()));
+    assert_eq!(
+        calls[0].target,
+        Target::Member("DevupStyled.__devupBase || DevupStyled".into())
+    );
     let helper = &calls[0].helper;
     program
         .body

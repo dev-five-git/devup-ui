@@ -233,6 +233,7 @@ impl<'a> Reader<'_, 'a> {
             code: transformed,
             css_prop,
             px,
+            emotion_styled,
             ..
         } = transform_import_aliases_with_edits(
             code,
@@ -283,6 +284,7 @@ impl<'a> Reader<'_, 'a> {
         visitor.unknown_bindings(&inlined.unknown);
         visitor.changed_bindings(inlined.changed);
         visitor.takes_css_prop(css_prop);
+        visitor.styles_with_emotion(emotion_styled);
         visitor.import_styled(imports);
         visitor.reserve_styled(styled_capability);
         visitor.reuse_scoping(inlined.scoping);

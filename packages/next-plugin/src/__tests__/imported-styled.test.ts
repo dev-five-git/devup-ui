@@ -160,13 +160,20 @@ describe('styled components another module defines', () => {
           const react = pathToFileURL(
             createRequire(testing).resolve('react'),
           ).href
+          // The emitted modules are written under `dist`, which the coverage
+          // of the packages ignores, as they are output and not their source
           const moduleUrl = (code: string) => {
             const javascript = transpiler
               .transformSync(
                 code.replace(/^import ["'][^"']+\.css["'];?\s*$/gm, ''),
               )
               .replace(/from ["']react["']/g, `from ${JSON.stringify(react)}`)
-            return `data:text/javascript;base64,${Buffer.from(`import * as React from ${JSON.stringify(react)};\n${javascript}`).toString('base64')}`
+            const path = `dist/emitted-${code.length}-${Bun.hash(code)}.mjs`
+            write(
+              path,
+              `import * as React from ${JSON.stringify(react)};\n${javascript}`,
+            )
+            return pathToFileURL(join(root, path)).href
           }
           const origin = compile(
             'src/Base.tsx',

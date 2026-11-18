@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import { Global } from "@devup-ui/react/compat";
+const reset = "a-a a-b";
+export const App = () => <Global />;
+
+Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: Some(At { kind: Media, query: "print", selector: Some("& html"), outer: [], file: None }), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: Some(At { kind: Media, query: "print", selector: Some("html"), outer: [], file: Some("compat.tsx") }), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "margin", value: "0", level: 0, selector: Some(Global("body", "compat.tsx")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "margin", value: "0", level: 0, selector: Some(Selector("& body")), style_order: None, layer: None })

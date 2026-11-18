@@ -93,6 +93,11 @@ const dracula = stylex.createTheme(colors, {
 ```
 
 ```css
+@property --b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: blue;
+}
 :root {
   --a: black;
   --b: blue;
@@ -115,6 +120,8 @@ const dracula = stylex.createTheme(colors, {
 
 Conditions are `default`, `@media`, `@supports` and `@container` keys, and `null` leaves a variable unset under its condition. A value that is not static is a build error naming it; pseudo-class keys count as not static, because a variable is set on `:root` or a theme class, not on the element being styled.
 
+A `types.*()` wrapper registers the variable with `@property`, its `default` as the initial value, so it animates and interpolates as that type. A typed variable without a `default`, a `types.integer()` given a fraction, and an unknown `types.*` helper are build errors. A key that is already a custom property name, such as `'--global'`, keeps that name, and `colors['--global']` reads it.
+
 As StyleX requires, variables usually live in a `.stylex.ts` file and are imported where they are used. Imports resolve like the bundler resolves them, and the importing file reads the same custom properties, theme classes and constants that the defining file generates:
 
 ```tsx
@@ -133,7 +140,7 @@ const styles = stylex.create({
 })
 ```
 
-A value in `create()` that this file's own functions compute from constants with exact built-ins, such as `double(SIZE)`, is computed at build time; another module's code never runs, and code whose result is not certain (`Date`, `Math.random`, `Math.sin`, locale methods, `new`, `this`...) is not run. A value only known at runtime, such as a prop or a state, is a build error naming it, as is anything `create()`, `defineVars()`, `defineConsts()`, `createTheme()`, `keyframes()`, `positionTry()` or `viewTransitionClass()` cannot read (a spread, a computed key, a non-object argument). Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+A value in `create()` that this file's own functions compute from constants with exact built-ins, such as `double(SIZE)`, is computed at build time; another module's code never runs, and code whose result is not certain (`Date`, `Math.random`, `Math.sin`, locale methods, `new`, `this`...) is not run. A value only known at runtime, such as a prop or a state, is a build error naming it, as is anything `create()`, `defineVars()`, `defineConsts()`, `createTheme()`, `keyframes()`, `positionTry()` or `viewTransitionClass()` cannot read (a spread, a computed key that is not a constant, a non-object argument). A computed condition key may read a constant, as `[constants.wide]` naming a `defineConsts()` query. Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead; a dynamic style may set its parameters under conditions too, as `(size) => ({ width: { default: 100, ':hover': size } })`, each condition taking its own variable.
 
 `stylex.props()` accepts styles compiled elsewhere — a `style` prop a parent passes, a spread, another module's namespaces — and joins their class names at runtime; namespaces of this file resolve at build time.
 
@@ -141,7 +148,14 @@ A value in `create()` that this file's own functions compute from constants with
 
 ```tsx
 const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' })
-const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
+const transition = stylex.viewTransitionClass({
+  old: { animationDuration: '300ms' },
+  new: { animationDuration: '150ms' },
+})
+const styles = stylex.create({
+  popover: { positionTryFallbacks: fallback, anchorName: '--trigger' },
+  card: { viewTransitionClass: transition },
+})
 ```
 
 ```css
@@ -149,14 +163,19 @@ const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
   top: 0;
   inset-block-end: auto;
 }
-.b {
+::view-transition-old(*.b) {
   animation-duration: 300ms;
+}
+::view-transition-new(*.b) {
+  animation-duration: 150ms;
 }
 ```
 
+The bindings read as their names in `create()`, and a dashed ident on a property that names an anchor, a timeline or a `@position-try` rule (`anchorName: '--trigger'`) stays a name instead of becoming `var(--trigger)`. `viewTransitionClass()` takes the groups `group`, `imagePair`, `old` and `new`; any other key is a build error.
+
 ## Value helpers
 
-`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value, and `include()` merges another namespace's keys where the spread is written. A key written after the `include()` overrides the included one: `{ ...stylex.include(base.root), color: 'blue' }` keeps only the blue class for `color`, and a later `include()` likewise overrides the keys before it. This is resolved at build time, including when the namespace is passed to `props()`. A dynamic (arrow function) namespace has no keys to merge, so its classes are only added before the namespace's own. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
+`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value in `create()` (and registers `@property` in `defineVars()`), and `include()` merges another namespace's keys where the spread is written. A key written after the `include()` overrides the included one: `{ ...stylex.include(base.root), color: 'blue' }` keeps only the blue class for `color`, and a later `include()` likewise overrides the keys before it. This is resolved at build time, including when the namespace is passed to `props()`. A dynamic (arrow function) namespace has no keys to merge, so its classes are only added before the namespace's own. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.
 
 ## Unsupported APIs
 

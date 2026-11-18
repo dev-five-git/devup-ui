@@ -1,5 +1,6 @@
 pub(crate) mod captured_render;
 mod compatibility;
+mod component_selector_extension;
 mod css_prop_captures;
 mod css_prop_execution;
 mod css_prop_markers;
@@ -7,6 +8,9 @@ mod css_prop_slot_edges;
 mod css_prop_slot_members;
 mod css_prop_slot_wrapped_keys;
 mod css_prop_slots;
+mod emotion_target_extension;
+mod emotion_with_component;
+mod emotion_with_component_selector;
 mod execution;
 mod finite_array_length;
 mod finite_literal_keys;

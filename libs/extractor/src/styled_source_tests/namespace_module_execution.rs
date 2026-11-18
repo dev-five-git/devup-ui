@@ -34,10 +34,17 @@ pub(in super::super) fn compile(
     };
     let option = crate::ExtractOption {
         single_css,
-        import_aliases: std::collections::HashMap::from([(
-            "@emotion/react".into(),
-            crate::ImportAlias::NamedToNamed,
-        )]),
+        import_aliases: std::collections::HashMap::from([
+            ("@emotion/react".into(), crate::ImportAlias::NamedToNamed),
+            (
+                "@emotion/styled".into(),
+                crate::ImportAlias::DefaultToNamed("styled".into()),
+            ),
+            (
+                "styled-components".into(),
+                crate::ImportAlias::DefaultToNamed("styled".into()),
+            ),
+        ]),
         ..crate::ExtractOption::default()
     };
     files

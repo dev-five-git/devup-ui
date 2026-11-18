@@ -1,0 +1,16 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+export const colors = {
+	"--global": "var(--global)",
+	"local": "var(--a-a)"
+};
+const s = { "r": "a-b a-c" };
+export const p = { className: "a-c a-b" };
+
+Css(ExtractCss { file: "stylex.tsx", order: 1, css: ":root{--global:black;--a-a:red;}" })
+Static(ExtractStaticStyle { property: "background-color", value: "var(--a-a)", level: 0, selector: None, style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "var(--global)", level: 0, selector: None, style_order: None, layer: None })

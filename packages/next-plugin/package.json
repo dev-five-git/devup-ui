@@ -28,7 +28,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -63,7 +63,7 @@
     "@types/webpack": "^5.28.5"
   },
   "peerDependencies": {
-    "@devup-ui/webpack-plugin": "*",
+    "@devup-ui/webpack-plugin": "workspace:^",
     "next": ">=13.0.0"
   }
 }
