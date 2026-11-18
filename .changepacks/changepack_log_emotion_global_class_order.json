@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Emotion's <Global> now writes the rules a css() class gives it in the same base cascade layer as the rules of its objects, so its entries keep the order Emotion writes them in: in styles={[css`p { color: green; }`, { p: { color: 'blue' } }]} the later blue wins, where before the class's rules sat outside the layer and always won. No new build errors.",
+  "date": "2026-11-18T00:00:00.000Z"
+}
