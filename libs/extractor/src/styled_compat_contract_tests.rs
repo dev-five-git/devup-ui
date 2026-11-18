@@ -76,6 +76,19 @@ fn compile(source: &str) -> String {
     "component_id_extension",
     "import styled from 'styled-components';\nexport const A = styled.div.withConfig({ componentId: 'idA' })`color: red;`;\nexport const B = styled(A)`color: blue;`;\nexport const C = styled(A).withConfig({ componentId: '' })`color: blue;`;\nexport const E = styled.div.withConfig({ componentId: '' })`color: red;`;\nexport const D = styled(E).withConfig({ componentId: 'idD' })`color: blue;`;"
 )]
+#[case::display_name(
+    "display_name",
+    "import styled from '@emotion/styled';
+import sc from 'styled-components';
+export const Labeled = styled('div', { label: 'card' })`color: red;`;
+export const Targeted = styled('div', { label: 'box', target: 'e1box' })`color: red;`;
+export const Named = sc.div.withConfig({ displayName: 'Alpha' })`color: red;`;
+export const Both = sc.div.withConfig({ displayName: 'Beta', componentId: 'sc-beta' })`color: red;`;
+export const Last = sc.div.withConfig({ displayName: 'First' }).withConfig({ displayName: 'Second' })`color: red;`;
+export const Unset = sc.div.withConfig({ displayName: undefined })`color: red;`;
+export const Number = sc.div.withConfig({ displayName: 5 })`color: red;`;
+export const Runtime = sc.div.withConfig({ displayName: name })`color: red;`;"
+)]
 #[case::template_label(
     "template_label",
     "import { css } from '@emotion/react';\nexport const named = css`label: card; color: red;`;"

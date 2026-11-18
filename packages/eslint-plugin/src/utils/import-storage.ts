@@ -22,6 +22,22 @@ const DEFAULT_IMPORT_ALIASES: ReadonlyMap<string, string | null> = new Map([
   ['@vanilla-extract/css-utils', null],
 ])
 
+/**
+ * The exports of each library whose rules declare a property's array of literals as fallbacks in one rule (`color: ['red', 'blue']`), not breakpoints, as `LibraryNumbers` in `libs/extractor/src/import_alias_visit.rs` lists them.
+ * `default` stands for the default and namespace imports. Other aliases read rules as Devup UI does.
+ */
+const FALLBACK_EXPORTS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['@emotion/react', new Set(['css', 'keyframes', 'Global'])],
+  ['@emotion/styled', new Set(['styled', 'default'])],
+  ['@emotion/css', new Set(['css', 'keyframes', 'injectGlobal'])],
+  ['styled-components', new Set(['css', 'keyframes', 'styled', 'default'])],
+  ['@vanilla-extract/css', new Set(['style', 'keyframes', 'globalStyle'])],
+])
+
+function takesFallbacks(source: string, imported: string): boolean {
+  return FALLBACK_EXPORTS.get(source)?.has(imported) ?? false
+}
+
 /** The package whose `calc` the build writes as the string it gives, as `vanilla_extract_calc` in `libs/extractor` compiles it */
 const CSS_UTILS = '@vanilla-extract/css-utils'
 
@@ -152,6 +168,7 @@ export class ImportStorage {
   private imports = new Map<string, string>()
   private importObject = new Set<string>()
   private calc = new Set<string>()
+  private fallbacks = new Set<string>()
   readonly vanilla: boolean
   private readonly config: ImportConfig
 
@@ -193,7 +210,11 @@ export class ImportStorage {
         case AST_NODE_TYPES.ImportSpecifier: {
           const imported = specifierName(specifier)
           const name = isDevup ? imported : devupEquivalent(source, imported)
-          if (name !== undefined) this.addImport(specifier.local.name, name)
+          this.addBinding(
+            specifier.local.name,
+            name,
+            !isDevup && takesFallbacks(source, imported),
+          )
           break
         }
         case AST_NODE_TYPES.ImportDefaultSpecifier:
@@ -204,15 +225,35 @@ export class ImportStorage {
           }
           // Both stand for the one export a string alias names, as `DefaultToNamed` in the build
           const name = alias ? devupEquivalent(source, alias) : undefined
-          if (name !== undefined) this.addImport(specifier.local.name, name)
+          this.addBinding(
+            specifier.local.name,
+            name,
+            takesFallbacks(source, 'default'),
+          )
           break
         }
       }
     }
   }
 
+  /** Binds `local` to the Devup UI export `name` it stands for, if it stands for one, remembering whether its rules take arrays as fallbacks */
+  private addBinding(
+    local: string,
+    name: string | undefined,
+    fallbacks: boolean,
+  ) {
+    if (name === undefined) return
+    this.addImport(local, name)
+    if (fallbacks) this.fallbacks.add(local)
+  }
+
   public addImport(key: string, value: string) {
     this.imports.set(key, value)
+  }
+
+  /** Whether the rules `local` takes declare a property's array of literals as fallbacks in one rule rather than breakpoints, as Emotion, styled-components and vanilla-extract do */
+  public takesFallbacks(local: string): boolean {
+    return this.fallbacks.has(local)
   }
 
   /** The name Devup UI exports for what `local` imports by name, from it or from a package the build reads as it */

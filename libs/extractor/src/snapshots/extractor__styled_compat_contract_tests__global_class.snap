@@ -8,6 +8,6 @@ const reset = "a-a a-b";
 export const App = () => <Global />;
 
 Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: Some(At { kind: Media, query: "print", selector: Some("& html"), outer: [], file: None }), style_order: None, layer: None })
-Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: Some(At { kind: Media, query: "print", selector: Some("html"), outer: [], file: Some("compat.tsx") }), style_order: None, layer: None })
-Static(ExtractStaticStyle { property: "margin", value: "0", level: 0, selector: Some(Global("body", "compat.tsx")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: Some(At { kind: Media, query: "print", selector: Some("html"), outer: [], file: Some("compat.tsx") }), style_order: Some(0), layer: None })
+Static(ExtractStaticStyle { property: "margin", value: "0", level: 0, selector: Some(Global("body", "compat.tsx")), style_order: Some(0), layer: None })
 Static(ExtractStaticStyle { property: "margin", value: "0", level: 0, selector: Some(Selector("& body")), style_order: None, layer: None })

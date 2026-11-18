@@ -7,13 +7,14 @@ use std::rc::Rc;
 
 use crate::{
     atom_hoist, class_map, debug, engine_state::CssState, file_map, file_routes, slot_reservation,
-    tailwind_definitions, theme_tokens,
+    style_resolution, tailwind_definitions, theme_tokens,
 };
 
 /// Reset CSS-owned persistent state without retaining a snapshot.
 pub fn reset_state_for_testing() {
     crate::set_prefix(None);
     debug::set_debug(false);
+    style_resolution::set_style_resolution(Default::default());
     atom_hoist::set_atom_hoist(None);
     atom_hoist::restore_atom_plan(None);
     slot_reservation::reset();

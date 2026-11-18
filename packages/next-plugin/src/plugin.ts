@@ -24,6 +24,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   readJsxImportSource,
   seedFileNumbers,
   type StaticImportGraph,
@@ -237,6 +238,7 @@ export function DevupUI(
   options: DevupUINextPluginOptions = {},
 ): NextConfig {
   const normalizedShorthands = normalizeShorthands(options.shorthands ?? {})
+  const styleResolution = normalizeStylexOptions(options.stylex)
   const engine = options.engine === undefined ? 'native' : options.engine
   const pluginStartedAt = profileStart()
   const isTurbo =
@@ -302,6 +304,7 @@ export function DevupUI(
       shorthands: normalizedShorthands,
       singleCss,
       sourceMap,
+      styleResolution,
     })
     const cachedSetup = watch
       ? undefined
@@ -360,9 +363,11 @@ export function DevupUI(
       registerTheme,
       setDebug,
       setPrefix,
+      setStylexStyleResolution,
     } = wasm
 
     registerShorthands(normalizedShorthands)
+    setStylexStyleResolution(styleResolution)
 
     writeFileSync(
       join(distDir, 'compat.d.ts'),

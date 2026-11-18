@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "Stop no-duplicate-value, no-useless-responsive and no-useless-tailing-nulls from reporting and fixing property arrays in the rules of Emotion, styled-components and vanilla-extract, where the build declares them as fallbacks in one rule rather than breakpoints. Fixing [4, 4, 8] to [4, null, 8] there turned the fallbacks into breakpoints. Packages added with importAliases and createGlobalStyle still read arrays as Devup UI does and are still checked. No new build or lint errors.",
+  "date": "2026-11-18T00:00:00.000Z"
+}

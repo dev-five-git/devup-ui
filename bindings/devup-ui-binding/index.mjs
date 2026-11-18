@@ -34,4 +34,5 @@ export const {
   setDebug,
   setModuleResolver,
   setPrefix,
+  setStylexStyleResolution,
 } = binding

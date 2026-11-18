@@ -11,7 +11,7 @@ export class Output {
   readonly updatedBaseStyle: boolean
 }
 
-// Positional signatures intentionally match the existing 33-name compiler ABI.
+// Positional signatures intentionally match the existing 34-name compiler ABI.
 export function codeExtract(
   filename: string,
   code: string,
@@ -95,3 +95,10 @@ export function setModuleResolver(
     | null,
 ): void
 export function setPrefix(prefix?: string | null): void
+export function setStylexStyleResolution(
+  resolution?:
+    | 'property-specificity'
+    | 'application-order'
+    | 'legacy-expand-shorthands'
+    | null,
+): void

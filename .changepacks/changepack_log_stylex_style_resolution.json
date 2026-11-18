@@ -1,0 +1,14 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "Every plugin takes `stylex: { styleResolution }`, StyleX's babel plugin option of the same name, and the engines take it through the new `setStylexStyleResolution()`. `'property-specificity'` stays the default. `'application-order'` gives a static `stylex.create()` key the `null` resets StyleX's table lists for the longhands it covers (and reads its aliases, `marginStart` as `margin-inline-start`), so the key applied last wins in `stylex.props()` and within a namespace. `'legacy-expand-shorthands'` splits a shorthand into its longhands at build time as StyleX's table does (`padding: '1px 2px'` into `padding-top`, `padding-inline-end`, `padding-bottom`, `padding-inline-start`). A later key of a static namespace now replaces an earlier one of the same name. New build errors under the two non-default policies only: a shorthand given `firstThatWorks()` fallbacks, `all` under `application-order` and a `listStyle` StyleX cannot sort under `legacy-expand-shorthands`; an unknown `styleResolution` is a configuration error (`StylexConfigError`). Devup UI's own APIs ignore the option",
+  "date": "2026-11-16T00:00:00.000Z"
+}

@@ -46,15 +46,37 @@ stylex.props(on && styles.active) // conditional
 stylex.props(styles?.base) // optional chaining
 ```
 
-## Style resolution
+## Shorthands and `styleResolution`
 
-StyleX's compiler has a `styleResolution` option: `'property-specificity'` (the default), `'application-order'` or `'legacy-expand-shorthands'`. Devup UI has no such option and follows only StyleX's default policy:
+StyleX's babel plugin decides between a shorthand and the longhands it covers with its `styleResolution` option. Pass the same option to the Devup UI plugin:
 
-- In one `props()` or `attrs()` call, a later style replaces an earlier one for the same property and condition: `stylex.props(colors.red, colors.blue)` keeps only the blue class.
-- Shorthands are not expanded into longhands, and a later shorthand does not remove an earlier longhand: `stylex.props(styles.marginTop, styles.margin)` keeps both classes. Which one applies is decided by the order of the generated stylesheet, not by the argument order.
-- StyleX's default makes the longhand win over its shorthand. Devup UI does not guarantee this for every pair (`borderTopWidth` against `borderWidth`, `alignItems` against `placeItems`), so prefer longhands and do not mix a shorthand with its own longhands.
+```ts
+// vite.config.ts (every plugin takes the same option)
+DevupUI({ stylex: { styleResolution: 'application-order' } })
+```
 
-Code written for `application-order` or `legacy-expand-shorthands`, where a later shorthand resets earlier longhands, has no equivalent: rewrite it with longhands before migrating.
+| `styleResolution`                  | What wins                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `'property-specificity'` (default) | A longhand beats a shorthand, whatever order they apply in               |
+| `'application-order'`              | The property applied last, shorthand or not                              |
+| `'legacy-expand-shorthands'`       | No shorthand is left: each one is split into its longhands at build time |
+
+Whatever the policy, in one `props()` or `attrs()` call a later style replaces an earlier one for the same property and condition: `stylex.props(colors.red, colors.blue)` keeps only the blue class.
+
+```tsx
+const styles = stylex.create({
+  top: { paddingTop: '1px' },
+  pad: { padding: '2px' },
+})
+
+const el = <div {...stylex.props(styles.top, styles.pad)} />
+```
+
+- `'property-specificity'` keeps both classes and writes `padding-top` after `padding` in the stylesheet, so `padding-top: 1px` wins.
+- `'application-order'` gives `padding` `null` resets for the longhands it covers, as StyleX does, so the later `padding` removes `padding-top`. In the other order both stay and `padding-top` wins.
+- `'legacy-expand-shorthands'` turns `padding: '1px 2px'` into `padding-top`, `padding-inline-end`, `padding-bottom` and `padding-inline-start`, which merge key by key like any longhand.
+
+The two non-default policies read StyleX's own shorthand tables, including its aliases (`marginStart` is `margin-inline-start`, `blockSize` is `height`), and apply to static `create()` namespaces only. A shorthand there cannot take `firstThatWorks()` fallbacks, and `application-order` rejects `all`, as StyleX does; both are build errors naming the key. Dynamic (arrow-function) namespaces keep their shorthands as written, and `float`/`clear` keep logical values such as `inline-start` as written, because StyleX's polyfill for them relies on its own runtime variables. An unknown `styleResolution` is a configuration error when the plugin is created. Devup UI's own APIs (`css()`, `styled`, `Box` props) ignore the option: there a shorthand written after a longhand wins.
 
 ## Variables and themes
 

@@ -5,6 +5,9 @@ expression: compile(code)
 import "@devup-ui/react/devup-ui-0.css";
 import { forwardRef as __devupForwardRef } from "react";
 const __devupStyled = (c) => (c.styledComponentId = "devup", c);
-export const Card = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== "$" && k !== "theme"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a Card-sc-card a-a ${className}` : "a--a Card-sc-card a-a"} style={style} />)), { styledComponentId: "Card-sc-card" });
+export const Card = Object.assign(__devupStyled(__devupForwardRef(({ style, className, as: DevupAs = "div", forwardedAs, ...rest }, __devupRef) => <DevupAs {...Object.fromEntries(Object.entries(rest).filter(([k]) => k[0] !== "$" && k !== "theme"))} ref={__devupRef} as={forwardedAs} className={className ? `a--a Card-sc-card a-a ${className}` : "a--a Card-sc-card a-a"} style={style} />)), {
+	styledComponentId: "Card-sc-card",
+	displayName: "Card"
+});
 
 Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })

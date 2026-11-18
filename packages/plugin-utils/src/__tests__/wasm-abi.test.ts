@@ -74,6 +74,7 @@ describe('@devup-ui/wasm exports', () => {
       'setDebug',
       'setModuleResolver',
       'setPrefix',
+      'setStylexStyleResolution',
     ])
   })
 })
@@ -145,6 +146,23 @@ describe('@devup-ui/wasm extraction', () => {
     expect(output.code).toMatch(/className="du-/)
     wasm.setPrefix(null)
     expect(wasm.getPrefix()).toBeUndefined()
+  })
+
+  it('reads stylex.create() under the StyleX styleResolution it is given', () => {
+    const source = `import * as stylex from '@stylexjs/stylex'
+const s = stylex.create({ top: { paddingTop: '1px' }, pad: { padding: '2px' } })
+export const a = stylex.props(s.top, s.pad)`
+    const classes = () =>
+      /className: "([^"]*)"/.exec(extract(source).code)?.[1].split(' ').length
+    wasm.setDebug(false)
+    expect(classes()).toBe(2)
+    wasm.setStylexStyleResolution('application-order')
+    expect(classes()).toBe(1)
+    expect(() => wasm.setStylexStyleResolution('last-wins')).toThrow(
+      'stylex.styleResolution must be',
+    )
+    wasm.setStylexStyleResolution(null)
+    expect(classes()).toBe(2)
   })
 })
 

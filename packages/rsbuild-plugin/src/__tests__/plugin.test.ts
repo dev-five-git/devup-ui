@@ -102,6 +102,24 @@ describe('shorthand creation boundary', () => {
       registration.mockRestore()
     }
   })
+
+  it('reads StyleX under the styleResolution it is given, the default otherwise', () => {
+    using resolution = spyOn(wasm, 'setStylexStyleResolution')
+    DevupUI({ stylex: { styleResolution: 'legacy-expand-shorthands' } })
+    DevupUI()
+    expect(resolution.mock.calls).toEqual([
+      ['legacy-expand-shorthands'],
+      ['property-specificity'],
+    ])
+  })
+
+  it('rejects an unknown styleResolution before selecting a compiler', () => {
+    using selection = spyOn(pluginUtils, 'loadCompiler')
+    expect(() =>
+      Reflect.apply(DevupUI, undefined, [{ stylex: { styleResolution: 1 } }]),
+    ).toThrow(pluginUtils.StylexConfigError)
+    expect(selection).not.toHaveBeenCalled()
+  })
 })
 
 type CodeExtractResult = pluginUtils.DevupCompilerOutput
