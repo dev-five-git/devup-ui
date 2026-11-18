@@ -33,6 +33,7 @@ declare module '@vanilla-extract/css' {
   export function fallbackVar(...values: string[]): string
   export function fontFace(rule: VanillaRule): string
   export function globalFontFace(name: string, rule: VanillaRule): void
+  export function globalKeyframes(name: string, rule: VanillaRule): void
   export function createTheme<T>(contract: T, values: unknown): string
   export function createTheme<T extends VanillaRule>(values: T): [string, T]
   export function createGlobalTheme<T extends VanillaRule>(

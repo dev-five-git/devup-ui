@@ -14,7 +14,7 @@ export const metadata = {
 
 ## Stylesheet files
 
-Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. Generated names — custom properties, containers, layers, theme classes, font families — are unique to each stylesheet, and layers keep the order they are declared in.
+Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `globalKeyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. Generated names — custom properties, containers, layers, theme classes, font families — are unique to each stylesheet, and layers keep the order they are declared in.
 
 ```ts
 // theme.css.ts
@@ -196,4 +196,4 @@ Use named imports to get the rewrite.
 
 ## Unsupported packages and APIs
 
-While `@vanilla-extract/css` is aliased, `@vanilla-extract/recipes`, `@vanilla-extract/sprinkles` and `@vanilla-extract/dynamic` are build errors however a file loads them — an import, `export … from`, `export *`, `require()` or `import()` — since what they generate or assign would never reach the stylesheet. `globalKeyframes()` is a build error too: Devup UI names every keyframes itself, so declare them with `keyframes()` and use the name it returns. To keep any of these, set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin.
+While `@vanilla-extract/css` is aliased, `@vanilla-extract/recipes`, `@vanilla-extract/sprinkles` and `@vanilla-extract/dynamic` are build errors however a file loads them — an import, `export … from`, `export *`, `require()` or `import()` — since what they generate or assign would never reach the stylesheet. To keep any of these, set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin.

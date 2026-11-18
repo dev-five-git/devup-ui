@@ -5051,6 +5051,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } else if matches!(r, UtilType::Keyframes) {
                 let keyframes = ExtractKeyframes {
                     keyframes: keyframes_to_keyframes_style(&build_css_str()),
+                    name: None,
                 };
                 let name =
                     style_property_into_string(keyframes.extract(self.split_filename.as_deref()));

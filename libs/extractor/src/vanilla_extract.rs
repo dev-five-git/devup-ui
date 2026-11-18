@@ -967,6 +967,7 @@ fn register_vanilla_extract_apis(
         ("globalStyle", api(collector, global_style), 2),
         ("styleVariants", api(collector, style_variants), 1),
         ("keyframes", api(collector, keyframes), 1),
+        ("globalKeyframes", api(collector, global_keyframes), 2),
         ("fontFace", api(collector, font_face), 1),
         ("globalFontFace", api(collector, global_font_face), 2),
         ("createVar", api(collector, create_var), 0),
@@ -1152,6 +1153,28 @@ fn keyframes(
         },
     );
     Ok(js_string!(id).into())
+}
+
+/// `globalKeyframes(name, frames)`: keyframes declared under `name` as written,
+/// in the order the stylesheet declares its global rules
+fn global_keyframes(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let name = to_text(args.get_or_undefined(0), context)?;
+    let json = style_to_json(args.get_or_undefined(1), context)?;
+    check_declarations(
+        collector,
+        &json,
+        crate::dead_properties::ObjectKind::Records,
+    );
+    collector
+        .borrow_mut()
+        .styles
+        .global_styles
+        .push((format!("@keyframes {name}"), json));
+    Ok(JsValue::undefined())
 }
 
 /// `fontFace(rule, debugId?)`: a generated family for one rule or a list of them
@@ -1988,7 +2011,7 @@ mod tests {
     fn generate_with(code: &str, keyframes_names: &[(&str, &str)]) -> String {
         reset_file_map();
         let collected = execute_vanilla_extract(
-            &format!("import {{ style, globalStyle, styleVariants, keyframes, fontFace, globalFontFace, createVar, fallbackVar, createContainer, layer, globalLayer, createTheme, createGlobalTheme, createThemeContract, createGlobalThemeContract, assignVars }} from '{PACKAGE}'\n{code}"),
+            &format!("import {{ style, globalStyle, styleVariants, keyframes, globalKeyframes, fontFace, globalFontFace, createVar, fallbackVar, createContainer, layer, globalLayer, createTheme, createGlobalTheme, createThemeContract, createGlobalThemeContract, assignVars }} from '{PACKAGE}'\n{code}"),
             PACKAGE,
             "test.css.ts",
         )
@@ -2215,6 +2238,21 @@ globalFontFace('Inter', { src: 'local(Inter)' })"
 globalCss({ fontFaces: [{"src":"local(a)","fontFamily":"Body_Font-0-0"}, {"src":"local(b)","fontFamily":"font-0-1"}, {"src":"local(c)","fontWeight":700,"fontFamily":"font-0-1"}, {"fontFamily":"font-0-2"}, {"src":"local(Inter)","fontFamily":"Inter"}] })
 export const body = "Body_Font-0-0"
 export const icons = "font-0-1""#
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_keyframes_keep_their_name() {
+        let _state = crate::test_state::TestStateGuard::new();
+        assert_eq!(
+            generate(
+                "globalKeyframes('fade-in', { from: { opacity: 0 }, to: { opacity: 1 } })
+export const box = style({ animation: 'fade-in 1s' })"
+            ),
+            r#"import { css, globalCss } from '@devup-ui/react'
+export const box = css({"animation":"fade-in 1s"})
+globalCss({ "@keyframes fade-in": {"from":{"opacity":0},"to":{"opacity":1}} })"#
         );
     }
 
