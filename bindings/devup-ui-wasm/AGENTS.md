@@ -22,6 +22,7 @@ Rust → WebAssembly → JavaScript bridge. Exposes extraction engine to build p
 ### Configuration
 - `setPrefix()/getPrefix()` - Class name prefix
 - `setDebug()/isDebug()` - Debug mode
+- `setLicenseBanner()/isLicenseBanner()` - License banner of emitted stylesheets (on by default)
 
 ## OUTPUT STRUCTURE
 

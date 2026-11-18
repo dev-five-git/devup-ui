@@ -1111,6 +1111,21 @@ const App = () => <Box></Box>`,
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 
+  it.each([
+    [undefined, true],
+    [true, true],
+    [false, false],
+  ] as const)(
+    'sets the license banner from licenseBanner=%s',
+    async (licenseBanner, expected) => {
+      using setLicenseBanner = spyOn(wasm, 'setLicenseBanner').mockReturnValue(
+        undefined,
+      )
+      await DevupUI({ licenseBanner }).setup(createSetupContext())
+      expect(setLicenseBanner).toHaveBeenCalledWith(expected)
+    },
+  )
+
   describe('deterministic file numbering', () => {
     it('sets the prefix every time, even without one', async () => {
       setPrefixSpy.mockClear()

@@ -264,7 +264,7 @@ function createCssChunkBuildOptions(
 
 export interface DevupUIPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine' | 'stylex'
+  'engine' | 'licenseBanner' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -361,6 +361,7 @@ export function DevupUI({
   include = [],
   singleCss = false,
   prefix,
+  licenseBanner = true,
   shorthands,
   stylex,
   engine,
@@ -410,6 +411,7 @@ export function DevupUI({
     compiler.setStylexStyleResolution(styleResolution)
     compiler.setDebug(debug)
     compiler.setPrefix(prefix ?? null)
+    compiler.setLicenseBanner(licenseBanner)
   }
   if (ownsEngine) configureEngine()
   // The relative options and the tsconfig belong to the project root, which

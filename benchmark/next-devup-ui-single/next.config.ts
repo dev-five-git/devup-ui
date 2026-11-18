@@ -2,4 +2,4 @@ import { DevupUI } from '@devup-ui/next-plugin'
 
 const nextConfig = { experimental: { useTypeScriptCli: true } }
 
-export default DevupUI(nextConfig, { singleCss: true })
+export default DevupUI(nextConfig, { singleCss: true, licenseBanner: false })

@@ -49,6 +49,7 @@ export const positions = [
   ['selectSession', 'id:session', () => [0]],
   ['setAtomHoist', 'threshold:n', () => [2]],
   ['setDebug', 'debug:b', () => [true]],
+  ['setLicenseBanner', 'enabled:b', () => [false]],
   ['setModuleResolver', 'resolver:resolver', () => [null]],
   ['setPrefix', 'prefix:prefix', () => ['valid-']],
   [
@@ -163,6 +164,6 @@ export const cases = positions.flatMap((position) =>
         .map((good, index) => (index === position.index ? value : good)),
   })),
 )
-assert.equal(positions.length, 49)
-assert.equal(new Set(positions.map((p) => p.fn)).size, 22)
+assert.equal(positions.length, 50)
+assert.equal(new Set(positions.map((p) => p.fn)).size, 23)
 assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)

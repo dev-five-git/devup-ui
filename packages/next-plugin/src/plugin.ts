@@ -257,6 +257,7 @@ export function DevupUI(
       include = [],
       prefix,
       debug = false,
+      licenseBanner = true,
       atomHoist,
       importAliases: userImportAliases,
     } = options
@@ -300,6 +301,7 @@ export function DevupUI(
       importAliases,
       include,
       libPackage,
+      licenseBanner,
       prefix,
       shorthands: normalizedShorthands,
       singleCss,
@@ -362,6 +364,7 @@ export function DevupUI(
       registerShorthands,
       registerTheme,
       setDebug,
+      setLicenseBanner,
       setPrefix,
       setStylexStyleResolution,
     } = wasm
@@ -387,6 +390,7 @@ export function DevupUI(
     // After the restore: dropping a state that does not import resets these.
     setPrefix(prefix ?? null)
     setDebug(debug)
+    setLicenseBanner(licenseBanner)
 
     // Register current theme after importing previous state,
     // since importSheet replaces the entire sheet including its theme.

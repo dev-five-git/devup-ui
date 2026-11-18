@@ -178,19 +178,39 @@ static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$\w[\w.-]*"))
 static INTERFACE_KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$"));
 
-/// Cached header string — computed once from compile-time included package.json
+/// Cached header string — computed once from compile-time included package.json.
+/// The version is the published npm version of `@devup-ui/wasm` (the Cargo
+/// crates stay at `0.1.0`); both engines build this crate, so they share it.
 static HEADER: LazyLock<String> = LazyLock::new(|| {
     format!(
         "/*! devup-ui v{version} | Apache License 2.0 | https://devup-ui.com */",
-        version = include_str!("../../../bindings/devup-ui-wasm/package.json")
-            .lines()
-            .find(|line| line.contains("\"version\""))
-            .and_then(|line| line.split(':').nth(1))
-            .unwrap_or("\"unknown\"")
-            .trim()
-            .replace('"', ""),
+        version = package_version(include_str!("../../../bindings/devup-ui-wasm/package.json")),
     )
 });
+
+/// The `version` field of a `package.json` manifest, or `unknown` without one
+fn package_version(manifest: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(manifest)
+        .ok()
+        .and_then(|manifest| manifest.get("version")?.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// The license banner, or nothing when the build turned it off
+fn license_header(enabled: bool) -> &'static str {
+    if enabled { &HEADER } else { "" }
+}
+
+/// A sheet without any rule is emitted empty rather than as a bare banner. The
+/// shared base sheet is `@import`ed by every per-file sheet, so a banner-only
+/// base would put the banner twice into one stylesheet chain.
+fn without_bare_header(css: String, header: &str) -> String {
+    if css.len() == header.len() {
+        String::new()
+    } else {
+        css
+    }
+}
 
 fn convert_interface_key(key: &str) -> Cow<'_, str> {
     if INTERFACE_KEY_RE.is_match(key) {
@@ -1302,13 +1322,14 @@ impl StyleSheet {
 
     #[inline]
     fn create_header() -> &'static str {
-        &HEADER
+        license_header(css::license_banner::is_license_banner())
     }
 
     #[must_use]
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
         let mut css = String::with_capacity(4096);
-        css.push_str(Self::create_header());
+        let header = Self::create_header();
+        css.push_str(header);
         // An import written again takes effect where it is written last
         let imports: Vec<&String> = self.imports.values().flatten().collect();
         for (index, import) in imports.iter().enumerate() {
@@ -1563,7 +1584,7 @@ impl StyleSheet {
                 }
             }
         }
-        css
+        without_bare_header(css, header)
     }
 }
 
@@ -1668,6 +1689,70 @@ mod tests {
     #[case("$color.brand.primary.100", "var(--color-brand-primary-100)")]
     fn test_convert_theme_variable_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(convert_theme_variable_value(input), expected);
+    }
+
+    #[rstest]
+    #[case(r#"{"name":"a","version":"1.0.83","b":1}"#, "1.0.83")]
+    #[case("{\n  \"version\": \"2.3.4\",\n  \"x\": 1\n}", "2.3.4")]
+    #[case(r#"{"name":"a"}"#, "unknown")]
+    #[case(r#"{"version":1}"#, "unknown")]
+    #[case("not json", "unknown")]
+    fn test_package_version(#[case] manifest: &str, #[case] expected: &str) {
+        assert_eq!(package_version(manifest), expected);
+    }
+
+    #[test]
+    fn test_header_names_the_published_version() {
+        // `@devup-ui/wasm`'s package.json holds the npm version; the old line
+        // split left the JSON comma in it (`v1.0.83,`).
+        let version = package_version(include_str!("../../../bindings/devup-ui-wasm/package.json"));
+        assert!(
+            compile_regex(r"^\d+\.\d+\.\d+").is_match(&version),
+            "{version}"
+        );
+        assert_eq!(
+            license_header(true),
+            format!("/*! devup-ui v{version} | Apache License 2.0 | https://devup-ui.com */")
+        );
+        assert_eq!(license_header(false), "");
+    }
+
+    #[test]
+    fn test_without_bare_header() {
+        assert_eq!(without_bare_header(HEADER.clone(), &HEADER), "");
+        assert_eq!(without_bare_header(String::new(), ""), "");
+        assert_eq!(
+            without_bare_header(format!("{}a{{}}", *HEADER), &HEADER),
+            format!("{}a{{}}", *HEADER)
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_license_banner_option() {
+        let _state = css::test_state::TestStateGuard::new();
+        let mut sheet = StyleSheet::default();
+        // A sheet without rules ships nothing, banner or not
+        assert_eq!(sheet.create_css(None, false), "");
+        assert_eq!(sheet.create_css(Some("a.tsx"), false), "");
+        sheet.add_property("a", "color", 0, "red", None, Some(255), None);
+        // On by default
+        let with_banner = sheet.create_css(None, false);
+        assert_eq!(with_banner, format!("{}.a{{color:red}}", *HEADER));
+        // The per-file sheet keeps importing the shared base, banner or not
+        assert_eq!(
+            sheet.create_css(Some("other.tsx"), true),
+            format!("{}@import \"./devup-ui.css\";", *HEADER)
+        );
+        css::license_banner::set_license_banner(false);
+        assert_eq!(sheet.create_css(None, false), ".a{color:red}");
+        assert_eq!(
+            sheet.create_css(Some("other.tsx"), true),
+            "@import \"./devup-ui.css\";"
+        );
+        assert_eq!(sheet.create_css(Some("other.tsx"), false), "");
+        css::license_banner::set_license_banner(true);
+        assert_eq!(sheet.create_css(None, false), with_banner);
     }
 
     #[test]
@@ -3036,7 +3121,15 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
 
         sheet.rm_global_css("test.tsx", true);
-        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+        // Nothing is left, so the sheet is emitted empty, banner included
+        assert_eq!(sheet.create_css(None, false), "");
+        assert_debug_snapshot!(
+            sheet
+                .create_css(None, false)
+                .split("*/")
+                .nth(1)
+                .unwrap_or_default()
+        );
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -3986,11 +4079,8 @@ mod tests {
         let filename = if single_css { None } else { Some("test.tsx") };
         let css = sheet.create_css(filename, false);
         if !single_css {
-            assert_eq!(sheet.create_css(None, false), StyleSheet::create_header());
-            assert_eq!(
-                sheet.create_css(Some("other.tsx"), false),
-                StyleSheet::create_header()
-            );
+            assert_eq!(sheet.create_css(None, false), "");
+            assert_eq!(sheet.create_css(Some("other.tsx"), false), "");
         }
         // Class names come from a process-wide counter; number them by first
         // appearance so the expected CSS only pins down structure and order.

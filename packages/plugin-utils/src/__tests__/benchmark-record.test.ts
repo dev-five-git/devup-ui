@@ -373,20 +373,35 @@ describe('benchmark refresh order', () => {
 })
 
 describe('benchmark JSON', () => {
-  it('prints short arrays on one line and long ones one item per line', () => {
+  it('prints short arrays on one line, fills long numbers and splits long strings', () => {
     const long = Array.from({ length: 12 }, (_, index) => 1_000_000 + index)
+    const longNames = Array.from(
+      { length: 6 },
+      (_, index) => `target-${index}-xxxxxxxx`,
+    )
 
+    // As Prettier prints them, so `bun run lint` accepts what the refresh writes
     expect(
-      formatJson({ short: [1, 2.5, null], names: ['a', 'b'], long, empty: [] }),
+      formatJson({
+        short: [1, 2.5, null],
+        names: ['a', 'b'],
+        long,
+        longNames,
+        empty: [],
+      }),
     ).toBe(
       [
         '{',
         '  "short": [1, 2.5, null],',
         '  "names": ["a", "b"],',
         '  "long": [',
-        ...long.map(
-          (value, index) =>
-            `    ${value}${index === long.length - 1 ? '' : ','}`,
+        '    1000000, 1000001, 1000002, 1000003, 1000004, 1000005, 1000006, 1000007,',
+        '    1000008, 1000009, 1000010, 1000011',
+        '  ],',
+        '  "longNames": [',
+        ...longNames.map(
+          (name, index) =>
+            `    "${name}"${index === longNames.length - 1 ? '' : ','}`,
         ),
         '  ],',
         '  "empty": []',

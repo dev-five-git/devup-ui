@@ -24,6 +24,7 @@ module.exports = function createBoundary() {
     selectSession: 'id:u',
     setAtomHoist: 'threshold:n',
     setDebug: 'debug:b',
+    setLicenseBanner: 'enabled:b',
     setModuleResolver: 'resolver:f',
     setPrefix: 'prefix:p',
     setStylexStyleResolution: 'resolution:p',
