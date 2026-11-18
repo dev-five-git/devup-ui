@@ -6,6 +6,7 @@ describe('export', () => {
     expect({ ...index }).toEqual({
       Button: expect.any(Object),
       Input: expect.any(Object),
+      ProgressBar: expect.any(Object),
       Textarea: expect.any(Object),
       Stepper: expect.any(Function),
       Select: expect.any(Object),

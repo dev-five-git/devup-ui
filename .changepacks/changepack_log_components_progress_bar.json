@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Add the `ProgressBar` component: a `progressbar` with its range that fills a bar to `value` out of `max`, or with `variant=\"step\"` one segment per finished step, and can show the progress as a percent or `done/total`",
+  "date": "2026-11-19T00:00:00.000Z"
+}

@@ -52,7 +52,8 @@ npm install @devup-ui/webpack-plugin
 ## Usage
 
 `@devup-ui/components` ships ready-made components (`Button`, `Checkbox`,
-`Input`, `Radio`, `RadioGroup`, `Select`, `Stepper`, `Textarea`, `Toggle`).
+`Input`, `ProgressBar`, `Radio`, `RadioGroup`, `Select`, `Stepper`, `Textarea`,
+`Toggle`).
 Their styles are compiled by the Devup UI build plugin like your own code; the
 plugins compile `@devup-ui/*` packages in `node_modules` by default.
 
