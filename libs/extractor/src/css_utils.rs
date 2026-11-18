@@ -886,8 +886,10 @@ fn css_to_style_block(
         let property = property.trim();
         let value = trim_css(value);
         // A declaration without a value is invalid CSS, which browsers drop;
-        // only a custom property may hold nothing
-        if value.is_empty() && !property.starts_with("--") {
+        // only a custom property may hold nothing. Emotion's `label` names
+        // its debug class and is no CSS property, so it is dropped as the
+        // object form drops it.
+        if (value.is_empty() && !property.starts_with("--")) || property == "label" {
             continue;
         }
         let value: Cow<str> = optimize_decl_value(property, value);

@@ -34,12 +34,14 @@ mod diagnostics_tests;
 #[cfg(test)]
 mod dynamic_as_sibling_props_tests;
 mod emotion_namespace;
+mod emotion_retargets;
 mod evaluation_sandbox;
 pub mod extract_style;
 mod extractor;
 mod fresh_name;
 mod gen_class_name;
 mod gen_style;
+mod global_component;
 mod import_alias_visit;
 mod imported_constants;
 mod imported_styled;
@@ -89,6 +91,8 @@ mod scope;
 mod selector_array_units_tests;
 #[cfg(test)]
 mod shorthand_tests;
+#[cfg(test)]
+mod styled_compat_contract_tests;
 #[cfg(test)]
 mod styled_computed_tag_tests;
 
@@ -555,6 +559,7 @@ fn extract_source(
         edits: alias_edits,
         css_prop,
         px,
+        emotion_styled,
     } = import_alias_visit::transform_import_aliases_with_edits(
         &namespace_code,
         filename,
@@ -881,6 +886,7 @@ fn extract_source(
     visitor.rule_spreads(inlined.rule_spreads);
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
+    visitor.styles_with_emotion(emotion_styled);
     visitor.reuse_scoping(inlined.scoping);
     visitor.own_rules(own_rules, &program);
     visitor.import_styled(imported.components);
@@ -15860,8 +15866,12 @@ const Button = styled.button({ bg: 'red' })
             .min()
             .unwrap_or(body.len());
         let body = &body[..end];
+        // `withComponent` gives its component `withComponent` too
+        let rendered = body
+            .strip_prefix(&format!("{declaration}__devupWithComponent("))
+            .unwrap_or_else(|| &body[declaration.len()..]);
         assert!(
-            body.starts_with(&format!("{declaration}__devupStyled(__devupForwardRef(")),
+            rendered.starts_with("__devupStyled(__devupForwardRef("),
             "{body}"
         );
         body
@@ -15899,8 +15909,8 @@ const Ordered = styled.div({ color: 'red', styleOrder: 3 })",
                 "\"div\"",
                 Some("margin-0-4px--255 color-0-blue--255 padding-0-8px--255"),
             ),
-            ("FromRuntime", "Runtime", None),
-            ("FromChanging", "Changing", None),
+            ("FromRuntime", "Runtime.__devupBase || Runtime", None),
+            ("FromChanging", "Changing.__devupBase || Changing", None),
             ("Ordered", "\"div\"", Some("color-0-red--3")),
         ] {
             let body = styled_renderer(&code, name);

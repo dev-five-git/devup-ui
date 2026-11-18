@@ -49,7 +49,7 @@ A styled callback cannot return a class name known only at runtime (`styled.div(
 
 Inside a template, an interpolation standing where a declaration would is a mixin: `${mixin}` and `${(p) => p.active && mixin}` compose their class with the component's. A literal or constant is written into the CSS wherever it stands — a value, a CSS snippet, a selector. Any other interpolation in a selector or a property name is a build error, as are runtime values in `css`, `keyframes` and global styles, which have no element to set a CSS variable on.
 
-`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props. In `.withConfig()`, `shouldForwardProp` is evaluated at build time; `displayName`, `componentId` and the other options are ignored and add no runtime behavior:
+`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props. In `.withConfig()`, `shouldForwardProp` is evaluated at build time, and `componentId` gives the element the classes styled-components gives it, so CSS written elsewhere can select it: the id, or `displayName-componentId` when both are set (with `displayName` escaped as styled-components escapes it), split at whitespace. An empty or blank id adds no class. A component extending it renders those classes too, and the component's `styledComponentId` is that id. Emotion's `target` option likewise adds `String(target)` to the classes, split the same way, so `''` adds none and `undefined` leaves the option unset. As in Emotion, those classes belong to the component alone: `styled(Card)` renders `Card`'s styles without them, wherever `Card` is defined, while `Card.withComponent('a')` keeps them. A compiled component with a `target` holds itself without it as `__devupBase`, which an extension renders in its place when the build cannot see where the component comes from, as Emotion composes through `__emotion_base`. When several `.withConfig()` calls set an option, the last one wins. A value only the runtime knows is a build error, as is a `componentId` that is not a string, which styled-components throws on. Apart from that id, `displayName` and Emotion's `label` only name the component for debugging and are ignored, as is a `label:` declaration in CSS text:
 
 ```tsx
 const Button = styled.button
@@ -70,6 +70,10 @@ import * as Emotion from '@emotion/styled'
 
 const Card = Emotion.div`color: red;`
 ```
+
+A component selector matches the elements each library matches. A selected component carries a short marker class, and `${Card}` selects it. Under styled-components, `styled(Card)` keeps `Card`'s class, so `${Card}` matches the extension too. Emotion's selector reads `Card`'s `target`, which `styled(Card)` renders without, so a component made with Emotion's `styled` keeps its marker to itself, as it does a `target`. The marker stays on `Card.withComponent('a')`, which keeps `Card`'s options. Under Emotion, `Card.withComponent('a')` shares `Card`'s marker instead of taking its own, even when it is exported or selected: `${Link}` for `Link = Card.withComponent('a')` matches `Card` and every `withComponent` result of it, and `styled(Link)`, like `styled(Card)`, renders without the marker.
+
+`withComponent` renders the component's styles as another tag or component. The build compiles it when it reads the component, in the same module or another one. A component compiled from Emotion's `styled` also takes `withComponent` at runtime, as Emotion's components do, so the call works where the build cannot see the component, or when only the runtime knows the target (`Card.withComponent(pick())`). That component renders the tag through `as`, which a later `as` still replaces, and keeps the classes the component's `target` gives. Options passed beside the target are a build error, because they would change classes and props the build cannot see. Create that component with `styled(tag, options)` instead.
 
 ## Transient props
 
@@ -137,7 +141,9 @@ const GlobalStyle = createGlobalStyle`body { margin: 0; }`
 // → const GlobalStyle = () => null
 ```
 
-Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is extracted and the element stops rendering markup.
+Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is extracted and the element stops rendering markup. `styles` takes an object of rules by selector, a `css()` class holding rules under selectors (`` css`body { margin: 0; }` ``), an array of those (`false`, `null` and `undefined` entries are skipped), or a function of the theme, whose `theme.a.b` reads become `var(--a-b)`. A class with declarations of its own, a spread in the array and any other read of the theme are build errors.
+
+A styled component compiles to a function component, whose `defaultProps` React 19 ignores, so `Button.defaultProps = { ... }` is a build error: give the default where the prop is read (`${(p) => p.$tone ?? 'red'}`) or pass the prop where the component is rendered.
 
 ## The rest of the surface
 
@@ -151,8 +157,8 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `isStyledComponent`                      | `true` for components compiled from `styled`, marked with `styledComponentId`    |
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
-| Component selectors (`${Child}`)         | a marker class on the selected component                                         |
-| `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`, other options ignored   |
+| Component selectors (`${Child}`)         | a marker class; Emotion extensions render without it, as Emotion's do            |
+| `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`; `componentId` classes   |
 
 ## Limitations
 

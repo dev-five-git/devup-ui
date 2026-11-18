@@ -37,7 +37,7 @@ pub fn with_component<'a>(
             definition.target = base.target.as_ref().map(|value| value.clone_in(allocator));
             definition.capability = context.capability.cloned();
             let inherited = definition.clone_in(allocator);
-            definition = definition.with_markers(naming.markers, Some(&inherited));
+            definition = definition.with_retargeted_markers(naming.markers, &inherited);
             let component = stages::create(
                 ast_builder,
                 &definition,
@@ -90,7 +90,7 @@ pub fn with_component<'a>(
         )
         .with_execution(ast_builder, Some(&definition))
         .with_css_slot(context.capability, Some(&definition), context.shared)
-        .with_markers(naming.markers, Some(&definition));
+        .with_retargeted_markers(naming.markers, &definition);
     let staged = stages::create(
         ast_builder,
         &new_definition,
