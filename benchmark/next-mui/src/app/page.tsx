@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, Typography } from '@mui/material'
+import { Box } from '@mui/material'
 import { useState } from 'react'
 
 export default function HomePage() {
@@ -20,13 +20,14 @@ export default function HomePage() {
         component="section"
         data-testid="box"
         sx={{
+          bgcolor: 'var(--text)',
           color,
           cursor: 'pointer',
           fontSize: 32,
           position: 'relative',
           py: '28px',
           '&:hover': {
-            bg: 'yellow',
+            bgcolor: 'yellow',
             cursor: 'cell',
           },
         }}
@@ -34,19 +35,20 @@ export default function HomePage() {
         <Box>hello</Box>
         <Box>hello</Box>
       </Box>
-      <Typography color="$text">text</Typography>
-      <Box
-        sx={{ color: enabled ? 'green' : 'blue', fontSize: [32], pr: '20px' }}
-      >
+      <Box component="span" sx={{ color: 'var(--text)' }}>
+        text
+      </Box>
+      <Box sx={{ color: enabled ? 'green' : 'blue', fontSize: 32, pr: '20px' }}>
         hello
       </Box>
-      <Box sx={{ fontSize: [12, 32] }}>hello</Box>
+      <Box sx={{ fontSize: 12, '@media (min-width: 480px)': { fontSize: 32 } }}>
+        hello
+      </Box>
       <button
         onClick={() => {
           setColor('blue')
           setEnabled((prev) => !prev)
         }}
-        type="button"
       >
         Change
       </button>

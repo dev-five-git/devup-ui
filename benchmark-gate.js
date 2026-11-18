@@ -118,14 +118,19 @@ export function nextBaseline(run, manifest, previous) {
   return { samples: run.samples, rows }
 }
 
+/** The rows whose CSS baseline may be replaced alone, without recalibrating */
+export const CSS_BASELINE_TARGETS = [
+  'devup-ui',
+  'devup-ui-single',
+  'vinext-devup-ui',
+  'vanilla-extract-devup-ui',
+]
+
 /** Replace only named, approved CSS baselines; default to per-file, never recalibrate. */
 export function nextCssBaseline(run, previous, targets = ['devup-ui']) {
   if (
     targets.length === 0 ||
-    targets.some(
-      (target) =>
-        !['devup-ui', 'devup-ui-single', 'vinext-devup-ui'].includes(target),
-    )
+    targets.some((target) => !CSS_BASELINE_TARGETS.includes(target))
   )
     throw new TypeError('CSS-only baseline requires approved named targets')
   const rows = { ...previous.rows }

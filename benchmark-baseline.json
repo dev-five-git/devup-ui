@@ -77,7 +77,7 @@
       ],
       "timeTolerance": 0.10794260127860712,
       "bytes": 29969233,
-      "cssBytes": 268
+      "cssBytes": 376
     },
     "tailwind-turbo-devup-ui": {
       "control": "tailwind-turbo",
