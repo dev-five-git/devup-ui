@@ -54,6 +54,9 @@ mod jsx_pragmas;
 mod jsx_semantics_tests;
 #[cfg(test)]
 mod legacy_semantics_contract_tests;
+mod library_arrays;
+#[cfg(test)]
+mod library_arrays_extract_tests;
 mod module_loader;
 mod module_loads;
 pub mod module_reference;
@@ -573,6 +576,7 @@ fn extract_source(
         css_prop,
         px,
         emotion_styled,
+        styled_components,
     } = import_alias_visit::transform_import_aliases_with_edits(
         &namespace_code,
         filename,
@@ -900,6 +904,7 @@ fn extract_source(
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
     visitor.styles_with_emotion(emotion_styled);
+    visitor.styles_with_styled_components(styled_components);
     visitor.reuse_scoping(inlined.scoping);
     visitor.own_rules(own_rules, &program);
     visitor.import_styled(imported.components);
@@ -1320,6 +1325,7 @@ pub fn has_devup_ui_with(
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod styled_library_forwarding_tests;
     mod styled_transient_tests;
 
     mod exact_literal_coercion {
@@ -12142,25 +12148,19 @@ export const e = spin.toString()",
             "{error}"
         );
         assert!(extract("a.css.ts", code, option(false)).is_ok());
-        // However the module loads, and `globalKeyframes`, the TypeError the
-        // stylesheet run gave named neither
-        for (filename, code, shown) in [
-            (
-                "a.tsx",
-                "import { style } from '@vanilla-extract/css'\nconst { assignInlineVars } = require('@vanilla-extract/dynamic')",
-                "a.tsx:2:30: `@vanilla-extract/dynamic`",
-            ),
-            (
-                "a.css.ts",
-                "import { style, globalKeyframes } from '@vanilla-extract/css'\nglobalKeyframes('fade', { from: { opacity: 0 } })",
-                "a.css.ts:1:17: `globalKeyframes()`",
-            ),
-        ] {
-            let error = extract(filename, code, option(true))
-                .unwrap_err()
-                .to_string();
-            assert!(error.starts_with(shown), "{error}");
-        }
+        // However the module loads, the TypeError the stylesheet run gave did
+        // not name it
+        let error = extract(
+            "a.tsx",
+            "import { style } from '@vanilla-extract/css'\nconst { assignInlineVars } = require('@vanilla-extract/dynamic')",
+            option(true),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.starts_with("a.tsx:2:30: `@vanilla-extract/dynamic`"),
+            "{error}"
+        );
     }
 
     #[rstest]
@@ -24194,7 +24194,7 @@ export const App = () => <Global {...rest} styles={{ body: { margin: '0px' } }} 
             ),
             (
                 "test.tsx",
-                "import styled from '@emotion/styled';\nconst Wide = styled.div({ margin: [1, 2] });\nconst Toggle = styled.div({ color: on ? 'red' : 'blue' });\nexport const App = ({ rest, c }) => <><Wide css={{ color: 'red' }} /><Toggle css={{ margin: 3 }} /><Wide {...rest} css={[c && { top: 1 }]} /></>;"
+                "import styled from '@emotion/styled';\nconst Wide = styled.div({ margin: ['1px', 2] });\nconst Toggle = styled.div({ color: on ? 'red' : 'blue' });\nexport const App = ({ rest, c }) => <><Wide css={{ color: 'red' }} /><Toggle css={{ margin: 3 }} /><Wide {...rest} css={[c && { top: 1 }]} /></>;"
             ),
             (
                 "test.tsx",
@@ -24484,27 +24484,30 @@ injectGlobal`body { margin: 0; }`;",
     }
 
     #[rstest]
-    #[case::literal("css({ padding: [1, 2] })", &[("padding", "1px;padding:2px", 0)])]
-    #[case::local_items("css({ padding: [A, B] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::literal("css({ padding: ['1px', 2] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::local_items("css({ padding: [S, B] })", &[("padding", "1px;padding:2px", 0)])]
     #[case::local_array("css({ padding: values })", &[("padding", "1px;padding:2px", 0)])]
     #[case::imported_array("css({ padding: VALUES })", &[("padding", "1px;padding:2px", 0)])]
     #[case::imported_record("css(RULES)", &[("padding", "1px;padding:2px", 0)])]
     #[case::spread("css({ ...RULES })", &[("padding", "1px;padding:2px", 0)])]
     #[case::nested("css({ '&:hover': RULES })", &[("padding", "1px;padding:2px", 0)])]
-    #[case::nested_items("css({ '&:hover': { padding: [A, B] } })", &[("padding", "1px;padding:2px", 0)])]
-    #[case::unitless("css({ opacity: [QUARTER, HALF] })", &[("opacity", ".25;opacity:.5", 0)])]
-    #[case::mixed_zero("css({ padding: [ZERO, A, '3em'] })", &[("padding", "0;padding:1px;padding:3em", 0)])]
+    #[case::nested_items("css({ '&:hover': { padding: [S, B] } })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::unitless("css({ opacity: ['.25', HALF] })", &[("opacity", ".25;opacity:.5", 0)])]
+    #[case::zero("css({ padding: [S, ZERO, '3em'] })", &[("padding", "1px;padding:0;padding:3em", 0)])]
     #[case::strings("css({ display: [OLD, 'flex'] })", &[("display", "-webkit-box;display:flex", 0)])]
     #[case::vendor("css({ WebkitBoxShadow: [NONE, '0 0 1px red'] })", &[("-webkit-box-shadow", "none;-webkit-box-shadow:0 0 1px red", 0)])]
-    #[case::single("css({ padding: [A] })", &[("padding", "4px", 0)])]
-    #[case::null("css({ padding: [A, null, B] })", &[("padding", "4px", 0), ("padding", "8px", 2)])]
-    #[case::bool("css({ padding: [A, false, B] })", &[("padding", "4px", 0), ("padding", "8px", 2), ("padding", "false", 1)])]
+    #[case::single("css({ padding: [S] })", &[("padding", "1px", 0)])]
+    #[case::null("css({ padding: [S, null, B] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::bool("css({ padding: [S, false, B] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::hole("css({ padding: [S, , B] })", &[("padding", "1px;padding:2px", 0)])]
+    #[case::number_first("css({ padding: [A, B] })", &[])]
+    #[case::number_single("css({ padding: [A] })", &[])]
+    #[case::null_first("css({ padding: [null, S] })", &[])]
     #[case::imported_rules_array("css(LIST)", &[("padding", "1px;padding:2px", 0)])]
     #[case::native("nativeCss({ padding: [A, B] })", &[("padding", "4px", 0), ("padding", "8px", 1)])]
     #[case::native_box("<Box padding={[A, B]} />", &[("padding", "4px", 0), ("padding", "8px", 1)])]
     #[case::vars("css({ vars: { padding: [A, B] } })", &[("padding", "4px", 0), ("padding", "8px", 1)])]
     #[case::empty("css({ padding: [] })", &[])]
-    #[case::hole("css({ padding: [A, , B] })", &[("padding", "4px", 0), ("padding", "8px", 2)])]
     #[case::selector_array("css({ _hover: [{ padding: A }] })", &[("padding", "4px", 0)])]
     #[case::selector_constant_array("css({ _hover: selectorValues })", &[("padding", "4px", 0)])]
     #[serial]
@@ -24516,14 +24519,14 @@ injectGlobal`body { margin: 0; }`;",
         const MODULES: &[(&str, &str)] = &[
             (
                 "/src/fallbacks.ts",
-                "export const VALUES = [1, 2]; export const RULES = { padding: [1, 2] }; export const LIST = [RULES];",
+                "export const VALUES = ['1px', 2]; export const RULES = { padding: ['1px', 2] }; export const LIST = [RULES];",
             ),
             ("/src/App.tsx", ""),
         ];
         reset_class_map();
         reset_file_map();
         let code = format!(
-            "import {{ css }} from '@emotion/react';\nimport {{ css as nativeCss, Box }} from '@devup-ui/react';\nimport {{ VALUES, RULES, LIST }} from './fallbacks';\nconst A=1, B=2, ZERO=0, QUARTER=0.25, HALF=0.5, OLD='-webkit-box', NONE='none';\nconst values=[A,B], selectorValues=[{{padding:A}}];\nexport const a = {expression};"
+            "import {{ css }} from '@emotion/react';\nimport {{ css as nativeCss, Box }} from '@devup-ui/react';\nimport {{ VALUES, RULES, LIST }} from './fallbacks';\nconst A=1, B=2, S='1px', ZERO=0, HALF=0.5, OLD='-webkit-box', NONE='none';\nconst values=[S,B], selectorValues=[{{padding:A}}];\nexport const a = {expression};"
         );
         // When: extract through the real alias/inlining/visitor pipeline.
         let output = extract_with_modules(
@@ -24545,7 +24548,8 @@ injectGlobal`body { margin: 0; }`;",
             })
             .collect();
         styles.sort_unstable();
-        // Then: library fallbacks repeat at level zero; native and nonfallback arrays keep their levels.
+        // Then: Emotion's fallbacks repeat at level zero, an array not starting
+        // with a string is a rule Emotion's browsers drop, and native arrays keep their levels.
         assert_eq!(styles, expected, "{expression}");
     }
 

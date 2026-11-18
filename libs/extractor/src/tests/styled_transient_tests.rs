@@ -56,7 +56,7 @@ impl<'a> Visit<'a> for Renderer {
     }
 }
 
-fn executable_component(code: String) -> String {
+pub(super) fn executable_component(code: String) -> String {
     let code = code
         .strip_prefix("import \"@devup-ui/core/devup-ui.css\";\n")
         .unwrap_or(&code)

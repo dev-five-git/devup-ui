@@ -74,6 +74,7 @@ export default [
       'apps/react-18/**',
       // These examples document supported input for the dual-major library.
       'apps/landing/src/app/(detail)/docs/migration/styled-components/page.mdx/**',
+      'apps/landing/src/app/(detail)/docs/migration/styled-components/page.ko.mdx/**',
     ],
     settings: {
       'react-x': {
