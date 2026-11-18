@@ -1,6 +1,10 @@
 import { resolve } from 'node:path'
 
-import { parseImports, type StaticImportGraph } from './import-graph'
+import {
+  computeReachableFiles,
+  parseImports,
+  type StaticImportGraph,
+} from './import-graph'
 import type { ReservationInventory } from './reservation-discovery'
 
 /** Project only cached physical sources and resolved edges; never discover files. */
@@ -54,4 +58,30 @@ export function reservationGraph(
     dynamicImports,
     dynamicTargets,
   }
+}
+
+/**
+ * The routes atom hoisting counts in a reservation graph, as `computeFileReach`
+ * entries: the entries the bundler resolved and the files they lazy-load.
+ * When the bundler names no entry, the project files no other file imports and
+ * the lazy-loaded ones: the files of an included package are not routes.
+ */
+export function reservationRoutes(
+  graph: StaticImportGraph,
+  inventory: ReservationInventory,
+): string[] {
+  const entries = inventory.resolutions.entries.map((entry) => resolve(entry))
+  if (entries.length === 0)
+    return graph.files.filter(
+      (file) =>
+        !/[\\/]node_modules[\\/]/.test(file) &&
+        (graph.staticImporters.get(file)?.size === 0 ||
+          graph.dynamicTargets.has(file)),
+    )
+  return [
+    ...entries,
+    ...computeReachableFiles({ graph, srcDir: '', entries }).filter((file) =>
+      graph.dynamicTargets.has(file),
+    ),
+  ]
 }

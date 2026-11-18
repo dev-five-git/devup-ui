@@ -5,10 +5,8 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
-  buildStaticImportGraph,
   computeFileReach,
   computeReachableFiles,
-  conventionalSourceRoots,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -20,7 +18,6 @@ import {
   esmImportConditions,
   getFileNumByFilename,
   type ImportAliases,
-  isMissingDirectory,
   loadCompiler,
   loadDevupConfig,
   mergeImportAliases,
@@ -28,10 +25,14 @@ import {
   normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
+  reservationGraph,
+  type ReservationInventory,
+  reservationRoutes,
   resolveDevupFile,
   resolveProjectPath,
   setupWarning,
   SOURCE_FILE_REGEX,
+  type StaticImportGraph,
   tailwindCssFiles,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
@@ -284,18 +285,27 @@ export const DevupUI = ({
         string,
         ReturnType<typeof moduleResolver>
       >()
-      // The `src` and `app` directories of the Rsbuild root, scanned once for
-      // the canonical map and the routes
-      const sourceGraph = (srcDir: string) =>
-        buildStaticImportGraph(
-          srcDir,
-          resolve(srcDir, 'tsconfig.json'),
-          conventionalSourceRoots(projectRoot),
-        )
-      if (atomMode) {
+      // One discovery serves the canonical map, the routes and the warm-up, as
+      // in the Vite plugin: the reservation's, over the `src` and `app`
+      // directories, the closures of the entries of every environment and the
+      // included packages. The graph is installed once, before the first
+      // transform; the warm-up follows the latest discovery.
+      let discovered:
+        | { readonly graph: StaticImportGraph; readonly entries: string[] }
+        | undefined
+      const discover = (inventory: ReservationInventory) => {
+        const installed = discovered !== undefined
+        const graph = reservationGraph(inventory)
+        discovered = {
+          graph,
+          entries: inventory.resolutions.entries.map((entry) => resolve(entry)),
+        }
+        if (!installed && atomMode)
+          installAtomHoist(graph, reservationRoutes(graph, inventory))
+      }
+      const installAtomHoist = (graph: StaticImportGraph, routes: string[]) => {
         try {
           const root = projectRoot
-          const graph = sourceGraph(root)
           const canonicalMap = buildCanonicalMap({
             srcDir: root,
             cwd: root,
@@ -308,6 +318,7 @@ export const DevupUI = ({
             cwd: root,
             keyBy: 'absolute',
             graph,
+            entries: routes,
           })
           const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
           if (plan) {
@@ -320,14 +331,13 @@ export const DevupUI = ({
           }
         } catch (error) {
           // Best-effort; on failure atom hoisting stays off (identity).
-          if (!isMissingDirectory(error, resolve(projectRoot, 'src')))
-            console.warn(
-              setupWarning(
-                'Rsbuild import graph',
-                error,
-                'Atom hoisting is off, so atoms several routes share are not moved into the shared stylesheet.',
-              ),
-            )
+          console.warn(
+            setupWarning(
+              'Rsbuild import graph',
+              error,
+              'Atom hoisting is off, so atoms several routes share are not moved into the shared stylesheet.',
+            ),
+          )
         }
       }
 
@@ -340,23 +350,28 @@ export const DevupUI = ({
           singleCss,
           atomMode,
           importAliases,
+          beforeReserve: discover,
         },
         compiler,
       )
+      // The entries of the Rsbuild environments, as configured
       const entryFiles = new Set<string>()
-      // Extract the source files under `src` and `app` that the entries
-      // reach, in path order, the same way the transform does, so that a
-      // stylesheet built on its first import already holds the styles of every
-      // one. Best-effort: a stylesheet still missing styles is rebuilt by
-      // another pass.
+      // Extract the source files the entries reach and the transform takes, in
+      // path order, the same way the transform does, so that a stylesheet
+      // built on its first import already holds the styles of every one.
+      // Best-effort: a stylesheet still missing styles is rebuilt by another
+      // pass.
       const prewarm = () => {
         try {
           const root = api.context.rootPath
-          for (const file of computeReachableFiles({
-            srcDir: root,
-            entries: [...entryFiles],
-            graph: sourceGraph(root),
-          })) {
+          for (const file of discovered
+            ? computeReachableFiles({
+                srcDir: root,
+                entries: [...new Set([...entryFiles, ...discovered.entries])],
+                graph: discovered.graph,
+              })
+            : []) {
+            if (excludeRegex.test(file)) continue
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
               '/',
@@ -374,8 +389,15 @@ export const DevupUI = ({
               importAliases,
             )
           }
-        } catch {
-          // The transform reports the error of the file it cannot extract
+        } catch (error) {
+          // The transform also reports the error of a file it cannot extract
+          console.warn(
+            setupWarning(
+              'Rsbuild stylesheet warm-up',
+              error,
+              'A stylesheet Rsbuild builds before every file it holds is extracted can miss their styles until another pass rebuilds it.',
+            ),
+          )
         }
       }
       api.onBeforeBuild(({ environments }) => {

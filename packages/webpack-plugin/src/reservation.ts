@@ -5,6 +5,7 @@ import {
   createSharedSlotReservation,
   type DevupCompiler,
   esmImportConditions,
+  type ReservationInventory,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import type { Compiler } from 'webpack'
@@ -17,12 +18,19 @@ export function createWebpackReservation(
   compiler: Pick<DevupCompiler, 'reserveClassSlots' | 'setModuleResolver'>,
 ) {
   const slots = createSharedSlotReservation(compiler)
-  return ({
-    context,
-    entry,
-    resolve: resolveOptions,
-  }: Pick<Compiler['options'], 'context' | 'entry'> &
-    Partial<Pick<Compiler['options'], 'resolve'>>) => {
+  /**
+   * Reserve the slots of the files webpack's options reach, handing their
+   * inventory to `beforeReserve` first whenever it changed
+   */
+  return (
+    {
+      context,
+      entry,
+      resolve: resolveOptions,
+    }: Pick<Compiler['options'], 'context' | 'entry'> &
+      Partial<Pick<Compiler['options'], 'resolve'>>,
+    beforeReserve?: (inventory: ReservationInventory) => void,
+  ) => {
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
     // The loaders extract files under ids relative to the project root
@@ -55,6 +63,7 @@ export function createWebpackReservation(
         conditions,
       },
       {
+        beforeReserve,
         singleCss: options.singleCss,
         importMainCssInCode: false,
         importMainCssInCss: true,

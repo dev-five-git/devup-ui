@@ -242,14 +242,37 @@ let statSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
 let consoleErrorSpy: ReturnType<typeof spyOn>
 let reservationSpy: ReturnType<typeof spyOn>
+/** The inventory the mocked reservation discovers */
+let inventory: pluginUtils.ReservationInventory
+
+function createInventory(
+  entries: string[] = [],
+): pluginUtils.ReservationInventory {
+  return {
+    inputs: [],
+    dependencies: [],
+    packageManifests: [],
+    sources: new Map(),
+    resolutions: { entries, imports: new Map() },
+  }
+}
 
 beforeEach(() => {
+  inventory = createInventory()
   reservationSpy = spyOn(
     pluginUtils,
     'createSharedSlotReservation',
   ).mockReturnValue({
     invalidate: mock(),
-    reserve: mock().mockReturnValue(true),
+    reserve: mock(
+      (
+        _discovery: pluginUtils.ReservationDiscoveryOptions,
+        options: pluginUtils.ReservationBatchOptions,
+      ) => {
+        options.beforeReserve?.(inventory)
+        return true
+      },
+    ),
   })
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
     (_path: string, contents: string) => createCodeExtractResult(contents),
@@ -1195,6 +1218,16 @@ describe('devupUIWebpackPlugin', () => {
       ).mockReturnValue([])
     })
 
+    /** Apply the plugin and run webpack's `run` hook, which installs the graph */
+    function applyAndRun(
+      plugin: DevupUIWebpackPlugin,
+      compiler: MockCompiler = createCompiler(),
+    ) {
+      plugin.apply(asCompiler(compiler))
+      compiler.hooks.run.tap.mock.calls[0][1]()
+      return compiler
+    }
+
     afterEach(() => {
       buildCanonicalMapSpy.mockRestore()
       computeFileReachSpy.mockRestore()
@@ -1204,33 +1237,61 @@ describe('devupUIWebpackPlugin', () => {
       computeReachableFilesSpy.mockRestore()
     })
 
-    it('plans collapse and hoisting over one graph of the src and app roots of the context', async () => {
+    it("plans collapse and hoisting over one graph of webpack's entries, the src and app roots and the included packages", async () => {
       const project = fs.mkdtempSync(join(tmpdir(), 'devup-ui-webpack-roots-'))
+      // The real reservation discovers the files
+      reservationSpy.mockRestore()
+      readFileSyncSpy.mockRestore()
+      existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
+      using _reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
+        undefined,
+      )
       try {
-        // The cwd's own `app` is not the project's: only the context's roots count
-        for (const path of ['app/page.tsx', 'web/app/a.tsx', 'web/src/b.tsx'])
-          await Bun.write(join(project, path), 'export {}')
-        existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
-        const plugin = new DevupUIWebpackPlugin({
-          engine: 'wasm',
-          atomHoist: 2,
-        })
+        for (const [path, code] of [
+          ['index.tsx', "import './lib/view'\nimport '@slot/ui'"],
+          ['lib/view.tsx', 'export const view = 1'],
+          ['app/a.tsx', 'export {}'],
+          ['src/b.tsx', 'export {}'],
+          [
+            'node_modules/@slot/ui/package.json',
+            JSON.stringify({ name: '@slot/ui', main: 'index.js' }),
+          ],
+          ['node_modules/@slot/ui/index.js', 'export const ui = 1'],
+        ])
+          await Bun.write(join(project, path), code)
         const compiler = createCompiler()
-        compiler.options.context = join(project, 'web')
-        const cwd = spyOn(process, 'cwd').mockReturnValue(project)
-        try {
-          plugin.apply(asCompiler(compiler))
-        } finally {
-          cwd.mockRestore()
-        }
+        compiler.options.context = project
+        compiler.options.entry = { main: { import: ['./index.tsx'] } }
+        applyAndRun(
+          new DevupUIWebpackPlugin({
+            engine: 'wasm',
+            atomHoist: 2,
+            include: ['@slot/ui'],
+          }),
+          compiler,
+        )
         const [{ graph }] = buildCanonicalMapSpy.mock.calls.at(-1) as [
           { graph: { files: string[] } },
         ]
-        expect(graph.files).toEqual(
-          ['web/app/a.tsx', 'web/src/b.tsx'].map((path) => join(project, path)),
+        // An entry outside `src` and `app` and its imports count too
+        expect(new Set(graph.files)).toEqual(
+          new Set(
+            [
+              'app/a.tsx',
+              'index.tsx',
+              'lib/view.tsx',
+              'node_modules/@slot/ui/index.js',
+              'src/b.tsx',
+            ].map((path) => join(project, path)),
+          ),
         )
+        // The routes are webpack's entries
         expect(computeFileReachSpy).toHaveBeenCalledWith(
-          expect.objectContaining({ graph, srcDir: join(project, 'web') }),
+          expect.objectContaining({
+            graph,
+            srcDir: project,
+            entries: [join(project, 'index.tsx')],
+          }),
         )
       } finally {
         fs.rmSync(project, { recursive: true, force: true })
@@ -1244,7 +1305,7 @@ describe('devupUIWebpackPlugin', () => {
         'src/child.tsx': 'src/parent.tsx',
       })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 })
-      plugin.apply(asCompiler(createCompiler()))
+      applyAndRun(plugin)
       expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
         expect.objectContaining({ keyBy: 'cwd-relative' }),
       )
@@ -1271,8 +1332,8 @@ describe('devupUIWebpackPlugin', () => {
         'matches explicit 2 on two routes when atomHoist is %s',
         (_label, options) => {
           // Given: explicit 2 installs a known two-route plan.
-          new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
-            asCompiler(createCompiler()),
+          applyAndRun(
+            new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }),
           )
           const explicitReach = [...importFileRoutesSpy.mock.calls]
           expect(explicitReach).toEqual([
@@ -1288,9 +1349,7 @@ describe('devupUIWebpackPlugin', () => {
           importFileRoutesSpy.mockClear()
           setAtomHoistSpy.mockClear()
           // When: the public option is defaulted.
-          new DevupUIWebpackPlugin({ ...options, engine: 'wasm' }).apply(
-            asCompiler(createCompiler()),
-          )
+          applyAndRun(new DevupUIWebpackPlugin({ ...options, engine: 'wasm' }))
           // Then: the same plan and threshold are installed.
           expect(importFileRoutesSpy.mock.calls).toEqual(explicitReach)
           expect(setAtomHoistSpy.mock.calls).toEqual([[2]])
@@ -1302,9 +1361,7 @@ describe('devupUIWebpackPlugin', () => {
         (atomHoist) => {
           // Given: two routes, not the single-route fallback.
           // When: a disabled numeric option is supplied.
-          new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist }).apply(
-            asCompiler(createCompiler()),
-          )
+          applyAndRun(new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist }))
           // Then: collapse still runs but reach and threshold are untouched.
           expect(buildCanonicalMapSpy).toHaveBeenCalled()
           expect(computeFileReachSpy).not.toHaveBeenCalled()
@@ -1316,9 +1373,7 @@ describe('devupUIWebpackPlugin', () => {
       it('preserves a custom threshold above the minimum', () => {
         // Given: two routes and a custom threshold.
         // When: the plugin applies.
-        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 3 }).apply(
-          asCompiler(createCompiler()),
-        )
+        applyAndRun(new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 3 }))
         // Then: the threshold is not replaced by 2.
         expect(setAtomHoistSpy.mock.calls).toEqual([[3]])
       })
@@ -1406,14 +1461,13 @@ describe('devupUIWebpackPlugin', () => {
           worker: {},
         }
         compiler.options.context = '/project'
+        // The reservation resolves the entries webpack names
+        inventory = createInventory(['/project/src/parent.tsx'])
         plugin.apply(asCompiler(compiler))
         compiler.hooks.run.tap.mock.calls[0][1]()
         expect(computeReachableFilesSpy).toHaveBeenCalledWith({
           srcDir: resolve('/project'),
-          entries: [
-            resolve('/project', './src/parent'),
-            resolve('/project', './src/other'),
-          ],
+          entries: [resolve('/project/src/parent.tsx')],
           graph: expect.objectContaining({ files: expect.any(Array) }),
         })
         // The loader's resolver is registered before the first extraction, so
@@ -1556,7 +1610,7 @@ describe('devupUIWebpackPlugin', () => {
         const compiler = createCompiler()
         try {
           // When its lifecycle stage runs, the original error reaches webpack.
-          if (stage === 'canonical' || stage === 'numbering') {
+          if (stage === 'numbering') {
             expect(() => plugin.apply(asCompiler(compiler))).toThrow(failure)
           } else {
             plugin.apply(asCompiler(compiler))
@@ -1573,6 +1627,21 @@ describe('devupUIWebpackPlugin', () => {
         }
       },
     )
+
+    it('pre-warms only the reached files the loader transforms', () => {
+      computeReachableFilesSpy.mockReturnValue([
+        resolve('node_modules', 'other', 'index.js'),
+        resolve('node_modules', '@slot', 'ui', 'index.js'),
+        resolve('src', 'a.tsx'),
+      ])
+      applyAndRun(
+        new DevupUIWebpackPlugin({ engine: 'wasm', include: ['@slot/ui'] }),
+      )
+      expect(codeExtractSpy.mock.calls.map(([filename]) => filename)).toEqual([
+        'node_modules/@slot/ui/index.js',
+        'src/a.tsx',
+      ])
+    })
 
     it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})
@@ -1629,7 +1698,7 @@ describe('devupUIWebpackPlugin', () => {
         'src/r1.tsx': [1],
       })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
-      plugin.apply(asCompiler(createCompiler()))
+      applyAndRun(plugin)
       // collapse runs with cwd-relative keys (webpack loader passes relative path)
       expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
         expect.objectContaining({ keyBy: 'cwd-relative' }),
@@ -1649,14 +1718,14 @@ describe('devupUIWebpackPlugin', () => {
         'src/b.tsx': [1],
       })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 1 })
-      plugin.apply(asCompiler(createCompiler()))
+      applyAndRun(plugin)
       expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
     })
 
     it('stays off when fewer than two routes are reachable', () => {
       computeFileReachSpy.mockReturnValue({ 'src/a.tsx': [0] })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
-      plugin.apply(asCompiler(createCompiler()))
+      applyAndRun(plugin)
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
       expect(importFileRoutesSpy).not.toHaveBeenCalled()
     })
@@ -1668,8 +1737,8 @@ describe('devupUIWebpackPlugin', () => {
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
       const warn = spyOn(console, 'warn').mockImplementation(() => {})
       try {
-        // apply must still complete without throwing
-        plugin.apply(asCompiler(createCompiler()))
+        // the build must still go on
+        applyAndRun(plugin)
         expect(setAtomHoistSpy).not.toHaveBeenCalled()
         expect(warn).toHaveBeenCalledWith(
           '[devup-ui] webpack import graph failed: boom. Classes are not merged across files only one module imports, and atom hoisting is off.',
@@ -1685,9 +1754,7 @@ describe('devupUIWebpackPlugin', () => {
       })
       const warn = spyOn(console, 'warn').mockImplementation(() => {})
       try {
-        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 }).apply(
-          asCompiler(createCompiler()),
-        )
+        applyAndRun(new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 0 }))
         expect(warn).toHaveBeenCalledWith(
           '[devup-ui] webpack import graph failed: boom. Classes are not merged across files only one module imports.',
         )
@@ -1696,39 +1763,28 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
 
-    it('stays quiet when the project has no src directory to scan', () => {
-      buildCanonicalMapSpy.mockImplementation(() => {
-        throw Object.assign(new Error('ENOENT'), {
-          code: 'ENOENT',
-          path: resolve(process.cwd(), 'src'),
-        })
-      })
-      const warn = spyOn(console, 'warn').mockImplementation(() => {})
-      try {
-        new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
-          asCompiler(createCompiler()),
-        )
-        expect(warn).not.toHaveBeenCalled()
-      } finally {
-        warn.mockRestore()
-      }
-    })
-
-    it('configures atom hoisting BEFORE registering loader rules', () => {
+    it('configures atom hoisting at webpack run, before any compilation, once per build', () => {
       computeFileReachSpy.mockReturnValue({
         'src/a.tsx': [0],
         'src/b.tsx': [1],
       })
       const compiler = createCompiler()
-      let rulesLenAtSetAtomHoist = -1
-      setAtomHoistSpy.mockImplementation(() => {
-        rulesLenAtSetAtomHoist = compiler.options.module.rules.length
-      })
-      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 })
-      plugin.apply(asCompiler(compiler))
-      // pre-pass must run before module rules are pushed (single WASM instance)
-      expect(rulesLenAtSetAtomHoist).toBe(0)
-      expect(compiler.options.module.rules.length).toBeGreaterThan(0)
+      new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
+        asCompiler(compiler),
+      )
+      // The bundler's entries are only final once webpack runs
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      const run = compiler.hooks.run.tap.mock.calls[0][1]
+      run()
+      expect(setAtomHoistSpy).toHaveBeenCalledTimes(1)
+      // A later discovery feeds the warm-up but never plans again
+      inventory = createInventory([resolve('src', 'a.tsx')])
+      run()
+      expect(buildCanonicalMapSpy).toHaveBeenCalledTimes(1)
+      expect(setAtomHoistSpy).toHaveBeenCalledTimes(1)
+      expect(computeReachableFilesSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ entries: [resolve('src', 'a.tsx')] }),
+      )
     })
   })
 
