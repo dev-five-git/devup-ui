@@ -304,3 +304,47 @@ fn stylesheet_nested_arrays_report_authored_locations(
     assert!(error.contains("responsive arrays must be flat"), "{error}");
     Ok(())
 }
+
+/// `<Global>` writes the rules of its entries in order, so of two rules for
+/// the same selector the later one wins, whether an entry is an object or a
+/// `css()` class
+#[rstest]
+#[case("[css`p { color: green; }`, { p: { color: 'blue' } }]", "blue")]
+#[case("[{ p: { color: 'blue' } }, css`p { color: green; }`]", "green")]
+#[case(
+    "[css({ body: { color: 'green' } }), { body: { color: 'blue' } }]",
+    "blue"
+)]
+#[serial]
+fn emotion_global_entries_keep_their_order(
+    #[case] styles: &str,
+    #[case] winner: &str,
+) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
+    with_style_sheet_mut(|sheet| *sheet = StyleSheet::default());
+    reset_class_map();
+    reset_file_map();
+    let source = format!(
+        "import {{ Global, css }} from '@emotion/react';\nexport const App = () => <Global styles={{{styles}}} />;"
+    );
+    let output = code_extract_without_source_map_internal(
+        "global.tsx",
+        &source,
+        "@devup-ui/react",
+        "@devup-ui/react".to_string(),
+        true,
+        false,
+        false,
+        HashMap::from([("@emotion/react".to_string(), ImportAlias::NamedToNamed)]),
+    )?;
+    let css = output.css().ok_or("expected emitted CSS")?;
+    let layer = css
+        .split_once("@layer b{")
+        .and_then(|(_, rest)| rest.split_once("}}"))
+        .ok_or_else(|| css.clone())?
+        .0;
+    let last = |color: &str| layer.rfind(&format!("color:{color}"));
+    let loser = if winner == "blue" { "green" } else { "blue" };
+    assert!(last(loser).is_some() && last(winner) > last(loser), "{css}");
+    Ok(())
+}

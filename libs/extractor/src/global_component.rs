@@ -41,7 +41,7 @@ pub(crate) fn global_class_styles(
                 Some((kind, query)) => StyleSelector::nest_at_rule(Some(&global), kind, query)?,
                 None => global,
             };
-            Some(ExtractStyleValue::Static(ExtractStaticStyle::new(
+            Some(global_rule(ExtractStaticStyle::new(
                 style.property(),
                 style.value(),
                 style.level(),
@@ -49,6 +49,14 @@ pub(crate) fn global_class_styles(
             )))
         })
         .collect()
+}
+
+/// A rule of `<Global>` in the base layer, where its object styles go too,
+/// so the rules of its entries keep the order Emotion writes them in
+const fn global_rule(style: ExtractStaticStyle) -> ExtractStyleValue {
+    let mut rule = ExtractStyleValue::Static(style);
+    rule.set_style_order(0);
+    rule
 }
 
 #[cfg(test)]
