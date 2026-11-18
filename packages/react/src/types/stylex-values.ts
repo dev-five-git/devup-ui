@@ -46,10 +46,22 @@ export type StyleXFlatDeclarations = {
   readonly [property: `--${string}`]: StyleXScalar
 }
 
+/**
+ * A dynamic namespace body: a value may set its parameters under conditions,
+ * each condition taking its own variable.
+ */
 export type StyleXDynamicDeclarations = {
-  readonly [K in keyof CssProperties]?: CssProperties[K] | null
+  readonly [K in keyof CssProperties]?: StyleXValue<CssProperties[K]>
 } & {
-  readonly [property: `--${string}`]: StyleXScalar | null
+  readonly [property: `--${string}`]: StyleXValue
+}
+
+/** The pseudo-element groups `viewTransitionClass` styles */
+export type StyleXViewTransitionGroups = {
+  readonly group?: StyleXFlatDeclarations
+  readonly imagePair?: StyleXFlatDeclarations
+  readonly old?: StyleXFlatDeclarations
+  readonly new?: StyleXFlatDeclarations
 }
 
 export interface StyleXTypes {

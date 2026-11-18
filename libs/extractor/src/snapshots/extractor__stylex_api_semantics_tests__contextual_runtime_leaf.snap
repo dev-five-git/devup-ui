@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+stylex.tsx:2:77: `stylex.create()` cannot use `size + 1` at build time: its values must be literals, theme tokens or constants, or be computed from them

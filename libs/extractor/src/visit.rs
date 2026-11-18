@@ -30,7 +30,7 @@ use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::KeyframesExtractResult;
 use crate::extractor::extract_keyframes_from_expression::extract_keyframes_with_location;
 use crate::extractor::extract_style_from_stylex::{
-    extract_stylex_declarations, extract_stylex_namespace_styles,
+    extract_stylex_declarations, extract_stylex_namespace_styles, extract_view_transition_groups,
 };
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
@@ -61,7 +61,7 @@ use crate::style_collector::StyleCollector;
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexIncludeRef, StylexNamespaceValue, create_theme_class,
     css_variable_block, css_variable_rules, define_vars_variable, joined_key_classes,
-    merge_included_keys, unsupported_stylex_error, variable_values,
+    merge_included_keys, typed_variable_rule, unsupported_stylex_error, variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
@@ -2816,6 +2816,15 @@ impl<'a> DevupVisitor<'a> {
         Some((key, prop))
     }
 
+    /// The name a `positionTry` (`kind` `p`) or `viewTransitionClass` (`v`)
+    /// rule takes, named after what it declares so two rules in a file differ
+    fn stylex_rule_name(&self, kind: &str, rules: &impl std::fmt::Debug) -> String {
+        keyframes_to_keyframes_name(
+            &format!("sxp-{}-{kind}-{rules:?}", self.filename),
+            self.split_filename.as_deref(),
+        )
+    }
+
     fn string_property(&self, key: &str, value: &str) -> ObjectPropertyKind<'a> {
         ObjectPropertyKind::new_object_property(
             SPAN,
@@ -4275,6 +4284,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 let variable =
                     define_vars_variable(&self.filename, &key, self.split_filename.as_deref());
+                match typed_variable_rule(&variable, &prop.value, &values, &|callee| {
+                    self.bindings.stylex_function(callee)
+                }) {
+                    Some(Ok(css)) => {
+                        self.styles.insert(ExtractStyleValue::Css(ExtractCss {
+                            file: self.filename.clone(),
+                            order: 0,
+                            css,
+                        }));
+                    }
+                    Some(Err(error)) => self.errors.push((prop.value.span().start, error)),
+                    None => {}
+                }
                 variables.push((variable.clone(), values));
                 properties.push(self.string_property(&key, &format!("var({variable})")));
                 contract.insert(key, variable);
@@ -4372,35 +4394,47 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             })
             && let [Argument::ObjectExpression(arg)] = call.arguments.as_slice()
         {
-            let generated = keyframes_to_keyframes_name(
-                &format!("sxp-{}-{}", self.filename, u8::from(is_position_try)),
-                self.split_filename.as_deref(),
-            );
-            let name = if is_position_try {
-                format!("--{generated}")
+            let (name, css) = if is_position_try {
+                let declarations = extract_stylex_declarations(
+                    "stylex.positionTry",
+                    arg,
+                    &mut self.errors,
+                    &|callee| self.bindings.stylex_function(callee),
+                );
+                let name = format!("--{}", self.stylex_rule_name("p", &declarations));
+                let css = css_variable_block(&format!("@position-try {name}"), &declarations);
+                (
+                    name,
+                    if declarations.is_empty() {
+                        String::new()
+                    } else {
+                        css
+                    },
+                )
             } else {
-                generated
+                let groups = extract_view_transition_groups(arg, &mut self.errors, &|callee| {
+                    self.bindings.stylex_function(callee)
+                });
+                let name = self.stylex_rule_name("v", &groups);
+                let css = groups
+                    .iter()
+                    .filter(|(_, declarations)| !declarations.is_empty())
+                    .map(|(pseudo, declarations)| {
+                        css_variable_block(&format!("{pseudo}(*.{name})"), declarations)
+                    })
+                    .collect::<String>();
+                (name, css)
             };
-            let api = if is_position_try {
-                "stylex.positionTry"
-            } else {
-                "stylex.viewTransitionClass"
-            };
-            let declarations = extract_stylex_declarations(api, arg, &mut self.errors, &|callee| {
-                self.bindings.stylex_function(callee)
-            });
-            if !declarations.is_empty() {
-                let css = if is_position_try {
-                    css_variable_block(&format!("@position-try {name}"), &declarations)
-                } else {
-                    css_variable_block(&format!(".{name}"), &declarations)
-                };
+            if !css.is_empty() {
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
                     file: self.filename.clone(),
                     order: 0,
                     css,
                 }));
             }
+            // `create()` reads the name where the binding is used as a value,
+            // as `positionTryFallbacks: fallback` or `viewTransitionClass: fade`
+            self.stylex_pending_keyframe_name = Some(name.clone());
             *it = Expression::new_string_literal(
                 SPAN,
                 Str::from_in(&name, self.ast.allocator()),

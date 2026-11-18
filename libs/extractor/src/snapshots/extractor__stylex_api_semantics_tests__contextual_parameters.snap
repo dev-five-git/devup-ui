@@ -1,0 +1,20 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+const s = { "w": "a-a a-b a-c a-d" };
+export const f = (w) => ({
+	className: "a-a a-b a-c a-d",
+	style: {
+		"--a": w,
+		"--b": "blue",
+		"--c": ((__devupUnit0) => typeof __devupUnit0 === "number" ? __devupUnit0 + "px" : __devupUnit0)(w)
+	}
+});
+
+Dynamic(ExtractDynamicStyle { property: "color", level: 0, identifier: "size", selector: Some(Selector("&:hover")), style_order: None })
+Dynamic(ExtractDynamicStyle { property: "color", level: 0, identifier: "tone", selector: Some(At { kind: Media, query: "(min-width:600px)", selector: None, outer: [], file: None }), style_order: None })
+Dynamic(ExtractDynamicStyle { property: "width", level: 0, identifier: "size", selector: None, style_order: None })
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })
