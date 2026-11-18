@@ -8,14 +8,14 @@ ToBTreeSet {
             ExtractCss {
                 file: "test.tsx",
                 order: 1,
-                css: "@position-try --a{top:0;inset-block-end:auto;}",
+                css: "@position-try --a{top:0;inset-block-end:auto}",
             },
         ),
         Css(
             ExtractCss {
                 file: "test.tsx",
                 order: 2,
-                css: "::view-transition-old(*.b){animation-duration:300ms;}",
+                css: "::view-transition-old(*.b){animation-duration:300ms}",
             },
         ),
     },

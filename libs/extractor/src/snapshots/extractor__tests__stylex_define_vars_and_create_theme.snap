@@ -28,14 +28,14 @@ ToBTreeSet {
             ExtractCss {
                 file: "test.tsx",
                 order: 1,
-                css: ":root{--a:blue;--b:grey;}",
+                css: ":root{--a:blue;--b:grey}",
             },
         ),
         Css(
             ExtractCss {
                 file: "test.tsx",
                 order: 2,
-                css: ".c{--a:navy;}",
+                css: ".c{--a:navy}",
             },
         ),
     },
