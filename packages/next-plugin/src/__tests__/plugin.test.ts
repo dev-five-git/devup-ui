@@ -20,6 +20,7 @@ import {
 import * as coordinatorModule from '../coordinator'
 import * as coordinatorPortModule from '../coordinator-port'
 import cssLoader, { resetInit as resetCssInit } from '../css-loader'
+import * as mdxModule from '../mdx'
 import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
@@ -861,7 +862,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
+                    '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$))',
                   ),
                 },
               },
@@ -910,7 +911,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
+                    '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$))',
                   ),
                 },
               },
@@ -1004,7 +1005,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
+                    '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$))',
                   ),
                 },
               },
@@ -1291,6 +1292,10 @@ export const box = style({ color: 'red' })`
     it('numbers the files the scan finds, and survives a failing scan', () => {
       process.env.TURBOPACK = '1'
       const collectSpy = spyOn(importGraphModule, 'collectNumberedFiles')
+      const mdxSpy = spyOn(
+        mdxModule,
+        'collectNumberedMdxFiles',
+      ).mockReturnValue(['src/a.mdx'])
       const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
       try {
         collectSpy.mockImplementation((options: any) => {
@@ -1298,10 +1303,20 @@ export const box = style({ color: 'red' })`
             ['src', 'app', 'pages'].map((dir) => resolve(dir)),
           )
           expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
-          return ['src/a.tsx']
+          return ['src/a.tsx', 'src/b.tsx']
         })
         DevupUI({}, { include: ['@acme/ui'] })
-        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx'])
+        // Compiled MDX is numbered with the sources, in path order.
+        expect(seedSpy).toHaveBeenCalledWith([
+          'src/a.mdx',
+          'src/a.tsx',
+          'src/b.tsx',
+        ])
+        expect(mdxSpy).toHaveBeenCalledWith(
+          ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          process.cwd(),
+          expect.arrayContaining(['@devup-ui/react', '@stylexjs/stylex']),
+        )
         expect(collectSpy.mock.calls[0][0]).toMatchObject({
           include: ['@acme/ui'],
         })
@@ -1319,6 +1334,7 @@ export const box = style({ color: 'red' })`
         }
       } finally {
         collectSpy.mockRestore()
+        mdxSpy.mockRestore()
         seedSpy.mockRestore()
       }
     })
@@ -1779,6 +1795,63 @@ export const box = style({ color: 'red' })`
         profileSpy.mockRestore()
         compiledSpy.mockRestore()
         routesSpy.mockRestore()
+      }
+    })
+
+    it('has the coordinator wait for compiled MDX it does not prewarm', () => {
+      process.env.TURBOPACK = '1'
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const mdxSpy = spyOn(
+        mdxModule,
+        'collectCompiledMdxFiles',
+      ).mockReturnValue(['src/app/docs/page.mdx'])
+      try {
+        DevupUI({ pageExtensions: ['tsx', 'mdx'] }, {})
+
+        expect(mdxSpy).toHaveBeenCalledWith({
+          cwd: process.cwd(),
+          srcDir: resolve('src'),
+          pageExtensions: ['tsx', 'mdx'],
+          compiledFiles: ['src/app/page.tsx'],
+        })
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expectedBaseFiles: ['src/app/page.tsx', 'src/app/docs/page.mdx'],
+            prewarmedFiles: ['src/app/page.tsx'],
+          }),
+        )
+
+        // Without a deterministic set there is nothing to add MDX to.
+        mdxSpy.mockClear()
+        compiledSpy.mockReturnValue([])
+        DevupUI({}, {})
+        expect(mdxSpy).not.toHaveBeenCalled()
+
+        compiledSpy.mockReturnValue(['src/app/page.tsx'])
+        mdxSpy.mockImplementation(() => {
+          throw new Error('mdx boom')
+        })
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          startCoordinatorSpy.mockClear()
+          DevupUI({}, {})
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack MDX scan failed: mdx boom. The production stylesheet does not wait for MDX documents, so classes only they use can be missing from it.',
+          )
+          expect(startCoordinatorSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              expectedBaseFiles: ['src/app/page.tsx'],
+            }),
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
+      } finally {
+        compiledSpy.mockRestore()
+        mdxSpy.mockRestore()
       }
     })
 
