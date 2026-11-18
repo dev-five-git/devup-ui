@@ -1,0 +1,11 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "`@vanilla-extract/css-utils` is aliased by default and its `calc` compiles to the strings the package builds (`calc.add/subtract/multiply/divide/negate`, chained `calc(x)` with `.toString()` or template interpolation, nested operations only parenthesized). A `.css.ts` stylesheet evaluates it without a module resolver, so its operands may be anything the stylesheet computes; elsewhere each call is written as its string and its operands must be literals, module-level `const`s holding a literal or other `calc` results. `@devup-ui/react/compat/vanilla-extract-css-utils` types it, and css-utils-literal-only reads its calls as the build does. New build errors: a `calc` operand outside a stylesheet the build cannot read, a `calc` read without being called, a `calc(x)` used as a value without `.toString()` (also in a stylesheet), an export other than `calc`, and a namespace import, `require()` or re-export of the package outside a stylesheet. Set `importAliases: { '@vanilla-extract/css-utils': false }` to keep the package",
+  "date": "2026-11-15T00:00:00.000Z"
+}

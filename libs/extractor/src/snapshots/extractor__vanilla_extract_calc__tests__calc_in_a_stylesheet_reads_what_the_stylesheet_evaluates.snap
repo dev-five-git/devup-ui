@@ -1,0 +1,12 @@
+---
+source: libs/extractor/src/vanilla_extract_calc_tests.rs
+expression: "format!(\"{compiled:#?}\")"
+---
+Ok(
+    (
+        "import \"@devup-ui/react/devup-ui-0.css\";\nexport const a = \"a-a a-b\";\n;\nexport const theme = \"theme-0-1\";\nexport const vars = { \"space\": { \"md\": \"var(--space-md-0-2)\" } };\n",
+        [
+            "calc((var(--space-md-0-2) * 2) + (var(--var-0-0) * -1))",
+        ],
+    ),
+)

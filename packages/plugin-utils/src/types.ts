@@ -126,6 +126,7 @@ export const DEFAULT_IMPORT_ALIASES: ImportAliases = {
   '@emotion/css': true,
   'styled-components': 'styled',
   '@vanilla-extract/css': true,
+  '@vanilla-extract/css-utils': true,
 }
 
 /**
@@ -184,6 +185,7 @@ const COMPAT_TYPE_ENTRIES: Record<string, string> = {
   '@emotion/styled': 'emotion',
   '@emotion/css': 'emotion',
   '@vanilla-extract/css': 'vanilla-extract',
+  '@vanilla-extract/css-utils': 'vanilla-extract-css-utils',
   'styled-components': 'styled-components',
 }
 

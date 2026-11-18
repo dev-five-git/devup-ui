@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/vanilla_extract_calc_tests.rs
+expression: "format!(\"{compiled:#?}\")"
+---
+Ok(
+    (
+        "import type { Unused } from \"@vanilla-extract/css-utils\";\nexport const gap: typeof calc = \"calc(1px + 2px)\" as never;\nexport const half = `calc(100% / 2) - 1px`;\n",
+        [],
+    ),
+)

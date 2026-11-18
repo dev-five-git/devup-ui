@@ -26,3 +26,4 @@
 /// <reference types="@devup-ui/react/compat/emotion" />
 /// <reference types="@devup-ui/react/compat/stylex" />
 /// <reference types="@devup-ui/react/compat/vanilla-extract" />
+/// <reference types="@devup-ui/react/compat/vanilla-extract-css-utils" />

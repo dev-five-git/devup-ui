@@ -166,6 +166,7 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 pub use vanilla_extract::ExtractorCaches;
+mod vanilla_extract_calc;
 #[cfg(test)]
 mod vanilla_extract_theme_import_tests;
 mod visit;
@@ -518,6 +519,11 @@ fn extract_source(
     }
     let mut errors = import_alias_visit::emotion_errors(code, filename, &option.import_aliases);
     errors.extend(runtime_options::runtime_option_errors(
+        code,
+        filename,
+        &option.import_aliases,
+    ));
+    errors.extend(vanilla_extract_calc::errors(
         code,
         filename,
         &option.import_aliases,

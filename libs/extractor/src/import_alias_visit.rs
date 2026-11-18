@@ -767,7 +767,19 @@ pub fn transform_import_aliases_with_edits<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    // One analysis for the whole pass: building it sets the AST's symbol and
+    // reference IDs, which every later reader resolves against this table
     let mut scoping = None;
+    if !redirect_every_name && crate::vanilla_extract_calc::reads(code, import_aliases) {
+        let built = scoping.insert(
+            SemanticBuilder::new()
+                .build(&program)
+                .semantic
+                .into_scoping(),
+        );
+        transformations
+            .extend(crate::vanilla_extract_calc::compile(&program, built, false).replacements);
+    }
     let may_take_css = CssProp::of(import_aliases, code, false) != CssProp::Off;
     let mut symbol = |local: &BindingIdentifier<'_>| {
         scoping.get_or_insert_with(|| {
@@ -835,6 +847,7 @@ pub fn transform_import_aliases_with_edits<'a>(
                     format!("\"{runtime}\""),
                 ));
             } else if let Some(alias) = import_aliases.get(source_value)
+                && source_value != crate::vanilla_extract_calc::CSS_UTILS
                 && !import_decl.import_kind.is_type()
             {
                 let span = import_decl.span;
