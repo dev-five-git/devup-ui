@@ -129,6 +129,7 @@ fn the_license_banner_setting_belongs_to_one_session() {
 }
 
 #[test]
+#[serial]
 fn the_stylex_style_resolution_belongs_to_one_session() {
     use css::style_resolution::{StyleResolution, style_resolution};
     let _clean = clean();
