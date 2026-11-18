@@ -217,6 +217,7 @@ impl<'a> Visit<'a> for Calls<'_> {
             let shape = match api.as_str() {
                 "style" | "css" | "fontFace" => Some((0, ObjectKind::Styles)),
                 "globalStyle" | "globalFontFace" => Some((1, ObjectKind::Styles)),
+                "globalKeyframes" => Some((1, ObjectKind::Records)),
                 "keyframes" | "styleVariants" => Some((0, ObjectKind::Records)),
                 "globalCss" => Some((0, ObjectKind::Globals)),
                 "styled" => Some((call.arguments.len().saturating_sub(1), ObjectKind::Styles)),

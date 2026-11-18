@@ -3,6 +3,7 @@ use crate::{
     extract_style::extract_style_value::ExtractStyleValue,
     extractor::{
         GlobalExtractResult,
+        extract_keyframes_from_expression::extract_keyframes_with_location,
         extract_style_from_expression::{
             LiteralHandling, at_rule_record_kind, extract_style_from_expression, misplaced,
             place_in_layer, unreadable, unreadable_key, yield_typography,
@@ -69,6 +70,53 @@ fn global_at_rule_key(name: &str) -> Option<AtRule> {
     })
 }
 
+/// What a `'@keyframes name'` key requires
+const KEYFRAMES_KEY: &str = "a `@keyframes` key must name its keyframes with letters, digits, `-` and `_`, outside any at-rule";
+
+/// The name a `'@keyframes name'` key declares
+fn keyframes_name(key: &str) -> Option<&str> {
+    let name = key.strip_prefix("@keyframes")?;
+    name.starts_with(char::is_whitespace).then(|| name.trim())
+}
+
+/// Whether `name` is a keyframes name CSS takes unquoted
+fn is_keyframes_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_') || !c.is_ascii())
+}
+
+/// `'@keyframes name': { from: {...}, to: {...} }`: keyframes declared under
+/// `name` as written, as vanilla-extract's `globalKeyframes` declares them
+fn global_keyframes<'a>(
+    ast_builder: &AstBuilder<'a>,
+    (name, offset): (&str, u32),
+    value: &mut Expression<'a>,
+    inputs: &GlobalInputs<'_, 'a>,
+    nested: bool,
+) -> ExtractStyleProp<'a> {
+    if nested || !is_keyframes_name(name) {
+        return misplaced(offset, format!("'@keyframes {name}'"), KEYFRAMES_KEY);
+    }
+    let (result, runtime_offset) = extract_keyframes_with_location(
+        super::style_inputs::StyleInputs::with_values(ast_builder, inputs.values),
+        value,
+    );
+    if let Some((code, requirement)) = result.runtime_value {
+        return ExtractStyleProp::Unreadable {
+            offset: runtime_offset.unwrap_or_else(|| value.span().start),
+            code,
+            prop: false,
+            requirement,
+        };
+    }
+    let mut keyframes = result.keyframes;
+    keyframes.name = Some(name.to_string());
+    ExtractStyleProp::Static(ExtractStyleValue::Keyframes(keyframes))
+}
+
 /// Collect a `globalCss` selector map whose rules sit inside `at_rules`
 /// (outermost first).
 fn collect_global_styles<'a>(
@@ -132,6 +180,14 @@ fn collect_global_styles<'a>(
                             );
                             place_in_layer(&mut layered, layer);
                             styles.extend(layered);
+                        } else if let Some(frames) = keyframes_name(&name) {
+                            styles.push(global_keyframes(
+                                ast_builder,
+                                (frames, o.key.span().start),
+                                &mut o.value,
+                                inputs,
+                                !at_rules.is_empty(),
+                            ));
                         } else if let Some(at_rule) = global_at_rule_key(&name) {
                             let mut nested = at_rules.to_vec();
                             nested.push(at_rule);

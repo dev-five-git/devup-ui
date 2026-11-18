@@ -3,6 +3,7 @@ import {
   noDuplicateValue,
   noRuntimeRead,
   noTypographyTokenPrefix,
+  noUselessFallback,
   noUselessResponsive,
   noUselessTailingNulls,
   preferMediaShorthand,
@@ -22,6 +23,7 @@ export default [
           'style-order-range': styleOrderRange,
           'no-typography-token-prefix': noTypographyTokenPrefix,
           'prefer-media-shorthand': preferMediaShorthand,
+          'no-useless-fallback': noUselessFallback,
         },
       },
     },
@@ -34,6 +36,7 @@ export default [
       '@devup-ui/style-order-range': 'error',
       '@devup-ui/no-typography-token-prefix': 'error',
       '@devup-ui/prefer-media-shorthand': 'warn',
+      '@devup-ui/no-useless-fallback': 'warn',
     },
   },
 ]

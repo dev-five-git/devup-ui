@@ -12,6 +12,8 @@ use crate::css_prop::{
     CssProp, EMOTION_REACT, builds_jsx_with_emotion, class_names_child, is_emotion, is_jsx_file,
     is_jsx_function, react_runtime, returned, root_reference,
 };
+use crate::library_arrays::Library;
+use crate::library_arrays::{ArrayValue, library_array};
 use crate::utils::{
     get_str_by_property_key, is_vanilla_extract_file, js_number_literal, keeps_bare_number,
     literal_member_name,
@@ -71,13 +73,18 @@ struct LibraryNumbers {
     replacements: Vec<(usize, usize, String)>,
     /// Where a constant inlined later is a number or rules of the library, as
     /// the source reads them
-    marks: Vec<(usize, usize)>,
+    marks: Vec<(usize, usize, Library)>,
     /// The references that are the whole value of a `css` prop
     css_reads: rustc_hash::FxHashSet<oxc_syntax::reference::ReferenceId>,
     /// The names the file imports Emotion's `styled` as
     emotion_styled: Vec<String>,
     /// The names the file imports styled-components' `styled` as
     styled_components: Vec<String>,
+    /// Import bindings of styled-components and vanilla-extract, whose rules
+    /// read arrays as their library does; others are Emotion's
+    libraries: Vec<(SymbolId, Library)>,
+    /// The library whose rules are read
+    library: Library,
 }
 
 impl LibraryNumbers {
@@ -103,9 +110,9 @@ impl LibraryNumbers {
             .is_some_and(|symbol| symbols.contains(&symbol))
     }
 
-    fn mark(expression: &Expression) -> (usize, usize) {
+    fn mark(&self, expression: &Expression) -> (usize, usize, Library) {
         let span = expression.span();
-        (span.start as usize, span.end as usize)
+        (span.start as usize, span.end as usize, self.library)
     }
 
     /// `styled.div`, `styled(tag)`, `styled(tag, options)` and their
@@ -152,7 +159,7 @@ impl LibraryNumbers {
                 }
             }
             Expression::ObjectExpression(object) => {
-                self.marks.push(Self::mark(rules));
+                self.marks.push(self.mark(rules));
                 for property in &object.properties {
                     match property {
                         ObjectPropertyKind::ObjectProperty(property) => {
@@ -161,7 +168,7 @@ impl LibraryNumbers {
                             }
                         }
                         ObjectPropertyKind::SpreadProperty(spread) => {
-                            self.marks.push(Self::mark(&spread.argument));
+                            self.marks.push(self.mark(&spread.argument));
                         }
                     }
                 }
@@ -191,7 +198,7 @@ impl LibraryNumbers {
                     self.pixelify(rules);
                 }
             }
-            rules => self.marks.push(Self::mark(rules)),
+            rules => self.marks.push(self.mark(rules)),
         }
     }
 
@@ -275,10 +282,10 @@ impl LibraryNumbers {
             return;
         }
         if !matches!(value, Expression::ObjectExpression(_)) && !keeps_bare_number(key) {
-            self.marks.push(Self::mark(value));
+            self.marks.push(self.mark(value));
         }
         match value {
-            Expression::ArrayExpression(array) => self.fallbacks(key, array),
+            Expression::ArrayExpression(array) => self.library_array(key, array),
             Expression::ObjectExpression(_) => {
                 if key != "vars" {
                     self.pixelify(value);
@@ -303,64 +310,46 @@ impl LibraryNumbers {
 }
 
 impl LibraryNumbers {
-    /// `key: [a, b]` in these libraries declares `key` once per value, later
-    /// ones as fallbacks a browser keeps when it understands them, where Devup
-    /// UI reads an array as breakpoints. Literal values become one value
-    /// declaring each in order; others stay as written.
-    fn fallbacks(&mut self, key: &str, array: &oxc_ast::ast::ArrayExpression) {
-        let Some(joined) = fallback_value(key, array) else {
+    /// `key: [a, b]` in these libraries is not breakpoints, as Devup UI reads an
+    /// array, but what the library declares for it (`library_array`). An array
+    /// of literals becomes that value; others stay as written.
+    fn library_array(&mut self, key: &str, array: &oxc_ast::ast::ArrayExpression) {
+        let Some(value) = library_array(self.library, key, array) else {
             return;
         };
         let span = array.span;
-        self.replacements.push((
-            span.start as usize,
-            span.end as usize,
-            format!("{joined:?}"),
-        ));
+        self.replacements
+            .push((span.start as usize, span.end as usize, array_source(&value)));
+    }
+
+    /// The library of the style function `callee` calls: the one its import
+    /// binding comes from, Emotion unless another is known
+    fn library_of(&self, callee: &Expression) -> Library {
+        let root = match crate::utils::unwrap_syntax_only(callee) {
+            Expression::Identifier(root) => Some(root),
+            Expression::StaticMemberExpression(member) => return self.library_of(&member.object),
+            Expression::ComputedMemberExpression(member) => return self.library_of(&member.object),
+            Expression::CallExpression(call) => return self.library_of(&call.callee),
+            _ => None,
+        };
+        root.and_then(|root| self.symbol(root))
+            .and_then(|symbol| {
+                self.libraries
+                    .iter()
+                    .find(|(binding, _)| *binding == symbol)
+                    .map(|(_, library)| *library)
+            })
+            .unwrap_or_default()
     }
 }
 
-pub(crate) fn fallback_value(key: &str, array: &oxc_ast::ast::ArrayExpression) -> Option<String> {
-    let values: Option<Vec<String>> = array
-        .elements
-        .iter()
-        .map(|element| {
-            let element = element.as_expression()?;
-            if let Some(number) = js_number_literal(element) {
-                return Some(if number == 0.0 || keeps_bare_number(key) {
-                    number.to_string()
-                } else {
-                    format!("{number}px")
-                });
-            }
-            match element {
-                Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
-                _ => None,
-            }
-        })
-        .collect();
-    let values = values.filter(|values| values.len() > 1)?;
-    let property = kebab_property(key);
-    Some(values.join(&format!(";{property}:")))
-}
-
-/// `backgroundColor` as the CSS property `background-color`, `WebkitBoxShadow`
-/// as `-webkit-box-shadow`
-fn kebab_property(key: &str) -> String {
-    let mut property = String::with_capacity(key.len() + 4);
-    for (index, c) in key.chars().enumerate() {
-        if c.is_ascii_uppercase() {
-            if index > 0
-                || matches!(key, k if k.starts_with("Webkit") || k.starts_with("Moz") || k.starts_with("Ms"))
-            {
-                property.push('-');
-            }
-            property.push(c.to_ascii_lowercase());
-        } else {
-            property.push(c);
-        }
+/// `value` as the source of a JavaScript value: a string, or `null`, which
+/// Devup UI declares nothing for
+pub(crate) fn array_source(value: &ArrayValue) -> String {
+    match value {
+        ArrayValue::Declarations(declarations) => format!("{declarations:?}"),
+        ArrayValue::Nothing => "null".to_string(),
     }
-    property
 }
 
 impl<'a> Visit<'a> for LibraryNumbers {
@@ -413,9 +402,11 @@ impl<'a> Visit<'a> for LibraryNumbers {
                 .collect(),
             None => vec![],
         };
+        self.library = self.library_of(&call.callee);
         for rules in rules {
             self.pixelify(rules);
         }
+        self.library = Library::Emotion;
         if let Expression::Identifier(callee) = &call.callee
             && self.contains(&self.jsx, callee)
             && let [element, Argument::ObjectExpression(props), ..] = call.arguments.as_slice()
@@ -566,8 +557,8 @@ pub struct Aliased<'a> {
 
 /// The spans of the style values and rules written as an expression a
 /// constant can stand in, which Emotion, styled-components and vanilla-extract
-/// read numbers in as `px` lengths
-pub type PxMarks = rustc_hash::FxHashSet<(u32, u32)>;
+/// read numbers in as `px` lengths, with the library reading them
+pub type PxMarks = rustc_hash::FxHashMap<(u32, u32), Library>;
 
 /// Packages working on top of vanilla-extract's, which Devup UI does not
 /// compile
@@ -581,14 +572,13 @@ const VANILLA_EXTRACT_COMPANIONS: [&str; 3] = [
 const VANILLA_EXTRACT_DYNAMIC: &str = "@vanilla-extract/dynamic";
 
 /// Where code loads vanilla-extract's companion packages, by an import, a
-/// re-export, `require()` or `import()`, and imports `globalKeyframes`, as
-/// errors at their offsets: while `@vanilla-extract/css` compiles to Devup UI,
-/// none of them reaches the stylesheet
+/// re-export, `require()` or `import()`, as errors at their offsets: while
+/// `@vanilla-extract/css` compiles to Devup UI, none of them reaches the
+/// stylesheet
 pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
     if !VANILLA_EXTRACT_COMPANIONS
         .iter()
         .any(|package| code.contains(package))
-        && !code.contains("globalKeyframes")
     {
         return Vec::new();
     }
@@ -600,13 +590,6 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
             .into_iter()
             .map(|(offset, package)| (offset, companion_error(package)))
             .collect();
-    for statement in &program.body {
-        if let Statement::ImportDeclaration(import) = statement
-            && import.source.value == "@vanilla-extract/css"
-        {
-            errors.extend(global_keyframes_imports(import));
-        }
-    }
     errors.sort_unstable();
     errors
 }
@@ -620,30 +603,6 @@ fn companion_error(package: &str) -> String {
     format!(
         "`{package}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin"
     )
-}
-
-/// The value imports of `globalKeyframes` in `import_decl`, as errors at their
-/// specifiers: Devup UI names keyframes itself, so it has no keyframes of a
-/// global name to compile them to
-fn global_keyframes_imports(import_decl: &ImportDeclaration<'_>) -> Vec<(u32, String)> {
-    import_decl
-        .specifiers
-        .iter()
-        .flatten()
-        .filter_map(|specifier| match specifier {
-            ImportDeclarationSpecifier::ImportSpecifier(spec)
-                if !import_decl.import_kind.is_type()
-                    && !spec.import_kind.is_type()
-                    && imported_name(&spec.imported) == "globalKeyframes" =>
-            {
-                Some((
-                    spec.span.start,
-                    "`globalKeyframes()` from `@vanilla-extract/css` is not compiled by Devup UI, which names every keyframes itself, so the global name would never reach the stylesheet. Fix: declare them with `keyframes()` and use the name it returns, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin".to_string(),
-                ))
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 /// Emotion's factory of instances of its own, whose classes Devup UI does not
@@ -925,13 +884,21 @@ pub fn transform_import_aliases_with_edits<'a>(
                             _ => {}
                         }
                     }
-                    let library = match source_value {
+                    let library = Library::of(source_value);
+                    if library != Library::Emotion {
+                        for specifier in import_decl.specifiers.iter().flatten() {
+                            if let Some(local) = symbol(specifier.local()) {
+                                numbers.libraries.push((local, library));
+                            }
+                        }
+                    }
+                    let styled = match source_value {
                         "@emotion/styled" => Some(&mut numbers.emotion_styled),
                         "styled-components" => Some(&mut numbers.styled_components),
                         _ => None,
                     };
-                    if let Some(library) = library {
-                        library.extend(
+                    if let Some(styled) = styled {
+                        styled.extend(
                             import_decl
                                 .specifiers
                                 .iter()
@@ -980,7 +947,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         let px = numbers
             .marks
             .iter()
-            .map(|&(start, end)| (start as u32, end as u32))
+            .map(|&(start, end, library)| ((start as u32, end as u32), library))
             .collect();
         return unchanged(numbers.css_prop, px);
     }
@@ -1001,7 +968,7 @@ pub fn transform_import_aliases_with_edits<'a>(
     let px = numbers
         .marks
         .iter()
-        .map(|&(start, end)| (shifted(start), shifted(end)))
+        .map(|&(start, end, library)| ((shifted(start), shifted(end)), library))
         .collect();
     let mut result = code.to_string();
     for (start, end, replacement) in transformations.into_iter().rev() {
@@ -1521,12 +1488,12 @@ mod tests {
         ));
     }
 
-    // A property's array of values declares fallbacks in these libraries
+    // A property's array is what each library declares for it, not breakpoints
     #[test]
-    fn test_property_arrays_become_fallback_declarations() {
-        let code = transform_import_aliases(
+    fn test_property_arrays_follow_their_library() {
+        let emotion = transform_import_aliases(
             "import { css } from '@emotion/react'
-css({ background: ['red', 'linear-gradient(red, blue)'], WebkitBoxShadow: ['none', '0 0 1px red'], margin: [4, 0], zIndex: [1, 2], color: [x, 'red'], top: ['1px'] })",
+css({ background: ['red', 'linear-gradient(red, blue)'], WebkitBoxShadow: ['none', '0 0 1px red'], margin: ['4px', 8, null, false, 0], zIndex: ['1', 2], top: ['1px'], left: [4], color: [x, 'red'], p: [1, 2] })",
             "test.tsx",
             "@devup-ui/react",
             &HashMap::from([("@emotion/react".to_string(), ImportAlias::NamedToNamed)]),
@@ -1534,15 +1501,58 @@ css({ background: ['red', 'linear-gradient(red, blue)'], WebkitBoxShadow: ['none
         for expected in [
             r#"background: "red;background:linear-gradient(red, blue)""#,
             r#"WebkitBoxShadow: "none;-webkit-box-shadow:0 0 1px red""#,
-            r#"margin: "4px;margin:0""#,
+            r#"margin: "4px;margin:8px;margin:0""#,
             r#"zIndex: "1;z-index:2""#,
+            r#"top: "1px""#,
+            "left: null",
             "color: [x, 'red']",
-            "top: ['1px']",
+            "p: [1, 2]",
         ] {
-            assert!(code.contains(expected), "{expected}\n{code}");
+            assert!(
+                emotion.contains(expected),
+                "{expected}
+{emotion}"
+            );
         }
-        assert_eq!(kebab_property("MozAppearance"), "-moz-appearance");
-        assert_eq!(kebab_property("msFlex"), "ms-flex");
+        let styled_components = transform_import_aliases(
+            "import styled, { css } from 'styled-components'
+css({ fontFamily: ['Arial', 'sans-serif'], margin: [4, null] })
+styled.div({ color: [null] })",
+            "test.tsx",
+            "@devup-ui/react",
+            &styled_components_alias(),
+        );
+        for expected in [
+            r#"fontFamily: "Arial,sans-serif""#,
+            r#"margin: "4,""#,
+            "color: null",
+        ] {
+            assert!(
+                styled_components.contains(expected),
+                "{expected}
+{styled_components}"
+            );
+        }
+        let vanilla_extract = transform_import_aliases(
+            "import { style } from '@vanilla-extract/css'
+style({ margin: [4, '8px', null, undefined, true], color: [] })",
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::from([(
+                "@vanilla-extract/css".to_string(),
+                ImportAlias::NamedToNamed,
+            )]),
+        );
+        for expected in [
+            r#"margin: "4;margin:8px;margin:null;margin:undefined;margin:true""#,
+            "color: null",
+        ] {
+            assert!(
+                vanilla_extract.contains(expected),
+                "{expected}
+{vanilla_extract}"
+            );
+        }
     }
 
     // Types are erased, so a type-only import never becomes a runtime import
@@ -1630,7 +1640,6 @@ import * as ve from '@vanilla-extract/css'",
                 (50, "`@vanilla-extract/sprinkles`"),
                 (185, "`@vanilla-extract/dynamic`"),
                 (240, "`@vanilla-extract/recipes`"),
-                (291, "`globalKeyframes()`"),
             ],
             "{errors:?}"
         );

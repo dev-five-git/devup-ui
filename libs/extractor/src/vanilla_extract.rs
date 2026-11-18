@@ -4,6 +4,7 @@
 //! and extract style definitions for processing by the existing extract logic.
 
 use crate::import_alias_visit::Edit;
+use crate::library_arrays::{ArrayValue, vanilla_extract_values};
 use crate::module_loader::{
     Evaluating, ModuleLoader, PACKAGE_BINDING, SCRIPT_PATH, Script, Unit, module_script,
 };
@@ -100,6 +101,9 @@ struct Collector {
     identifiers: usize,
     origin: Option<(String, String)>,
     declaration_errors: Vec<String>,
+    /// Whether the stylesheet imports vanilla-extract, whose arrays declare
+    /// fallbacks, rather than Devup UI, whose arrays are breakpoints
+    fallback_arrays: bool,
 }
 
 type StyleCollector = Rc<RefCell<Collector>>;
@@ -230,12 +234,60 @@ fn pixelify(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResul
     })
 }
 
-/// Serialize a style rule object with vanilla-extract's number units.
-fn style_to_json(value: &JsValue, context: &mut Context) -> JsResult<String> {
+/// [`pixelify`] writing a property's array of values as the fallbacks
+/// vanilla-extract declares for it, each value as `String()` writes it
+fn pixelify_fallbacks(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let key = to_text(args.get_or_undefined(0), context)?;
+    // An array of rules or arrays is no property value
+    if let Some(items) = array_items(args.get_or_undefined(1), context)?
+        && !items.iter().any(JsValue::is_object)
+    {
+        let texts = items
+            .iter()
+            .map(|item| to_text(item, context))
+            .collect::<JsResult<Vec<_>>>()?;
+        if let Some(declared) = vanilla_extract_values(&key, texts.into_iter()) {
+            return Ok(match declared {
+                ArrayValue::Declarations(declarations) => js_string!(declarations).into(),
+                ArrayValue::Nothing => JsValue::null(),
+            });
+        }
+    }
+    pixelify(this, args, context)
+}
+
+/// Serialize a style rule object with vanilla-extract's number units, and its
+/// arrays as fallbacks when `fallbacks`
+fn style_to_json(value: &JsValue, fallbacks: bool, context: &mut Context) -> JsResult<String> {
     let realm = context.realm().clone();
-    let replacer =
-        FunctionObjectBuilder::new(&realm, NativeFunction::from_fn_ptr(pixelify)).build();
+    let replacer = FunctionObjectBuilder::new(
+        &realm,
+        NativeFunction::from_fn_ptr(if fallbacks {
+            pixelify_fallbacks
+        } else {
+            pixelify
+        }),
+    )
+    .build();
     Ok(stringify(value, replacer.into(), context)?.unwrap_or_else(|| "{}".to_string()))
+}
+
+/// Whether `source` imports vanilla-extract's own package
+fn imports_vanilla_extract(source: &str) -> bool {
+    let allocator = oxc_allocator::Allocator::default();
+    let source_type = oxc_span::SourceType::ts();
+    oxc_parser::Parser::new(&allocator, source, source_type)
+        .parse()
+        .program
+        .body
+        .iter()
+        .any(|statement| {
+            matches!(statement, oxc_ast::ast::Statement::ImportDeclaration(import) if import.source.value == "@vanilla-extract/css")
+        })
 }
 
 /// What a stylesheet read besides its own source
@@ -356,6 +408,7 @@ pub(crate) fn execute_evaluated(
     }
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
+        fallback_arrays: imports_vanilla_extract(source),
         ..Collector::default()
     }));
     let mut context = Context::default();
@@ -914,6 +967,7 @@ fn register_vanilla_extract_apis(
         ("globalStyle", api(collector, global_style), 2),
         ("styleVariants", api(collector, style_variants), 1),
         ("keyframes", api(collector, keyframes), 1),
+        ("globalKeyframes", api(collector, global_keyframes), 2),
         ("fontFace", api(collector, font_face), 1),
         ("globalFontFace", api(collector, global_font_face), 2),
         ("createVar", api(collector, create_var), 0),
@@ -979,7 +1033,8 @@ fn register_style(
 ) -> JsResult<String> {
     let mut entry = StyleEntry::default();
     let mut rules = Vec::new();
-    compose(rule, &mut entry, &mut rules, context)?;
+    let fallbacks = collector.borrow().fallback_arrays;
+    compose(rule, &mut entry, &mut rules, fallbacks, context)?;
     entry.classes.extend(debug_class(collector, debug_id));
     entry.json = format!("{{{}}}", rules.join(","));
     check_declarations(
@@ -1003,11 +1058,12 @@ fn compose(
     value: &JsValue,
     entry: &mut StyleEntry,
     rules: &mut Vec<String>,
+    fallbacks: bool,
     context: &mut Context,
 ) -> JsResult<()> {
     if let Some(items) = array_items(value, context)? {
         for item in &items {
-            compose(item, entry, rules, context)?;
+            compose(item, entry, rules, fallbacks, context)?;
         }
     } else if let Some(classes) = js_str(value) {
         for class in classes.split_whitespace() {
@@ -1018,7 +1074,7 @@ fn compose(
             }
         }
     } else if value.is_object() {
-        let json = style_to_json(value, context)?;
+        let json = style_to_json(value, fallbacks, context)?;
         let inner = inner_json(&json);
         if !inner.is_empty() {
             rules.push(inner.to_string());
@@ -1033,7 +1089,8 @@ fn global_style(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let selector = to_text(args.get_or_undefined(0), context)?;
-    let json = style_to_json(args.get_or_undefined(1), context)?;
+    let fallbacks = collector.borrow().fallback_arrays;
+    let json = style_to_json(args.get_or_undefined(1), fallbacks, context)?;
     check_declarations(collector, &json, crate::dead_properties::ObjectKind::Styles);
     collector
         .borrow_mut()
@@ -1079,7 +1136,8 @@ fn keyframes(
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    let json = style_to_json(args.get_or_undefined(0), context)?;
+    let fallbacks = collector.borrow().fallback_arrays;
+    let json = style_to_json(args.get_or_undefined(0), fallbacks, context)?;
     check_declarations(
         collector,
         &json,
@@ -1095,6 +1153,29 @@ fn keyframes(
         },
     );
     Ok(js_string!(id).into())
+}
+
+/// `globalKeyframes(name, frames)`: keyframes declared under `name` as written,
+/// in the order the stylesheet declares its global rules
+fn global_keyframes(
+    collector: &StyleCollector,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let name = to_text(args.get_or_undefined(0), context)?;
+    let fallbacks = collector.borrow().fallback_arrays;
+    let json = style_to_json(args.get_or_undefined(1), fallbacks, context)?;
+    check_declarations(
+        collector,
+        &json,
+        crate::dead_properties::ObjectKind::Records,
+    );
+    collector
+        .borrow_mut()
+        .styles
+        .global_styles
+        .push((format!("@keyframes {name}"), json));
+    Ok(JsValue::undefined())
 }
 
 /// `fontFace(rule, debugId?)`: a generated family for one rule or a list of them
@@ -1931,7 +2012,7 @@ mod tests {
     fn generate_with(code: &str, keyframes_names: &[(&str, &str)]) -> String {
         reset_file_map();
         let collected = execute_vanilla_extract(
-            &format!("import {{ style, globalStyle, styleVariants, keyframes, fontFace, globalFontFace, createVar, fallbackVar, createContainer, layer, globalLayer, createTheme, createGlobalTheme, createThemeContract, createGlobalThemeContract, assignVars }} from '{PACKAGE}'\n{code}"),
+            &format!("import {{ style, globalStyle, styleVariants, keyframes, globalKeyframes, fontFace, globalFontFace, createVar, fallbackVar, createContainer, layer, globalLayer, createTheme, createGlobalTheme, createThemeContract, createGlobalThemeContract, assignVars }} from '{PACKAGE}'\n{code}"),
             PACKAGE,
             "test.css.ts",
         )
@@ -2163,6 +2244,21 @@ export const icons = "font-0-1""#
 
     #[test]
     #[serial]
+    fn test_global_keyframes_keep_their_name() {
+        let _state = crate::test_state::TestStateGuard::new();
+        assert_eq!(
+            generate(
+                "globalKeyframes('fade-in', { from: { opacity: 0 }, to: { opacity: 1 } })
+export const box = style({ animation: 'fade-in 1s' })"
+            ),
+            r#"import { css, globalCss } from '@devup-ui/react'
+export const box = css({"animation":"fade-in 1s"})
+globalCss({ "@keyframes fade-in": {"from":{"opacity":0},"to":{"opacity":1}} })"#
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_vars_follow_vanilla_extract() {
         let _state = crate::test_state::TestStateGuard::new();
         assert_eq!(
@@ -2297,15 +2393,20 @@ export const notObject = ["theme-0-9", {}]"#
         let mut context = Context::default();
         let rule = context
             .eval(Source::from_bytes(
-                "({ fontSize: 16, top: 0, lineHeight: 1.5, '--gap': 4, 'var(--x)': 2, fallback: [1, 2], ':hover': { width: 3 }, vars: { 'var(--a)': 1, '--b': 2 } })",
+                "({ fontSize: 16, top: 0, lineHeight: 1.5, '--gap': 4, 'var(--x)': 2, fallback: [1, 2], p: [1, 2], color: [], ':hover': { width: 3 }, vars: { 'var(--a)': 1, '--b': 2 } })",
             ))
             .unwrap();
         assert_eq!(
-            style_to_json(&rule, &mut context).unwrap(),
-            r#"{"fontSize":"16px","top":0,"lineHeight":1.5,"--gap":4,"var(--x)":2,"fallback":[1,2],":hover":{"width":"3px"},"vars":{"--a":1,"--b":2}}"#
+            style_to_json(&rule, false, &mut context).unwrap(),
+            r#"{"fontSize":"16px","top":0,"lineHeight":1.5,"--gap":4,"var(--x)":2,"fallback":[1,2],"p":[1,2],"color":[],":hover":{"width":"3px"},"vars":{"--a":1,"--b":2}}"#
+        );
+        // vanilla-extract declares a property's array as fallbacks, as written
+        assert_eq!(
+            style_to_json(&rule, true, &mut context).unwrap(),
+            r#"{"fontSize":"16px","top":0,"lineHeight":1.5,"--gap":4,"var(--x)":2,"fallback":"1;fallback:2","p":[1,2],"color":null,":hover":{"width":"3px"},"vars":{"--a":1,"--b":2}}"#
         );
         assert_eq!(
-            style_to_json(&JsValue::undefined(), &mut context).unwrap(),
+            style_to_json(&JsValue::undefined(), false, &mut context).unwrap(),
             "{}"
         );
     }
