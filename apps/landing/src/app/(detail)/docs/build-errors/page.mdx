@@ -617,12 +617,12 @@ export const App = () => <div css={{ color: 'red' }} />
 
 ```tsx-error
 import { css } from '@emotion/react';
-export function App() { const rules = { color: 'red' }; return <div css={rules} />; }
+export function App() { let rules = { color: 'red' }; return <div css={rules} />; }
 ```
 
-**Why:** The composition path reads module-level const objects; a local object cannot be mistaken for a class string.
+**Why:** The build reads a style object from a `const` binding, in the function or at the module top level. A `let` binding can be reassigned, so the build cannot tell its value from a class string.
 
-**Fix:** Write the object directly in css, or declare it with const at the module top level.
+**Fix:** Write the object directly in css, or declare it with const.
 
 {/* probe: css-prop-local after */}
 
@@ -1889,29 +1889,28 @@ const E = await import('@emotion/css')
 E.flush()
 ```
 
-### Repair malformed source when diagnostic restoration fails
+### Source that does not parse
 
-**API:** Imports and barrels. **Message pattern:**
+**API:** Any file the build compiles. **Message pattern:**
 
 ```text
-`@emotion/css()` cannot use `<code>` at build time: use a supported styling API or a runtime-only Emotion export
-Emotion diagnostic restoration failed: Diagnostics([OxcDiagnostic { inner: OxcDiagnosticInner { message: "Missing initializer in const declaration", labels: [LabeledSpan { label: None, span: Span { start: 61, end: 67 }, primary: false }], help: Some("Add an initializer (e.g. ` = undefined`) here"), note: None, severity: Error, code: OxcCode { scope: None, number: None }, url: None } }])
+Cannot parse source: <parser message>. Fix: correct the syntax at this location
 ```
 
 **Trigger:**
 
-{/* probe: restoration-suffix before */}
+{/* probe: parse-error before */}
 
 ```tsx-error
 import * as E from '@emotion/css';
 E.__emotion_user(); const broken;
 ```
 
-**Why:** An error expression containing the generated-name prefix invokes original-source diagnostic restoration; malformed source prevents that restoration.
+**Why:** The build reads a file only once it parses. A syntax error is reported first, at its location, before any style diagnostic of the same file.
 
-**Fix:** Correct the malformed declaration and use a supported namespace member.
+**Fix:** Correct the syntax at the reported location, then fix any style diagnostic the build reports next.
 
-{/* probe: restoration-suffix after */}
+{/* probe: parse-error after */}
 
 ```tsx
 import * as E from '@emotion/css'
@@ -3560,7 +3559,7 @@ export function example() {
 }
 ```
 
-### include(): same-call
+### include(): namespace not defined earlier
 
 **API:** StyleX. **Message pattern:**
 
@@ -3574,10 +3573,11 @@ export function example() {
 
 ```tsx-error
 import * as stylex from '@stylexjs/stylex';
-export const styles = stylex.create({ base: { color: 'red' }, derived: { ...stylex.include(styles.base) } });
+const styles = stylex.create({ base: { color: 'red' } });
+export const more = stylex.create({ derived: { ...stylex.include(styles.missing) } });
 ```
 
-**Why:** Having the syntax styles.base is insufficient: the visible binding and member must have been registered by an earlier create() in this file. Unknown, forward, imported or missing namespace references cannot be composed here.
+**Why:** Having the syntax styles.base is insufficient: the visible binding and member must have been registered by an earlier create() in this file. Unknown, imported, parameter or missing namespace references cannot be composed here. A `create()` that includes the namespace it is itself defining reads that `const` before it is initialized, which is reported as such.
 
 **Fix:** Define the namespace earlier in this file and reference an existing member from that binding.
 
@@ -3940,151 +3940,68 @@ export function example() {
 
 ## Plugins and config
 
-These operational setup messages are distinct from style-syntax diagnostics. The build plugins forward extractor diagnostics; native filesystem or transport failures depend on the platform and underlying error.
+These messages come from the build plugins rather than from the extractor. The plugins also forward every extractor diagnostic above as the error of the file it is in; native filesystem or transport failures depend on the platform and the underlying error.
 
-### Next coordinator and loader failures
+### devup.json cannot be loaded
 
-The Next plugin manages its coordinator and port-file options. The following internal setup/HTTP fixtures describe the failure contract, not options to hand-author in an application. Restart the Next build with a matching plugin/coordinator configuration and inspect its originating error when the transport fails.
-
-#### Coordinator port file not found
-
-**Message pattern:**
+**Message patterns:**
 
 ```text
-Coordinator port file not found
+<file> is not valid JSON: <parser message>. Fix its syntax; Devup UI does not load the theme until it parses.
+<file> must hold a JSON object such as { "theme": {} }, not <null | an array | a string | ...>.
+devup.json `extends` form a cycle: <file> -> <file> -> <file>. Remove the `extends` entry that points back to an earlier file.
 ```
 
-**Trigger (internal protocol fixture):**
+**Why:** The theme is read from `devup.json` and every file its `extends` lists. Building with an empty theme instead would ship classes reading theme variables that are never declared.
 
-```json
-{
-  "loader": "loader",
-  "portFileExists": false
-}
-```
+**Fix:** Correct the file the message names. A file listed in `extends` that does not exist is not an error: it adds nothing.
 
-**Why:** Real port file is absent for all 20 loader retries (50ms each); loader reports the authored callback error. Both loaders share this error family.
+### Theme tokens the build cannot emit
 
-**Fix:** Create the configured port file containing the listening coordinator port before extraction.
-
-```json
-{
-  "loader": "loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 200,
-    "body": "{\"code\":\"export const answer = 42;\",\"dependencies\":[]}"
-  }
-}
-```
-
-#### Coordinator error
-
-**Message pattern:**
+**Message patterns:**
 
 ```text
-Coordinator error
+theme.colors.<variant>: color token '<name>' is not a valid token name: start with a letter, a digit or '_', then use letters, digits, '-', '_' and '.'
+theme.colors.<variant>: color tokens '<a>' and '<b>' both become the CSS variable --<variable>: rename one
+theme: color token '<name>' and shadow token '<name>' both become the CSS variable --<variable>: rename one
 ```
 
-**Trigger (internal protocol fixture):**
+`length` and `shadow` tokens report the same way, as `theme.length.<variant>: length token ...` and `theme.shadow.<variant>: shadow token ...`.
 
-```json
-{
-  "loader": "loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 500,
-    "body": "{}"
-  }
-}
-```
+**Why:** A token becomes a CSS variable (`gray.100` is `--gray-100`), so a name outside those characters would emit CSS the browser drops, and two tokens giving the same variable (`a-b` and `a.b`, or a color and a `shadow` token both named `card`) would set one variable twice.
 
-**Why:** HTTP status is non-200 and parsed JSON has no string error field; loader uses its authored fallback.
+**Fix:** Rename one of the tokens. See [Colors](/docs/devup/colors) for the naming rules.
 
-**Fix:** Have POST /extract return HTTP 200 with a string code field and dependencies array.
+### Production builds and development servers
 
-```json
-{
-  "loader": "loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 200,
-    "body": "{\"code\":\"export const answer = 42;\",\"dependencies\":[]}"
-  }
-}
-```
+A `devup.json` or theme error fails a production build (`vite build`, a webpack build without `watch`, `rsbuild build`, `next build`, `Bun.build`) with the message above. A development server keeps running, so you can fix the file while it watches it: Vite prints the error and shows it in its error overlay, while webpack, Rsbuild and Next.js with webpack report it as a compilation error (`[devup-ui] <message>`) until the theme loads again. Until then the theme is empty.
 
-#### Coordinator response missing code
-
-**Message pattern:**
+When the project root has no `devup.json` and `devupFile` is not set, but the working directory has one, the plugins read that file and print a warning once:
 
 ```text
-Coordinator response missing code
+[devup-ui] Found devup.json relative to the working directory (<cwd file>), not the project root (<root>). ...
 ```
 
-**Trigger (internal protocol fixture):**
+Move `devup.json` into the project root, or set `devupFile`. See [devup.json](/docs/devup/devup-json).
 
-```json
-{
-  "loader": "loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 200,
-    "body": "{\"dependencies\":[]}"
-  }
-}
-```
+### Next.js coordinator failures
 
-**Why:** HTTP 200 parsed JSON has no string code field; loader rejects the response contract.
-
-**Fix:** Include a string code field in the successful POST /extract JSON response.
-
-```json
-{
-  "loader": "loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 200,
-    "body": "{\"code\":\"export const answer = 42;\",\"dependencies\":[]}"
-  }
-}
-```
-
-#### Coordinator CSS error: 503
-
-**Message pattern:**
+With Turbopack, the Next.js plugin compiles files in a coordinator process it starts for the build, and its loaders send each file there. You do not configure the coordinator; these messages mean it is not running, not answering, or could not finish.
 
 ```text
-Coordinator CSS error: <status>
+Coordinator port file not found: <port file>. The devup-ui coordinator for this build is not running (or exited). ...
+Coordinator unreachable at 127.0.0.1:<port> (<owner>, port file <port file>): <cause>. ...
 ```
 
-**Trigger (internal protocol fixture):**
+The coordinator exited, or another `next dev` or `next build` replaced it. Restart the dev server or build, and do not run `next dev` and `next build` in one `distDir` at the same time; give each its own `distDir` if they must run together.
 
-```json
-{
-  "loader": "css-loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 503,
-    "body": "unavailable"
-  }
-}
+```text
+Coordinator CSS error: <status>: [devup-ui] coordinator: <bucket or base sheet> is incomplete (<reason>); refusing to serve partial CSS. Files not extracted: <files>.
 ```
 
-**Why:** CSS loader rejects any non-200 status and inserts the actual numeric HTTP status into its authored error.
+A production build waited for files that were never extracted, so it fails instead of shipping a stylesheet missing their rules. This means the files the plugin expected and the files Next.js compiled differ; report it with the file list.
 
-**Fix:** Have GET /css return HTTP 200 and the CSS text, not a failure status.
-
-```json
-{
-  "loader": "css-loader",
-  "portFileExists": true,
-  "httpResponse": {
-    "status": 200,
-    "body": ".a{color:red}"
-  }
-}
-```
+`Coordinator error` and `Coordinator response missing code` mean the coordinator answered a file without a result or an error message. Restart the build; report it if it persists.
 
 ### A build plugin is missing
 
@@ -4112,25 +4029,4 @@ Other ESLint diagnostics, alias-retention warnings, and StyleX shorthand warning
 
 ## Verification sources
 
-The examples were checked against these source snapshots. The reference uses separately built branch binaries, not a claim that every open implementation PR has already merged or that their combined final binary was tested.
-
-- `origin/main` at `a935315c`
-- `origin/fix/selectors` at `d94ef3c6`
-- `origin/fix/compat-imports` at `4a6ee3a2`
-- `origin/fix/styled-props` at `e2cfa67b`
-- `origin/fix/theme-reads` at `53bdbc20`
-- `origin/fix/emotion-css` at `9b2a04a3`
-- `origin/fix/emotion-fallback-arrays` at `bb86b80d`
-- `origin/fix/vanilla-extract-companions` at `7866e4f3`
-- `origin/fix/nested-css-results` at `001a9816`
-- `origin/fix/emotion-component-selectors` at `d44950f7`
-- `origin/fix/imported-styled-definitions` at `7df41c06`
-- `origin/fix/barrel-and-namespace-imports` at `10ec6113`
-- `origin/fix/imports-follow-aliases` at `4830601d`
-- `origin/fix/emotion-rule-numbers-and-mixins` at `050c6862`
-- `origin/fix/local-style-objects` at `734fd16f`
-- `origin/fix/scoped-compiled-names` at `29812f37`
-- `origin/fix/tailwind-classes` at `c4a62b68`
-- `origin/feat/tailwind-v4-complete` at `8104fdec`
-- `origin/fix/types-match-build` at `d0028a89`
-- `origin/fix/eslint-alias-rules` at `32c30074`
+Each failing example on this page and its repair, with its companion modules, was compiled through the extractor at `main` `e9e5801cc`: every failing example reports the message shown, and every repair compiles. The plugin messages were checked against the plugin sources at the same commit.
