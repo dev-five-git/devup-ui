@@ -1,0 +1,153 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "emotion_outputs(&[(\"test.tsx\",\n\"export function App({ on }) {\\n  const rules = on ? { color: 'red' } : { color: 'blue' };\\n  return <div css={rules} />;\\n}\"),\n(\"test.tsx\",\n\"export function App({ on }) {\\n  const rules = on && { color: 'red' };\\n  return <div css={rules} />;\\n}\"),\n(\"test.tsx\",\n\"export function App({ x, y }) {\\n  const a = x || { color: 'red' };\\n  const b = y ?? [{ color: 'blue' }, { margin: 0 }];\\n  return <><div css={a} /><div css={b} /></>;\\n}\"),\n(\"test.tsx\",\n\"import { css } from '@emotion/react';\\nconst base = css({ color: 'green' });\\nexport function App({ a, b }) {\\n  const rules = a ? base : b ? 'color: red;' : null;\\n  return <><div css={rules} /><span css={rules} /></>;\\n}\"),\n(\"test.tsx\",\n\"export function App({ on }) {\\n  const rules = on ? { margin: 1, lineHeight: 2 } : undefined;\\n  return <div css={rules} className=\\\"external\\\" />;\\n}\"),\n(\"test.tsx\",\n\"export function App({ on }) {\\n  const unread = on ? { color: 'red' } : { color: 'blue' };\\n  return <div />;\\n}\"),])"
+---
+[
+    (
+        "export function App({ on }) {\n  const rules = on ? { color: 'red' } : { color: 'blue' };\n  return <div css={rules} />;\n}",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport function App({ on }) {\n\tconst rules = on ? \"a\" : \"b\";\n\treturn <div className={rules} />;\n}\n",
+        },
+    ),
+    (
+        "export function App({ on }) {\n  const rules = on && { color: 'red' };\n  return <div css={rules} />;\n}",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport function App({ on }) {\n\tconst rules = on ? \"a\" : \"\";\n\treturn <div className={rules} />;\n}\n",
+        },
+    ),
+    (
+        "export function App({ x, y }) {\n  const a = x || { color: 'red' };\n  const b = y ?? [{ color: 'blue' }, { margin: 0 }];\n  return <><div css={a} /><div css={b} /></>;\n}",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "blue",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "0",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport function App({ x, y }) {\n\tconst a = x || \"a\";\n\tconst b = y ?? \"b c\";\n\treturn <><div className={a} /><div className={b} /></>;\n}\n",
+        },
+    ),
+    (
+        "import { css } from '@emotion/react';\nconst base = css({ color: 'green' });\nexport function App({ a, b }) {\n  const rules = a ? base : b ? 'color: red;' : null;\n  return <><div css={rules} /><span css={rules} /></>;\n}",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "green",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "color",
+                        value: "red",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport function App({ a, b }) {\n\tconst rules = a ? base : b ? \"b\" : \"\";\n\treturn <><div className={rules} /><span className={rules} /></>;\n}\n",
+        },
+    ),
+    (
+        "export function App({ on }) {\n  const rules = on ? { margin: 1, lineHeight: 2 } : undefined;\n  return <div css={rules} className=\"external\" />;\n}",
+        ToBTreeSet {
+            styles: {
+                Static(
+                    ExtractStaticStyle {
+                        property: "line-height",
+                        value: "2",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+                Static(
+                    ExtractStaticStyle {
+                        property: "margin",
+                        value: "1px",
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                ),
+            },
+            code: "import \"@devup-ui/react/devup-ui.css\";\nexport function App({ on }) {\n\tconst rules = on ? \"a b\" : \"\";\n\treturn <div className={`external ${rules}`} />;\n}\n",
+        },
+    ),
+    (
+        "export function App({ on }) {\n  const unread = on ? { color: 'red' } : { color: 'blue' };\n  return <div />;\n}",
+        ToBTreeSet {
+            styles: {},
+            code: "export function App({ on }) {\n  const unread = on ? { color: 'red' } : { color: 'blue' };\n  return <div />;\n}",
+        },
+    ),
+]

@@ -472,21 +472,36 @@ static SHORTHANDS: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// The sort key of every property set through a shorthand:
-/// (greatest name among it and its shorthands, how deeply it is covered).
-static COVERED: LazyLock<HashMap<&'static str, (&'static str, u8)>> = LazyLock::new(|| {
+/// The shorthands setting each property directly.
+static PARENTS: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
     let mut parents: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
     for (shorthand, longhands) in SHORTHANDS {
         for longhand in *longhands {
             parents.entry(longhand).or_default().push(shorthand);
         }
     }
+    parents
+});
+
+/// The sort key of every property set through a shorthand:
+/// (greatest name among it and its shorthands, how deeply it is covered).
+static COVERED: LazyLock<HashMap<&'static str, (&'static str, u8)>> = LazyLock::new(|| {
     let mut keys = HashMap::new();
-    for property in parents.keys() {
-        covered_key(property, &parents, &mut keys);
+    for property in PARENTS.keys() {
+        covered_key(property, &PARENTS, &mut keys);
     }
     keys
 });
+
+/// Whether the kebab-case `shorthand` sets `property`, directly or through
+/// another shorthand it sets, so declaring it replaces `property`.
+pub fn covers(shorthand: &str, property: &str) -> bool {
+    PARENTS.get(property).is_some_and(|parents| {
+        parents
+            .iter()
+            .any(|parent| *parent == shorthand || covers(shorthand, parent))
+    })
+}
 
 fn covered_key(
     property: &'static str,
@@ -568,5 +583,22 @@ mod tests {
     #[case("align-items", "display", Ordering::Greater)]
     fn orders_properties(#[case] a: &str, #[case] b: &str, #[case] expected: Ordering) {
         assert_eq!(cmp_properties(a, b), expected);
+    }
+
+    #[rstest]
+    #[case("border-width", "border-top-width", true)]
+    #[case("border", "border-top-width", true)]
+    #[case("place-items", "align-items", true)]
+    #[case("white-space", "text-wrap-mode", true)]
+    #[case("border-top-width", "border-width", false)]
+    #[case("border-width", "border-width", false)]
+    #[case("margin", "padding-top", false)]
+    #[case("color", "display", false)]
+    fn covers_what_a_shorthand_sets(
+        #[case] shorthand: &str,
+        #[case] property: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(covers(shorthand, property), expected);
     }
 }

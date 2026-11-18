@@ -84,13 +84,16 @@ export default {
 
 ```ts
 // build.ts
-import '@devup-ui/bun-plugin'
+import { DevupUI } from '@devup-ui/bun-plugin/register'
 
 await Bun.build({
   entrypoints: ['./src/index.tsx'],
   outdir: './dist',
+  plugins: [DevupUI()],
 })
 ```
+
+For `bun test`, add `preload = ["@devup-ui/bun-plugin"]` under `[test]` in `bunfig.toml`.
 
 ## 3. Create Your First Component
 

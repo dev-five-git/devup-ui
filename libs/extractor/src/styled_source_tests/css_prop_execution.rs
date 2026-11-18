@@ -408,6 +408,9 @@ mod props_function_theme;
 #[path = "implicit_theme_scope.rs"]
 mod implicit_theme_scope;
 
+#[path = "css_prop_bound_choices.rs"]
+mod css_prop_bound_choices;
+
 #[path = "local_member_guard.rs"]
 mod local_member_guard;
 

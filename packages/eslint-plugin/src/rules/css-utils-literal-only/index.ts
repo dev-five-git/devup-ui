@@ -627,6 +627,8 @@ class Values {
     private readonly stylex: (name: string) => boolean,
     /** Whether calling `callee` gives the class of `css()` or the name of `keyframes()`, which the build writes in its place */
     private readonly givesStyleName: (callee: TSESTree.Node) => boolean,
+    /** Whether a name binds the `calc` of `@vanilla-extract/css-utils`, whose calls the build writes as the string they give */
+    private readonly calc: (name: string) => boolean,
   ) {}
 
   /** Whether `init` is a call of `css()` or `keyframes()`, whose result the build writes in place of a `const` holding it in any scope */
@@ -726,7 +728,8 @@ class Values {
     const callee = call.callee
     const root = rootOf(callee)
     if (
-      (root.type === AST_NODE_TYPES.Identifier && this.stylex(root.name)) ||
+      (root.type === AST_NODE_TYPES.Identifier &&
+        (this.stylex(root.name) || this.calc(root.name))) ||
       this.givesStyleName(callee)
     )
       return true
@@ -1070,7 +1073,13 @@ export const cssUtilsLiteralOnly = createRule({
             : undefined
       return name === 'css' || name === 'keyframes'
     }
-    const values = new Values(changes, scopeOf, isStylex, givesStyleName)
+    const values = new Values(
+      changes,
+      scopeOf,
+      isStylex,
+      givesStyleName,
+      (name) => importStorage.isCalc(name),
+    )
     /** Whether `attribute` is the `styles` of Emotion's `Global`, which the build reads as rules */
     const isGlobalStyles = (attribute: TSESTree.JSXAttribute) =>
       attribute.name.type === AST_NODE_TYPES.JSXIdentifier &&

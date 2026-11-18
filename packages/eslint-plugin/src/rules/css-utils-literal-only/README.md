@@ -13,6 +13,7 @@ The build knows:
 - literals, and constants: imports and module-level `const`s
 - what those compute through exact built-ins (`String`, `Number`, `JSON`, string and array methods, `Math.max`, `Math.round`, ... — not `Math.random`, `Math.sin` or `Math.pow`) and through functions this file declares that only compute
 - what StyleX functions give: `defineVars()` variables, `keyframes()` names, `firstThatWorks()`
+- what `calc` of `@vanilla-extract/css-utils` gives, which the build writes as its string (`calc.add('1px', GAP)`, `calc('2px').multiply(2).toString()`); outside a `.css.ts` stylesheet the build reads only literals and `const`s holding one as its operands
 - the class a devup-ui `css()` and the name a `keyframes()` give, held in a `const` of any scope (`const fade = keyframes({ ... }); css({ animationName: fade })`, also inside a component), also through the package imported whole (`Devup.keyframes`)
 
 The build inlines constants, folds `Math` and runs the file's own functions at build time. It never runs another module's code, so calling an imported function is reported.

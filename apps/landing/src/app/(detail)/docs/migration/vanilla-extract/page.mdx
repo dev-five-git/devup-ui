@@ -171,6 +171,21 @@ They are not evaluated by the ordinary-module extraction path.
 
 Moving those calls into a `.css.ts` file — where vanilla-extract wants them anyway — removes the dependency.
 
+## `@vanilla-extract/css-utils`
+
+`calc` builds the same strings `@vanilla-extract/css-utils` does, so the package need not be installed. `calc.add`, `calc.subtract`, `calc.multiply`, `calc.divide` and `calc.negate` give a string; `calc(x)` gives an expression whose `add`, `subtract`, `multiply`, `divide` and `negate` chain, and which is a CSS value once `.toString()` is called or it is interpolated in a template. As in the package, an operand that is itself a `calc` is only parenthesized:
+
+```ts
+import { calc } from '@vanilla-extract/css-utils'
+
+calc.add('100%', '-4px') // 'calc(100% + -4px)'
+calc.negate('4px') // 'calc(4px * -1)'
+calc('10px').add('5px').multiply(2).toString() // 'calc((10px + 5px) * 2)'
+calc.add(calc.multiply('2px', 3), '1px') // 'calc((2px * 3) + 1px)'
+```
+
+A `.css.ts` stylesheet evaluates `calc`, so its operands can be anything the stylesheet computes, such as `vars.space.md` or a `createVar()`. Any other module is not evaluated: each `calc` there is written as the string it gives, so its operands must be literals, module-level `const`s holding a literal, or other `calc` results. Anything else is a build error at the operand, as is a `calc` read without being called, a `calc(x)` used as a value without `.toString()`, a namespace or default import, and a `require()` or re-export of the package. To use the package itself, set `importAliases: { '@vanilla-extract/css-utils': false }`.
+
 ## Namespace imports
 
 A namespace stands for many named exports whose Devup UI counterparts are renamed (`style` → `css`), which a namespace access cannot express, so it is left alone:

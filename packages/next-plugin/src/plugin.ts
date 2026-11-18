@@ -32,6 +32,7 @@ import {
 import { type NextConfig } from 'next'
 
 import {
+  openCoordinatorCompiler,
   type PrewarmedOutput,
   startCoordinator,
   takeExtractOutput,
@@ -343,7 +344,10 @@ export function DevupUI(
     removeStaleStateDirs(distDir)
     if (stateDir !== distDir) mkdirSync(stateDir, { recursive: true })
 
-    const wasm = loadWasm(engine)
+    // The engine is shared by every Next app in this process; this app works
+    // on an engine session of its own, so another app's setup or extraction
+    // never changes its numbering, sheet, theme or settings.
+    const wasm = openCoordinatorCompiler(distDir, loadWasm(engine))
     const {
       codeExtract,
       codeExtractWithoutSourceMap,
@@ -621,6 +625,7 @@ export function DevupUI(
     removeStalePortFile(coordinatorPortFile)
 
     const coordinator = startCoordinator({
+      distDir,
       wasm,
       package: libPackage,
       cssDir,

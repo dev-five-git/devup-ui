@@ -19,7 +19,18 @@ const DEFAULT_IMPORT_ALIASES: ReadonlyMap<string, string | null> = new Map([
   ['@emotion/css', null],
   ['styled-components', 'styled'],
   ['@vanilla-extract/css', null],
+  ['@vanilla-extract/css-utils', null],
 ])
+
+/** The package whose `calc` the build writes as the string it gives, as `vanilla_extract_calc` in `libs/extractor` compiles it */
+const CSS_UTILS = '@vanilla-extract/css-utils'
+
+/** The name `specifier` imports */
+function specifierName(specifier: TSESTree.ImportSpecifier): string {
+  return specifier.imported.type === AST_NODE_TYPES.Literal
+    ? specifier.imported.value
+    : specifier.imported.name
+}
 
 /** What the build is configured to read as Devup UI */
 export interface ImportConfig {
@@ -140,6 +151,7 @@ export interface StorageContext {
 export class ImportStorage {
   private imports = new Map<string, string>()
   private importObject = new Set<string>()
+  private calc = new Set<string>()
   readonly vanilla: boolean
   private readonly config: ImportConfig
 
@@ -159,6 +171,17 @@ export class ImportStorage {
     const source = node.source.value
     // A vanilla-extract stylesheet runs as it is: no import is compiled away
     if (this.vanilla) return
+    if (source === CSS_UTILS) {
+      // Turned off with `importAliases`, the build leaves `calc` to the package
+      if (!this.config.aliases.has(CSS_UTILS)) return
+      for (const specifier of node.specifiers)
+        if (
+          specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+          specifierName(specifier) === 'calc'
+        )
+          this.calc.add(specifier.local.name)
+      return
+    }
     const isDevup =
       source === this.config.package ||
       source === `${this.config.package}/compat`
@@ -168,10 +191,7 @@ export class ImportStorage {
     for (const specifier of node.specifiers) {
       switch (specifier.type) {
         case AST_NODE_TYPES.ImportSpecifier: {
-          const imported =
-            specifier.imported.type === AST_NODE_TYPES.Literal
-              ? specifier.imported.value
-              : specifier.imported.name
+          const imported = specifierName(specifier)
           const name = isDevup ? imported : devupEquivalent(source, imported)
           if (name !== undefined) this.addImport(specifier.local.name, name)
           break
@@ -198,6 +218,11 @@ export class ImportStorage {
   /** The name Devup UI exports for what `local` imports by name, from it or from a package the build reads as it */
   public importedName(local: string): string | undefined {
     return this.imports.get(local)
+  }
+
+  /** Whether `local` binds the `calc` of `@vanilla-extract/css-utils`, whose calls the build writes as the string they give */
+  public isCalc(local: string): boolean {
+    return this.calc.has(local)
   }
 
   /** Whether `local` is the package imported whole, as a namespace or default */

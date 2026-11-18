@@ -16,6 +16,7 @@ describe('mergeImportAliases', () => {
       '@emotion/css': null,
       'styled-components': 'styled',
       '@vanilla-extract/css': null,
+      '@vanilla-extract/css-utils': null,
     })
   })
 
@@ -30,6 +31,7 @@ describe('mergeImportAliases', () => {
       '@emotion/css': null,
       'styled-components': 'styled',
       '@vanilla-extract/css': null,
+      '@vanilla-extract/css-utils': null,
       'my-lib': 'customExport',
     })
   })
@@ -66,6 +68,7 @@ describe('mergeImportAliases', () => {
       '@emotion/css': false,
       'styled-components': false,
       '@vanilla-extract/css': false,
+      '@vanilla-extract/css-utils': false,
     })
 
     expect(result).toEqual({})
@@ -91,6 +94,7 @@ describe('mergeImportAliases', () => {
       '@emotion/css': null,
       'styled-components': 'styled',
       '@vanilla-extract/css': null,
+      '@vanilla-extract/css-utils': null,
     })
     expect(
       mergeImportAliases({ '@emotion/react': false }, '@emotion/react'),
@@ -115,6 +119,7 @@ describe('DEFAULT_IMPORT_ALIASES', () => {
       '@emotion/css': true,
       'styled-components': 'styled',
       '@vanilla-extract/css': true,
+      '@vanilla-extract/css-utils': true,
     })
   })
 })

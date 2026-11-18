@@ -35,7 +35,7 @@ describe('benchmark output measurement', () => {
 
       const result = measureOutput(directory)
 
-      expect(result).toEqual({ bytes: 1196, cssBytes: 494 })
+      expect(result).toEqual({ bytes: 1196, cssBytes: 494, clientBytes: 595 })
     },
   )
 
@@ -49,7 +49,7 @@ describe('benchmark output measurement', () => {
 
     const result = measureOutput(directory)
 
-    expect(result).toEqual({ bytes: 299, cssBytes: 48 })
+    expect(result).toEqual({ bytes: 299, cssBytes: 48, clientBytes: 149 })
   })
 
   it('rejects measurement when neither output directory exists', () => {
@@ -79,7 +79,7 @@ describe('benchmark output measurement', () => {
 
       const result = measureOutput(directory)
 
-      expect(result).toEqual({ bytes: 0, cssBytes: 0 })
+      expect(result).toEqual({ bytes: 0, cssBytes: 0, clientBytes: 0 })
     },
   )
 
@@ -91,7 +91,7 @@ describe('benchmark output measurement', () => {
 
       const result = measureOutput(directory)
 
-      expect(result).toEqual({ bytes: 64, cssBytes: 0 })
+      expect(result).toEqual({ bytes: 64, cssBytes: 0, clientBytes: 41 })
     },
   )
 

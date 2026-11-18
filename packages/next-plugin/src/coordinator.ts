@@ -2,13 +2,23 @@ import { existsSync, statSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { getFileNumByFilename } from '@devup-ui/plugin-utils'
+import {
+  type CompilerSession,
+  getFileNumByFilename,
+  openCompilerSession,
+} from '@devup-ui/plugin-utils'
 
 import { formatPortFile, removeOwnPortFile } from './coordinator-port'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import type { DevupWasm } from './wasm'
+import { type DevupWasm, withModuleResolver } from './wasm'
 
 export interface CoordinatorOptions {
+  /**
+   * The app's output directory. Coordinators are kept per resolved `distDir`:
+   * starting one replaces only the previous coordinator of the same app.
+   */
+  distDir: string
+  /** The app's engine, from `openCoordinatorCompiler(distDir, ...)`. */
   wasm: DevupWasm
   package: string
   cssDir: string
@@ -201,14 +211,13 @@ function readBody(req: IncomingMessage): Promise<string> {
   })
 }
 
-let server: Server | null = null
-
 // The latest extraction of each file. Next compiles a module that both the
 // server and the client graph import once per graph, with the same source,
 // and in no guaranteed order. Re-running WASM for the second copy only
 // rebuilds the same styles, so it answers from here instead. Keeping only the
 // latest source per file bounds the cache by the project's file count and
-// guarantees the sheet still holds exactly that source's styles.
+// guarantees the sheet still holds exactly that source's styles. Each app
+// keeps its own in its CoordinatorState, since each app has its own sheet.
 interface CachedExtract {
   code: string
   relCssDir: string
@@ -217,15 +226,11 @@ interface CachedExtract {
   output: ExtractOutputSnapshot
 }
 
-const transformCache = new Map<string, CachedExtract>()
-
 interface ThemeWatch {
   files: string[]
   stamp: string
   reload: () => string[]
 }
-
-let themeWatch: ThemeWatch | undefined
 
 /**
  * What changes when one of the files is edited, added or deleted: a theme
@@ -245,11 +250,12 @@ function fileStamp(files: string[] = []): string {
 }
 
 function cachedExtract(
+  state: CoordinatorState,
   filename: string,
   code: string,
   relCssDir: string,
 ): ExtractOutputSnapshot | undefined {
-  const cached = transformCache.get(filename)
+  const cached = state.transformCache.get(filename)
   return cached?.code === code &&
     cached.relCssDir === relCssDir &&
     cached.dependencies === fileStamp(cached.output.dependencies)
@@ -257,15 +263,17 @@ function cachedExtract(
     : undefined
 }
 
-/** Register the theme again when one of its input files has changed. */
-function refreshTheme(): void {
+/** Register the app's theme again when one of its input files has changed. */
+function refreshTheme(state: CoordinatorState): void {
+  const { themeWatch } = state
   if (!themeWatch || fileStamp(themeWatch.files) === themeWatch.stamp) return
-  // Every cached extraction was made under the old theme. Even a reload that
-  // throws may have changed the registered theme, so drop them first.
-  transformCache.clear()
+  // Every cached extraction of this app was made under the old theme. Even a
+  // reload that throws may have changed the registered theme, so drop them
+  // first.
+  state.transformCache.clear()
   // A throwing reload keeps the old stamp, so the next request retries.
   const files = themeWatch.reload()
-  themeWatch = { ...themeWatch, files, stamp: fileStamp(files) }
+  state.themeWatch = { ...themeWatch, files, stamp: fileStamp(files) }
 }
 
 // Extraction tracking for waitForIdle.
@@ -287,39 +295,95 @@ function refreshTheme(): void {
 // extraction batches. Empirically the gap between Turbopack extraction
 // "waves" in a 64-route landing build can exceed the previous 500ms, which
 // caused the snapshot to capture only the early routes' styles.
-let activeExtractions = 0
-let totalExtractions = 0
-let lastCompletedAt = 0
-let pendingExtractStarts = 0
-let idleThresholdMs = 2500
-let quietMs = 10_000
-let maxWaitMs = 60_000
+//
+// Per-bucket completion tracking (deterministic replacement for waitForIdle on
+// collapsed chunks).
+//
+// Single-importer collapse merges several source files into ONE shared CSS
+// chunk (a "bucket"). That chunk is only complete once EVERY member file has
+// been extracted. Turbopack, however, may request the chunk as soon as ONE
+// member's import resolves. The old global idle heuristic guessed completion
+// and dropped late members' atoms when extraction "waves" exceeded the idle
+// threshold (flaky CI rendering). Instead we wait for the bucket's KNOWN
+// members (from the canonical map) — no guessing, no extra extraction.
+//
+// Each coordinator keeps this tracking in a state of its own, so two apps in
+// one process never count each other's extractions.
+interface CoordinatorState {
+  activeExtractions: number
+  totalExtractions: number
+  lastCompletedAt: number
+  pendingExtractStarts: number
+  idleThresholdMs: number
+  quietMs: number
+  maxWaitMs: number
+  extractedFiles: Set<string>
+  // Where each file the loaders posted lives, to notice the ones deleted since
+  extractedSources: Map<string, string>
+  // The latest extraction of each file, for this app's sheet only
+  transformCache: Map<string, CachedExtract>
+  fileNumToBucket: Map<number, string>
+  bucketToMembers: Map<string, Set<string>>
+  canonicalMap: Record<string, string>
+  // Route-reachable runtime files the base sheet must wait for (cwd-relative
+  // POSIX). When populated, base-css completion is deterministic; empty falls
+  // back to the idle heuristic. See CoordinatorOptions.expectedBaseFiles.
+  expectedBaseFiles: Set<string>
+  // The files the app's theme was read from, under `next dev`
+  themeWatch: ThemeWatch | undefined
+}
+
+function createState(options: CoordinatorOptions): CoordinatorState {
+  return {
+    activeExtractions: 0,
+    totalExtractions: 0,
+    lastCompletedAt: 0,
+    pendingExtractStarts: 0,
+    idleThresholdMs: options.idleThresholdMs ?? 2500,
+    quietMs: options.quietMs ?? 10_000,
+    maxWaitMs: options.maxWaitMs ?? 60_000,
+    extractedFiles: new Set(options.prewarmedFiles),
+    extractedSources: new Map(),
+    transformCache: new Map(),
+    fileNumToBucket: new Map(),
+    bucketToMembers: buildBucketToMembers(options.canonicalMap),
+    canonicalMap: options.canonicalMap,
+    expectedBaseFiles: new Set(options.expectedBaseFiles),
+    themeWatch: options.theme && {
+      ...options.theme,
+      stamp: fileStamp(options.theme.files),
+    },
+  }
+}
 
 // Give-up signal for a wait whose known files never report. It only observes
 // extraction traffic; it is NOT a Turbopack compilation-complete signal, so it
 // ends the wait with an error, never with partial CSS. Production builds seed
 // `extractedFiles` with their prewarmed route closure and never reach it.
-function bundlerQuiet(now: number): boolean {
+function bundlerQuiet(state: CoordinatorState, now: number): boolean {
   return (
-    totalExtractions > 0 &&
-    activeExtractions === 0 &&
-    pendingExtractStarts === 0 &&
-    now - lastCompletedAt >= quietMs
+    state.totalExtractions > 0 &&
+    state.activeExtractions === 0 &&
+    state.pendingExtractStarts === 0 &&
+    now - state.lastCompletedAt >= state.quietMs
   )
 }
 
-function baseFilesComplete(): boolean {
+function baseFilesComplete(state: CoordinatorState): boolean {
   // Deterministic: the base sheet is complete once every route-reachable file
   // has been extracted by either the production prewarm or `/extract`.
-  if (expectedBaseFiles.size === 0) return false
-  for (const file of expectedBaseFiles) {
-    if (!extractedFiles.has(file)) return false
+  if (state.expectedBaseFiles.size === 0) return false
+  for (const file of state.expectedBaseFiles) {
+    if (!state.extractedFiles.has(file)) return false
   }
   return true
 }
 
-function missingFiles(files: Iterable<string>): string[] {
-  return [...files].filter((file) => !extractedFiles.has(file))
+function missingFiles(
+  state: CoordinatorState,
+  files: Iterable<string>,
+): string[] {
+  return [...files].filter((file) => !state.extractedFiles.has(file))
 }
 
 /**
@@ -338,37 +402,37 @@ function incompleteCssError(
 }
 
 /** Resolves with an error message when the base sheet cannot be completed. */
-function waitForBase(): Promise<string | undefined> {
+function waitForBase(state: CoordinatorState): Promise<string | undefined> {
   const start = Date.now()
   return new Promise((resolve) => {
     const check = () => {
       const now = Date.now()
-      if (now - start > maxWaitMs) {
+      if (now - start > state.maxWaitMs) {
         // Last-resort backstop (see waitForBucket). Never fires on a healthy
         // build: either every expected file extracts, or the idle fallback
         // resolves first.
         resolve(
           incompleteCssError(
             'base CSS',
-            `not complete after ${maxWaitMs}ms`,
-            missingFiles(expectedBaseFiles),
+            `not complete after ${state.maxWaitMs}ms`,
+            missingFiles(state, state.expectedBaseFiles),
           ),
         )
         return
       }
       // Primary, deterministic path.
-      if (baseFilesComplete()) {
+      if (baseFilesComplete(state)) {
         resolve(undefined)
         return
       }
       // Expected files stopped arriving. The Next plugin's production path
       // prewarms them and completes above, so this is a real gap.
-      if (expectedBaseFiles.size > 0 && bundlerQuiet(now)) {
+      if (state.expectedBaseFiles.size > 0 && bundlerQuiet(state, now)) {
         resolve(
           incompleteCssError(
             'base CSS',
-            `no extraction for ${quietMs}ms`,
-            missingFiles(expectedBaseFiles),
+            `no extraction for ${state.quietMs}ms`,
+            missingFiles(state, state.expectedBaseFiles),
           ),
         )
         return
@@ -376,11 +440,11 @@ function waitForBase(): Promise<string | undefined> {
       // Fallback ONLY when no deterministic signal exists (no routes detected /
       // pre-pass failed -> expectedBaseFiles empty): the legacy idle heuristic.
       if (
-        expectedBaseFiles.size === 0 &&
-        totalExtractions > 0 &&
-        activeExtractions === 0 &&
-        pendingExtractStarts === 0 &&
-        now - lastCompletedAt >= idleThresholdMs
+        state.expectedBaseFiles.size === 0 &&
+        state.totalExtractions > 0 &&
+        state.activeExtractions === 0 &&
+        state.pendingExtractStarts === 0 &&
+        now - state.lastCompletedAt >= state.idleThresholdMs
       ) {
         resolve(undefined)
         return
@@ -390,27 +454,6 @@ function waitForBase(): Promise<string | undefined> {
     check()
   })
 }
-
-// Per-bucket completion tracking (deterministic replacement for waitForIdle on
-// collapsed chunks).
-//
-// Single-importer collapse merges several source files into ONE shared CSS
-// chunk (a "bucket"). That chunk is only complete once EVERY member file has
-// been extracted. Turbopack, however, may request the chunk as soon as ONE
-// member's import resolves. The old global idle heuristic guessed completion
-// and dropped late members' atoms when extraction "waves" exceeded the idle
-// threshold (flaky CI rendering). Instead we wait for the bucket's KNOWN
-// members (from the canonical map) — no guessing, no extra extraction.
-const extractedFiles = new Set<string>()
-// Where each file the loaders posted lives, to notice the ones deleted since
-const extractedSources = new Map<string, string>()
-const fileNumToBucket = new Map<number, string>()
-let bucketToMembers = new Map<string, Set<string>>()
-let canonicalMapRef: Record<string, string> = {}
-// Route-reachable runtime files the base sheet must wait for (cwd-relative
-// POSIX). When populated, base-css completion is deterministic; empty falls back
-// to the idle heuristic. See CoordinatorOptions.expectedBaseFiles.
-let expectedBaseFiles = new Set<string>()
 
 function buildBucketToMembers(
   canonicalMap: Record<string, string>,
@@ -431,12 +474,16 @@ function buildBucketToMembers(
 }
 
 /** Resolves with an error message when the bucket cannot be completed. */
-function waitForBucket(bucket: string): Promise<string | undefined> {
-  const members = bucketToMembers.get(bucket) ?? new Set([bucket])
+function waitForBucket(
+  state: CoordinatorState,
+  bucket: string,
+): Promise<string | undefined> {
+  const { maxWaitMs, quietMs } = state
+  const members = state.bucketToMembers.get(bucket) ?? new Set([bucket])
   const start = Date.now()
   return new Promise((resolve) => {
     const check = () => {
-      const missing = missingFiles(members)
+      const missing = missingFiles(state, members)
       if (missing.length === 0) {
         resolve(undefined)
         return
@@ -445,7 +492,7 @@ function waitForBucket(bucket: string): Promise<string | undefined> {
       // Members stopped arriving. Quiet time alone cannot tell an erased
       // import from a later Turbopack wave, so serving now could drop a late
       // member's rules; production builds complete above via prewarming.
-      if (bundlerQuiet(now)) {
+      if (bundlerQuiet(state, now)) {
         resolve(
           incompleteCssError(
             `bucket "${bucket}"`,
@@ -476,16 +523,75 @@ function waitForBucket(bucket: string): Promise<string | undefined> {
   })
 }
 
+// One entry per Next app in this process, keyed by its resolved `distDir`. Each
+// app keeps its own engine session, listener and tracking state, so a second
+// app never closes the first one's coordinator or reads its sheet. Repeated
+// config evaluations of the same app share the entry; it is released when the
+// last coordinator started for it closes.
+interface CoordinatorApp {
+  key: string
+  session: CompilerSession | null
+  /** The shared engine `session` lives in. */
+  engine: DevupWasm | null
+  server: Server | null
+  refs: number
+}
+
+const apps = new Map<string, CoordinatorApp>()
+
+/** @internal The registry key of a `distDir`: absolute and normalized. */
+export function coordinatorKey(distDir: string): string {
+  const key = resolve(distDir)
+  return process.platform === 'win32' ? key.toLowerCase() : key
+}
+
+function appFor(distDir: string): CoordinatorApp {
+  const key = coordinatorKey(distDir)
+  let app = apps.get(key)
+  if (!app) {
+    app = { key, session: null, engine: null, server: null, refs: 0 }
+    apps.set(key, app)
+  }
+  return app
+}
+
+/**
+ * The engine of the app at `distDir`: one session of its own on the shared
+ * `compiler`, opened on first use and kept until the app's last coordinator
+ * closes. Run the app's setup and pass it to `startCoordinator` as `wasm`.
+ */
+export function openCoordinatorCompiler(
+  distDir: string,
+  compiler: DevupWasm,
+): DevupWasm {
+  const app = appFor(distDir)
+  if (!app.session || app.engine !== compiler) {
+    // A session lives in one engine: a re-evaluation on another engine
+    // (`engine` option changed) starts over on that one
+    app.session?.close()
+    app.session = openCompilerSession(compiler)
+    app.engine = compiler
+  }
+  return withModuleResolver(app.session.compiler)
+}
+
+function releaseApp(app: CoordinatorApp): void {
+  app.refs--
+  // Every coordinator started for the app has closed its own listener by now
+  if (app.refs > 0) return
+  app.session?.close()
+  apps.delete(app.key)
+}
+
 export function startCoordinator(options: CoordinatorOptions): {
   close: () => void
 } {
+  const app = appFor(options.distDir)
   // Next may evaluate its config more than once in the same process. Close the
-  // previous listener before replacing it so its HTTP server and request
-  // closure do not remain live for the rest of the build.
-  if (server) {
-    server.close()
-    server = null
-  }
+  // app's previous listener before replacing it so its HTTP server and request
+  // closure do not remain live for the rest of the build. Other apps' listeners
+  // stay untouched.
+  app.server?.close()
   const {
     wasm,
     package: libPackage,
@@ -510,21 +616,9 @@ export function startCoordinator(options: CoordinatorOptions): {
   const extract =
     options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
-  idleThresholdMs = options.idleThresholdMs ?? 2500
-  quietMs = options.quietMs ?? 10_000
-  maxWaitMs = options.maxWaitMs ?? 60_000
-  canonicalMapRef = options.canonicalMap
-  bucketToMembers = buildBucketToMembers(options.canonicalMap)
-  expectedBaseFiles = new Set(options.expectedBaseFiles ?? [])
-  extractedFiles.clear()
-  for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
-  extractedSources.clear()
-  fileNumToBucket.clear()
-  transformCache.clear()
-  themeWatch = options.theme && {
-    ...options.theme,
-    stamp: fileStamp(options.theme.files),
-  }
+  const state = createState(options)
+  const { extractedFiles, extractedSources, fileNumToBucket, transformCache } =
+    state
 
   // A deleted file is never extracted again, so its styles would stay in the
   // sheet; its importers are, once they stop importing it. A repeated
@@ -567,7 +661,7 @@ export function startCoordinator(options: CoordinatorOptions): {
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
 
       try {
-        refreshTheme()
+        refreshTheme(state)
       } catch (error) {
         res.writeHead(500, { 'Content-Type': 'text/plain' })
         res.end(error instanceof Error ? error.message : String(error))
@@ -579,11 +673,11 @@ export function startCoordinator(options: CoordinatorOptions): {
           fileNum != null && fileNumToBucket.has(fileNum)
             ? // Deterministic: block until every member of this collapsed
               // bucket has been extracted, then serve the complete chunk.
-              await waitForBucket(fileNumToBucket.get(fileNum)!)
+              await waitForBucket(state, fileNumToBucket.get(fileNum)!)
             : // Base css (no fileNum) or a bucket no member has reported yet:
               // wait for the deterministic route-reachable file set (idle
               // fallback only when that set is unavailable).
-              await waitForBase()
+              await waitForBase(state)
         if (incomplete !== undefined) {
           // Only builds wait (`next dev` never asks to), and a build bundles
           // this answer as its stylesheet: fail it rather than ship gaps.
@@ -616,15 +710,15 @@ export function startCoordinator(options: CoordinatorOptions): {
       // window between the request hitting this handler and `activeExtractions++`
       // below — making it falsely conclude the build is idle even though
       // more extractions are imminent.
-      pendingExtractStarts++
+      state.pendingExtractStarts++
       let promotedToActive = false
       let extractedFilename: string | undefined
       try {
         const bodyStartedAt = profileStart()
         const body = JSON.parse(await readBody(req))
         const bodyDurationMs = elapsedMs(bodyStartedAt)
-        activeExtractions++
-        pendingExtractStarts--
+        state.activeExtractions++
+        state.pendingExtractStarts--
         promotedToActive = true
         const { filename, code, resourcePath } = body as {
           filename: string
@@ -632,7 +726,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           resourcePath: string
         }
         extractedFilename = filename
-        refreshTheme()
+        refreshTheme(state)
         const repeated = extractedSources.has(filename)
         extractedSources.set(filename, resourcePath)
 
@@ -652,7 +746,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         const cached =
           prewarmed?.source === code
             ? prewarmed
-            : cachedExtract(filename, code, relCssDir)
+            : cachedExtract(state, filename, code, relCssDir)
         const cacheHit = cached !== undefined
         let result: ExtractOutputSnapshot
         if (cached) {
@@ -723,7 +817,10 @@ export function startCoordinator(options: CoordinatorOptions): {
           if (fileNum != null) {
             // Record this bucket's fileNum -> canonical bucket path so /css can
             // wait for the bucket's members before serving it.
-            fileNumToBucket.set(fileNum, canonicalMapRef[filename] ?? filename)
+            fileNumToBucket.set(
+              fileNum,
+              state.canonicalMap[filename] ?? filename,
+            )
           }
         }
 
@@ -842,17 +939,17 @@ export function startCoordinator(options: CoordinatorOptions): {
         )
       } finally {
         if (promotedToActive) {
-          activeExtractions--
+          state.activeExtractions--
         } else {
           // readBody/JSON.parse threw before we promoted to active, so the
           // pending slot is still ours to release.
-          pendingExtractStarts--
+          state.pendingExtractStarts--
         }
         // Mark the file processed (success OR failure) so per-bucket waiters
         // never hang on a file that errored — fail open, like the idle path.
         if (extractedFilename != null) extractedFiles.add(extractedFilename)
-        totalExtractions++
-        lastCompletedAt = Date.now()
+        state.totalExtractions++
+        state.lastCompletedAt = Date.now()
       }
       return
     }
@@ -861,7 +958,8 @@ export function startCoordinator(options: CoordinatorOptions): {
     res.end('Not Found')
   })
 
-  server = coordinatorServer
+  app.server = coordinatorServer
+  app.refs++
   coordinatorServer.listen(0, '127.0.0.1', () => {
     const addr = coordinatorServer.address()
     if (addr && typeof addr !== 'string') {
@@ -869,16 +967,20 @@ export function startCoordinator(options: CoordinatorOptions): {
     }
   })
 
+  let closed = false
   return {
     close: () => {
       coordinatorServer.close()
-      if (server === coordinatorServer) {
-        server = null
+      if (closed) return
+      closed = true
+      if (app.server === coordinatorServer) {
+        app.server = null
         removeOwnPortFile(coordinatorPortFile)
       }
       // The last CSS and state on disk must hold the final sheet, though
       // `close` cannot await the writes still pending
       writePendingSync()
+      releaseApp(app)
     },
   }
 }
@@ -888,25 +990,11 @@ export const flushCoordinatorWrites = (): Promise<void> => flushPendingWrites()
 
 /** @internal Reset coordinator state for testing purposes only */
 export const resetCoordinator = () => {
-  if (server) {
-    server.close()
-    server = null
+  for (const app of apps.values()) {
+    app.server?.close()
+    app.session?.close()
   }
-  activeExtractions = 0
-  totalExtractions = 0
-  lastCompletedAt = 0
-  pendingExtractStarts = 0
-  idleThresholdMs = 2500
-  quietMs = 10_000
-  maxWaitMs = 60_000
-  extractedFiles.clear()
-  extractedSources.clear()
-  fileNumToBucket.clear()
-  bucketToMembers = new Map()
-  canonicalMapRef = {}
-  expectedBaseFiles = new Set()
-  transformCache.clear()
-  themeWatch = undefined
+  apps.clear()
   writeChain.clear()
   latestContent.clear()
   writingContent.clear()

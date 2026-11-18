@@ -2211,7 +2211,7 @@ mod tests {
         "import * as stylex from '@stylexjs/stylex';const s=stylex.create({a:{borderTopWidth:2,alignItems:'end'},b:{borderWidth:1,placeItems:'start'}});<div {...stylex.props(s.a,s.b)}/>"
     )]
     #[case::box_props(
-        "import {Box} from '@devup-ui/react';<Box borderTopWidth='2px' alignItems='end' borderWidth='1px' placeItems='start'/>"
+        "import {Box} from '@devup-ui/react';<Box alignItems='end' borderTopWidth='2px' borderWidth='1px' placeItems='start'/>"
     )]
     #[serial]
     fn extracted_longhands_win_over_shorthands(#[case] code: &str) {

@@ -8,5 +8,5 @@ const fade = "a-a";
 const s = { "r": "a-b" };
 export const p = { className: "a-b" };
 
-Css(ExtractCss { file: "stylex.tsx", order: 1, css: "::view-transition-group(*.a-a){transition-timing-function:ease;}::view-transition-image-pair(*.a-a){isolation:auto;}::view-transition-old(*.a-a){animation-duration:2s;}::view-transition-new(*.a-a){animation-duration:1s;}" })
+Css(ExtractCss { file: "stylex.tsx", order: 1, css: "::view-transition-group(*.a-a){transition-timing-function:ease}::view-transition-image-pair(*.a-a){isolation:auto}::view-transition-old(*.a-a){animation-duration:2s}::view-transition-new(*.a-a){animation-duration:1s}" })
 Static(ExtractStaticStyle { property: "view-transition-class", value: "a-a", level: 0, selector: None, style_order: None, layer: None })

@@ -45,6 +45,10 @@ export default defineConfig({
     command: process.env.CI
       ? 'node e2e/serve-static.mjs 3099'
       : `bun run --filter landing ${process.env.LANDING_BUILD_MODE === 'next' ? 'build:next' : 'build'} && node e2e/serve-static.mjs 3099`,
+    // The landing renders the frozen e2e/fixtures/benchmark-results.json, so a
+    // benchmark refresh on main never changes a screenshot. CI sets the same
+    // variable on the landing builds it serves here.
+    env: { LANDING_BENCHMARK_DATA: 'fixture' },
     url: 'http://localhost:3099',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

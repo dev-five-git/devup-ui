@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/vanilla_extract_calc_tests.rs
+expression: message
+---
+theme.css.ts:3:23: JS execution error: TypeError: `calc(x)` of '@vanilla-extract/css-utils' builds an expression, which is a CSS value only once `.toString()` is called or it is interpolated in a template. Fix: call `.toString()` on it, as `calc(x).multiply(2).toString()`, or interpolate it in a template
+    at stringify (native)
+    at style (native)
+    at <main> (theme.css.ts:3:23)

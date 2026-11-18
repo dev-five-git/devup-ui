@@ -207,19 +207,21 @@ The plugin transforms your JSX/TSX code at build time:
 <Box bg="red" color="$text" />
 
 // After
-<div className="d0 d1" />
+<div className="a b" />
 ```
 
 Generated CSS:
 
 ```css
-.d0 {
-  background-color: red;
+.a {
+  background: red;
 }
-.d1 {
+.b {
   color: var(--text);
 }
 ```
+
+Generated class and CSS variable names may change between versions, build state, and prefix settings; do not manually reuse them.
 
 ## License
 

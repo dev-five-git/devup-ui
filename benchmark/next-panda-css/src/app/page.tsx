@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 
 import { Box } from '../../styled-system/jsx'
 
@@ -22,22 +22,25 @@ export default function HomePage() {
           cursor: 'cell',
         }}
         as="section"
-        bg="$text"
-        color={color}
+        bg="var(--text)"
+        color="var(--box-color)"
         cursor="pointer"
         data-testid="box"
-        fontSize={32}
+        fontSize="32px"
         position="relative"
         py="28px"
+        style={{ '--box-color': color } as CSSProperties}
       >
         <Box>hello</Box>
         <Box>hello</Box>
       </Box>
-      <Box color="$text">text</Box>
-      <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">
+      <Box as="span" color="var(--text)">
+        text
+      </Box>
+      <Box color={enabled ? 'green' : 'blue'} fontSize="32px" pr="20px">
         hello
       </Box>
-      <Box fontSize={[12, 32]}>hello</Box>
+      <Box fontSize={['12px', '32px']}>hello</Box>
       <button
         onClick={() => {
           setColor('blue')

@@ -22,6 +22,7 @@ const settings = {
       'acme-other': 'notAnExport',
       '@emotion/styled': false,
       'styled-components': true,
+      '@vanilla-extract/css-utils': false,
     },
   },
 }
@@ -62,6 +63,7 @@ describe('import settings', () => {
       'import * as U from "@acme/ui/compat";',
       'import { css as x } from "@devup-ui/react";',
       'import { css as g } from "@emotion/react";',
+      'import { calc } from "@vanilla-extract/css-utils";',
     ].join('\n'),
     (storage) => {
       expect(Object.fromEntries(storage.bindings())).toEqual({
@@ -73,6 +75,8 @@ describe('import settings', () => {
         g: 'css',
       })
       expect(storage.isImportObject('U')).toBe(true)
+      // Turned off, the build leaves `calc` to the package
+      expect(storage.isCalc('calc')).toBe(false)
     },
   )
 

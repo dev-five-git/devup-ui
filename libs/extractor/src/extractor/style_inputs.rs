@@ -6,11 +6,15 @@ use oxc_ast::{
     ast::{Expression, UnaryOperator},
     builder::AstBuilder,
 };
+use oxc_span::Span;
 
 #[derive(Clone, Copy)]
 pub(crate) struct StyleInputs<'s, 'a> {
     pub ast: &'s AstBuilder<'a>,
     values: Option<&'s StyleValues<'s>>,
+    /// The source spans of the style objects a call merged into the one
+    /// being read, in order: each is a level of its own
+    arguments: &'s [Span],
 }
 
 impl<'s, 'a> StyleInputs<'s, 'a> {
@@ -18,7 +22,20 @@ impl<'s, 'a> StyleInputs<'s, 'a> {
         Self {
             ast,
             values: Some(values),
+            arguments: &[],
         }
+    }
+
+    /// Read a merge of the style objects at `arguments`
+    pub const fn with_arguments(self, arguments: &'s [Span]) -> Self {
+        Self { arguments, ..self }
+    }
+
+    /// Which of the merged style objects a property at `span` was written in
+    pub fn argument_of(self, span: Span) -> Option<usize> {
+        self.arguments
+            .iter()
+            .position(|argument| argument.start <= span.start && span.end <= argument.end)
     }
 
     pub fn absent(self, expression: &Expression<'_>) -> bool {
@@ -28,7 +45,11 @@ impl<'s, 'a> StyleInputs<'s, 'a> {
 
 impl<'s, 'a> From<&'s AstBuilder<'a>> for StyleInputs<'s, 'a> {
     fn from(ast: &'s AstBuilder<'a>) -> Self {
-        Self { ast, values: None }
+        Self {
+            ast,
+            values: None,
+            arguments: &[],
+        }
     }
 }
 

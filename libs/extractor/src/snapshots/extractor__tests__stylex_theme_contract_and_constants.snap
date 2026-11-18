@@ -28,7 +28,7 @@ ToBTreeSet {
             ExtractCss {
                 file: "test.tsx",
                 order: 1,
-                css: ".b{--a:navy;}",
+                css: ".b{--a:navy}",
             },
         ),
     },
