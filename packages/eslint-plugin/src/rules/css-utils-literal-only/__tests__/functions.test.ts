@@ -28,6 +28,7 @@ describe('css-utils-literal-only rule: functions as values', () => {
       [devup, 'const f = () => "red";\nglobalCss({ body: { color: f() } })'],
       [devup, 'css`color: ${(() => "red")()};`'],
       [devup, 'other({ color: () => "red" })'],
+      [emotion, '<Global styles={(theme) => ({ body: { color: "red" } })} />'],
       [stylex, 'stylex.create({ dyn: (color) => ({ color }) })'],
       [stylex, 'create({ dyn: (color) => ({ color }) })'],
       [

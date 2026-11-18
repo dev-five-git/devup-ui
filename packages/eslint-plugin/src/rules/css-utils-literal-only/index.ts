@@ -123,7 +123,7 @@ function rootOf(node: TSESTree.Node): TSESTree.Node {
     : node
 }
 
-/** Whether the node `path` ends with is itself a value the style API `root` reads, rather than a function called or a part of what is computed at build time: `path` leads down from `root` */
+/** Whether the node `path` ends with is itself a value the style API `root` reads, rather than a function called, a part of what is computed at build time, or the theme function of Emotion's `Global`: `path` leads down from `root` */
 function heldAsValue(
   root: TSESTree.Node,
   path: readonly TSESTree.Node[],
@@ -151,7 +151,15 @@ function heldAsValue(
         return false
     }
   }
-  return root.type !== AST_NODE_TYPES.CallExpression || root.callee !== path[1]
+  switch (root.type) {
+    case AST_NODE_TYPES.CallExpression:
+      return root.callee !== path[1]
+    // Emotion's `Global` takes its whole `styles` as a function of the theme
+    case AST_NODE_TYPES.JSXAttribute:
+      return path.some((node) => node.type === AST_NODE_TYPES.ObjectExpression)
+    default:
+      return true
+  }
 }
 
 /** Whether the end of `path`, which leads down from an argument of a style API, is in a value the build reads: in a rule object or CSS text, rather than a part `css()` composes as a class or what chooses between parts */
