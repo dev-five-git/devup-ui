@@ -90,7 +90,7 @@ it('drops markers no module selects from script assets', () => {
   })
   const { compilation: build, assets } = compilation(
     {
-      'main.js': 'f("a--a x"),f("a--b y"),f("a--c"),f("a--d")',
+      'main.js': 'f("a--a x"),f("a--b y"),f("a--c"),f("a--d"),f("a--e")',
       'other.mjs': 'f("y")',
       'main.css': '.a--a{}',
     },
@@ -99,13 +99,25 @@ it('drops markers no module selects from script assets', () => {
       module(`${root}/vendor.js`, 'f("a--c")'),
       module(undefined, 'f("a--d")'),
       module(`${root}/raw.bin`, undefined),
+      {
+        ...module(`${root}/src/Cached.tsx`, 'f("a--e")'),
+        buildInfo: {
+          devupComponentMarkers: {
+            id: 'src/Cached.tsx',
+            input: '',
+            givenMarkers: ['a--e'],
+            selectedMarkers: [],
+          },
+        },
+      },
+      { ...module(`${root}/src/A.tsx`, 'unread'), buildInfo: {} },
     ],
   )
   // When
   stripComponentMarkers(webpack, build, ledger, root, relative)
   // Then
   expect(assets.get('main.js')?.source.source()).toBe(
-    'f("x"),f("a--b y"),f("a--c"),f("a--d")',
+    'f("x"),f("a--b y"),f("a--c"),f("a--d"),f("")',
   )
   expect(assets.get('main.css')?.source.source()).toBe('.a--a{}')
   expect(assets.get('other.mjs')?.source.source()).toBe('f("y")')

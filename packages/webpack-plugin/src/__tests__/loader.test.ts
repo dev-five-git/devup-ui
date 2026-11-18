@@ -770,8 +770,13 @@ describe('component-selector markers', () => {
     ledger.scanned([], ['src/A.tsx'])
     writeFileSync(join(root, 'disk.tsx'), 'source')
     writeFileSync(join(root, 'compiled.tsx'), 'other')
+    const cached = { buildInfo: {} as Record<string, unknown> }
     // When
-    await load('src/A.tsx', { givenMarkers: ['a--a'] }, { _compiler: compiler })
+    await load(
+      'src/A.tsx',
+      { givenMarkers: ['a--a'] },
+      { _compiler: compiler, _module: cached },
+    )
     await load(
       'ctx.tsx',
       { selectedMarkers: ['a--b'] },
@@ -817,6 +822,13 @@ describe('component-selector markers', () => {
     )
     // Then
     expect(ledger.recorded('src/A.tsx')).toBe(true)
+    expect(cached.buildInfo['devupComponentMarkers']).toEqual({
+      id: 'src/A.tsx',
+      input: '',
+      givenMarkers: ['a--a'],
+      selectedMarkers: [],
+      cause: undefined,
+    })
     expect(ledger.plan()).toEqual({
       keep: {
         kind: 'unscanned',

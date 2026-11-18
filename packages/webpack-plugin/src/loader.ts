@@ -11,10 +11,14 @@ import {
   esmImportConditions,
   loadCompiler,
   markerLedgerOf,
+  markerLikeTokens,
+  type MarkerTransform,
   type UnscannedCause,
   unscannedCause,
 } from '@devup-ui/plugin-utils'
 import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
+
+import { MARKER_BUILD_INFO } from './component-markers'
 
 export interface DevupUILoaderOptions {
   readonly engine?: DevupEngine
@@ -89,13 +93,19 @@ function reportMarkers(
   const ledger = markerLedgerOf(owner?.root ?? owner)
   if (!ledger) return
   const selectedMarkers = output.selectedMarkers
-  ledger.record({
+  const transform: MarkerTransform = {
     id,
-    input,
-    givenMarkers: output.givenMarkers,
-    selectedMarkers,
+    // Of the code, the ledger reads only the tokens written like a marker
+    input: [...markerLikeTokens(input)].join(' '),
+    givenMarkers: [...output.givenMarkers],
+    selectedMarkers: [...selectedMarkers],
     cause: selectedMarkers.length ? markerCause(context, id, input) : undefined,
-  })
+  }
+  ledger.record(transform)
+  // A build that restores the module from webpack's cache runs no loader for
+  // it; the plugin reads the report from the module instead
+  const buildInfo = context._module?.buildInfo
+  if (buildInfo) buildInfo[MARKER_BUILD_INFO] = transform
 }
 
 function markerCause(

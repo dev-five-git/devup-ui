@@ -2,11 +2,27 @@ import {
   type ComponentMarkerLedger,
   markerEdits,
   markerLikeTokens,
+  type MarkerTransform,
   markerWarning,
 } from '@devup-ui/plugin-utils'
 import type { Compilation, Compiler } from 'webpack'
 
 const SCRIPT = /\.[cm]?js$/
+
+/** Where the loader keeps a module's report, which webpack's cache restores */
+export const MARKER_BUILD_INFO = 'devupComponentMarkers'
+
+/** Take the reports of the modules webpack restored instead of loading them */
+function restoreReports(
+  compilation: Compilation,
+  ledger: ComponentMarkerLedger,
+): void {
+  for (const module of compilation.modules) {
+    const report = module.buildInfo?.[MARKER_BUILD_INFO] as
+      MarkerTransform | undefined
+    if (report && !ledger.recorded(report.id)) ledger.record(report)
+  }
+}
 
 /** The marker-like classes modules the loader did not transform wrote */
 function foreignTokens(
@@ -41,6 +57,7 @@ export function stripComponentMarkers(
   root: string,
   relative: (from: string, to: string) => string,
 ): void {
+  restoreReports(compilation, ledger)
   const plan = ledger.plan()
   if ('keep' in plan) {
     const warning = markerWarning(plan.keep)
