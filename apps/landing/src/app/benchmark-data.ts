@@ -12,5 +12,27 @@ import fixture from '../../../../e2e/fixtures/benchmark-results.json'
 export const BENCHMARK_SOURCE =
   process.env.LANDING_BENCHMARK_DATA === 'fixture' ? 'fixture' : 'live'
 
-export const benchmarkResults: typeof live =
+// The fields the page reads. The refresh rewrites the live file in its
+// current format while the fixture keeps the format it was frozen in, so the
+// page must not depend on any field it does not read.
+export interface BenchmarkResults {
+  run: {
+    id: string
+    url: string
+    commit: string
+    next: string
+    devupUi: string
+    sha: string
+  }
+  samples: number
+  rows: {
+    table: string
+    target: string
+    version: string
+    median: number
+    bytes: number
+  }[]
+}
+
+export const benchmarkResults: BenchmarkResults =
   BENCHMARK_SOURCE === 'fixture' ? fixture : live

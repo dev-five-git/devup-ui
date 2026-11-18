@@ -1,13 +1,13 @@
 {
   "run": {
-    "id": "44260795526",
-    "url": "https://github.com/dev-five-git/devup-ui/actions/runs/44260795526",
-    "commit": "e94a7ef4",
+    "id": "44274080608",
+    "url": "https://github.com/dev-five-git/devup-ui/actions/runs/44274080608",
+    "commit": "13bbf7f3",
     "runner": "ubuntu-26.04",
     "next": "16.4.6",
     "devupUi": "1.0.44",
-    "sha": "e94a7ef4faa76219122083844573834a12a9d73e",
-    "date": "2026-11-18T08:11:44.343Z"
+    "sha": "13bbf7f322212235f4119cebc3c618ed7fbeed3d",
+    "date": "2026-11-18T09:31:05.543Z"
   },
   "samples": 3,
   "rows": [
@@ -16,19 +16,19 @@
       "target": "tailwind",
       "label": "tailwindcss",
       "version": "4.3.5",
-      "samples": [11.989, 12.525, 12.208],
-      "median": 12.208,
-      "min": 11.989,
-      "max": 12.525,
-      "bytes": 69758746,
+      "samples": [12.498, 12.287, 12.238],
+      "median": 12.287,
+      "min": 12.238,
+      "max": 12.498,
+      "bytes": 69758089,
       "cssBytes": 717,
       "clientBytes": 924183,
       "sizes": {
         "bytes": {
-          "samples": [69758746, 69757658, 69759250],
-          "median": 69758746,
-          "min": 69757658,
-          "max": 69759250
+          "samples": [69757820, 69758474, 69758089],
+          "median": 69758089,
+          "min": 69757820,
+          "max": 69758474
         },
         "cssBytes": {
           "samples": [717, 717, 717],
@@ -49,19 +49,19 @@
       "target": "stylex",
       "label": "styleX",
       "version": "0.19.2",
-      "samples": [25.61, 26.61, 25.007],
-      "median": 25.61,
-      "min": 25.007,
-      "max": 26.61,
-      "bytes": 97730865,
+      "samples": [25.798, 26.749, 26.041],
+      "median": 26.041,
+      "min": 25.798,
+      "max": 26.749,
+      "bytes": 97729329,
       "cssBytes": 661,
       "clientBytes": 2021525,
       "sizes": {
         "bytes": {
-          "samples": [97729876, 97730865, 97735688],
-          "median": 97730865,
-          "min": 97729876,
-          "max": 97735688
+          "samples": [97729329, 97729883, 97728905],
+          "median": 97729329,
+          "min": 97728905,
+          "max": 97729883
         },
         "cssBytes": {
           "samples": [661, 661, 661],
@@ -82,19 +82,19 @@
       "target": "vanilla-extract",
       "label": "vanilla-extract",
       "version": "1.21.3",
-      "samples": [11.083, 11.644, 11.26],
-      "median": 11.26,
-      "min": 11.083,
-      "max": 11.644,
-      "bytes": 70449666,
+      "samples": [11.511, 11.588, 11.897],
+      "median": 11.588,
+      "min": 11.511,
+      "max": 11.897,
+      "bytes": 70449127,
       "cssBytes": 398,
       "clientBytes": 923721,
       "sizes": {
         "bytes": {
-          "samples": [70447602, 70449666, 70450719],
-          "median": 70449666,
-          "min": 70447602,
-          "max": 70450719
+          "samples": [70449127, 70448532, 70449625],
+          "median": 70449127,
+          "min": 70448532,
+          "max": 70449625
         },
         "cssBytes": {
           "samples": [398, 398, 398],
@@ -115,19 +115,19 @@
       "target": "kuma-ui",
       "label": "kuma-ui",
       "version": "1.6.4",
-      "samples": [12.757, 13.254, 12.802],
-      "median": 12.802,
-      "min": 12.757,
-      "max": 13.254,
-      "bytes": 77760402,
+      "samples": [13.343, 12.919, 13.538],
+      "median": 13.343,
+      "min": 12.919,
+      "max": 13.538,
+      "bytes": 77758437,
       "cssBytes": 354,
       "clientBytes": 956158,
       "sizes": {
         "bytes": {
-          "samples": [77759345, 77762878, 77760402],
-          "median": 77760402,
-          "min": 77759345,
-          "max": 77762878
+          "samples": [77755860, 77759455, 77758437],
+          "median": 77758437,
+          "min": 77755860,
+          "max": 77759455
         },
         "cssBytes": {
           "samples": [354, 354, 354],
@@ -148,19 +148,19 @@
       "target": "panda-css",
       "label": "panda-css",
       "version": "2.5.0",
-      "samples": [12.554, 12.85, 12.512],
-      "median": 12.554,
-      "min": 12.512,
-      "max": 12.85,
-      "bytes": 75835328,
+      "samples": [13.119, 12.781, 13.428],
+      "median": 13.119,
+      "min": 12.781,
+      "max": 13.428,
+      "bytes": 75835831,
       "cssBytes": 18567,
       "clientBytes": 980282,
       "sizes": {
         "bytes": {
-          "samples": [75833351, 75836798, 75835328],
-          "median": 75835328,
-          "min": 75833351,
-          "max": 75836798
+          "samples": [75835807, 75835831, 75836828],
+          "median": 75835831,
+          "min": 75835807,
+          "max": 75836828
         },
         "cssBytes": {
           "samples": [18567, 18567, 18567],
@@ -181,19 +181,19 @@
       "target": "chakra-ui",
       "label": "chakra-ui",
       "version": "3.38.0",
-      "samples": [18.861, 19.253, 19.112],
-      "median": 19.112,
-      "min": 18.861,
-      "max": 19.253,
-      "bytes": 211190121,
+      "samples": [19.758, 19.034, 20.407],
+      "median": 19.758,
+      "min": 19.034,
+      "max": 20.407,
+      "bytes": 211187242,
       "cssBytes": 0,
       "clientBytes": 1175910,
       "sizes": {
         "bytes": {
-          "samples": [211192189, 211190121, 211188010],
-          "median": 211190121,
-          "min": 211188010,
-          "max": 211192189
+          "samples": [211194310, 211187242, 211185389],
+          "median": 211187242,
+          "min": 211185389,
+          "max": 211194310
         },
         "cssBytes": {
           "samples": [0, 0, 0],
@@ -214,19 +214,19 @@
       "target": "mui",
       "label": "mui",
       "version": "9.5.0",
-      "samples": [13.305, 13.962, 13.38],
-      "median": 13.38,
-      "min": 13.305,
-      "max": 13.962,
-      "bytes": 103206901,
+      "samples": [13.715, 13.787, 14.177],
+      "median": 13.787,
+      "min": 13.715,
+      "max": 14.177,
+      "bytes": 103204775,
       "cssBytes": 0,
       "clientBytes": 993400,
       "sizes": {
         "bytes": {
-          "samples": [103201559, 103206901, 103209447],
-          "median": 103206901,
-          "min": 103201559,
-          "max": 103209447
+          "samples": [103204775, 103206575, 103200823],
+          "median": 103204775,
+          "min": 103200823,
+          "max": 103206575
         },
         "cssBytes": {
           "samples": [0, 0, 0],
@@ -248,31 +248,31 @@
       "label": "devup-ui (per-file CSS)",
       "version": "1.0.44",
       "devup": true,
-      "samples": [10.93, 11.168, 10.91],
-      "median": 10.93,
-      "min": 10.91,
-      "max": 11.168,
-      "bytes": 69833130,
-      "cssBytes": 492,
-      "clientBytes": 923890,
+      "samples": [11.196, 10.914, 12],
+      "median": 11.196,
+      "min": 10.914,
+      "max": 12,
+      "bytes": 69831004,
+      "cssBytes": 355,
+      "clientBytes": 923753,
       "sizes": {
         "bytes": {
-          "samples": [69829694, 69833754, 69833130],
-          "median": 69833130,
-          "min": 69829694,
-          "max": 69833754
+          "samples": [69831004, 69830278, 69831073],
+          "median": 69831004,
+          "min": 69830278,
+          "max": 69831073
         },
         "cssBytes": {
-          "samples": [492, 492, 492],
-          "median": 492,
-          "min": 492,
-          "max": 492
+          "samples": [355, 355, 355],
+          "median": 355,
+          "min": 355,
+          "max": 355
         },
         "clientBytes": {
-          "samples": [923890, 923890, 923890],
-          "median": 923890,
-          "min": 923890,
-          "max": 923890
+          "samples": [923753, 923753, 923753],
+          "median": 923753,
+          "min": 923753,
+          "max": 923753
         }
       }
     },
@@ -282,31 +282,31 @@
       "label": "devup-ui (single CSS)",
       "version": "1.0.44",
       "devup": true,
-      "samples": [10.75, 11.133, 10.704],
-      "median": 10.75,
-      "min": 10.704,
-      "max": 11.133,
-      "bytes": 69817709,
-      "cssBytes": 393,
-      "clientBytes": 923757,
+      "samples": [11.219, 10.73, 11.436],
+      "median": 11.219,
+      "min": 10.73,
+      "max": 11.436,
+      "bytes": 69815702,
+      "cssBytes": 325,
+      "clientBytes": 923689,
       "sizes": {
         "bytes": {
-          "samples": [69816227, 69819176, 69817709],
-          "median": 69817709,
-          "min": 69816227,
-          "max": 69819176
+          "samples": [69815702, 69813615, 69817746],
+          "median": 69815702,
+          "min": 69813615,
+          "max": 69817746
         },
         "cssBytes": {
-          "samples": [393, 393, 393],
-          "median": 393,
-          "min": 393,
-          "max": 393
+          "samples": [325, 325, 325],
+          "median": 325,
+          "min": 325,
+          "max": 325
         },
         "clientBytes": {
-          "samples": [923757, 923757, 923757],
-          "median": 923757,
-          "min": 923757,
-          "max": 923757
+          "samples": [923689, 923689, 923689],
+          "median": 923689,
+          "min": 923689,
+          "max": 923689
         }
       }
     },
@@ -315,19 +315,19 @@
       "target": "tailwind-turbo",
       "label": "tailwindcss",
       "version": "4.3.5",
-      "samples": [4.424, 4.593, 4.603],
-      "median": 4.593,
-      "min": 4.424,
-      "max": 4.603,
-      "bytes": 30530216,
+      "samples": [4.593, 4.626, 4.674],
+      "median": 4.626,
+      "min": 4.593,
+      "max": 4.674,
+      "bytes": 30525665,
       "cssBytes": 653,
       "clientBytes": 571738,
       "sizes": {
         "bytes": {
-          "samples": [30530216, 30527795, 30537892],
-          "median": 30530216,
-          "min": 30527795,
-          "max": 30537892
+          "samples": [30518720, 30530931, 30525665],
+          "median": 30525665,
+          "min": 30518720,
+          "max": 30530931
         },
         "cssBytes": {
           "samples": [653, 653, 653],
@@ -349,19 +349,19 @@
       "label": "devup-ui (direct APIs, single CSS)",
       "version": "1.0.44",
       "devup": true,
-      "samples": [4.619, 4.471, 4.547],
-      "median": 4.547,
-      "min": 4.471,
-      "max": 4.619,
-      "bytes": 28913315,
+      "samples": [4.638, 4.67, 4.694],
+      "median": 4.67,
+      "min": 4.638,
+      "max": 4.694,
+      "bytes": 28916568,
       "cssBytes": 325,
       "clientBytes": 571234,
       "sizes": {
         "bytes": {
-          "samples": [28927651, 28913315, 28908102],
-          "median": 28913315,
-          "min": 28908102,
-          "max": 28927651
+          "samples": [28919453, 28902704, 28916568],
+          "median": 28916568,
+          "min": 28902704,
+          "max": 28919453
         },
         "cssBytes": {
           "samples": [325, 325, 325],
@@ -383,19 +383,19 @@
       "label": "devup-ui (static `.css.ts`)",
       "version": "1.0.44",
       "devup": true,
-      "samples": [4.762, 4.59, 4.467],
-      "median": 4.59,
-      "min": 4.467,
-      "max": 4.762,
-      "bytes": 28965658,
+      "samples": [4.506, 4.627, 4.597],
+      "median": 4.597,
+      "min": 4.506,
+      "max": 4.627,
+      "bytes": 28953896,
       "cssBytes": 376,
       "clientBytes": 571331,
       "sizes": {
         "bytes": {
-          "samples": [28954539, 28966263, 28965658],
-          "median": 28965658,
-          "min": 28954539,
-          "max": 28966263
+          "samples": [28944860, 28953896, 28966654],
+          "median": 28953896,
+          "min": 28944860,
+          "max": 28966654
         },
         "cssBytes": {
           "samples": [376, 376, 376],

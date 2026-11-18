@@ -1,0 +1,14 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "Stylesheets without any rule are emitted empty instead of as a bare license banner, so the empty shared base sheet no longer repeats the banner in every per-file stylesheet that imports it. The banner names the version without a trailing comma (`v1.0.83`, not `v1.0.83,`). A new `licenseBanner` plugin option (default `true`) and the `setLicenseBanner`/`isLicenseBanner` engine functions turn the banner off; both engines emit identical output.",
+  "date": "2026-11-17T00:00:00.000Z"
+}

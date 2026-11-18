@@ -34,7 +34,7 @@ function Example({ variable }: {
 Generated CSS:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}.b{color:white}.c{margin:8px}.d{padding:8px}.e{text-align:var(--f)}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:red}.b{color:white}.c{margin:8px}.d{padding:8px}.e{text-align:var(--f)}
 ```
 
 ```mermaid
