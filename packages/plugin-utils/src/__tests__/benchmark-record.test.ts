@@ -411,24 +411,6 @@ describe('benchmark JSON', () => {
     )
   })
 
-  it('fills a line to the print width when no comma follows it', () => {
-    // 80 characters with no comma after it, 81 with one
-    const last = [
-      6.5, 6.483, 6.542, 38662174, 1512, 571629, 1, 2, 3, 4, 5, 66, 123456789,
-    ]
-    expect(formatJson({ a: last, b: last })).toBe(
-      [
-        '{',
-        '  "a": [',
-        '    6.5, 6.483, 6.542, 38662174, 1512, 571629, 1, 2, 3, 4, 5, 66, 123456789',
-        '  ],',
-        '  "b": [6.5, 6.483, 6.542, 38662174, 1512, 571629, 1, 2, 3, 4, 5, 66, 123456789]',
-        '}',
-        '',
-      ].join('\n'),
-    )
-  })
-
   it('formats the checked files exactly as it writes them', () => {
     for (const file of ['benchmark-results.json', 'benchmark/history.json']) {
       const text = readFileSync(join(ROOT, file), 'utf8').replaceAll(

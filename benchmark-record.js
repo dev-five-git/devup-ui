@@ -187,14 +187,13 @@ function fillNumbers(indent, key, values) {
 export function formatJson(value) {
   return (
     JSON.stringify(value, null, 2).replace(
-      /^( *)(.*)\[\n((?:\1 {2}(?:-?[\d.e+-]+|"[^"\n]*"|null),?\n)+)\1\](,?)/gm,
-      (whole, indent, key, items, comma) => {
+      /^( *)(.*)\[\n((?:\1 {2}(?:-?[\d.e+-]+|"[^"\n]*"|null),?\n)+)\1\]/gm,
+      (whole, indent, key, items) => {
         const values = items.trim().split(/,\n */)
-        // The comma after the last member of an object does not exist
-        const line = `${indent}${key}[${values.join(', ')}]${comma}`
-        if (line.length <= PRINT_WIDTH) return line
+        const line = `${indent}${key}[${values.join(', ')}]`
+        if (line.length + 1 <= PRINT_WIDTH) return line
         return values.every((item) => /^-?[\d.e+-]+$/.test(item))
-          ? `${fillNumbers(indent, key, values)}${comma}`
+          ? fillNumbers(indent, key, values)
           : whole
       },
     ) + '\n'
