@@ -16,8 +16,10 @@ import {
 } from 'bun:test'
 
 import {
+  coordinatorKey,
   type CoordinatorOptions,
   flushCoordinatorWrites,
+  openCoordinatorCompiler,
   resetCoordinator,
   startCoordinator,
 } from '../coordinator'
@@ -39,6 +41,7 @@ function makeOptions(
   overrides: Partial<CoordinatorOptions> = {},
 ): CoordinatorOptions {
   return {
+    distDir: tmpDir,
     wasm,
     package: '@devup-ui/react',
     cssDir: join(tmpDir, 'css'),
@@ -948,6 +951,83 @@ describe('coordinator', () => {
     second.close()
   })
 
+  it('keeps the coordinators of different apps running side by side', async () => {
+    // Given: two apps in one process, each with its own distDir and port file.
+    const app = (name: string) =>
+      makeOptions({
+        distDir: join(tmpDir, name),
+        coordinatorPortFile: join(tmpDir, name, 'coordinator.port'),
+      })
+    const portOf = (options: CoordinatorOptions) =>
+      parseInt(
+        (
+          writeFileSyncSpy.mock.calls.findLast(
+            ([path]) => path === options.coordinatorPortFile,
+          ) as [string, string]
+        )[1],
+      )
+    const one = app('one')
+    const two = app('two')
+
+    // When: the second app starts its coordinator after the first.
+    const first = startCoordinator(one)
+    const second = startCoordinator(two)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Then: both answer, and closing one leaves the other running.
+    expect(await httpRequest(portOf(one), 'GET', '/health')).toEqual({
+      status: 200,
+      body: 'ok',
+    })
+    first.close()
+    expect(await httpRequest(portOf(two), 'GET', '/health')).toEqual({
+      status: 200,
+      body: 'ok',
+    })
+    second.close()
+  })
+
+  it('keeps one engine session per app until its last coordinator closes', () => {
+    // Given: one app's engine, read through two spellings of its distDir.
+    const distDir = join(tmpDir, 'app')
+    const engine = openCoordinatorCompiler(distDir, wasm)
+    expect(openCoordinatorCompiler(join(distDir, 'x', '..'), wasm)).toBe(engine)
+    expect(coordinatorKey(join(distDir, 'x', '..'))).toBe(
+      coordinatorKey(distDir),
+    )
+    const other = openCoordinatorCompiler(join(tmpDir, 'other'), wasm)
+    expect(other).not.toBe(engine)
+    engine.setPrefix('app-')
+    expect(other.exportSheet()).not.toContain('app-')
+
+    // When: a config re-evaluation starts a second coordinator for the app.
+    const options = makeOptions({ distDir, wasm: engine })
+    const first = startCoordinator(options)
+    const second = startCoordinator(options)
+    first.close()
+    first.close()
+
+    // Then: the session outlives the superseded coordinator, even closed twice.
+    expect(engine.getCss(null, false)).toBeString()
+    second.close()
+    expect(() => engine.getCss(null, false)).toThrow('does not exist')
+    expect(openCoordinatorCompiler(distDir, wasm)).not.toBe(engine)
+  })
+
+  it('opens a new session when an app moves to another engine', () => {
+    // Given: an app whose session lives in the WASM engine.
+    const distDir = join(tmpDir, 'moving')
+    const before = openCoordinatorCompiler(distDir, wasm)
+
+    // When: a re-evaluation hands over another engine namespace.
+    const after = openCoordinatorCompiler(distDir, new Proxy(wasm, {}))
+
+    // Then: the first session is dropped and a new one is used.
+    expect(after).not.toBe(before)
+    expect(() => before.getCss(null, false)).toThrow('does not exist')
+    expect(after.getCss(null, false)).toBeString()
+  })
+
   it('should touch devup-ui.css to invalidate Turbopack cache when singleCss=false and new CSS collected', async () => {
     codeExtractSpy.mockReturnValue({
       code: 'import "./../../df/devup-ui/devup-ui-5.css";\nconst x = 1;',
@@ -1729,6 +1809,52 @@ describe('coordinator per-bucket completion', () => {
 
     coordinator.close()
   })
+
+  it("never completes one app's CSS with another app's extractions", async () => {
+    // Given: two apps in one process that expect the same base files.
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
+    getCssSpy.mockReturnValue('base-css')
+    const app = (name: string) =>
+      makeOptions({
+        distDir: join(tmpDir, `wait-${name}`),
+        coordinatorPortFile: join(tmpDir, `wait-${name}`, 'coordinator.port'),
+        expectedBaseFiles: ['src/a.tsx', 'src/b.tsx'],
+        quietMs: 100,
+        maxWaitMs: 10_000,
+      })
+    const one = app('one')
+    const two = app('two')
+    const first = startCoordinator(one)
+    const second = startCoordinator(two)
+    await new Promise((r) => setTimeout(r, 100))
+    const portOf = (options: CoordinatorOptions) =>
+      parseInt(
+        (
+          writeFileSyncSpy.mock.calls.findLast(
+            ([path]: unknown[]) => path === options.coordinatorPortFile,
+          ) as [string, string]
+        )[1],
+      )
+
+    // When: each app extracts a different one of those files.
+    await extract(portOf(one), 'src/a.tsx')
+    await extract(portOf(two), 'src/b.tsx')
+
+    // Then: the first app still misses the file only the second extracted,
+    // so its build fails instead of serving partial CSS.
+    const res = await httpRequest(
+      portOf(one),
+      'GET',
+      '/css?importMainCss=false&waitForIdle=true',
+    )
+    expect(res.status).toBe(500)
+    expect(res.body).toBe(
+      '[devup-ui] coordinator: base CSS is incomplete (no extraction for 100ms); refusing to serve partial CSS. Files not extracted: src/b.tsx.',
+    )
+
+    first.close()
+    second.close()
+  })
 })
 
 describe('coordinator transform cache', () => {
@@ -1841,6 +1967,47 @@ describe('coordinator transform cache', () => {
     expect(codeExtractSpy).toHaveBeenCalledTimes(3)
 
     coordinator.close()
+  })
+
+  it('keeps the cached extractions of different apps apart', async () => {
+    // Given: two apps in one process with the same CSS directory, so only the
+    // app tells their extractions of the same source apart.
+    codeExtractSpy.mockImplementation((_filename: string, code: string) =>
+      extractResult(`out:${code}`),
+    )
+    const app = (name: string) =>
+      makeOptions({
+        distDir: join(tmpDir, `cache-${name}`),
+        coordinatorPortFile: join(tmpDir, `cache-${name}`, 'coordinator.port'),
+      })
+    const one = app('one')
+    const two = app('two')
+    const first = startCoordinator(one)
+    const second = startCoordinator(two)
+    await new Promise((r) => setTimeout(r, 100))
+    const portOf = (options: CoordinatorOptions) =>
+      parseInt(
+        (
+          writeFileSyncSpy.mock.calls.findLast(
+            ([path]: unknown[]) => path === options.coordinatorPortFile,
+          ) as [string, string]
+        )[1],
+      )
+
+    // When: the first app extracts a file, then the second app the same file
+    // with the same source.
+    await extract(portOf(one), 'v1')
+    await extract(portOf(two), 'v1')
+
+    // Then: the second app's sheet never saw that source, so it extracts too;
+    // each app then answers its own repeat from its own cache.
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+    await extract(portOf(one), 'v1')
+    await extract(portOf(two), 'v1')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+
+    first.close()
+    second.close()
   })
 })
 

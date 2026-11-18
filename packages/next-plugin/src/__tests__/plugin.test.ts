@@ -168,6 +168,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  coordinatorModule.resetCoordinator()
   resetTurboSetupCacheForTesting()
   setWasmForTesting(undefined)
   setWebpackPluginForTesting(undefined)
@@ -1030,7 +1031,8 @@ describe('DevupUINextPlugin', () => {
         },
       })
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
+        distDir: 'df',
+        wasm: coordinatorModule.openCoordinatorCompiler('df', wasm),
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,
@@ -1276,7 +1278,10 @@ export const box = style({ color: 'red' })`
 
         setNodeEnv('development')
         DevupUI({}, { include: ['@acme/ui'], singleCss: true })
-        expect(reservationSpy).toHaveBeenCalledWith(wasm)
+        // Into the app's own engine session, never the shared engine.
+        expect(reservationSpy).toHaveBeenCalledWith(
+          coordinatorModule.openCoordinatorCompiler('df', wasm),
+        )
         const [discovery, options] = reserve.mock.calls[0] as Parameters<
           ReturnType<
             typeof importGraphModule.createSharedSlotReservation
@@ -1507,7 +1512,8 @@ export const box = style({ color: 'red' })`
 
         // Verify coordinator was started with correct options
         expect(startCoordinatorSpy).toHaveBeenCalledWith({
-          wasm,
+          distDir: 'df',
+          wasm: coordinatorModule.openCoordinatorCompiler('df', wasm),
           package: '@devup-ui/react',
           cssDir: resolve('df', 'devup-ui'),
           singleCss: false,

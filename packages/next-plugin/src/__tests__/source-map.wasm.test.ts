@@ -206,6 +206,7 @@ describe.each([false, true])('Next singleCss with prewarm=%s', (prewarm) => {
         try {
           coordinator = startCoordinator({
             ...options,
+            distDir: root,
             wasm,
             sourceMap,
             importAliases: {},
