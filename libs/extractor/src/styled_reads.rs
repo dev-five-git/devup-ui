@@ -310,6 +310,21 @@ fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Opt
     })
 }
 
+/// What a component styled-components v6 makes forwards: every prop but
+/// `theme`, as it no longer validates props, unless `shouldForwardProp` also
+/// decides (`$` props and `as` never reach it). Other libraries keep `forward`.
+#[must_use]
+pub fn library_forward(styled_components: bool, forward: Option<Forward>) -> Option<Forward> {
+    if !styled_components {
+        return forward;
+    }
+    let theme = Forward::Not(Box::new(Forward::Is("theme".to_string())));
+    Some(match forward {
+        Some(own) => Forward::And(Box::new(theme), Box::new(own)),
+        None => theme,
+    })
+}
+
 /// Whether a styled component passes the prop `name` on to what it renders:
 /// a `$` prop never, otherwise as `forward` decides, or by default a tag only
 /// what it takes as attributes and never `theme`, a component every prop

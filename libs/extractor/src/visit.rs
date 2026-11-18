@@ -365,6 +365,8 @@ pub struct DevupVisitor<'a> {
     css_prop: CssProp,
     /// The names the file imports Emotion's `styled` as
     emotion_styled: Vec<String>,
+    /// The names the file imports styled-components' `styled` as
+    styled_components: Vec<String>,
     /// Bindings declared to an object, an array, a function, text, a choice
     /// of styles or what a call gives, which a `css` prop cannot compose as a
     /// class, besides the top-level constants the build reads in its place,
@@ -1426,6 +1428,7 @@ impl<'a> DevupVisitor<'a> {
             changed_bindings: crate::imported_constants::Changed::default(),
             css_prop: CssProp::Off,
             emotion_styled: Vec::new(),
+            styled_components: Vec::new(),
             local_styles: FxHashMap::default(),
             css_prop_reads: FxHashSet::default(),
             style_functions: FxHashSet::default(),
@@ -1442,6 +1445,11 @@ impl<'a> DevupVisitor<'a> {
         self.emotion_styled = names;
     }
 
+    /// Hand the visitor the names the file imports styled-components' `styled` as
+    pub fn styles_with_styled_components(&mut self, names: Vec<String>) {
+        self.styled_components = names;
+    }
+
     /// The compiled styled `component`: one made with Emotion's `styled`
     /// takes `withComponent` wherever it goes, as Emotion's components do
     fn emitted_styled(&mut self, component: Expression<'a>, emotion: bool) -> Expression<'a> {
@@ -1456,18 +1464,26 @@ impl<'a> DevupVisitor<'a> {
     /// component selector picks out the component alone, not its extensions:
     /// a binding of the import, read before the walk reaches the import too
     fn emotion_factory(&self, factory: &Expression<'_>) -> bool {
+        self.library_factory(factory, &self.emotion_styled)
+    }
+
+    /// Whether the styled factory `factory` reads a `styled` the file imports
+    /// as one of `names`
+    fn library_factory(&self, factory: &Expression<'_>, names: &[String]) -> bool {
         match unwrap_syntax_only(factory) {
-            Expression::CallExpression(call) => self.emotion_factory(&call.callee),
-            Expression::StaticMemberExpression(member) => self.emotion_factory(&member.object),
+            Expression::CallExpression(call) => self.library_factory(&call.callee, names),
+            Expression::StaticMemberExpression(member) => {
+                self.library_factory(&member.object, names)
+            }
             root => {
-                (self.bindings.is_styled(root)
-                    || self
-                        .style_values
-                        .symbol(root)
-                        .and_then(|symbol| self.style_values.import_name(symbol))
-                        .is_some())
-                    && matches!(root, Expression::Identifier(identifier)
-                        if self.emotion_styled.iter().any(|name| identifier.name == name.as_str()))
+                matches!(root, Expression::Identifier(identifier)
+                        if names.iter().any(|name| identifier.name == name.as_str()))
+                    && (self.bindings.is_styled(root)
+                        || self
+                            .style_values
+                            .symbol(root)
+                            .and_then(|symbol| self.style_values.import_name(symbol))
+                            .is_some())
             }
         }
     }
@@ -3828,6 +3844,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(error) = forward_error {
             self.errors.push(error);
         }
+        let styled_components = match it {
+            Expression::CallExpression(call) => Some(&call.callee),
+            Expression::TaggedTemplateExpression(tag) => Some(&tag.tag),
+            _ => None,
+        }
+        .is_some_and(|factory| self.library_factory(factory, &self.styled_components));
+        let forward = crate::styled_reads::library_forward(styled_components, forward);
         let (identity, identity_errors) = read_identity(&options, &|identifier| {
             self.bindings.symbol(identifier).is_none()
         });

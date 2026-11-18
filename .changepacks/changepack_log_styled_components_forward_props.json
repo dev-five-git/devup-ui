@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "Components made with styled-components' `styled` now pass props on as styled-components v6 does: without `shouldForwardProp`, every prop reaches the rendered element, a DOM tag included, even one the styles read, except `$` props, `as` and `theme`. Before, a prop the styles read was kept off a tag unless it was a valid HTML attribute, as Emotion does; Emotion's components keep that filtering. `.withConfig({ shouldForwardProp })` still decides, composed with a wrapped styled component's own, and when several `.withConfig()` calls set it the last one wins, as in styled-components. `StyleSheetManager`'s `shouldForwardProp` stays a build error: keep props off the element with `$` transient props or `.withConfig({ shouldForwardProp })`.",
+  "date": "2026-11-18T00:00:00.000Z"
+}
