@@ -113,6 +113,7 @@ pub(super) fn terminal<'a>(
             style_vars: &None,
             bindings: Vec::new(),
             withheld: &[],
+            forward: None,
             capability: None,
             execution: &Execution::Replay,
             markers: None,

@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "bindings/devup-ui-binding/package.json": "Patch"
+  },
+  "note": "A styled component's `shouldForwardProp` now decides every prop it renders with, as styled-components v6 and Emotion do: before, the build applied it only to props the styles read or the predicate named, so with `() => false` a spread `id` or `customPayload` still reached the element. The predicate the build evaluates is compiled into the component's prop filter, and a predicate calling `isPropValid` makes the module import `@emotion/is-prop-valid`. Under styled-components the second argument is the element the component renders, `as` included, as in v6: `typeof element === 'string'` tests it, and calling it as v5's validator (`(prop, valid) => valid(prop)`) is a new build error, since it throws in v6. Emotion's predicate and Devup UI's own `styled` keep their signatures.",
+  "date": "2026-11-19T00:00:00.000Z"
+}

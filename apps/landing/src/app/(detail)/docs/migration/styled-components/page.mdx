@@ -108,6 +108,23 @@ const Badge = styled.span.withConfig({
 `
 ```
 
+The predicate meets every prop the component renders with, as in both libraries: those its styles read, and those a spread or a caller passes that the build never sees by name. The build evaluates it, and compiles it into the filter the component runs over its props. Under styled-components its second argument is the element the component renders, `as` included, which the predicate can test with `typeof element === 'string'`. Calling it as styled-components v5's validator (`(prop, valid) => valid(prop)`) fails in v6, so it is a build error: call `isPropValid` from `@emotion/is-prop-valid` instead. A predicate calling `isPropValid` makes the compiled module import `@emotion/is-prop-valid`, so keep it installed. Emotion's `shouldForwardProp` takes the prop name alone.
+
+```tsx
+import isPropValid from '@emotion/is-prop-valid'
+import styled from 'styled-components'
+
+const Card = styled.div.withConfig({
+  shouldForwardProp: (prop, element) =>
+    typeof element !== 'string' || isPropValid(prop),
+})`
+  color: ${(p) => p.tone};
+`
+
+// <div id="a"> on a tag; every prop when `as` renders a component
+const card = <Card customPayload="x" id="a" tone="teal" />
+```
+
 `StyleSheetManager` is accepted but inert, so a `shouldForwardProp` given to it is never applied. Since it would filter the props of every styled component below it, which the compiled components cannot see, it is a build error rather than being silently dropped. Code that restores styled-components v5 filtering with `<StyleSheetManager shouldForwardProp={isPropValid}>` must move that filter onto the components: rename the styling props to `$` props, or give each component `.withConfig({ shouldForwardProp })`.
 
 ## Transient props

@@ -108,6 +108,23 @@ const Badge = styled.span.withConfig({
 `
 ```
 
+predicate는 두 라이브러리에서처럼 컴포넌트가 렌더하는 모든 prop에 적용됩니다. 스타일이 읽는 props뿐 아니라, 빌드가 이름을 알 수 없는 spread나 호출하는 쪽이 넘기는 props도 마찬가지입니다. 빌드는 predicate를 평가하고, 컴포넌트가 props에 실행하는 필터로 컴파일합니다. styled-components에서 두 번째 인자는 `as`를 포함해 컴포넌트가 렌더하는 요소이며, predicate는 `typeof element === 'string'`으로 이를 검사할 수 있습니다. styled-components v5의 validator처럼 호출하면(`(prop, valid) => valid(prop)`) v6에서는 실패하므로 빌드 에러가 됩니다. 대신 `@emotion/is-prop-valid`의 `isPropValid`를 호출하세요. `isPropValid`를 호출하는 predicate가 있으면 컴파일된 모듈이 `@emotion/is-prop-valid`를 import하므로, 이 패키지를 계속 설치해 두어야 합니다. Emotion의 `shouldForwardProp`은 prop 이름 하나만 받습니다.
+
+```tsx
+import isPropValid from '@emotion/is-prop-valid'
+import styled from 'styled-components'
+
+const Card = styled.div.withConfig({
+  shouldForwardProp: (prop, element) =>
+    typeof element !== 'string' || isPropValid(prop),
+})`
+  color: ${(p) => p.tone};
+`
+
+// <div id="a"> on a tag; every prop when `as` renders a component
+const card = <Card customPayload="x" id="a" tone="teal" />
+```
+
 `StyleSheetManager`는 허용되지만 아무 동작도 하지 않으므로, 여기에 전달한 `shouldForwardProp`은 적용되지 않습니다. 이는 그 아래의 모든 styled 컴포넌트의 props를 필터링하게 되는데 컴파일된 컴포넌트는 이를 볼 수 없으므로, 조용히 무시되는 대신 빌드 에러가 됩니다. `<StyleSheetManager shouldForwardProp={isPropValid}>`로 styled-components v5의 필터링을 되살리는 코드는 그 필터를 컴포넌트로 옮겨야 합니다. 스타일링 props의 이름을 `$` props로 바꾸거나, 각 컴포넌트에 `.withConfig({ shouldForwardProp })`를 지정하세요.
 
 ## Transient props

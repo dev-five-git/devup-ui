@@ -483,6 +483,35 @@ export const Card = styled.div.withConfig({
 })({ color: 'red' })
 ```
 
+### shouldForwardProp calls the element argument
+
+**API:** styled. **Message pattern:**
+
+```text
+`styled()` cannot use `<code>` at build time: styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so calling it fails at runtime. Fix: import `isPropValid` from `@emotion/is-prop-valid` and call `isPropValid(prop)`, or test the element with `typeof element === 'string'`
+```
+
+**Trigger:**
+
+```tsx-error
+import styled from 'styled-components';
+export const Card = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) })`color: red;`;
+```
+
+**Why:** styled-components v6 calls `shouldForwardProp(prop, elementToBeCreated)`. The second argument is the tag or component it renders, so calling it throws for a tag.
+
+**Fix:** Call `isPropValid` from `@emotion/is-prop-valid`, or test the element with `typeof element === 'string'`.
+
+```tsx
+import isPropValid from '@emotion/is-prop-valid'
+import styled from 'styled-components'
+export const Card = styled.div.withConfig({
+  shouldForwardProp: (prop) => isPropValid(prop),
+})`
+  color: red;
+`
+```
+
 ### Unreadable styled identity option
 
 **API:** styled. **Message pattern:**

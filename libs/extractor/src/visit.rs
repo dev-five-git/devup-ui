@@ -3738,6 +3738,30 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 it.body.insert(0, statement);
             }
         }
+        if crate::styled_reads::calls_is_prop_valid(it) {
+            let source = self
+                .ast
+                .allocator()
+                .alloc_str(&if it.source_type.is_commonjs() {
+                    format!(
+                        "const {} = require('@emotion/is-prop-valid').default;",
+                        crate::styled_reads::IS_PROP_VALID
+                    )
+                } else {
+                    format!(
+                        "import {} from '@emotion/is-prop-valid';",
+                        crate::styled_reads::IS_PROP_VALID
+                    )
+                });
+            let mut program =
+                oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
+                    .parse()
+                    .program;
+            crate::utils::clear_generated_program_spans(&mut program);
+            for statement in program.body.into_iter().rev() {
+                it.body.insert(0, statement);
+            }
+        }
         if let Some(helper) = &self.styled_jsx
             && let Some(binding) = helper.binding(&self.ast, it.source_type.is_commonjs())
         {
@@ -3840,16 +3864,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             configs.insert(0, options.into_expression());
         }
         let options = configs.iter().collect::<Vec<_>>();
-        let (forward, forward_error) = read_forward(&options);
-        if let Some(error) = forward_error {
-            self.errors.push(error);
-        }
         let styled_components = match it {
             Expression::CallExpression(call) => Some(&call.callee),
             Expression::TaggedTemplateExpression(tag) => Some(&tag.tag),
             _ => None,
         }
         .is_some_and(|factory| self.library_factory(factory, &self.styled_components));
+        let (forward, forward_error) = read_forward(&options, styled_components);
+        if let Some(error) = forward_error {
+            self.errors.push(error);
+        }
         let forward = crate::styled_reads::library_forward(styled_components, forward);
         let (identity, identity_errors) = read_identity(&options, &|identifier| {
             self.bindings.symbol(identifier).is_none()

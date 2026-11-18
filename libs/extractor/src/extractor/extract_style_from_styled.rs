@@ -193,7 +193,7 @@ fn withheld(reads: &Reads, renders_tag: bool, forward: Option<&Forward>) -> Vec<
 /// `own` applying after `inherited`: a prop passes only when both pass it
 fn combine_forward(inherited: Option<&Forward>, own: Option<Forward>) -> Option<Forward> {
     match (inherited.cloned(), own) {
-        (Some(inherited), Some(own)) => Some(Forward::And(Box::new(inherited), Box::new(own))),
+        (Some(inherited), Some(own)) => Some(Forward::and(inherited, own)),
         (inherited, own) => own.or(inherited),
     }
 }
@@ -1116,6 +1116,7 @@ pub fn extract_style_from_styled<'a>(
                     style_vars: &gen_styles(ast_builder, &props_styles, None),
                     bindings,
                     withheld: &withheld,
+                    forward: definition.forward.as_ref(),
                     capability: definition.capability.as_ref(),
                     execution: &definition.execution,
                     markers: definition.render_markers(ast_builder),
@@ -1267,6 +1268,7 @@ pub fn extract_style_from_styled<'a>(
                     style_vars: &gen_styles(ast_builder, &styles, None),
                     bindings,
                     withheld: &withheld,
+                    forward: definition.forward.as_ref(),
                     capability: definition.capability.as_ref(),
                     execution: &definition.execution,
                     markers: definition.render_markers(ast_builder),
@@ -1437,26 +1439,29 @@ pub fn take_styled_modifiers<'a>(
 
 /// The `shouldForwardProp` the options objects give, the last one replacing
 /// the earlier, as styled-components spreads each `.withConfig()` over the
-/// options before it, with the offset and code of one the build cannot evaluate
-pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u32, String)>) {
+/// options before it, with the offset and code of one the build cannot evaluate.
+/// Under styled-components its second argument is the element it renders.
+pub fn read_forward(
+    options: &[&Expression<'_>],
+    styled_components: bool,
+) -> (Option<Forward>, Option<(u32, String)>) {
     let mut forward = None;
     for property in option_properties(options, &["shouldForwardProp"]) {
-        match Forward::read(&property.value) {
-            Some(own) => forward = Some(own),
-            None => {
-                return (
-                    forward,
-                    Some((
-                        property.value.span().start,
-                        build_time_error(
-                            "styled",
-                            &readable_code(&property.value),
-                            SHOULD_FORWARD_PROP,
-                        ),
-                    )),
-                );
-            }
-        }
+        let Some(own) = Forward::read(&property.value, styled_components) else {
+            let requirement = if styled_components && Forward::calls_element(&property.value) {
+                ELEMENT_ARGUMENT
+            } else {
+                SHOULD_FORWARD_PROP
+            };
+            return (
+                forward,
+                Some((
+                    property.value.span().start,
+                    build_time_error("styled", &readable_code(&property.value), requirement),
+                )),
+            );
+        };
+        forward = Some(own);
     }
     (forward, None)
 }
@@ -1486,6 +1491,8 @@ fn option_properties<'b, 'a>(
             _ => None,
         })
 }
+
+const ELEMENT_ARGUMENT: &str = "styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so calling it fails at runtime. Fix: import `isPropValid` from `@emotion/is-prop-valid` and call `isPropValid(prop)`, or test the element with `typeof element === 'string'`";
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";
 
@@ -1916,6 +1923,8 @@ struct StyledRender<'b, 'a> {
     style_vars: &'b Option<Expression<'a>>,
     bindings: Vec<(String, Expression<'a>)>,
     withheld: &'b [String],
+    /// Its `shouldForwardProp`, which every prop it renders meets
+    forward: Option<&'b Forward>,
     capability: Option<&'b StyledCapability>,
     execution: &'b Execution<'a>,
     markers: Option<Expression<'a>>,
@@ -1932,6 +1941,7 @@ fn create_styled_component<'a>(
         style_vars,
         bindings,
         withheld,
+        forward,
         capability,
         execution,
         markers,
@@ -2073,14 +2083,18 @@ fn create_styled_component<'a>(
             merge_object_expressions(ast_builder, &parts).unwrap_or(style_vars)
         },
     );
+    let omitted = super::styled_transient::Omitted::of(withheld, forward, RENDERED);
     let omissions = capability.map(|slot| {
-        let mut omissions = withheld.to_vec();
+        let mut omissions = omitted.withheld.to_vec();
         slot.omit(&mut omissions);
         omissions
     });
-    let withheld = omissions.as_deref().unwrap_or(withheld);
+    let omitted = super::styled_transient::Omitted {
+        withheld: omissions.as_deref().unwrap_or(omitted.withheld),
+        forward: omitted.forward,
+    };
     let ordinary =
-        super::styled_transient::filter(ast_builder, identifier(ast_builder, "rest"), withheld);
+        super::styled_transient::filter(ast_builder, identifier(ast_builder, "rest"), &omitted);
     let forwarded = capability.map_or_else(
         || ordinary.clone_in(ast_builder.allocator()),
         |slot| slot.forwarded(ast_builder, &ordinary),

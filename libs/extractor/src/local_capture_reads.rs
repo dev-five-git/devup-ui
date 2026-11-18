@@ -70,6 +70,7 @@ fn generated_reserved(name: &str) -> bool {
             | "__devupRefProps"
             | "__devupRef"
             | "__devupDom"
+            | "__devupIsPropValid"
     ) || name.starts_with("__devupOmit")
 }
 
