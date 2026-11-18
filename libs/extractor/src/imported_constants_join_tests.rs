@@ -24,7 +24,7 @@ fn compiled_css_shorthand_when_inlined_keeps_the_css_property_name() {
         &options,
         None,
         CssProp::Everywhere,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     assert_eq!(result.errors, vec![]);
     parsed
@@ -69,7 +69,11 @@ fn pixel_rules_when_nested_selectors_are_arrays_preserve_unitless_values()
         .as_mut()
         .ok_or("missing rules initializer")?;
     // When: the production pixel traversal prepares the complete rule tree.
-    px_rules(&AstBuilder::new(&allocator), rules);
+    px_rules(
+        &AstBuilder::new(&allocator),
+        rules,
+        crate::library_arrays::Library::Emotion,
+    );
     let generated = oxc_codegen::Codegen::new().build(&parsed.program).code;
     let script = format!("{generated}\nJSON.stringify(rules);");
     let json = boa_engine::Context::default()
@@ -114,7 +118,7 @@ fn shape_accounting_when_selection_erases_a_read_counts_original_sites(
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     // Then: generated members neither hide an extra use nor invent one.
     let errors = if observed {
@@ -158,7 +162,7 @@ fn scoping_when_a_bound_callback_captures_a_local_is_returned_for_reuse()
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     // Then: the caller receives the semantic phase that owns the renamed reads.
     assert_eq!(inlined.errors, vec![]);
