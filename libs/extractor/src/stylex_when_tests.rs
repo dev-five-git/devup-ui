@@ -39,7 +39,8 @@ const IMPORT: &str = "import * as stylex from '@stylexjs/stylex';\n";
 )]
 #[case::conditional_markers(
     "conditional_markers",
-    "export const card = stylex.defineMarker();\nconst s = stylex.create({ a: { color: { default: 'black', [stylex.when.ancestor(':hover', card)]: 'red' } } });\nexport const f = (on) => stylex.props(on && card, on ? stylex.defaultMarker() : null, s.a);\nexport const g = stylex.props(card, 0, stylex.defaultMarker(), s.a);"
+    "export const card = stylex.defineMarker();\nconst s = stylex.create({ a: { color: { default: 'black', [stylex.when.ancestor(':hover', card)]: 'red' } } });\nexport const f = (on) => stylex.props(on && card, on ? stylex.defaultMarker() : null, s.a);\nexport const g = stylex.props(card, 0, stylex.defaultMarker(), s.a);
+export const h = (extra) => stylex.props(s.a, extra());"
 )]
 #[case::dynamic_namespace(
     "dynamic_namespace",
