@@ -8,13 +8,17 @@ use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::ast::Expression;
 use oxc_ast::builder::AstBuilder;
 
+use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 
 #[path = "composition_keys.rs"]
 mod key_query;
 #[path = "composition_residual.rs"]
 mod residual;
+#[path = "composition_shorthands.rs"]
+pub(crate) mod shorthands;
 pub(crate) use residual::{CascadeKey, Coverage, coverage};
+use shorthands::replaces;
 
 #[cfg(test)]
 #[path = "layer_registration_tests.rs"]
@@ -143,6 +147,9 @@ impl<'a> Composition<'a> {
     }
 
     fn overlay(&mut self, ast_builder: &AstBuilder<'a>, key: CascadeKey, overlay: Overlay<'a>) {
+        if let Overlay::Atom(ExtractStyleValue::Static(shorthand)) = &overlay {
+            self.drop_covered(shorthand);
+        }
         let previous = self
             .entries
             .iter()
@@ -150,6 +157,14 @@ impl<'a> Composition<'a> {
             .map_or(Choice::Empty, |index| self.entries.remove(index).1);
         let choice = resolve(ast_builder, overlay, previous);
         self.entries.push((key, choice));
+    }
+
+    /// A shorthand a later part sets replaces the longhands it covers that
+    /// earlier parts set, under the rule of `shorthands`
+    fn drop_covered(&mut self, shorthand: &ExtractStaticStyle) {
+        self.entries.retain(|(_, choice)| {
+            !matches!(choice, Choice::Atom(ExtractStyleValue::Static(longhand)) if replaces(shorthand, longhand))
+        });
     }
 
     /// A class applying after the composed parts, whose styles `values` the

@@ -4653,10 +4653,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     call.arguments =
                         oxc_allocator::Vec::from_array_in([Argument::from(classes)], &self.ast);
                 }
+                // The style objects merged below stay levels of their own
+                let mut merged_arguments = Vec::new();
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
                         style_arguments(&self.ast, &call.arguments)
                 {
+                    merged_arguments = call.arguments.iter().map(GetSpan::span).collect();
                     call.arguments =
                         oxc_allocator::Vec::from_array_in([Argument::from(rules)], &self.ast);
                     classes
@@ -4673,7 +4676,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     *it = if r.is_css() {
                         let (result, authored) =
                             crate::extractor::style_order_projection::extract_with_order(
-                                StyleInputs::with_values(&self.ast, &self.style_values),
+                                StyleInputs::with_values(&self.ast, &self.style_values)
+                                    .with_arguments(&merged_arguments),
                                 None,
                                 if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
                                     &mut spread.argument
@@ -5785,6 +5789,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             // extract ExtractStyleProp and remain style and class name, just extract
             let mut duplicate_set = FxHashSet::default();
+            // Attributes are read from the last, so the ones read so far are
+            // the later ones; only a spread orders them, as the lint sorts the
+            // rest by name
+            let mut later = crate::composition::shorthands::LaterRuns::default();
             let mut parsed_style_order = ParsedStyleOrder::None;
             let mut style_vars = None;
             let mut props = None;
@@ -5853,13 +5861,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     &disassembled,
                                     at,
                                 );
-                                props_styles.extend(styles.into_iter().rev());
+                                props_styles
+                                    .extend(later.member((None, 0), styles).into_iter().rev());
                                 tag_name = tag.unwrap_or(tag_name);
                             }
                             duplicate_set.insert(disassembled);
                         }
                     }
                 } else if let JSXAttributeItem::SpreadAttribute(spread) = &mut attr {
+                    later.end_run();
                     if self.is_rule_branch(&spread.argument) {
                         self.style_values.read_in(&self.ast, &mut spread.argument);
                         crate::style_order_validation::validate_rules(
@@ -5875,7 +5885,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &None,
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
-                        props_styles.extend(styles.into_iter().rev());
+                        props_styles.extend(later.spread(styles).into_iter().rev());
                         if element_props::has_runtime_props(&spread.argument) {
                             attrs.insert(i, attr);
                         }
@@ -5923,7 +5933,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         style_vars = style_vars.or(extracted.style_vars);
                         props = props.or(extracted.props);
-                        props_styles.extend(extracted.styles);
+                        props_styles.extend(later.spread(extracted.styles));
                         if !object.properties.is_empty() {
                             attrs.insert(i, attr);
                         }
