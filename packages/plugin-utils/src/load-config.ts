@@ -83,6 +83,21 @@ function enterConfig(configPath: string, chain: readonly string[]): string[] {
 }
 
 /**
+ * The config of a file that does not exist: empty. A project without
+ * devup.json is normal, but an `extends` entry naming a missing file is
+ * likely a typo, so that case warns, naming both files. The path stays in the
+ * inputs, so a watcher picks the file up once it is created.
+ */
+function missingConfig(chain: readonly string[]): DevupConfig {
+  if (chain.length > 1) {
+    console.warn(
+      `[devup-ui] ${chain[chain.length - 2]} extends ${chain[chain.length - 1]}, which does not exist, so it adds nothing to the theme. Create the file or fix the \`extends\` entry.`,
+    )
+  }
+  return {}
+}
+
+/**
  * Merge resolved parent configs with the current config
  * Extends are merged in order (first is the base, subsequent ones override),
  * then the current config is merged last (highest priority) with its
@@ -124,7 +139,7 @@ function loadConfigSync(
   inputs?.add(resolve(configPath))
   const chain = enterConfig(configPath, parents)
   if (!existsSync(configPath)) {
-    return {}
+    return missingConfig(chain)
   }
 
   const content = readFileSync(configPath, 'utf-8')
@@ -167,7 +182,7 @@ async function loadConfig(
   inputs?.add(resolve(configPath))
   const chain = enterConfig(configPath, parents)
   if (!existsSync(configPath)) {
-    return {}
+    return missingConfig(chain)
   }
 
   const content = await readFile(configPath, 'utf-8')
