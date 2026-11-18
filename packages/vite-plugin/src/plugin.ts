@@ -43,6 +43,7 @@ import type {
 
 import { assetNames, hashSheetAssetNames } from './asset-names'
 import { createCompiledDependencies } from './compiled-dependencies'
+import { createViteMarkers } from './component-markers'
 import { createEnvironmentSheets } from './environment-sheets'
 import { createViteReservation } from './reservation'
 import { createServerWatch } from './server-watch'
@@ -459,6 +460,9 @@ export function DevupUI({
     compiler.getCss(fileNum, false),
   )
   const compiledDependencies = createCompiledDependencies()
+  const markers = createViteMarkers()
+  /** Whether this is a one-shot production build, which drops unread markers */
+  let dropsMarkers = false
   let stopWatching: (() => void) | undefined
   let watcherSession: ExtractionSession | undefined
   let watchConfigInputs: (() => void) | undefined
@@ -621,6 +625,8 @@ export function DevupUI({
       cssFile,
       updatedBaseStyle,
       dependencies = [],
+      givenMarkers,
+      selectedMarkers,
       // import main css in code
     } = (() => {
       using output = compiler.codeExtract(
@@ -640,8 +646,11 @@ export function DevupUI({
         cssFile: output.cssFile,
         updatedBaseStyle: output.updatedBaseStyle,
         dependencies: output.dependencies,
+        givenMarkers: output.givenMarkers,
+        selectedMarkers: output.selectedMarkers,
       }
     })()
+    markers.record(fileName, code, { givenMarkers, selectedMarkers })
     compiledDependencies.update(
       this.environment?.name ?? 'client',
       id,
@@ -711,6 +720,9 @@ export function DevupUI({
       if (!ownsEngine) configureEngine()
       resolvedConfig = config
       isServe = config?.command === 'serve'
+      dropsMarkers =
+        !isServe && !config?.build?.watch && config?.isProduction === true
+      markers.reset()
       const projectRoot = config?.root ?? process.cwd()
       locate(projectRoot)
       // Vite ids are POSIX absolute paths
@@ -803,6 +815,7 @@ export function DevupUI({
     async buildStart() {
       if (!extractCss) return
       await reservation.reserve()
+      markers.scanned(reservation.markerSelections, reservation.reservedIds)
       for (const dependency of reservation.dependencies)
         this.addWatchFile(dependency)
     },
@@ -985,6 +998,10 @@ export function DevupUI({
     async transform(code, id) {
       if (!SOURCE_FILE_REGEX.test(id.split('?')[0].toLowerCase())) return
       return extractModule.call(this, code, id)
+    },
+    renderChunk(code, chunk) {
+      if (!extractCss || !dropsMarkers) return null
+      return markers.renderChunk(code, chunk, this)
     },
     async generateBundle(_options, bundle) {
       if (!extractCss) return

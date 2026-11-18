@@ -155,6 +155,7 @@ interface ViteTestPlugin {
   configResolved: (config?: {
     command?: 'serve' | 'build'
     build?: { watch?: object | null }
+    isProduction?: boolean
     root?: string
     plugins?: readonly object[]
   }) => Promise<void>
@@ -177,6 +178,11 @@ interface ViteTestPlugin {
     timestamp: number
   }) => Promise<unknown[] | undefined>
   load: (id: string) => string | undefined
+  renderChunk: (
+    this: { warn(message: string): void },
+    code: string,
+    chunk: { modules: Record<string, { code: string | null }> },
+  ) => { code: string } | null
   transform: (
     this: {
       environment?: {
@@ -424,6 +430,35 @@ describe('devupUIVitePlugin', () => {
     expect(output.free).toHaveBeenCalledTimes(1)
   })
 
+  it('drops unselected component markers only from one-shot production chunks', async () => {
+    // Given
+    const plugin = createPlugin()
+    codeExtractSpy.mockReturnValueOnce(
+      createCodeExtractResult({ givenMarkers: ['a--a'], selectedMarkers: [] }),
+    )
+    const context = { warn: mock() }
+    const chunk = { modules: {} }
+    // When
+    await plugin.configResolved({ command: 'build', isProduction: true })
+    await plugin.buildStart.call({ addWatchFile: mock() } as never)
+    await plugin.transform('source', 'source.tsx')
+    const production = plugin.renderChunk.call(context, 'f("a--a")', chunk)
+    await plugin.configResolved({ command: 'build', isProduction: false })
+    const development = plugin.renderChunk.call(context, 'f("a--a")', chunk)
+    // Then
+    expect(production?.code).toBe('f("")')
+    expect(development).toBeNull()
+    expect(context.warn).not.toHaveBeenCalled()
+  })
+
+  it('renders chunks untouched without CSS extraction', async () => {
+    const plugin = createPlugin({ extractCss: false })
+    await plugin.configResolved({ command: 'build', isProduction: true })
+    expect(
+      plugin.renderChunk.call({ warn: mock() }, 'f("a--a")', { modules: {} }),
+    ).toBeNull()
+  })
+
   it('should apply default options', () => {
     const plugin = createPlugin({})
     expect(plugin).toEqual({
@@ -437,6 +472,7 @@ describe('devupUIVitePlugin', () => {
       hotUpdate: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
+      renderChunk: expect.any(Function),
       apply: expect.any(Function),
       outputOptions: expect.any(Function),
       generateBundle: expect.any(Function),
