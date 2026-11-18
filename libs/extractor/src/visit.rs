@@ -3545,12 +3545,11 @@ impl<'a> DevupVisitor<'a> {
                     (None, None) => None,
                 }
             }
-            // false, null, undefined, 0, "" → falsy, skip
+            // false, null, undefined, 0 → falsy, skip ("" is a class, read above)
             Expression::BooleanLiteral(b) if !b.value => None,
             Expression::NullLiteral(_) => None,
             Expression::Identifier(ident) if ident.name == "undefined" => None,
             Expression::NumericLiteral(n) if n.value == 0.0 => None,
-            Expression::StringLiteral(s) if s.value.is_empty() => None,
             _ => Some(runtime_classes(&self.ast, expr)),
         }
     }
