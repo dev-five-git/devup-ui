@@ -12,6 +12,20 @@ fn set(key: &'static str, value: &str) -> ExpandedKey {
     (key, Some(value.to_string()))
 }
 
+#[test]
+fn an_expansion_built_at_runtime_applies_like_a_table_entry() {
+    // The tables build every `Expansion` in a const context
+    let expansion = Expansion::new(Split::Pair, &["rowGap", "columnGap"], &["gridGap"]);
+    assert_eq!(
+        expansion.apply(Some("1px 2px")),
+        Ok(vec![
+            set("rowGap", "1px"),
+            set("columnGap", "2px"),
+            ("gridGap", None)
+        ])
+    );
+}
+
 #[rstest]
 #[case(StyleResolution::PropertySpecificity, "padding")]
 #[case(StyleResolution::ApplicationOrder, "color")]
