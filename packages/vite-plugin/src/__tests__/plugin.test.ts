@@ -73,6 +73,29 @@ describe('shorthand creation boundary', () => {
       registration.mockRestore()
     }
   })
+
+  it('reads StyleX under the styleResolution it is given, the default otherwise', () => {
+    using resolution = spyOn(wasm, 'setStylexStyleResolution')
+    createPlugin({
+      stylex: { styleResolution: 'application-order' },
+    }).closeBundle()
+    createPlugin().closeBundle()
+    expect(resolution.mock.calls).toEqual([
+      ['application-order'],
+      ['property-specificity'],
+    ])
+    wasm.setStylexStyleResolution(null)
+  })
+
+  it('rejects an unknown styleResolution before selecting a compiler', () => {
+    using selection = spyOn(pluginUtils, 'loadCompiler')
+    expect(() =>
+      Reflect.apply(DevupUI, undefined, [
+        { stylex: { styleResolution: 'last-wins' } },
+      ]),
+    ).toThrow(pluginUtils.StylexConfigError)
+    expect(selection).not.toHaveBeenCalled()
+  })
 })
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>

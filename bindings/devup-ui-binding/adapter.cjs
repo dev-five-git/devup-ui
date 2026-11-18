@@ -117,5 +117,7 @@ exports.createBinding = function createBinding(raw) {
     setLicenseBanner: (value) => raw.setLicenseBanner(value),
     setModuleResolver,
     setPrefix: (value) => raw.setPrefix(value == null ? undefined : value),
+    setStylexStyleResolution: (value) =>
+      raw.setStylexStyleResolution(value == null ? undefined : value),
   })
 }

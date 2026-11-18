@@ -18,11 +18,14 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   readJsxImportSource,
   resolveDevupFile,
   resolveProjectPath,
   seedFileNumbers,
   setupWarning,
+  type StylexOptions,
+  type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -75,6 +78,8 @@ export interface DevupUIBunPluginOptions {
   /** Native by default. Select WASM explicitly without automatic fallback. */
   engine?: DevupEngine
   shorthands?: CustomShorthands
+  /** How code written against StyleX's API is read. */
+  stylex?: StylexOptions
   /**
    * Readable class names. Defaults to `true` under the Bun runtime (tests) and
    * `false` in `Bun.build`.
@@ -208,12 +213,14 @@ async function writeDataFiles(
 async function initialize(
   compiler: DevupCompiler,
   shorthands: Record<string, readonly string[]>,
+  styleResolution: StylexStyleResolution,
   watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
   project: BunProject,
   conditions: readonly string[],
 ) {
   const { distDir } = project
   compiler.registerShorthands(shorthands)
+  compiler.setStylexStyleResolution(styleResolution)
   compiler.setPrefix(null)
   compiler.setModuleResolver(createModuleResolver({ conditions }))
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
@@ -317,6 +324,7 @@ function loadSourceFile(
  */
 function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const shorthands = normalizeShorthands(options.shorthands ?? {})
+  const styleResolution = normalizeStylexOptions(options.stylex)
   const compiler = loadCompiler(options.engine)
   // Each setup locates the project again; the watcher reads it then
   const project = locateProject(process.cwd())
@@ -346,6 +354,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       await initialize(
         compiler,
         shorthands,
+        styleResolution,
         watchTailwindCss,
         project,
         bunConditions(build.config),

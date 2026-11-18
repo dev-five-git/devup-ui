@@ -78,7 +78,7 @@ describe('compiler structural types', () => {
           Object.keys(compiler).filter(
             (key) => key !== 'Output' && key !== 'default',
           ),
-        ).toHaveLength(34)
+        ).toHaveLength(35)
       } finally {
         compiler.resetStateForTesting()
       }

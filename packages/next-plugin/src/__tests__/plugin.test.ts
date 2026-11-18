@@ -239,6 +239,34 @@ describe('DevupUINextPlugin', () => {
     }
   })
 
+  it('reads StyleX under the styleResolution a Turbopack plugin is given', () => {
+    process.env.TURBOPACK = '1'
+    const resolution = spyOn(wasm, 'setStylexStyleResolution')
+    try {
+      DevupUI({}, { stylex: { styleResolution: 'legacy-expand-shorthands' } })
+      expect(resolution.mock.calls).toEqual([['legacy-expand-shorthands']])
+    } finally {
+      resolution.mockRestore()
+      wasm.setStylexStyleResolution(null)
+    }
+  })
+
+  it.each(['1', undefined])(
+    'rejects an unknown styleResolution before setup in mode %s',
+    (mode) => {
+      if (mode === undefined) delete process.env.TURBOPACK
+      else process.env.TURBOPACK = mode
+      expect(() =>
+        Reflect.apply(DevupUI, undefined, [
+          {},
+          { stylex: { styleResolution: 'last-wins' } },
+        ]),
+      ).toThrow(importGraphModule.StylexConfigError)
+      expect(startCoordinatorSpy).not.toHaveBeenCalled()
+      expect(devupUIWebpackPluginSpy).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects a typo before reading an available production handoff', () => {
     process.env.TURBOPACK = '1'
     setNodeEnv('production')

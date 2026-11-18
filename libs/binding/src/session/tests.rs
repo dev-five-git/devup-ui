@@ -129,6 +129,35 @@ fn the_license_banner_setting_belongs_to_one_session() {
 }
 
 #[test]
+fn the_stylex_style_resolution_belongs_to_one_session() {
+    use css::style_resolution::{StyleResolution, style_resolution};
+    let _clean = clean();
+    // Given: session 0 reads stylex.create() under application order
+    assert_eq!(
+        crate::set_stylex_style_resolution(Some("application-order")),
+        Ok(())
+    );
+    let session = create_session();
+    // When: another session runs, Then: it starts from the default policy
+    assert_eq!(
+        with_session(session, style_resolution),
+        Ok(StyleResolution::PropertySpecificity)
+    );
+    // And: a policy it installs stays in it
+    assert_eq!(
+        with_session(session, || crate::set_stylex_style_resolution(Some(
+            "legacy-expand-shorthands"
+        ))),
+        Ok(Ok(()))
+    );
+    assert_eq!(style_resolution(), StyleResolution::ApplicationOrder);
+    assert_eq!(select_session(session), Ok(0));
+    assert_eq!(style_resolution(), StyleResolution::LegacyExpandShorthands);
+    assert_eq!(select_session(0), Ok(session));
+    assert_eq!(style_resolution(), StyleResolution::ApplicationOrder);
+}
+
+#[test]
 #[serial]
 fn removing_a_file_forgets_it_only_in_the_live_session() {
     let _clean = clean();

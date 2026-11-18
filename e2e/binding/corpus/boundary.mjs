@@ -204,6 +204,23 @@ add('prefix-valid-and-malformed-boolean-strict', (h) => {
   }
   h.call('setPrefix')
 })
+add('stylex-style-resolution-valid-unknown-and-malformed', (h) => {
+  const stylex = `import * as stylex from '@stylexjs/stylex'
+const s = stylex.create({ top: { paddingTop: '1px' }, pad: { padding: '1px 2px' } })
+export const a = stylex.props(s.top, s.pad)`
+  for (const value of [
+    'application-order',
+    'legacy-expand-shorthands',
+    'last-wins',
+    null,
+    undefined,
+    false,
+  ]) {
+    h.call('setStylexStyleResolution', value)
+    h.extract(stylex)
+  }
+  h.call('setStylexStyleResolution')
+})
 export const boundary = cases
 
 export function capturePatched(patches, action) {

@@ -147,6 +147,9 @@ mod stylesheet_regression_tests;
 #[cfg(test)]
 mod stylesheet_stack_tests;
 mod stylex;
+mod stylex_resolution;
+#[cfg(test)]
+mod stylex_resolution_extract_tests;
 mod tailwind;
 mod tailwind_children;
 mod tailwind_color;

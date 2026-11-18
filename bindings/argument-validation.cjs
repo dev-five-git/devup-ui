@@ -27,6 +27,7 @@ module.exports = function createBoundary() {
     setLicenseBanner: 'enabled:b',
     setModuleResolver: 'resolver:f',
     setPrefix: 'prefix:p',
+    setStylexStyleResolution: 'resolution:p',
   }
   const labels = {
     s: 'a string',

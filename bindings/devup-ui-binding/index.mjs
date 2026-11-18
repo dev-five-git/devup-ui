@@ -36,4 +36,5 @@ export const {
   setLicenseBanner,
   setModuleResolver,
   setPrefix,
+  setStylexStyleResolution,
 } = binding

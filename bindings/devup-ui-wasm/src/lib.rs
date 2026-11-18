@@ -212,6 +212,19 @@ pub fn set_prefix(prefix: Option<String>) {
     binding_core::set_prefix(prefix);
 }
 
+/// Install the named `StyleX` `styleResolution` (testable without `JsValue`)
+pub fn set_stylex_style_resolution_internal(value: Option<&str>) -> Result<(), String> {
+    binding_core::set_stylex_style_resolution(value)
+}
+
+/// Read `stylex.create()` under the `StyleX` `styleResolution` `resolution` names,
+/// the default when nullish; an unknown name fails
+#[wasm_bindgen(js_name = "setStylexStyleResolution")]
+#[cfg(not(tarpaulin_include))]
+pub fn set_stylex_style_resolution(resolution: Option<String>) -> Result<(), JsValue> {
+    set_stylex_style_resolution_internal(resolution.as_deref()).map_err(js_error)
+}
+
 #[wasm_bindgen(js_name = "getPrefix")]
 #[must_use]
 pub fn get_prefix() -> Option<String> {
@@ -2023,5 +2036,25 @@ mod tests {
             ["-webkit-mask-image", "-webkit-mask-image", "--Mask"]
         );
         register_shorthands_internal(BTreeMap::new()).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_set_stylex_style_resolution_internal() {
+        use css::style_resolution::{StyleResolution, style_resolution};
+        let _state = TestStateGuard::new();
+        assert_eq!(
+            set_stylex_style_resolution_internal(Some("application-order")),
+            Ok(())
+        );
+        assert_eq!(style_resolution(), StyleResolution::ApplicationOrder);
+        assert!(
+            set_stylex_style_resolution_internal(Some("nope"))
+                .unwrap_err()
+                .contains("stylex.styleResolution")
+        );
+        assert_eq!(style_resolution(), StyleResolution::ApplicationOrder);
+        assert_eq!(set_stylex_style_resolution_internal(None), Ok(()));
+        assert_eq!(style_resolution(), StyleResolution::PropertySpecificity);
     }
 }

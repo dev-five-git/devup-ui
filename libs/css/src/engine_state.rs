@@ -6,12 +6,12 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     atom_hoist, class_map, debug, file_map, file_routes, license_banner, slot_reservation,
-    tailwind_definitions, theme_tokens,
+    style_resolution, tailwind_definitions, theme_tokens,
 };
 
-/// The prefix, debug and license banner flags, atom hoisting, class and file
-/// numbering, routes, shorthands, theme tokens and Tailwind definitions of one
-/// engine session.
+/// The prefix, debug and license banner flags, `StyleX` style resolution, atom
+/// hoisting, class and file numbering, routes, shorthands, theme tokens and
+/// Tailwind definitions of one engine session.
 ///
 /// The default value is a clean engine, as after a full reset.
 #[derive(Default)]
@@ -20,6 +20,7 @@ pub struct CssState {
     debug: bool,
     /// Stored inverted so that the default state keeps the banner on.
     license_banner_off: bool,
+    resolution: style_resolution::StyleResolution,
     hoist: Option<usize>,
     plan: Option<BTreeSet<String>>,
     reservation: slot_reservation::State,
@@ -45,6 +46,8 @@ impl CssState {
             &mut self.license_banner_off,
             banner_off,
         ));
+        let resolution = style_resolution::style_resolution();
+        style_resolution::set_style_resolution(std::mem::replace(&mut self.resolution, resolution));
         let hoist = atom_hoist::atom_hoist_threshold();
         atom_hoist::set_atom_hoist(std::mem::replace(&mut self.hoist, hoist));
         let plan = atom_hoist::atom_plan();
