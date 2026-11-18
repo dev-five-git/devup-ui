@@ -2,6 +2,11 @@ export const metadata = {
   title: 'Migration',
   alternates: {
     canonical: '/docs/migration/styled-components',
+    languages: {
+      en: '/docs/migration/styled-components',
+      ko: '/ko/docs/migration/styled-components',
+      'x-default': '/docs/migration/styled-components',
+    },
   },
 }
 
@@ -76,6 +81,34 @@ const Card = Emotion.div`color: red;`
 A component selector matches the elements each library matches. A selected component carries a short marker class, and `${Card}` selects it. Under styled-components, `styled(Card)` keeps `Card`'s class, so `${Card}` matches the extension too. Emotion's selector reads `Card`'s `target`, which `styled(Card)` renders without, so a component made with Emotion's `styled` keeps its marker to itself, as it does a `target`. The marker stays on `Card.withComponent('a')`, which keeps `Card`'s options. Under Emotion, `Card.withComponent('a')` shares `Card`'s marker instead of taking its own, even when it is exported or selected: `${Link}` for `Link = Card.withComponent('a')` matches `Card` and every `withComponent` result of it, and `styled(Link)`, like `styled(Card)`, renders without the marker.
 
 `withComponent` renders the component's styles as another tag or component. The build compiles it when it reads the component, in the same module or another one. A component compiled from Emotion's `styled` also takes `withComponent` at runtime, as Emotion's components do, so the call works where the build cannot see the component, or when only the runtime knows the target (`Card.withComponent(pick())`). That component renders the tag through `as`, which a later `as` still replaces, and keeps the classes the component's `target` gives. Options passed beside the target are a build error, because they would change classes and props the build cannot see. Create that component with `styled(tag, options)` instead.
+
+## Props passed to the element
+
+Each library's components pass props on as that library does. A component made with styled-components' `styled` follows styled-components v6, which no longer filters props: without `shouldForwardProp`, every prop reaches what it renders, a tag included, even one its styles read, such as `tone` below. Only `$` props, `as` (and `forwardedAs`, which becomes the rendered element's `as`) and `theme` stay behind. A component made with Emotion's `styled` keeps the props its styles read off a tag unless the tag takes them as attributes, as Emotion's `@emotion/is-prop-valid` check does.
+
+```tsx
+import styled from 'styled-components'
+
+const Badge = styled.span`
+  color: ${(p) => p.tone};
+  background: ${(p) => p.$surface};
+`
+
+// <span tone="teal" class="..."> — `tone` reaches the DOM, as in styled-components v6
+const badge = <Badge $surface="white" tone="teal" />
+```
+
+React warns about a prop the DOM does not know, as it does under styled-components. To keep a prop off the element, start its name with `$`, or give the component its own `shouldForwardProp` through `.withConfig()`, which the build evaluates. A component extending another applies both predicates, so a prop passes only when both pass it, and when several `.withConfig()` calls set `shouldForwardProp` on one component, the last one wins:
+
+```tsx
+const Badge = styled.span.withConfig({
+  shouldForwardProp: (prop) => prop !== 'tone',
+})`
+  color: ${(p) => p.tone};
+`
+```
+
+`StyleSheetManager` is accepted but inert, so a `shouldForwardProp` given to it is never applied. Since it would filter the props of every styled component below it, which the compiled components cannot see, it is a build error rather than being silently dropped. Code that restores styled-components v5 filtering with `<StyleSheetManager shouldForwardProp={isPropValid}>` must move that filter onto the components: rename the styling props to `$` props, or give each component `.withConfig({ shouldForwardProp })`.
 
 ## Transient props
 

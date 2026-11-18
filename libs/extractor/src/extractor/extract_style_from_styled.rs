@@ -1435,13 +1435,14 @@ pub fn take_styled_modifiers<'a>(
     (attrs, configs)
 }
 
-/// The `shouldForwardProp` the options objects give, the later applying after
-/// the earlier, with the offset and code of one the build cannot evaluate
+/// The `shouldForwardProp` the options objects give, the last one replacing
+/// the earlier, as styled-components spreads each `.withConfig()` over the
+/// options before it, with the offset and code of one the build cannot evaluate
 pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u32, String)>) {
     let mut forward = None;
     for property in option_properties(options, &["shouldForwardProp"]) {
         match Forward::read(&property.value) {
-            Some(own) => forward = combine_forward(forward.as_ref(), Some(own)),
+            Some(own) => forward = Some(own),
             None => {
                 return (
                     forward,

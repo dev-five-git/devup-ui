@@ -576,6 +576,7 @@ fn extract_source(
         css_prop,
         px,
         emotion_styled,
+        styled_components,
     } = import_alias_visit::transform_import_aliases_with_edits(
         &namespace_code,
         filename,
@@ -903,6 +904,7 @@ fn extract_source(
     visitor.changed_bindings(inlined.changed.clone());
     visitor.takes_css_prop(css_prop);
     visitor.styles_with_emotion(emotion_styled);
+    visitor.styles_with_styled_components(styled_components);
     visitor.reuse_scoping(inlined.scoping);
     visitor.own_rules(own_rules, &program);
     visitor.import_styled(imported.components);
@@ -1323,6 +1325,7 @@ pub fn has_devup_ui_with(
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    mod styled_library_forwarding_tests;
     mod styled_transient_tests;
 
     mod exact_literal_coercion {

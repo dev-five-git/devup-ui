@@ -19,6 +19,11 @@ export const translatedPages: Record<string, TranslatedPage | undefined> = {
     load: () => import('@/app/(detail)/docs/installation/page.ko.mdx'),
     Layout: DocsLayout,
   },
+  '/docs/migration/styled-components': {
+    load: () =>
+      import('@/app/(detail)/docs/migration/styled-components/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
   '/docs/migration/vanilla-extract': {
     load: () =>
       import('@/app/(detail)/docs/migration/vanilla-extract/page.ko.mdx'),

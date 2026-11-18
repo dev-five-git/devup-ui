@@ -78,6 +78,8 @@ struct LibraryNumbers {
     css_reads: rustc_hash::FxHashSet<oxc_syntax::reference::ReferenceId>,
     /// The names the file imports Emotion's `styled` as
     emotion_styled: Vec<String>,
+    /// The names the file imports styled-components' `styled` as
+    styled_components: Vec<String>,
     /// Import bindings of styled-components and vanilla-extract, whose rules
     /// read arrays as their library does; others are Emotion's
     libraries: Vec<(SymbolId, Library)>,
@@ -548,6 +550,9 @@ pub struct Aliased<'a> {
     /// The names the file imports Emotion's `styled` as, whose components a
     /// component selector picks out without the components extending them
     pub emotion_styled: Vec<String>,
+    /// The names the file imports styled-components' `styled` as, whose
+    /// components forward every prop as styled-components v6 does
+    pub styled_components: Vec<String>,
 }
 
 /// The spans of the style values and rules written as an expression a
@@ -703,6 +708,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         css_prop,
         px,
         emotion_styled: Vec::new(),
+        styled_components: Vec::new(),
     };
     let emotion_aliased = import_aliases.contains_key(EMOTION_REACT);
     let emotion_jsx = builds_jsx_with_emotion(import_aliases);
@@ -886,8 +892,13 @@ pub fn transform_import_aliases_with_edits<'a>(
                             }
                         }
                     }
-                    if source_value == "@emotion/styled" {
-                        numbers.emotion_styled.extend(
+                    let styled = match source_value {
+                        "@emotion/styled" => Some(&mut numbers.emotion_styled),
+                        "styled-components" => Some(&mut numbers.styled_components),
+                        _ => None,
+                    };
+                    if let Some(styled) = styled {
+                        styled.extend(
                             import_decl
                                 .specifiers
                                 .iter()
@@ -970,6 +981,7 @@ pub fn transform_import_aliases_with_edits<'a>(
         css_prop: numbers.css_prop,
         px,
         emotion_styled: numbers.emotion_styled,
+        styled_components: numbers.styled_components,
     }
 }
 
