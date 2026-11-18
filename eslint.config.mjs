@@ -89,4 +89,20 @@ export default [
       '@devup-ui/css-utils-literal-only': 'off',
     },
   },
+  // Test files share one Bun process, so changing its directory leaks into
+  // every later file. Stub process.cwd() or spawn a child with `cwd` instead.
+  {
+    files: ['packages/**/__tests__/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'process',
+          property: 'chdir',
+          message:
+            'Stub process.cwd() or spawn a child process with `cwd` instead.',
+        },
+      ],
+    },
+  },
 ]

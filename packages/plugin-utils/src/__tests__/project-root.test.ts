@@ -8,21 +8,22 @@ import { resolveDevupFile, resolveProjectPath } from '../project-root'
 
 let workspace: string
 let project: string
-let cwd: string
+let cwd: ReturnType<typeof spyOn>
 let warn: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  cwd = process.cwd()
   workspace = mkdtempSync(join(tmpdir(), 'devup-project-root-'))
   project = join(workspace, 'apps', 'web')
   mkdirSync(project, { recursive: true })
-  process.chdir(workspace)
+  // Stub the working directory instead of changing the shared process's
+  // directory, which other test files running in the same process read.
+  cwd = spyOn(process, 'cwd').mockReturnValue(workspace)
   warn = spyOn(console, 'warn').mockReturnValue(undefined)
 })
 
 afterEach(() => {
   warn.mockRestore()
-  process.chdir(cwd)
+  cwd.mockRestore()
   rmSync(workspace, { recursive: true, force: true })
 })
 

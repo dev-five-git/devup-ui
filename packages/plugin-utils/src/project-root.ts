@@ -14,8 +14,17 @@ const warnedCwdDevupFiles = new Set<string>()
  * exactly the paths it always did.
  */
 export function resolveProjectPath(root: string, path: string): string {
-  if (isAbsolute(path) || resolve(root) === resolve(process.cwd())) return path
-  return resolve(root, path)
+  if (isAbsolute(path) || fromCwd(root) === fromCwd()) return path
+  return fromCwd(root, path)
+}
+
+/**
+ * `paths` resolved against `process.cwd()`, read at call time, so every
+ * working-directory dependency goes through the one function tests can stub
+ * instead of changing the process directory.
+ */
+function fromCwd(...paths: string[]): string {
+  return resolve(process.cwd(), ...paths)
 }
 
 /**
@@ -29,17 +38,18 @@ export function resolveDevupFile(
   devupFile: string | undefined,
 ): string {
   const projectFile = resolveProjectPath(root, devupFile ?? DEFAULT_DEVUP_FILE)
-  if (devupFile !== undefined || existsSync(projectFile)) return projectFile
-  const cwdFile = resolve(DEFAULT_DEVUP_FILE)
-  if (resolve(projectFile) === cwdFile || !existsSync(cwdFile))
+  if (devupFile !== undefined || existsSync(fromCwd(projectFile)))
     return projectFile
-  const warning = `${resolve(root)}\0${cwdFile}`
+  const cwdFile = fromCwd(DEFAULT_DEVUP_FILE)
+  if (fromCwd(projectFile) === cwdFile || !existsSync(cwdFile))
+    return projectFile
+  const warning = `${fromCwd(root)}\0${cwdFile}`
   if (!warnedCwdDevupFiles.has(warning)) {
     warnedCwdDevupFiles.add(warning)
     console.warn(
-      `[devup-ui] Found devup.json relative to the working directory (${cwdFile}), not the project root (${resolve(root)}). ` +
+      `[devup-ui] Found devup.json relative to the working directory (${cwdFile}), not the project root (${fromCwd(root)}). ` +
         'Devup UI now resolves devupFile against the project root by default; ' +
-        `move devup.json to ${resolve(projectFile)} or set the devupFile option to keep using this file.`,
+        `move devup.json to ${fromCwd(projectFile)} or set the devupFile option to keep using this file.`,
     )
   }
   return cwdFile
