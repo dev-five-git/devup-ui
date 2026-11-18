@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
-import { type DevupCompilerOutput, loadCompiler } from '@devup-ui/plugin-utils'
+import {
+  ComponentMarkerLedger,
+  type DevupCompilerOutput,
+  loadCompiler,
+  registerMarkerLedger,
+  resetMarkerProcessState,
+} from '@devup-ui/plugin-utils'
 import {
   afterEach,
   beforeEach,
@@ -44,6 +50,8 @@ function createCodeExtractResult(
     updatedBaseStyle: false,
     map: undefined,
     dependencies: [],
+    givenMarkers: [],
+    selectedMarkers: [],
     free: () => {},
     [Symbol.dispose]: () => {},
     ...overrides,
@@ -715,5 +723,110 @@ export const a = <div css={{ color: 'red' }} />`
     } finally {
       relativeSpy.mockRestore()
     }
+  })
+})
+
+describe('component-selector markers', () => {
+  const options = {
+    package: 'package',
+    cssDir: 'df/devup-ui',
+    sheetFile: 's',
+    classMapFile: 'c',
+    fileMapFile: 'f',
+    watch: false,
+    singleCss: true,
+  }
+  let root: string
+  beforeEach(() => {
+    resetMarkerProcessState()
+    root = mkdtempSync(join(tmpdir(), 'devup-loader-markers-'))
+  })
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  async function load(
+    file: string,
+    output: Partial<CodeExtractResult>,
+    context: Record<string, unknown>,
+  ) {
+    const callback = mock()
+    codeExtractSpy.mockReturnValue(createCodeExtractResult(output))
+    const t = createLoaderContext(
+      { ...options, root },
+      callback,
+      join(root, file),
+      context,
+    )
+    devupUILoader.bind(t)(Buffer.from('source'), join(root, file))
+    await waitFor(() => expect(callback).toHaveBeenCalled())
+  }
+
+  it('reports what each module gives and selects to the build ledger', async () => {
+    // Given
+    const compiler = { __DEVUP_CACHE: '', options: { resolve: {} } }
+    const ledger = new ComponentMarkerLedger()
+    registerMarkerLedger(compiler, ledger)
+    ledger.scanned([], ['src/A.tsx'])
+    writeFileSync(join(root, 'disk.tsx'), 'source')
+    writeFileSync(join(root, 'compiled.tsx'), 'other')
+    // When
+    await load('src/A.tsx', { givenMarkers: ['a--a'] }, { _compiler: compiler })
+    await load(
+      'ctx.tsx',
+      { selectedMarkers: ['a--b'] },
+      {
+        _compiler: { root: compiler, options: { resolve: {} } },
+        _module: {},
+        _compilation: {
+          moduleGraph: {
+            getIncomingConnections: () => [
+              { dependency: null },
+              { dependency: { type: 'require.context' } },
+            ],
+          },
+        },
+      },
+    )
+    await load(
+      'disk.tsx',
+      { selectedMarkers: ['a--c'] },
+      {
+        _compiler: compiler,
+        _module: {},
+        _compilation: {
+          moduleGraph: {
+            getIncomingConnections: () => [{ dependency: { type: 'esm' } }],
+          },
+        },
+      },
+    )
+    await load(
+      'compiled.tsx',
+      { selectedMarkers: ['a--d'] },
+      {
+        _compiler: compiler,
+      },
+    )
+    await load(
+      'gone.tsx',
+      { selectedMarkers: ['a--e'] },
+      {
+        _compiler: compiler,
+      },
+    )
+    // Then
+    expect(ledger.recorded('src/A.tsx')).toBe(true)
+    expect(ledger.plan()).toEqual({
+      keep: {
+        kind: 'unscanned',
+        modules: [
+          { id: 'compiled.tsx', cause: 'compiled-source', markers: ['a--d'] },
+          { id: 'ctx.tsx', cause: 'context-module', markers: ['a--b'] },
+          { id: 'disk.tsx', cause: 'outside-scan', markers: ['a--c'] },
+          { id: 'gone.tsx', cause: 'virtual-module', markers: ['a--e'] },
+        ],
+      },
+    })
   })
 })

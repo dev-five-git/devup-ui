@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { contextImports } from './context-imports'
 import {
   createModuleResolver,
   importedSpecifiers,
@@ -181,6 +182,12 @@ export function collectReservationInputs(
       if (allowed) seeds.add(target)
       if (!sources.has(target)) sources.set(target, module.code)
       pending.push(module.path)
+    }
+    // Directories `require.context` or `import.meta.glob` load, written out
+    for (const file of contextImports(physicalPath, code, cwd)) {
+      if (!isSourceFile(file)) continue
+      targets.add(physicalKey(file))
+      pending.push(file)
     }
   }
   const selected = new Set<string>()

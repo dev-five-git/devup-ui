@@ -56,8 +56,7 @@ export type MarkerKeepReason =
 
 /** What a build does with the markers its modules give */
 export type MarkerPlan =
-  | { readonly strip: ReadonlySet<string> }
-  | { readonly keep: MarkerKeepReason }
+  { readonly strip: ReadonlySet<string> } | { readonly keep: MarkerKeepReason }
 
 /** What one transform reports */
 export interface MarkerTransform {
@@ -143,6 +142,11 @@ export class ComponentMarkerLedger {
     })
   }
 
+  /** Whether a transform of module `id` reported to this ledger */
+  recorded(id: string): boolean {
+    return this.modules.has(id)
+  }
+
   /** Forget every transform, as a new build begins */
   clear(): void {
     this.modules.clear()
@@ -150,8 +154,7 @@ export class ComponentMarkerLedger {
 
   /** What the build does with its markers, once every module is transformed */
   plan(): MarkerPlan {
-    if (processState.uncertain)
-      return { keep: { kind: 'earlier-compilation' } }
+    if (processState.uncertain) return { keep: { kind: 'earlier-compilation' } }
     const scan = this.scan
     if (!scan) return { keep: { kind: 'no-scan' } }
     const unscanned = this.unscanned(scan)
@@ -347,4 +350,32 @@ export function markerEditMap(
   }
   lines.push(segments.join(','))
   return { version: 3, sources: [''], names: [], mappings: lines.join(';') }
+}
+
+const LEDGERS = Symbol.for('devup-ui.componentMarkerLedgers')
+
+function ledgers(): WeakMap<object, ComponentMarkerLedger> {
+  const scope = globalThis as typeof globalThis & {
+    [LEDGERS]?: WeakMap<object, ComponentMarkerLedger>
+  }
+  return (scope[LEDGERS] ??= new WeakMap())
+}
+
+/**
+ * The ledger of the build `owner` stands for, as the plugin registered it;
+ * shared by every copy of this module a process loads, so that a loader
+ * bundled apart from its plugin reports to the same ledger
+ */
+export function markerLedgerOf(
+  owner: object | undefined,
+): ComponentMarkerLedger | undefined {
+  return owner ? ledgers().get(owner) : undefined
+}
+
+/** Register `ledger` as the one of the build `owner` stands for */
+export function registerMarkerLedger(
+  owner: object,
+  ledger: ComponentMarkerLedger,
+): void {
+  ledgers().set(owner, ledger)
 }

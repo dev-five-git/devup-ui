@@ -5,8 +5,10 @@ import {
   ComponentMarkerLedger,
   markerEditMap,
   markerEdits,
+  markerLedgerOf,
   markerLikeTokens,
   markerWarning,
+  registerMarkerLedger,
   resetMarkerProcessState,
   unscannedCause,
 } from '../component-markers'
@@ -55,7 +57,10 @@ describe('ComponentMarkerLedger', () => {
     ledger.scanned(['a--b'], ['/a.tsx', '/c.tsx'])
     ledger.record(transform('/a.tsx', ['a--a', 'a--b']))
     ledger.record(transform('/z.tsx', [], ['a--a']))
-    ledger.record({ ...transform('/v.tsx', [], ['a--a']), cause: 'virtual-module' })
+    ledger.record({
+      ...transform('/v.tsx', [], ['a--a']),
+      cause: 'virtual-module',
+    })
     ledger.record(transform('/c.tsx', [], ['a--b', 'a--c']))
     // When
     const plan = ledger.plan()
@@ -87,6 +92,10 @@ describe('ComponentMarkerLedger', () => {
     const plan = ledger.plan()
     // Then
     expect(plan).toEqual({ strip: new Set(['a--a', 'a--c', 'b--a']) })
+    expect([ledger.recorded('/b.tsx'), ledger.recorded('/c.tsx')]).toEqual([
+      true,
+      false,
+    ])
     ledger.clear()
     expect(ledger.plan()).toEqual({ strip: new Set() })
   })
@@ -104,8 +113,16 @@ describe('markerWarning', () => {
     const reason = {
       kind: 'unscanned' as const,
       modules: [
-        { id: 'virtual:x', cause: 'virtual-module' as const, markers: ['a--a'] },
-        { id: '/a.mdx', cause: 'compiled-source' as const, markers: ['a--b', 'a--c'] },
+        {
+          id: 'virtual:x',
+          cause: 'virtual-module' as const,
+          markers: ['a--a'],
+        },
+        {
+          id: '/a.mdx',
+          cause: 'compiled-source' as const,
+          markers: ['a--b', 'a--c'],
+        },
         { id: '/ctx.tsx', cause: 'context-module' as const, markers: ['a--d'] },
         { id: '/out.tsx', cause: 'outside-scan' as const, markers: ['a--e'] },
         { id: '/fail.tsx', cause: 'scan-failed' as const, markers: ['a--f'] },
@@ -246,4 +263,18 @@ describe('markerEditMap', () => {
   function strip() {
     return new Set(['a--a', 'a--b'])
   }
+})
+
+describe('marker ledger registry', () => {
+  it('finds the ledger registered for an owner', () => {
+    // Given
+    const owner = {}
+    const ledger = new ComponentMarkerLedger()
+    // When
+    registerMarkerLedger(owner, ledger)
+    // Then
+    expect(markerLedgerOf(owner)).toBe(ledger)
+    expect(markerLedgerOf({})).toBeUndefined()
+    expect(markerLedgerOf(undefined)).toBeUndefined()
+  })
 })
