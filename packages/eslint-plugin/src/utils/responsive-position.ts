@@ -12,20 +12,19 @@ function calleeBinding(node: TSESTree.Node): TSESTree.Node {
   return node
 }
 
-/** Whether `root` is an API of another library the build reads as Devup UI. Its rules declare a property's array of literals as fallbacks in one rule (`color: ['red', 'blue']`), as `fallback_value` in `libs/extractor/src/import_alias_visit.rs` writes it, not as breakpoints */
-function readsFallbackRules(
+/** The package of another library the build reads as Devup UI whose API `root` is. Its rules declare a property's array of literals as that library does (`color: ['red', 'blue']`), as `library_array` in `libs/extractor/src/library_arrays.rs` writes it, not as breakpoints */
+export function fallbackRulesLibrary(
   root: TSESTree.JSXOpeningElement | TSESTree.CallExpression,
   imports: ImportStorage,
-): boolean {
+): string | undefined {
   const binding =
     root.type === AST_NODE_TYPES.CallExpression
       ? calleeBinding(root.callee)
       : root.name
-  return (
-    (binding.type === AST_NODE_TYPES.Identifier ||
-      binding.type === AST_NODE_TYPES.JSXIdentifier) &&
-    imports.takesFallbacks(binding.name)
-  )
+  return binding.type === AST_NODE_TYPES.Identifier ||
+    binding.type === AST_NODE_TYPES.JSXIdentifier
+    ? imports.fallbackLibrary(binding.name)
+    : undefined
 }
 
 /** Responsive values belong to a property, not to a composition argument. */
@@ -34,7 +33,7 @@ export function responsiveValueSite(
   imports: ImportStorage,
 ): StyleSite | null {
   const site = styleValueSite(node, imports)
-  if (!site || readsFallbackRules(site.root, imports)) return null
+  if (!site || fallbackRulesLibrary(site.root, imports)) return null
   let child = node
   let nestedArray = false
   while (child !== site.start && child.parent) {

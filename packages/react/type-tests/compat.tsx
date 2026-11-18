@@ -20,6 +20,7 @@ import {
   createVar,
   fontFace,
   globalFontFace,
+  globalKeyframes,
   globalStyle,
   keyframes as vanillaKeyframes,
   style,
@@ -174,14 +175,13 @@ createGlobalTheme(':root', contract, { color: 'red' })
 export const family = fontFace({ src: 'url(font.woff2)' })
 globalStyle('body', { margin: 0 })
 globalFontFace('Inter', { src: 'url(font.woff2)' })
+globalKeyframes('fade-in', { from: { opacity: 0 }, to: { opacity: 1 } })
 export const vanillaAnimation = vanillaKeyframes({ from: { opacity: 0 } })
 export const gutter: string = calc.add('1px', calc('2px').multiply(2))
 export const half: string = calc('100%').divide(2).negate().toString()
 // @ts-expect-error `calc(x)` is a CSS value only once `toString()` is called
 export const unfinished: string = calc('100%').divide(2)
 
-// @ts-expect-error the evaluator registers no `globalKeyframes`
-export { globalKeyframes } from '@vanilla-extract/css'
 // @ts-expect-error the evaluator registers no `composeStyles`
 export { composeStyles } from '@vanilla-extract/css'
 // @ts-expect-error the evaluator registers no `generateIdentifier`

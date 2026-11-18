@@ -23,7 +23,7 @@ fn local_shape_when_callback_capture_is_unresolved_reports_binding_error(
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     // Then: the rejected shape stays a binding read, never a relocated callback.
     assert_eq!(
@@ -57,7 +57,7 @@ fn local_shape_when_callback_capture_is_resolved_retains_lexical_read() {
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     // Then
     assert_eq!(inlined.errors, vec![]);
@@ -232,7 +232,7 @@ fn selected_jsx_style_spread_keeps_the_authored_winning_value() {
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     assert!(inlined.errors.is_empty(), "{:?}", inlined.errors);
     let Some(oxc_ast::ast::Statement::ExpressionStatement(statement)) = parsed.program.body.last()
@@ -522,7 +522,7 @@ fn referenced_local_shapes_reject_eager_tdz_and_keep_safe_controls(
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     if rejected {
         let offset = u32::try_from(
@@ -571,7 +571,7 @@ fn native_nested_spreads_inline_only_copy_exclusive_bindings(#[case] escapes: bo
         &ExtractOption::default(),
         None,
         CssProp::Off,
-        &FxHashSet::default(),
+        &crate::import_alias_visit::PxMarks::default(),
     );
     assert!(inlined.errors.is_empty(), "{:?}", inlined.errors);
     let function = parsed

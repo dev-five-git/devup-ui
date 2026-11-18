@@ -861,10 +861,12 @@ impl StyleSheet {
                                 (key.clone(), props)
                             })
                             .collect(),
-                        bucket_scope,
+                        // Keyframes the code names are global, like the rules naming them
+                        keyframes.name.as_ref().map_or(bucket_scope, |_| None),
                     ) {
                         collected = true;
-                        updated_base_style |= atom_mode && global_bucket;
+                        updated_base_style |=
+                            keyframes.name.is_some() || (atom_mode && global_bucket);
                     }
                 }
                 ExtractStyleValue::Css(cs) => {

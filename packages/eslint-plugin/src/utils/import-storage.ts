@@ -23,7 +23,7 @@ const DEFAULT_IMPORT_ALIASES: ReadonlyMap<string, string | null> = new Map([
 ])
 
 /**
- * The exports of each library whose rules declare a property's array of literals as fallbacks in one rule (`color: ['red', 'blue']`), not breakpoints, as `LibraryNumbers` in `libs/extractor/src/import_alias_visit.rs` lists them.
+ * The exports of each library whose rules declare a property's array of literals as fallbacks in one rule (`color: ['red', 'blue']`), not breakpoints, as `LibraryNumbers` in `libs/extractor/src/import_alias_visit.rs` lists them and `library_array` in `libs/extractor/src/library_arrays.rs` writes them.
  * `default` stands for the default and namespace imports. Other aliases read rules as Devup UI does.
  */
 const FALLBACK_EXPORTS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
@@ -168,7 +168,8 @@ export class ImportStorage {
   private imports = new Map<string, string>()
   private importObject = new Set<string>()
   private calc = new Set<string>()
-  private fallbacks = new Set<string>()
+  /** The package of each binding whose rules take arrays as fallbacks */
+  private fallbacks = new Map<string, string>()
   readonly vanilla: boolean
   private readonly config: ImportConfig
 
@@ -213,7 +214,7 @@ export class ImportStorage {
           this.addBinding(
             specifier.local.name,
             name,
-            !isDevup && takesFallbacks(source, imported),
+            !isDevup && takesFallbacks(source, imported) ? source : undefined,
           )
           break
         }
@@ -228,7 +229,7 @@ export class ImportStorage {
           this.addBinding(
             specifier.local.name,
             name,
-            takesFallbacks(source, 'default'),
+            takesFallbacks(source, 'default') ? source : undefined,
           )
           break
         }
@@ -236,24 +237,24 @@ export class ImportStorage {
     }
   }
 
-  /** Binds `local` to the Devup UI export `name` it stands for, if it stands for one, remembering whether its rules take arrays as fallbacks */
+  /** Binds `local` to the Devup UI export `name` it stands for, if it stands for one, remembering the package whose rules it takes when they take arrays as fallbacks */
   private addBinding(
     local: string,
     name: string | undefined,
-    fallbacks: boolean,
+    fallbacks: string | undefined,
   ) {
     if (name === undefined) return
     this.addImport(local, name)
-    if (fallbacks) this.fallbacks.add(local)
+    if (fallbacks) this.fallbacks.set(local, fallbacks)
   }
 
   public addImport(key: string, value: string) {
     this.imports.set(key, value)
   }
 
-  /** Whether the rules `local` takes declare a property's array of literals as fallbacks in one rule rather than breakpoints, as Emotion, styled-components and vanilla-extract do */
-  public takesFallbacks(local: string): boolean {
-    return this.fallbacks.has(local)
+  /** The package (`@emotion/react`, `styled-components`...) whose rules `local` takes, when they declare a property's array of literals as that library does rather than as breakpoints */
+  public fallbackLibrary(local: string): string | undefined {
+    return this.fallbacks.get(local)
   }
 
   /** The name Devup UI exports for what `local` imports by name, from it or from a package the build reads as it */

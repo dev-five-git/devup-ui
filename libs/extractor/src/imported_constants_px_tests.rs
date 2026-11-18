@@ -140,7 +140,7 @@ fn namespace_css_tag_materializes_record_when_inlined_without_alias_normalizatio
 fn own_css_record_keeps_fallback_order_when_authored_px_mark_is_inlined() {
     // Given: Emotion-style fallback arrays, not responsive breakpoints.
     let source = "import { css } from '@devup-ui/react';
-const rules = { padding: [2, 4], opacity: [0, 0.5] };
+const rules = { padding: ['2px', 4], opacity: ['0', 0.5] };
 export const card = css`${rules}`;";
     let allocator = Allocator::default();
     let mut program = crate::parsing::parse(&allocator, "/src/fallback.ts", source)
@@ -152,7 +152,7 @@ export const card = css`${rules}`;";
             .unwrap_or_else(|| panic!("missing interpolation")),
     )
     .unwrap_or_else(|error| panic!("fixture offset exceeds u32: {error}"));
-    marks.insert((start, start + 5));
+    marks.insert((start, start + 5), crate::library_arrays::Library::Emotion);
     // When
     let inlined = inline_constants(
         &AstBuilder::new(&allocator),
@@ -231,7 +231,7 @@ export const card = css`${rules}`;";
     )
     .unwrap_or_else(|error| panic!("fixture offset exceeds u32: {error}"));
     if marked {
-        marks.insert((start, start + 5));
+        marks.insert((start, start + 5), crate::library_arrays::Library::Emotion);
     }
 
     // When: run the lower-level contract directly, without an alias transform.
