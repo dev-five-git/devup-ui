@@ -93,6 +93,8 @@ const fields = [
   'cssFile',
   'updatedBaseStyle',
   'dependencies',
+  'givenMarkers',
+  'selectedMarkers',
 ]
 const exports4 = [
   'exportSheet',
