@@ -1012,7 +1012,7 @@ fn inline_in<'a>(
     let pixel_callbacks = callbacks
         .sites
         .into_iter()
-        .filter_map(|(span, address)| px.contains(&(span.start, span.end)).then_some(address))
+        .filter_map(|(span, address)| px.contains_key(&(span.start, span.end)).then_some(address))
         .collect();
     let mut declared = Vec::new();
     for symbol in scoping.symbol_ids() {
@@ -1060,6 +1060,7 @@ fn inline_in<'a>(
             objects: false,
             styles: false,
             px: false,
+            px_library: crate::library_arrays::Library::Emotion,
             numeric_role: NumericRole::Other,
             position: InlinePosition::Rules,
             marks: px,
@@ -2931,6 +2932,8 @@ struct Inline<'s, 'a> {
     styles: bool,
     /// Inside a `css` prop, whose numbers Emotion reads as `px` lengths
     px: bool,
+    /// The library reading the rules when `px`
+    px_library: crate::library_arrays::Library,
     numeric_role: NumericRole,
     position: InlinePosition,
     /// Where a constant stands as a value or rules of a library reading
@@ -3319,21 +3322,33 @@ fn px_number<'a>(ast_builder: &AstBuilder<'a>, value: &mut Expression<'a>) {
     }
 }
 
-/// `property` holding a number as the `px` length Emotion reads it as
-fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
+/// `property` holding a number as the `px` length `library` reads it as, and
+/// an array as what `library` declares for it
+fn px_value<'a>(
+    ast_builder: &AstBuilder<'a>,
+    property: &mut oxc_ast::ast::ObjectProperty<'a>,
+    library: crate::library_arrays::Library,
+) {
     if let Some(key) = property
         .key
         .static_name()
         .and_then(oxc_ast::StaticPropertyName::into_cow_str)
         && let Expression::ArrayExpression(array) = &property.value
-        && let Some(value) = crate::import_alias_visit::fallback_value(&key, array)
+        && let Some(value) = crate::library_arrays::library_array(library, &key, array)
     {
-        property.value = Expression::new_string_literal(
-            SPAN,
-            Str::from_in(value.as_str(), ast_builder.allocator()),
-            None,
-            ast_builder,
-        );
+        property.value = match value {
+            crate::library_arrays::ArrayValue::Declarations(value) => {
+                Expression::new_string_literal(
+                    SPAN,
+                    Str::from_in(value.as_str(), ast_builder.allocator()),
+                    None,
+                    ast_builder,
+                )
+            }
+            crate::library_arrays::ArrayValue::Nothing => {
+                Expression::new_null_literal(SPAN, ast_builder)
+            }
+        };
     }
     if property
         .key
@@ -3345,9 +3360,13 @@ fn px_value<'a>(ast_builder: &AstBuilder<'a>, property: &mut oxc_ast::ast::Objec
     }
 }
 
-/// The rules `rules` with their numbers as the `px` lengths Emotion reads them
-/// as, nested rules included
-fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
+/// The rules `rules` with their numbers as the `px` lengths `library` reads
+/// them as, nested rules included
+fn px_rules<'a>(
+    ast_builder: &AstBuilder<'a>,
+    rules: &mut Expression<'a>,
+    library: crate::library_arrays::Library,
+) {
     let mut pending = vec![rules];
     while let Some(rules) = pending.pop() {
         if let Expression::ArrayExpression(array) = rules {
@@ -3362,7 +3381,7 @@ fn px_rules<'a>(ast_builder: &AstBuilder<'a>, rules: &mut Expression<'a>) {
                 if let ObjectPropertyKind::ObjectProperty(property) = property
                     && property.key.static_name().is_none_or(|key| key != "vars")
                 {
-                    px_value(ast_builder, property);
+                    px_value(ast_builder, property, library);
                     if matches!(property.value, Expression::ObjectExpression(_)) {
                         pending.push(&mut property.value);
                     }
@@ -3512,13 +3531,16 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 };
                 self.replaced.consume(expression);
                 *expression = local_rule_shapes::expand(self.ast_builder, shape, &root);
-                let outer = self.px;
-                self.px |= self.marks.contains(&(root.span().start, root.span().end));
+                let outer = (self.px, self.px_library);
+                if let Some(library) = self.marks.get(&(root.span().start, root.span().end)) {
+                    self.px = true;
+                    self.px_library = *library;
+                }
                 if self.px {
-                    px_rules(self.ast_builder, expression);
+                    px_rules(self.ast_builder, expression, self.px_library);
                 }
                 self.visit_expression(expression);
-                self.px = outer;
+                (self.px, self.px_library) = outer;
                 return;
             }
             if let Some(constant) = self.constant(expression) {
@@ -3528,17 +3550,21 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
                 }
                 if let Some(literal) = self.literal(&constant) {
                     let span = expression.span();
-                    let marked = self.marks.contains(&(span.start, span.end));
+                    let mark = self.marks.get(&(span.start, span.end)).copied();
                     self.replaced.consume(expression);
                     *expression = literal;
-                    if marked {
+                    if mark.is_some() {
                         px_number(self.ast_builder, expression);
                     }
-                    if (self.px || marked)
+                    if (self.px || mark.is_some())
                         && (matches!(self.position, InlinePosition::Rules)
                             || matches!(expression, Expression::ObjectExpression(_)))
                     {
-                        px_rules(self.ast_builder, expression);
+                        px_rules(
+                            self.ast_builder,
+                            expression,
+                            mark.unwrap_or(self.px_library),
+                        );
                     }
                     return;
                 }
@@ -3550,7 +3576,11 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             }
         }
         let span = expression.span();
-        let marked = self.styles && self.marks.contains(&(span.start, span.end));
+        let mark = self
+            .marks
+            .get(&(span.start, span.end))
+            .copied()
+            .filter(|_| self.styles);
         let outer_px = self.px;
         if matches!(
             expression,
@@ -3560,8 +3590,10 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
         }
         walk_mut::walk_expression(self, expression);
         self.px = outer_px;
-        if marked && matches!(expression, Expression::ObjectExpression(_)) {
-            px_rules(self.ast_builder, expression);
+        if let Some(library) = mark
+            && matches!(expression, Expression::ObjectExpression(_))
+        {
+            px_rules(self.ast_builder, expression, library);
         }
     }
 
@@ -3741,7 +3773,9 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
 
     fn visit_object_property(&mut self, property: &mut oxc_ast::ast::ObjectProperty<'a>) {
         let span = property.value.span();
-        let px = self.styles && (self.px || self.marks.contains(&(span.start, span.end)));
+        let mark = self.marks.get(&(span.start, span.end)).copied();
+        let px = self.styles && (self.px || mark.is_some());
+        let library = mark.unwrap_or(self.px_library);
         let outer = self.px;
         if property.key.static_name().is_some_and(|key| key == "vars") {
             self.px = false;
@@ -3754,7 +3788,7 @@ impl<'a> VisitMut<'a> for Inline<'_, 'a> {
             property.shorthand = false;
         }
         if px && property.key.static_name().is_none_or(|key| key != "vars") {
-            px_value(self.ast_builder, property);
+            px_value(self.ast_builder, property, library);
             if self.numeric_role == NumericRole::ElementCssProp
                 && self.px
                 && property

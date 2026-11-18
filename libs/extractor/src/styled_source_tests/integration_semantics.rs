@@ -184,7 +184,7 @@ fn local_records_keep_fallback_units_when_native_and_emotion_consumers_mix(
     // Given
     reset_class_map();
     reset_file_map();
-    let source = "import {css as native} from '@devup-ui/react';import {css as paint} from '@emotion/react';export function f(){const rules={padding:[2,4],opacity:[0,0.5],margin:0,vars:{'--gap':7}};return [paint(rules),native({margin:2})];}";
+    let source = "import {css as native} from '@devup-ui/react';import {css as paint} from '@emotion/react';export function f(){const rules={padding:['2px',4],opacity:['0',0.5],margin:0,vars:{'--gap':7}};return [paint(rules),native({margin:2})];}";
     // When
     let output = extract("intersection.tsx", source, options(single_css))
         .unwrap_or_else(|error| panic!("{error}"));

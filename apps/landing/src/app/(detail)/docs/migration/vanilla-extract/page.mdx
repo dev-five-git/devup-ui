@@ -14,7 +14,7 @@ export const metadata = {
 
 ## Stylesheet files
 
-Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. Generated names — custom properties, containers, layers, theme classes, font families — are unique to each stylesheet, and layers keep the order they are declared in.
+Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `globalKeyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. Generated names — custom properties, containers, layers, theme classes, font families — are unique to each stylesheet, and layers keep the order they are declared in.
 
 ```ts
 // theme.css.ts
@@ -30,6 +30,8 @@ export const base = style({ padding: 8 })
 ```
 
 Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written. As in vanilla-extract, a number for a time gets `px` too (`transitionDuration: 300` is `300px`, which browsers ignore), so write times with their unit: `transitionDuration: '300ms'`.
+
+An array as a property's value declares each value as a fallback, as vanilla-extract does: `height: ['100vh', '100dvh']` is `height:100vh;height:100dvh`, values written as they are. This holds in stylesheets that import `@vanilla-extract/css` and in ordinary modules; a stylesheet using Devup UI's own `style` keeps responsive arrays, and Devup UI shorthands such as `p` read an array as breakpoints everywhere.
 
 A `debugId` names what `createVar`, `createContainer`, `layer`, `fontFace` and `createTheme` generate. Class names come from Devup UI, so with the plugin's `debug` option `style(rule, 'root')` adds a class such as `root-0-0` next to its readable classes, and `styleVariants(variants, 'tone')` adds `tone_primary-0-1` to the `primary` variant, the way vanilla-extract names them. Those classes style nothing, and a build without `debug` leaves them out. `keyframes` accepts a `debugId` and ignores it: its name comes from Devup UI, readable with `debug`.
 
@@ -194,4 +196,4 @@ Use named imports to get the rewrite.
 
 ## Unsupported packages and APIs
 
-While `@vanilla-extract/css` is aliased, `@vanilla-extract/recipes`, `@vanilla-extract/sprinkles` and `@vanilla-extract/dynamic` are build errors however a file loads them — an import, `export … from`, `export *`, `require()` or `import()` — since what they generate or assign would never reach the stylesheet. `globalKeyframes()` is a build error too: Devup UI names every keyframes itself, so declare them with `keyframes()` and use the name it returns. To keep any of these, set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin.
+While `@vanilla-extract/css` is aliased, `@vanilla-extract/recipes`, `@vanilla-extract/sprinkles` and `@vanilla-extract/dynamic` are build errors however a file loads them — an import, `export … from`, `export *`, `require()` or `import()` — since what they generate or assign would never reach the stylesheet. To keep any of these, set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin.

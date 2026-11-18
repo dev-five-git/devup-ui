@@ -14,6 +14,7 @@ describe('export index', () => {
       styleOrderRange: expect.any(Object),
       noTypographyTokenPrefix: expect.any(Object),
       preferMediaShorthand: expect.any(Object),
+      noUselessFallback: expect.any(Object),
     })
   })
 })
