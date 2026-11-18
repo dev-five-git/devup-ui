@@ -48,7 +48,7 @@ import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine' | 'stylex'
+  'engine' | 'licenseBanner' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -110,6 +110,7 @@ export class DevupUIWebpackPlugin {
     singleCss = false,
     engine = 'native',
     prefix,
+    licenseBanner = true,
     shorthands,
     stylex,
     atomHoist = 2,
@@ -140,6 +141,7 @@ export class DevupUIWebpackPlugin {
       singleCss,
       engine,
       prefix,
+      licenseBanner,
       shorthands,
       atomHoist,
       productionPrewarmFiles: undefined,
@@ -367,6 +369,7 @@ export class DevupUIWebpackPlugin {
     this.locate(resolve(compiler.options.context ?? process.cwd()))
     this.compiler.setDebug(this.options.debug)
     this.compiler.setPrefix(this.options.prefix ?? null)
+    this.compiler.setLicenseBanner(this.options.licenseBanner !== false)
     this.compiler.registerShorthands(this.normalizedShorthands)
     this.compiler.setStylexStyleResolution(this.styleResolution)
     if (!existsSync(this.options.distDir))

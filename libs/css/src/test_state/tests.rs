@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 fn seed() {
     crate::set_prefix(Some("outer".into()));
     debug::set_debug(true);
+    license_banner::set_license_banner(false);
     style_resolution::set_style_resolution(style_resolution::StyleResolution::ApplicationOrder);
     atom_hoist::set_atom_hoist(Some(3));
     class_map::set_class_map(HashMap::from([(
@@ -37,6 +38,7 @@ fn seed() {
 fn assert_seed() {
     assert_eq!(crate::get_prefix().as_deref(), Some("outer"));
     assert!(debug::is_debug());
+    assert!(!license_banner::is_license_banner());
     assert_eq!(
         style_resolution::style_resolution(),
         style_resolution::StyleResolution::ApplicationOrder
@@ -84,6 +86,7 @@ fn assert_seed() {
 fn assert_clean() {
     assert_eq!(crate::get_prefix(), None);
     assert!(!debug::is_debug());
+    assert!(license_banner::is_license_banner());
     assert_eq!(
         style_resolution::style_resolution(),
         style_resolution::StyleResolution::PropertySpecificity

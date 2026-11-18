@@ -5,19 +5,21 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::Ordering;
 
 use crate::{
-    atom_hoist, class_map, debug, file_map, file_routes, slot_reservation, style_resolution,
-    tailwind_definitions, theme_tokens,
+    atom_hoist, class_map, debug, file_map, file_routes, license_banner, slot_reservation,
+    style_resolution, tailwind_definitions, theme_tokens,
 };
 
-/// The prefix, debug flag, `StyleX` style resolution, atom hoisting, class and
-/// file numbering, routes, shorthands, theme tokens and Tailwind definitions
-/// of one engine session.
+/// The prefix, debug and license banner flags, `StyleX` style resolution, atom
+/// hoisting, class and file numbering, routes, shorthands, theme tokens and
+/// Tailwind definitions of one engine session.
 ///
 /// The default value is a clean engine, as after a full reset.
 #[derive(Default)]
 pub struct CssState {
     prefix: Option<String>,
     debug: bool,
+    /// Stored inverted so that the default state keeps the banner on.
+    license_banner_off: bool,
     resolution: style_resolution::StyleResolution,
     hoist: Option<usize>,
     plan: Option<BTreeSet<String>>,
@@ -39,6 +41,11 @@ impl CssState {
         crate::set_prefix(std::mem::replace(&mut self.prefix, prefix));
         let debug = debug::is_debug();
         debug::set_debug(std::mem::replace(&mut self.debug, debug));
+        let banner_off = !license_banner::is_license_banner();
+        license_banner::set_license_banner(!std::mem::replace(
+            &mut self.license_banner_off,
+            banner_off,
+        ));
         let resolution = style_resolution::style_resolution();
         style_resolution::set_style_resolution(std::mem::replace(&mut self.resolution, resolution));
         let hoist = atom_hoist::atom_hoist_threshold();

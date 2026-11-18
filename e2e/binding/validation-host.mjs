@@ -47,6 +47,7 @@ const extract = (filename, text) => {
 w.resetStateForTesting()
 w.setPrefix('kept-')
 w.setDebug(true)
+w.setLicenseBanner(false)
 w.registerTheme(theme)
 w.registerShorthands({ insetX: ['left', 'right'] })
 w.importCanonicalMap({ 'src/kept.tsx': 'src/root.tsx' })
@@ -71,6 +72,7 @@ const snapshot = () => ({
   config: [
     'getPrefix',
     'isDebug',
+    'isLicenseBanner',
     'getDefaultTheme',
     'getUnreservedClassSlotCount',
   ].map((name) => capture(() => w[name]())),

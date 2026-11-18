@@ -86,6 +86,11 @@ export interface DevupUIBunPluginOptions {
    */
   debug?: boolean
   /**
+   * Start every emitted stylesheet with the devup-ui license banner comment.
+   * Defaults to `true`.
+   */
+  licenseBanner?: boolean
+  /**
    * Packages whose published `.js` and `.cjs` files are compiled as well, as
    * in the other plugins: a library that ships Devup UI components
    * uncompiled, as ES modules or CommonJS.
@@ -345,6 +350,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
       // this process left in the engine
       const endBuild = beginBuild(compiler)
       build.onEnd?.(endBuild)
+      compiler.setLicenseBanner(options.licenseBanner ?? true)
       await initialize(
         compiler,
         shorthands,

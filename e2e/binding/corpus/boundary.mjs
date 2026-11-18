@@ -24,11 +24,14 @@ add('numeric-wrapper-and-boolean-abi', (h) => {
     h.call('setAtomHoist', value)
     h.call('getCss', value, false)
     h.call('setDebug', value)
+    h.call('setLicenseBanner', value)
     h.extract(source, { flags: [value, value, value] })
   }
   h.call('setAtomHoist')
   h.call('getCss')
   h.call('setDebug')
+  h.call('setLicenseBanner')
+  h.call('setLicenseBanner', true)
 })
 add('decoder-width-overflow-and-enums', (h) => {
   for (const value of [
