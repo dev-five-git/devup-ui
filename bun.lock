@@ -680,6 +680,7 @@
       },
       "peerDependencies": {
         "@typescript-eslint/utils": ">=8.0.0",
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
         "typescript-eslint": ">=8.0.0",
       },
     },
@@ -696,7 +697,7 @@
         "typescript": "^7.0.2",
       },
       "peerDependencies": {
-        "@devup-ui/webpack-plugin": "*",
+        "@devup-ui/webpack-plugin": "workspace:^",
         "next": ">=13.0.0",
       },
     },
