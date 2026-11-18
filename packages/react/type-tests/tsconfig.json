@@ -18,6 +18,7 @@
     "../src/compat/emotion.d.ts",
     "../src/compat/styled-components.d.ts",
     "../src/compat/vanilla-extract.d.ts",
+    "../src/compat/vanilla-extract-css-utils.d.ts",
     "../src/compat/stylex.d.ts"
   ],
   "include": ["*.ts", "*.tsx"]

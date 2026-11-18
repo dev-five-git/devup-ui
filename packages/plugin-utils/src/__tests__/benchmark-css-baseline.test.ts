@@ -54,6 +54,16 @@ const expected = {
     'devup-ui': { ...baseline.rows['devup-ui'], cssBytes: 494 },
   },
 }
+const vanillaExpected = {
+  ...baseline,
+  rows: {
+    ...baseline.rows,
+    'vanilla-extract-devup-ui': {
+      ...baseline.rows['vanilla-extract-devup-ui'],
+      cssBytes: baseline.rows['vanilla-extract-devup-ui'].cssBytes + 456,
+    },
+  },
+}
 const pairBaseline = expected
 const pairRun = {
   ...run,
@@ -79,6 +89,12 @@ const pairExpected = {
   },
 }
 
+// The baseline a successful CLI write leaves, by its target argument
+const CLI_EXPECTED: Record<string, typeof expected> = {
+  'devup-ui-single,vinext-devup-ui': pairExpected,
+  'vanilla-extract-devup-ui': vanillaExpected,
+}
+
 describe('CSS-only benchmark baseline', () => {
   it('changes only the two named CSS fields when every run field disagrees', () => {
     const previous = structuredClone(pairBaseline)
@@ -94,9 +110,23 @@ describe('CSS-only benchmark baseline', () => {
     expect(input).toEqual(pairRun)
   })
 
+  it('changes only the vanilla-extract-devup-ui CSS field when every run field disagrees', () => {
+    const previous = structuredClone(baseline)
+    const input = structuredClone(run)
+
+    const result = nextCssBaseline(input, previous, [
+      'vanilla-extract-devup-ui',
+    ])
+
+    expect(result).toEqual(vanillaExpected)
+    expect(previous).toEqual(baseline)
+    expect(input).toEqual(run)
+  })
+
   it.each([
     { targets: [] },
     { targets: ['devup-ui-turbo'] },
+    { targets: ['vanilla-extract-devup-ui', 'tailwind-turbo-devup-ui'] },
     { targets: ['devup-ui-single', ''] },
     { targets: ['unknown'] },
   ])(
@@ -108,7 +138,7 @@ describe('CSS-only benchmark baseline', () => {
     },
   )
 
-  it.each(['devup-ui-single', 'vinext-devup-ui'])(
+  it.each(['devup-ui-single', 'vinext-devup-ui', 'vanilla-extract-devup-ui'])(
     'rejects missing selected rows when updating %s',
     (target) => {
       expect(() => nextCssBaseline(pairRun, { rows: {} }, [target])).toThrow(
@@ -117,7 +147,7 @@ describe('CSS-only benchmark baseline', () => {
     },
   )
 
-  it.each(['devup-ui-single', 'vinext-devup-ui'])(
+  it.each(['devup-ui-single', 'vinext-devup-ui', 'vanilla-extract-devup-ui'])(
     'rejects missing selected measurements when updating %s',
     (target) => {
       expect(() =>
@@ -171,6 +201,10 @@ describe('CSS-only baseline CLI', () => {
       args: ['--write-css-baseline', 'devup-ui-single,vinext-devup-ui'],
       success: true,
     },
+    {
+      args: ['--write-css-baseline', 'vanilla-extract-devup-ui'],
+      success: true,
+    },
     { args: ['--write-css-baseline', 'devup-ui-turbo'], success: false },
     {
       args: ['--write-css-baseline', 'devup-ui-single,devup-ui-turbo'],
@@ -219,7 +253,7 @@ describe('CSS-only baseline CLI', () => {
           readFileSync(join(directory, 'benchmark-baseline.json'), 'utf8'),
         ).toBe(
           success
-            ? JSON.stringify(paired ? pairExpected : expected, null, 2) + '\n'
+            ? JSON.stringify(CLI_EXPECTED[args[1]] ?? expected, null, 2) + '\n'
             : stored,
         )
         expect(

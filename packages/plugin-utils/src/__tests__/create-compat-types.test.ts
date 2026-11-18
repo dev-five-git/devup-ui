@@ -10,6 +10,7 @@ describe('createCompatTypes', () => {
         '/// <reference types="@devup-ui/react/compat/styled-components" />',
         '/// <reference types="@devup-ui/react/compat/stylex" />',
         '/// <reference types="@devup-ui/react/compat/vanilla-extract" />',
+        '/// <reference types="@devup-ui/react/compat/vanilla-extract-css-utils" />',
       ].join('\n') + '\n',
     )
   })
@@ -22,6 +23,7 @@ describe('createCompatTypes', () => {
           '@emotion/styled': false,
           '@emotion/css': false,
           '@vanilla-extract/css': false,
+          '@vanilla-extract/css-utils': false,
         }),
       ),
     ).toBe(
@@ -57,6 +59,7 @@ describe('createCompatTypes', () => {
         '/// <reference types="@devup-ui/react/compat/styled-components" />',
         '/// <reference types="@devup-ui/react/compat/stylex" />',
         '/// <reference types="@devup-ui/react/compat/vanilla-extract" />',
+        '/// <reference types="@devup-ui/react/compat/vanilla-extract-css-utils" />',
       ].join('\n') + '\n',
     )
   })

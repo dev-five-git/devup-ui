@@ -122,6 +122,9 @@ fn fix(cause: &str) -> String {
             "declare or import `{name}` before this code reads it; it is not available when the stylesheet is evaluated at build time"
         );
     }
+    if cause.contains(crate::module_loader::css_utils::CHAIN_VALUE) {
+        return "call `.toString()` on it, as `calc(x).multiply(2).toString()`, or interpolate it in a template".to_string();
+    }
     if cause.starts_with("SyntaxError") {
         return "correct the syntax at this location".to_string();
     }

@@ -10,6 +10,7 @@ export {
   viteImportConditions,
 } from './bundler-conditions'
 export { loadCompiler } from './compiler'
+export { type CompilerSession, openCompilerSession } from './compiler-session'
 export type {
   DevupCompiler,
   DevupCompilerOutput,

@@ -28,5 +28,29 @@
     "webpack": "tailwind",
     "turbopack": "tailwind-turbo",
     "vite": "tailwind"
+  },
+  "packages": {
+    "tailwind": "tailwindcss",
+    "stylex": "@stylexjs/stylex",
+    "stylex-turbo": "@stylexjs/stylex",
+    "stylex-turbo-devup-ui": "@devup-ui/react",
+    "vanilla-extract": "@vanilla-extract/css",
+    "kuma-ui": "@kuma-ui/core",
+    "panda-css": "@pandacss/dev",
+    "chakra-ui": "@chakra-ui/react",
+    "mui": "@mui/material",
+    "devup-ui": "@devup-ui/react",
+    "devup-ui-single": "@devup-ui/react",
+    "tailwind-turbo": "tailwindcss",
+    "devup-ui-single-turbo": "@devup-ui/react",
+    "devup-ui-turbo": "@devup-ui/react",
+    "vanilla-extract-devup-ui": "@devup-ui/react",
+    "tailwind-turbo-devup-ui": "@devup-ui/react",
+    "vinext-devup-ui": "@devup-ui/react",
+    "devup-ui-collapse": "@devup-ui/react",
+    "devup-ui-large": "@devup-ui/react",
+    "devup-ui-large-wasm": "@devup-ui/react",
+    "devup-ui-large-turbo": "@devup-ui/react",
+    "devup-ui-large-turbo-wasm": "@devup-ui/react"
   }
 }

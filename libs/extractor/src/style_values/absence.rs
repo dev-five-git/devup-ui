@@ -1,5 +1,6 @@
 use super::StyleValues;
 use crate::utils::unwrap_syntax_only;
+use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::{Expression, IdentifierReference, Program};
 use oxc_ast_visit::Visit;
 use oxc_semantic::{Scoping, SemanticBuilder};
@@ -37,23 +38,30 @@ impl StyleValues<'_> {
         if !program.source_text.contains("undefined") {
             return;
         }
-        let temporary;
-        let scoping: &Scoping = if let Some(scoping) = &self.scoping {
-            scoping
-        } else {
-            temporary = SemanticBuilder::new()
-                .build(program)
-                .semantic
-                .into_scoping();
-            &temporary
+        self.absent_references = match &self.scoping {
+            Some(scoping) => absent_references(scoping, program),
+            None => absent_in_copy(program),
         };
-        let mut references = AbsenceReferences {
-            scoping,
-            spans: FxHashSet::default(),
-        };
-        references.visit_program(program);
-        self.absent_references = references.spans;
     }
+}
+
+fn absent_references(scoping: &Scoping, program: &Program<'_>) -> FxHashSet<Span> {
+    let mut references = AbsenceReferences {
+        scoping,
+        spans: FxHashSet::default(),
+    };
+    references.visit_program(program);
+    references.spans
+}
+
+/// The proof for a program the visit reads with no analysis: built on a copy,
+/// since analysing the program itself would give it IDs no table of the visit
+/// resolves
+fn absent_in_copy(program: &Program<'_>) -> FxHashSet<Span> {
+    let allocator = Allocator::default();
+    let copy = program.clone_in(&allocator);
+    let scoping = SemanticBuilder::new().build(&copy).semantic.into_scoping();
+    absent_references(&scoping, &copy)
 }
 
 struct AbsenceReferences<'s> {
@@ -153,6 +161,26 @@ mod tests {
         };
         identifier.reference_id.set(None);
         assert!(!values.is_unbound_undefined(&statement.expression));
+    }
+
+    #[test]
+    fn recording_without_scoping_leaves_the_program_without_ids() {
+        // Given a program the visit reads with no semantic analysis.
+        let arena = Allocator::default();
+        let parsed = Parser::new(&arena, "undefined;", SourceType::tsx()).parse();
+        let mut values = StyleValues::default();
+        // When the absence proof is recorded.
+        values.record_absence(&parsed.program);
+        // Then the proof holds while the program keeps no reference ID, which
+        // the visit's empty table could not resolve.
+        let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+            panic!("expected expression");
+        };
+        let Expression::Identifier(identifier) = &statement.expression else {
+            panic!("expected identifier");
+        };
+        assert_eq!(identifier.reference_id.get(), None);
+        assert!(values.is_unbound_undefined(&statement.expression));
     }
 
     #[test]

@@ -1,32 +1,38 @@
 'use client'
 
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 
 export default function HomePage() {
-  const [color, setColor] = useState('text-yellow-500')
+  const [color, setColor] = useState('yellow')
   const [enabled, setEnabled] = useState(false)
 
   return (
     <div>
-      <p className="bg-blue-500 text-white p-2">Track & field champions:</p>
+      <p
+        style={{
+          backgroundColor: 'blue',
+        }}
+      >
+        Track & field champions:
+      </p>
       <section
-        className={`${color} cursor-pointer relative py-7 hover:bg-yellow-500 hover:cursor-cell text-3xl`}
+        className="bg-(--text) text-(--box-color) cursor-pointer text-[32px] relative py-7 hover:bg-[yellow] hover:cursor-cell"
         data-testid="box"
+        style={{ '--box-color': color } as CSSProperties}
       >
         <div>hello</div>
         <div>hello</div>
       </section>
-      <p className="text-gray-900">text</p>
+      <span className="text-(--text)">text</span>
       <div
-        className={`${enabled ? 'text-green-500' : 'text-blue-500'} text-3xl pr-5`}
+        className={`${enabled ? 'text-[green]' : 'text-[blue]'} text-[32px] pr-5`}
       >
         hello
       </div>
-      <div className="text-xs sm:text-3xl">hello</div>
+      <div className="text-[12px] min-[480px]:text-[32px]">hello</div>
       <button
-        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4"
         onClick={() => {
-          setColor('text-blue-500')
+          setColor('blue')
           setEnabled((prev) => !prev)
         }}
       >

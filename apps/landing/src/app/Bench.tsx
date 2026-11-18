@@ -1,65 +1,65 @@
-import { Flex, Text, VStack } from '@devup-ui/react'
+import { css, Flex, Text, VStack } from '@devup-ui/react'
 
 import { BenchBox } from './BenchBox'
+import { BENCHMARK_SOURCE, benchmarkResults as results } from './benchmark-data'
 import { DevupUICard } from './DevupUICard'
 import { OtherCard } from './OtherCard'
 
-const OTHER_CARDS = [
-  {
-    title: 'Chakra UI',
-    version: '3.37.0',
-    buildTime: '19.98s',
-    buildSize: '197.02MB',
-    url: 'https://chakra-ui.com',
-  },
-  {
-    title: 'Mui',
-    version: '9.4.0',
-    buildTime: '13.78s',
-    buildSize: '95.94MB',
-    url: 'https://mui.com',
-  },
-  {
-    title: 'Kuma UI',
-    version: '1.6.4',
-    buildTime: '13.07s',
-    buildSize: '71.28MB',
-    url: 'https://kuma-ui.com',
-  },
-  {
-    title: 'Tailwindcss',
-    version: '4.3.3',
-    buildTime: '12.81s',
-    buildSize: '63.37MB',
-    url: 'https://tailwindcss.com',
-  },
-  {
-    title: 'panda CSS',
-    version: '1.12.0',
-    buildTime: '13.20s',
-    buildSize: '67.68MB',
-    url: 'https://panda-css.com',
-  },
-  {
-    title: 'styleX',
-    version: '0.19.0',
-    buildTime: '27.61s',
-    buildSize: '91.00MB',
-    url: 'https://stylexjs.com',
-  },
+// The numbers come from benchmark-data.ts: the live benchmark-results.json, or
+// the frozen e2e fixture in the e2e builds.
+const WEBPACK = new Map(
+  results.rows
+    .filter((row) => row.table === 'webpack')
+    .map((row) => [row.target, row]),
+)
+
+function row(target: string) {
+  const found = WEBPACK.get(target)
+  if (!found)
+    throw new Error(`benchmark-results.json has no webpack ${target} row`)
+  return found
+}
+
+const seconds = (value: number) => `${value.toFixed(2)}s`
+const megabytes = (value: number) => `${(value / 1024 / 1024).toFixed(2)}MB`
+
+const OTHERS = [
+  { title: 'Chakra UI', target: 'chakra-ui', url: 'https://chakra-ui.com' },
+  { title: 'Mui', target: 'mui', url: 'https://mui.com' },
+  { title: 'Kuma UI', target: 'kuma-ui', url: 'https://kuma-ui.com' },
+  { title: 'Tailwindcss', target: 'tailwind', url: 'https://tailwindcss.com' },
+  { title: 'panda CSS', target: 'panda-css', url: 'https://panda-css.com' },
+  { title: 'styleX', target: 'stylex', url: 'https://stylexjs.com' },
   {
     title: 'vanilla extract',
-    version: '1.21.2',
-    buildTime: '11.96s',
-    buildSize: '64.55MB',
+    target: 'vanilla-extract',
     url: 'https://vanilla-extract.style',
   },
-]
+].map(({ target, ...card }) => ({ ...card, row: row(target) }))
+
+const OTHER_CARDS = OTHERS.map(({ row, ...card }) => ({
+  ...card,
+  version: row.version,
+  buildTime: seconds(row.median),
+  buildSize: megabytes(row.bytes),
+}))
+
+const devup = row('devup-ui-single')
+const DEVUP_CARD = {
+  version: results.run.devupUi,
+  buildTime: seconds(devup.median),
+  buildSize: megabytes(devup.bytes),
+  fastest: OTHERS.every(({ row }) => devup.median <= row.median),
+  smallest: OTHERS.every(({ row }) => devup.bytes <= row.bytes),
+}
+
+const link = css({ color: 'inherit' })
 
 export function Bench() {
   return (
     <VStack
       alignItems="center"
+      data-benchmark-source={BENCHMARK_SOURCE}
       overflow="hidden"
       py={['40px', null, '50px', null, '60px']}
       w="100%"
@@ -80,12 +80,24 @@ export function Bench() {
             Comparison Benchmarks
           </Text>
           <Text color="$text" typography="textL">
-            Next.js 16.3.3 cold build (GitHub Actions, run 33254030962)
+            Next.js {results.run.next} cold build, median of {results.samples}{' '}
+            (GitHub Actions{' '}
+            <a className={link} href={results.run.url}>
+              run {results.run.id}
+            </a>
+            , commit{' '}
+            <a
+              className={link}
+              href={`https://github.com/dev-five-git/devup-ui/commit/${results.run.sha}`}
+            >
+              {results.run.commit}
+            </a>
+            )
           </Text>
         </VStack>
 
         <Flex display={[null, null, null, null, 'none']}>
-          <DevupUICard />
+          <DevupUICard {...DEVUP_CARD} />
         </Flex>
         <BenchBox>
           <Flex
@@ -97,7 +109,7 @@ export function Bench() {
             w="fit-content"
           >
             <Flex display={['none', null, null, null, 'flex']}>
-              <DevupUICard />
+              <DevupUICard {...DEVUP_CARD} />
             </Flex>
             {OTHER_CARDS.map((item) => (
               <OtherCard key={item.title} {...item} />

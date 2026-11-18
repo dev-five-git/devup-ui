@@ -1,0 +1,39 @@
+{
+  "columns": ["median", "min", "max", "bytes", "cssBytes", "clientBytes"],
+  "entries": [
+    {
+      "sha": "c750d33c01593b9debc8f9d1b745db0774fab519",
+      "run": "43770976836",
+      "committedAt": "2026-11-15T22:44:40.000Z",
+      "measuredAt": "2026-11-15T23:37:42.586Z",
+      "devupUi": "1.0.44",
+      "samples": 3,
+      "gate": "pass",
+      "regressions": [],
+      "rows": {
+        "tailwind": [10.234, 10.16, 11.069, 69807397, 5851, null],
+        "stylex": [24.333, 24.037, 25.579, 99500267, 425, null],
+        "stylex-turbo": [4.496, 4.329, 4.696, 26941607, 424, null],
+        "stylex-turbo-devup-ui": [3.948, 3.777, 4.028, 24801570, 321, null],
+        "vanilla-extract": [10.137, 9.564, 10.294, 70957513, 294, null],
+        "kuma-ui": [11.127, 10.383, 11.655, 77951297, 340, null],
+        "panda-css": [11.043, 10.141, 11.219, 75860686, 21149, null],
+        "chakra-ui": [16.328, 16.046, 16.372, 211095734, 0, null],
+        "mui": [11.331, 10.647, 12.03, 104631987, 0, null],
+        "devup-ui": [9.106, 8.607, 9.266, 69803573, 494, null],
+        "devup-ui-single": [9.226, 8.653, 9.309, 69788823, 395, null],
+        "tailwind-turbo": [3.906, 3.65, 3.937, 30536946, 6196, null],
+        "devup-ui-single-turbo": [3.855, 3.605, 4.021, 28905488, 327, null],
+        "devup-ui-turbo": [4.006, 3.685, 4.04, 28922033, 358, null],
+        "vanilla-extract-devup-ui": [3.91, 3.613, 3.953, 28950340, 268, null],
+        "tailwind-turbo-devup-ui": [3.822, 3.521, 3.865, 28950865, 1011, null],
+        "vinext-devup-ui": [1.789, 1.71, 1.907, 1276742, 10055, null],
+        "devup-ui-collapse": [3.861, 3.846, 3.888, 25317694, 1286, null],
+        "devup-ui-large": [12.999, 12.784, 13.16, 88451010, 1592, null],
+        "devup-ui-large-wasm": [14.174, 13.617, 14.359, 88564324, 1592, null],
+        "devup-ui-large-turbo": [5.558, 5.397, 5.921, 38522739, 1512, null],
+        "devup-ui-large-turbo-wasm": [5.93, 5.654, 6.273, 38565212, 1512, null]
+      }
+    }
+  ]
+}

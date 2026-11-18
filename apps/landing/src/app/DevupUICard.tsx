@@ -1,6 +1,38 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
 
-export function DevupUICard() {
+interface DevupUICardProps {
+  version: string
+  buildTime: string
+  buildSize: string
+  /** Whether Devup UI builds faster than every other card */
+  fastest: boolean
+  /** Whether Devup UI builds smaller than every other card */
+  smallest: boolean
+}
+
+function Crown({ shown }: { shown: boolean }) {
+  // Always laid out, so the card keeps its shape when Devup UI is not ahead.
+  return (
+    <Box
+      aria-hidden
+      aspectRatio="1"
+      bg="#FFC100"
+      maskImage="url(/icons/crown.svg)"
+      maskRepeat="no-repeat"
+      maskSize="contain"
+      visibility={shown ? 'visible' : 'hidden'}
+      w="24px"
+    />
+  )
+}
+
+export function DevupUICard({
+  version,
+  buildTime,
+  buildSize,
+  fastest,
+  smallest,
+}: DevupUICardProps) {
   return (
     <Flex
       bg="$containerBackground"
@@ -30,7 +62,7 @@ export function DevupUICard() {
           Devup UI
         </Text>
         <Text color="$text" typography="textL">
-          1.0.40
+          {version}
         </Text>
       </VStack>
       <VStack alignItems="flex-end" gap="20px">
@@ -39,21 +71,14 @@ export function DevupUICard() {
             Next.js Build Time (single CSS)
           </Text>
           <Flex gap="10px">
-            <Box
-              aspectRatio="1"
-              bg="#FFC100"
-              maskImage="url(/icons/crown.svg)"
-              maskRepeat="no-repeat"
-              maskSize="contain"
-              w="24px"
-            />
+            <Crown shown={fastest} />
             <Text
               backgroundClip="text"
               bg="linear-gradient(270deg, #6BB1F2 0%, #8235CA 100%)"
               color="transparent"
               typography="h4"
             >
-              10.81s
+              {buildTime}
             </Text>
           </Flex>
         </VStack>
@@ -62,21 +87,14 @@ export function DevupUICard() {
             Build Size
           </Text>
           <Flex gap="10px">
-            <Box
-              aspectRatio="1"
-              bg="#FFC100"
-              maskImage="url(/icons/crown.svg)"
-              maskRepeat="no-repeat"
-              maskSize="contain"
-              w="24px"
-            />
+            <Crown shown={smallest} />
             <Text
               backgroundClip="text"
               bg="linear-gradient(270deg, #6BB1F2 0%, #8235CA 100%)"
               color="transparent"
               typography="h4"
             >
-              63.45MB
+              {buildSize}
             </Text>
           </Flex>
         </VStack>

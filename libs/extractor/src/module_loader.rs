@@ -16,6 +16,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 
+pub(crate) mod css_utils;
 mod import_bindings;
 pub(crate) mod operations;
 mod retained_css;
@@ -24,6 +25,7 @@ mod script;
 mod tests;
 mod validate;
 
+use css_utils::{CSS_UTILS, CSS_UTILS_BINDING, CSS_UTILS_MODULE};
 use import_bindings::{BindingSource, ImportBindings};
 use retained_css::{CssImport, RetainedCss};
 pub(crate) use script::{Body, Origin, SCRIPT_PATH, Script, Unit};
@@ -153,6 +155,9 @@ pub(crate) struct ModuleLoader<'r> {
     /// What the stylesheet imports for its side effects, and the stylesheets it
     /// imports, which emit their own styles: its output keeps importing them
     pub kept_imports: Vec<String>,
+    /// Whether the stylesheet loads `@vanilla-extract/css-utils`, which it
+    /// evaluates as written here
+    css_utils: bool,
 }
 
 impl<'r> ModuleLoader<'r> {
@@ -185,6 +190,7 @@ impl<'r> ModuleLoader<'r> {
             css_bindings: FxHashMap::default(),
             dependencies: BTreeSet::new(),
             kept_imports: Vec::new(),
+            css_utils: false,
         }
     }
 
@@ -207,6 +213,9 @@ impl<'r> ModuleLoader<'r> {
     /// stylesheet
     pub(crate) fn script(&self, entry: &ModuleScript) -> Script {
         let mut script = Script::default();
+        if self.css_utils {
+            script.generated(CSS_UTILS_MODULE);
+        }
         for definition in &self.definitions {
             match definition {
                 Definition::Generated(text) => script.generated(text),
@@ -228,6 +237,10 @@ impl<'r> ModuleLoader<'r> {
 
     /// The name of the exports object of `specifier` imported by `importer`
     fn load(&mut self, specifier: &str, importer: &str, direct: bool) -> Result<String, LoadError> {
+        if specifier == CSS_UTILS && self.option.import_aliases.contains_key(CSS_UTILS) {
+            self.css_utils = true;
+            return Ok(CSS_UTILS_BINDING.to_string());
+        }
         let resolver = self.resolver.ok_or(LoadError::NoResolver)?;
         let module = resolver(specifier, importer).ok_or(LoadError::Unresolved)?;
         if retained_css::is_css(&module.path) {

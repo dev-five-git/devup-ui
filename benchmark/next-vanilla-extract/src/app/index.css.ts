@@ -1,6 +1,8 @@
 import { style } from '@vanilla-extract/css'
 
 export const hello = style({
+  backgroundColor: 'var(--text)',
+  color: 'var(--box-color)',
   cursor: 'pointer',
   fontSize: 32,
   position: 'relative',
@@ -33,4 +35,9 @@ export const hello3 = style({
 
 export const hello2 = style({
   fontSize: 12,
+  '@media': {
+    '(min-width: 480px)': {
+      fontSize: 32,
+    },
+  },
 })

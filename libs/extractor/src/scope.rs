@@ -26,6 +26,10 @@ pub use visits::requires;
 /// no source text spells it, so no binding can share it
 pub const NAMESPACE_STYLED: &str = "<namespace>.styled";
 
+/// What stands for `css` where the visit compiles the styles a binding the
+/// `css` prop reads holds: no source text spells it, so no binding can share it
+pub const NAMESPACE_CSS: &str = "<namespace>.css";
+
 /// The bindings of a program that stand for compiled APIs, by symbol
 #[derive(Default)]
 pub struct Bindings {

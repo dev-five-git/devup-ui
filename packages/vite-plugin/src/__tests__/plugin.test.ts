@@ -693,6 +693,7 @@ describe('devupUIVitePlugin', () => {
           '@emotion/css': null,
           'styled-components': 'styled',
           '@vanilla-extract/css': null,
+          '@vanilla-extract/css-utils': null,
         },
         needles: expect.arrayContaining([
           '@devup-ui/react',
@@ -2386,6 +2387,7 @@ export const a = <div css={{ color: 'red' }} />`
         '@emotion/styled': 'styled',
         '@emotion/css': null,
         '@vanilla-extract/css': null,
+        '@vanilla-extract/css-utils': null,
         'styled-components': 'styled',
       },
     )
@@ -2405,6 +2407,7 @@ export const a = <div css={{ color: 'red' }} />`
         '@emotion/styled': 'styled',
         '@emotion/css': null,
         '@vanilla-extract/css': null,
+        '@vanilla-extract/css-utils': null,
         'styled-components': 'styled',
       },
     )

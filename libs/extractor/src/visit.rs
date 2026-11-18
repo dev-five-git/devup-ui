@@ -115,6 +115,7 @@ mod call_order;
 mod call_target;
 mod capture;
 mod class_capture;
+mod css_prop_bindings;
 mod element_calls;
 mod element_props;
 mod imports;
@@ -129,6 +130,7 @@ pub(crate) use selected_capture::{INHERITED, own_key};
 mod semantics_helpers_tests;
 mod style_order;
 
+pub(crate) use css_prop_bindings::css_prop_reads;
 pub(crate) use element_props::is_unknown_spread;
 #[path = "own_css_visit.rs"]
 mod own_css;
@@ -363,10 +365,15 @@ pub struct DevupVisitor<'a> {
     css_prop: CssProp,
     /// The names the file imports Emotion's `styled` as
     emotion_styled: Vec<String>,
-    /// Bindings declared to an object, an array, a function or text, which a
-    /// `css` prop cannot compose as a class, besides the top-level constants
-    /// the build reads in its place
-    local_styles: FxHashSet<oxc_syntax::symbol::SymbolId>,
+    /// Bindings declared to an object, an array, a function, text, a choice
+    /// of styles or what a call gives, which a `css` prop cannot compose as a
+    /// class, besides the top-level constants the build reads in its place,
+    /// with what the prop needs instead
+    local_styles: FxHashMap<oxc_syntax::symbol::SymbolId, &'static str>,
+    /// The references that are the whole value of a `css` prop
+    css_prop_reads: FxHashSet<oxc_syntax::reference::ReferenceId>,
+    /// The functions of the module returning a style object
+    style_functions: FxHashSet<oxc_syntax::symbol::SymbolId>,
     /// The bindings below the top level of the module holding an object or
     /// array, which no style reads as the styles it holds
     local_objects: FxHashSet<oxc_syntax::symbol::SymbolId>,
@@ -1419,7 +1426,9 @@ impl<'a> DevupVisitor<'a> {
             changed_bindings: crate::imported_constants::Changed::default(),
             css_prop: CssProp::Off,
             emotion_styled: Vec::new(),
-            local_styles: FxHashSet::default(),
+            local_styles: FxHashMap::default(),
+            css_prop_reads: FxHashSet::default(),
+            style_functions: FxHashSet::default(),
             local_objects: FxHashSet::default(),
         }
     }
@@ -2077,6 +2086,12 @@ impl<'a> DevupVisitor<'a> {
 
     /// Whether `part` reads a binding `local_styles` holds
     fn reads_local_styles(&self, part: &Expression<'a>) -> bool {
+        self.local_styles_requirement(part).is_some()
+    }
+
+    /// What the `css` prop needs instead of the binding `local_styles` holds
+    /// that `part` reads
+    fn local_styles_requirement(&self, part: &Expression<'a>) -> Option<&'static str> {
         let mut root = part;
         while let Expression::StaticMemberExpression(member) = root {
             root = &member.object;
@@ -2086,7 +2101,7 @@ impl<'a> DevupVisitor<'a> {
         }
         self.style_values
             .symbol(root)
-            .is_some_and(|symbol| self.local_styles.contains(&symbol))
+            .and_then(|symbol| self.local_styles.get(&symbol).copied())
     }
 
     /// The styles `earlier` and the `css` prop of `element` compose, the
@@ -2103,7 +2118,10 @@ impl<'a> DevupVisitor<'a> {
         let CssValue { value, offset } = css;
         let mut parts = Vec::new();
         let unusable = if let Some(part) = self.css_part(&value, &Self::reads_local_styles) {
-            Some((part, LOCAL_STYLES))
+            Some((
+                part,
+                self.local_styles_requirement(part).unwrap_or(LOCAL_STYLES),
+            ))
         } else if self.known_parts(&value, &mut parts, Text::Rules).is_none() {
             Some((
                 self.css_part(&value, &|visitor, part| {
@@ -3652,6 +3670,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let shared = self.shared_targets(it);
             self.selected_components.extend(shared);
             self.rendered = crate::style_values::rendered(it);
+            if self.css_prop != CssProp::Off {
+                self.css_prop_reads =
+                    css_prop_bindings::css_prop_reads(it, &|name| self.takes_css(name));
+                self.style_functions = css_prop_bindings::style_functions(it);
+            }
             let imported: Vec<_> = self
                 .selected_components
                 .iter()
@@ -5394,17 +5417,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.private_styled.insert(start);
         }
         if self.css_prop != CssProp::Off
-            && matches!(
-                it.init.as_ref().map(unwrap_syntax_only),
-                Some(
-                    Expression::ObjectExpression(_)
-                        | Expression::ArrayExpression(_)
-                        | Expression::ArrowFunctionExpression(_)
-                        | Expression::FunctionExpression(_)
-                        | Expression::StringLiteral(_)
-                        | Expression::TemplateLiteral(_)
-                )
-            )
+            && !it
+                .init
+                .as_mut()
+                .is_some_and(|init| self.compile_css_choice(&it.id, init))
+            && let Some(requirement) = it
+                .init
+                .as_ref()
+                .and_then(|init| self.css_binding_requirement(init))
             && let Some(symbol) = it
                 .id
                 .get_binding_identifier()
@@ -5414,7 +5434,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         || self.style_values.is_local(*symbol)
                 })
         {
-            self.local_styles.insert(symbol);
+            self.local_styles.insert(symbol, requirement);
         }
 
         if matches!(

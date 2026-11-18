@@ -168,6 +168,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  coordinatorModule.resetCoordinator()
   resetTurboSetupCacheForTesting()
   setWasmForTesting(undefined)
   setWebpackPluginForTesting(undefined)
@@ -833,6 +834,7 @@ describe('DevupUINextPlugin', () => {
                       '@emotion/styled': 'styled',
                       '@emotion/css': null,
                       '@vanilla-extract/css': null,
+                      '@vanilla-extract/css-utils': null,
                       'styled-components': 'styled',
                     },
                     defaultSheet: {
@@ -918,6 +920,7 @@ describe('DevupUINextPlugin', () => {
                       '@emotion/styled': 'styled',
                       '@emotion/css': null,
                       '@vanilla-extract/css': null,
+                      '@vanilla-extract/css-utils': null,
                       'styled-components': 'styled',
                     },
                     watch: false,
@@ -1016,6 +1019,7 @@ describe('DevupUINextPlugin', () => {
                       '@emotion/styled': 'styled',
                       '@emotion/css': null,
                       '@vanilla-extract/css': null,
+                      '@vanilla-extract/css-utils': null,
                       'styled-components': 'styled',
                     },
                     defaultSheet: {
@@ -1058,7 +1062,8 @@ describe('DevupUINextPlugin', () => {
         },
       })
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
-        wasm,
+        distDir: 'df',
+        wasm: coordinatorModule.openCoordinatorCompiler('df', wasm),
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,
@@ -1070,6 +1075,7 @@ describe('DevupUINextPlugin', () => {
           '@emotion/styled': 'styled',
           '@emotion/css': null,
           '@vanilla-extract/css': null,
+          '@vanilla-extract/css-utils': null,
           'styled-components': 'styled',
         },
         coordinatorPortFile: join('df', 'coordinator.port'),
@@ -1304,7 +1310,10 @@ export const box = style({ color: 'red' })`
 
         setNodeEnv('development')
         DevupUI({}, { include: ['@acme/ui'], singleCss: true })
-        expect(reservationSpy).toHaveBeenCalledWith(wasm)
+        // Into the app's own engine session, never the shared engine.
+        expect(reservationSpy).toHaveBeenCalledWith(
+          coordinatorModule.openCoordinatorCompiler('df', wasm),
+        )
         const [discovery, options] = reserve.mock.calls[0] as Parameters<
           ReturnType<
             typeof importGraphModule.createSharedSlotReservation
@@ -1535,7 +1544,8 @@ export const box = style({ color: 'red' })`
 
         // Verify coordinator was started with correct options
         expect(startCoordinatorSpy).toHaveBeenCalledWith({
-          wasm,
+          distDir: 'df',
+          wasm: coordinatorModule.openCoordinatorCompiler('df', wasm),
           package: '@devup-ui/react',
           cssDir: resolve('df', 'devup-ui'),
           singleCss: false,
@@ -1547,6 +1557,7 @@ export const box = style({ color: 'red' })`
             '@emotion/styled': 'styled',
             '@emotion/css': null,
             '@vanilla-extract/css': null,
+            '@vanilla-extract/css-utils': null,
             'styled-components': 'styled',
           },
           coordinatorPortFile: join('df', 'coordinator.port'),
