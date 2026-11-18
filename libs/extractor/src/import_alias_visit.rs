@@ -576,14 +576,13 @@ const VANILLA_EXTRACT_COMPANIONS: [&str; 3] = [
 const VANILLA_EXTRACT_DYNAMIC: &str = "@vanilla-extract/dynamic";
 
 /// Where code loads vanilla-extract's companion packages, by an import, a
-/// re-export, `require()` or `import()`, and imports `globalKeyframes`, as
-/// errors at their offsets: while `@vanilla-extract/css` compiles to Devup UI,
-/// none of them reaches the stylesheet
+/// re-export, `require()` or `import()`, as errors at their offsets: while
+/// `@vanilla-extract/css` compiles to Devup UI, none of them reaches the
+/// stylesheet
 pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
     if !VANILLA_EXTRACT_COMPANIONS
         .iter()
         .any(|package| code.contains(package))
-        && !code.contains("globalKeyframes")
     {
         return Vec::new();
     }
@@ -595,13 +594,6 @@ pub fn companion_errors(code: &str, filename: &str) -> Vec<(u32, String)> {
             .into_iter()
             .map(|(offset, package)| (offset, companion_error(package)))
             .collect();
-    for statement in &program.body {
-        if let Statement::ImportDeclaration(import) = statement
-            && import.source.value == "@vanilla-extract/css"
-        {
-            errors.extend(global_keyframes_imports(import));
-        }
-    }
     errors.sort_unstable();
     errors
 }
@@ -615,30 +607,6 @@ fn companion_error(package: &str) -> String {
     format!(
         "`{package}` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: {{ '@vanilla-extract/css': false }}` and build with the vanilla-extract plugin"
     )
-}
-
-/// The value imports of `globalKeyframes` in `import_decl`, as errors at their
-/// specifiers: Devup UI names keyframes itself, so it has no keyframes of a
-/// global name to compile them to
-fn global_keyframes_imports(import_decl: &ImportDeclaration<'_>) -> Vec<(u32, String)> {
-    import_decl
-        .specifiers
-        .iter()
-        .flatten()
-        .filter_map(|specifier| match specifier {
-            ImportDeclarationSpecifier::ImportSpecifier(spec)
-                if !import_decl.import_kind.is_type()
-                    && !spec.import_kind.is_type()
-                    && imported_name(&spec.imported) == "globalKeyframes" =>
-            {
-                Some((
-                    spec.span.start,
-                    "`globalKeyframes()` from `@vanilla-extract/css` is not compiled by Devup UI, which names every keyframes itself, so the global name would never reach the stylesheet. Fix: declare them with `keyframes()` and use the name it returns, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin".to_string(),
-                ))
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 /// Emotion's factory of instances of its own, whose classes Devup UI does not
@@ -1618,7 +1586,6 @@ import * as ve from '@vanilla-extract/css'",
                 (50, "`@vanilla-extract/sprinkles`"),
                 (185, "`@vanilla-extract/dynamic`"),
                 (240, "`@vanilla-extract/recipes`"),
-                (291, "`globalKeyframes()`"),
             ],
             "{errors:?}"
         );

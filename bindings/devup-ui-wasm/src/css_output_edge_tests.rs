@@ -304,3 +304,63 @@ fn stylesheet_nested_arrays_report_authored_locations(
     assert!(error.contains("responsive arrays must be flat"), "{error}");
     Ok(())
 }
+
+/// `'@keyframes name'` in `globalCss` declares keyframes under that name
+#[test]
+#[serial]
+fn global_css_declares_named_keyframes() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
+    let output = compile(
+        "import { globalCss } from '@devup-ui/react';\nglobalCss({ '@keyframes fade-in': { from: { opacity: 0 }, 50: { opacity: 0.5 }, to: { opacity: 1, transform: 'translateX(10px)' } }, body: { animationName: 'fade-in' } });",
+    )?;
+    let css = devup_ui_binding_core::get_css(None, false);
+    assert!(
+        css.contains("@keyframes fade-in{50%{opacity:.5}from{opacity:0}to{opacity:1;transform:translateX(10px)}}"),
+        "{css}"
+    );
+    assert!(!css.contains("@keyframes fade-in from"), "{css}");
+    drop(output);
+    Ok(())
+}
+
+#[rstest]
+#[case("'@keyframes 1st': { from: { opacity: 0 } }", "css-edges.tsx:2:13:")]
+#[case(
+    "'@media print': { '@keyframes fade': { from: { opacity: 0 } } }",
+    "css-edges.tsx:2:31:"
+)]
+#[case("'@keyframes fade': { from: { opacity: x } }", "css-edges.tsx:2:")]
+#[serial]
+fn global_css_keyframes_errors(#[case] rules: &str, #[case] location: &str) -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
+    let error = compile(&format!(
+        "import {{ globalCss }} from '@devup-ui/react';\nglobalCss({{ {rules} }});"
+    ))
+    .err()
+    .ok_or("expected a keyframes error")?;
+    assert!(error.starts_with(location), "{error}");
+    Ok(())
+}
+
+/// vanilla-extract's `globalKeyframes` declares keyframes under its name, which
+/// styles of the stylesheet animate by
+#[test]
+#[serial]
+fn vanilla_extract_global_keyframes_keep_their_name() -> Result<(), String> {
+    let _scope = super::TestStateGuard::new();
+    let output = compile_file(
+        "anim.css.ts",
+        "import { globalKeyframes, style } from '@vanilla-extract/css';\nglobalKeyframes('fade-global', { from: { opacity: 0 }, to: { opacity: 1 } });\nexport const fade = style({ animation: 'fade-global 1s' });",
+    )?;
+    let css = devup_ui_binding_core::get_css(None, false);
+    assert!(
+        css.contains("@keyframes fade-global{from{opacity:0}to{opacity:1}}"),
+        "{css}"
+    );
+    assert!(
+        output.code().contains("export const fade = \""),
+        "{}",
+        output.code()
+    );
+    Ok(())
+}

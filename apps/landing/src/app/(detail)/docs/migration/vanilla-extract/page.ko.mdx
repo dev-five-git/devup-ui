@@ -14,7 +14,7 @@ export const metadata = {
 
 ## 스타일시트 파일
 
-vanilla-extract가 자체 API를 허용하는 유일한 위치인 `.css.ts` / `.css.js` 파일에서 Devup UI는 모듈을 평가하고 모든 호출을 생성된 결과로 대체합니다. 이 파일에서는 다음 API를 모두 사용할 수 있습니다: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. 커스텀 속성, 컨테이너, 레이어, 테마 클래스, 폰트 패밀리처럼 생성된 이름은 스타일시트마다 고유하며, 레이어는 선언된 순서를 유지합니다.
+vanilla-extract가 자체 API를 허용하는 유일한 위치인 `.css.ts` / `.css.js` 파일에서 Devup UI는 모듈을 평가하고 모든 호출을 생성된 결과로 대체합니다. 이 파일에서는 다음 API를 모두 사용할 수 있습니다: `style`, `globalStyle`, `keyframes`, `globalKeyframes`, `styleVariants`, `fontFace`, `globalFontFace`, `createVar`, `fallbackVar`, `createTheme`, `createGlobalTheme`, `createThemeContract`, `createGlobalThemeContract`, `assignVars`, `layer`, `globalLayer`, `createContainer`. 커스텀 속성, 컨테이너, 레이어, 테마 클래스, 폰트 패밀리처럼 생성된 이름은 스타일시트마다 고유하며, 레이어는 선언된 순서를 유지합니다.
 
 ```ts
 // theme.css.ts

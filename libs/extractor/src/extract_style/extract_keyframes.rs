@@ -6,13 +6,31 @@ use crate::extract_style::{
     ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
 };
 
-#[derive(Debug, Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[derive(Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractKeyframes {
     pub keyframes: BTreeMap<String, Vec<ExtractStaticStyle>>,
+    /// The name the keyframes are declared under, when the code names them
+    /// (`'@keyframes fade'` in `globalCss`); otherwise the build names them
+    pub name: Option<String>,
+}
+
+/// Shows `name` only when the code names the keyframes
+impl std::fmt::Debug for ExtractKeyframes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("ExtractKeyframes");
+        debug.field("keyframes", &self.keyframes);
+        if let Some(name) = &self.name {
+            debug.field("name", name);
+        }
+        debug.finish()
+    }
 }
 
 impl ExtractStyleProperty for ExtractKeyframes {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
+        if let Some(name) = &self.name {
+            return StyleProperty::ClassName(name.clone());
+        }
         let mut content = String::new();
         for (step, styles) in &self.keyframes {
             content.push_str(&css::atom_name::hex(step));
@@ -36,6 +54,26 @@ mod tests {
     use css::style_selector::StyleSelector;
     use rstest::rstest;
     use serial_test::serial;
+
+    #[test]
+    fn named_keyframes_keep_their_name() {
+        let keyframes = ExtractKeyframes {
+            name: Some("fade".to_string()),
+            ..ExtractKeyframes::default()
+        };
+        assert!(matches!(
+            keyframes.extract(Some("a.tsx")),
+            StyleProperty::ClassName(name) if name == "fade"
+        ));
+        assert_eq!(
+            format!("{keyframes:?}"),
+            "ExtractKeyframes { keyframes: {}, name: \"fade\" }"
+        );
+        assert_eq!(
+            format!("{:?}", ExtractKeyframes::default()),
+            "ExtractKeyframes { keyframes: {} }"
+        );
+    }
 
     #[test]
     #[serial]
@@ -94,6 +132,7 @@ mod tests {
                 ),
                 ("to".to_string(), vec![]),
             ]),
+            name: None,
         }
     }
 
