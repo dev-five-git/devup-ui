@@ -1163,7 +1163,8 @@ fn global_keyframes(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let name = to_text(args.get_or_undefined(0), context)?;
-    let json = style_to_json(args.get_or_undefined(1), context)?;
+    let fallbacks = collector.borrow().fallback_arrays;
+    let json = style_to_json(args.get_or_undefined(1), fallbacks, context)?;
     check_declarations(
         collector,
         &json,
