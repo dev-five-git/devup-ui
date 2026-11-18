@@ -104,7 +104,8 @@ export const reactProps = namedProps(
 export const domAttrs = stylex.attrs(composition, base.dynamic(10, 'red'))
 export const tryName = stylex.positionTry({ top: 0, insetBlockEnd: 'auto' })
 export const transitionName = stylex.viewTransitionClass({
-  animationDuration: '1s',
+  old: { animationDuration: '1s' },
+  new: { animationDuration: '0.5s' },
 })
 export const scalarWrappers = [
   stylex.types.angle('1deg'),
@@ -179,9 +180,11 @@ export type StyleXContractChecks = [
   Assert<Rejects<{ text: InvalidVariableCondition }, InvalidConditionInput>>,
   Assert<Rejects<InvalidVariableGroup, InvalidGroupInput>>,
   Assert<Rejects<{ color: ['red', 'blue'] }, StyleXRawStyles>>,
-  Assert<Rejects<{ color: { default: 'red' } }, StyleXDynamicDeclarations>>,
+  Assert<Accepts<{ color: { default: 'red' } }, StyleXDynamicDeclarations>>,
+  Assert<Rejects<{ color: { default: true } }, StyleXDynamicDeclarations>>,
   Assert<Rejects<{ top: { default: 0 } }, StyleXFlatDeclarations>>,
-  Assert<Rejects<OfficialTransitionOptions, OfficialTransitionInput>>,
+  Assert<Accepts<OfficialTransitionOptions, OfficialTransitionInput>>,
+  Assert<Rejects<{ opacity: 0 }, OfficialTransitionInput>>,
   Assert<Rejects<{ x: null }, ConstantsInput>>,
   Assert<Rejects<{ x: { default: 'red' } }, ConstantsInput>>,
   Assert<Rejects<number, Parameters<typeof direct.types.color>[0]>>,

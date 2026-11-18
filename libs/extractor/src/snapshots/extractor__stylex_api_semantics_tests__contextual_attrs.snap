@@ -1,0 +1,14 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+const s = { "w": "a-a a-b" };
+export const f = (w) => ({
+	class: "a-a a-b",
+	style: "--a:" + w
+});
+
+Dynamic(ExtractDynamicStyle { property: "color", level: 0, identifier: "size", selector: None, style_order: None })
+Static(ExtractStaticStyle { property: "color", value: "blue", level: 0, selector: Some(Selector("&:hover")), style_order: None, layer: None })

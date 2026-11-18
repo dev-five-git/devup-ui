@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+stylex.tsx:2:44: `stylex.defineVars()` cannot use `stylex.types.integer(3.5)` at build time: `types.integer` takes whole numbers
+stylex.tsx:2:80: `stylex.defineVars()` cannot use `stylex.types.color({ "@media print": "red" })` at build time: a typed variable registers its `default` value as the initial value of its `@property`; give it a `default`
+stylex.tsx:2:132: `stylex.defineVars()` cannot use `stylex.types.wat("x")` at build time: `types.wat` is not a `stylex.types` helper
