@@ -21,7 +21,7 @@
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "postcss": "^8.5.32",
+    "postcss": "^8.5.33",
     "rimraf": "^6.1.4",
     "typescript": "^7.0.2"
   }
