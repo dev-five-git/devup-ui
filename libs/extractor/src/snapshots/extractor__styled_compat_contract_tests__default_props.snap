@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+compat.tsx:3:6: `Tone` cannot take `defaultProps` at build time: it compiles to a function component, whose `defaultProps` React 19 ignores, so its styles would not see them. Fix: give the default where the prop is read, as `${(p) => p.$tone ?? 'red'}`, or pass the prop where the component is rendered

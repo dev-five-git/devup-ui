@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import * as nodePath from 'node:path'
 import { join } from 'node:path'
@@ -81,6 +82,11 @@ describe('shorthand creation boundary', () => {
 const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-bun-hooks-'))
 const scopedRoot = join(root, '@devup-ui/fixture')
 fs.mkdirSync(scopedRoot, { recursive: true })
+// The runtime stub a `require()` the extractor keeps in CommonJS loads
+const reactStub = join(root, 'node_modules/@devup-ui/react')
+fs.mkdirSync(reactStub, { recursive: true })
+fs.writeFileSync(join(reactStub, 'package.json'), '{"main":"index.js"}')
+fs.writeFileSync(join(reactStub, 'index.js'), 'exports.css = () => {}')
 const realPlugin = Bun.plugin
 const realExists = fs.existsSync
 const realResolve = nodePath.resolve
@@ -500,6 +506,9 @@ describe('registered Bun hooks', () => {
     ['jsx', 'jsx'],
     ['mjs', 'js'],
     ['js', 'js'],
+    ['cjs', 'js'],
+    ['mts', 'ts'],
+    ['cts', 'ts'],
   ] as const) {
     it(`compiles a ${extension} source through the captured onLoad callback`, async () => {
       const source =
@@ -568,6 +577,8 @@ describe('registered Bun hooks', () => {
       ['@scope/ui', 'C:\\app\\node_modules\\@scope\\ui\\index.js'],
       ['foo.bar', '/app/node_modules/foo.bar/index.js'],
       ['foo+bar', '/app/node_modules/foo+bar/index.js'],
+      ['my-lib', '/app/node_modules/my-lib/dist/index.cjs'],
+      ['@scope/ui', 'C:\\app\\node_modules\\@scope\\ui\\index.cjs'],
     ])('loads .js of include %s at %s', async (name, path) => {
       await register({ engine: 'wasm', include: [name] })
       expect(sourceFilter().test(path)).toBe(true)
@@ -578,7 +589,7 @@ describe('registered Bun hooks', () => {
       ['my-lib', '/app/node_modules/@scope/my-lib/index.js'],
       ['my-lib', '/app/node_modules/my-lib/node_modules/dep/index.js'],
       ['my-lib', '/app/node_modules/other/my-lib/index.js'],
-      ['my-lib', '/app/my-lib/index.js'],
+      ['my-lib', '/app/node_modules/my-lib/node_modules/dep/index.cjs'],
       ['my-lib', '/app/node_modules/my-lib/index.json'],
       ['foo.bar', '/app/node_modules/fooXbar/index.js'],
       ['@scope/ui', '/app/node_modules/@scope/ui-kit/index.js'],
@@ -592,10 +603,38 @@ describe('registered Bun hooks', () => {
       expect(sourceFilter().test('/app/node_modules/my-lib/index.js')).toBe(
         false,
       )
+      expect(sourceFilter().test('/app/node_modules/my-lib/index.cjs')).toBe(
+        false,
+      )
       expect(
         sourceFilter().test('/app/node_modules/@devup-ui/react/dist/index.js'),
       ).toBe(true)
       expect(sourceFilter().test('/app/src/App.tsx')).toBe(true)
+      // Project JavaScript is loaded whether or not a package is included
+      expect(sourceFilter().test('/app/my-lib/index.js')).toBe(true)
+    })
+
+    it('runs the CommonJS .js of an included package under the runtime', async () => {
+      const path = join(root, 'node_modules', 'cjs-lib', 'index.js')
+      await Bun.write(
+        path,
+        "const { css } = require('@devup-ui/react')\nmodule.exports = { className: css({ color: 'maroon' }) }",
+      )
+      await register({ engine: 'wasm', include: ['cjs-lib'] })
+      expect(sourceFilter().test(path)).toBe(true)
+      const result = await load(path)
+      if (!result || !('contents' in result))
+        throw new Error('Expected transformed source contents')
+      expect(result.loader).toBe('js')
+      expect(result.contents).not.toContain('css(')
+      expect(require.cache[path]?.exports).toEqual({
+        className: expect.any(String),
+      })
+      expect(writeSync).toHaveBeenCalledWith(
+        expect.stringContaining('devup-ui.css'),
+        expect.stringContaining('maroon'),
+        'utf-8',
+      )
     })
   })
 
@@ -646,6 +685,189 @@ describe('registered Bun hooks', () => {
     )
     await register({ engine: 'wasm' })
     await expect(load(path)).rejects.toThrow(/invalid\.ts:\d+:\d+:/)
+  })
+})
+
+describe('CommonJS under the runtime', () => {
+  async function loadSource(name: string, source: string) {
+    const path = join(root, name)
+    await Bun.write(path, source)
+    await register({ engine: 'wasm' })
+    return { path, result: await load(path) }
+  }
+
+  /** Imports the ES module the plugin hands Bun in place of CommonJS */
+  async function importResult(name: string, result: unknown) {
+    if (
+      typeof result !== 'object' ||
+      result === null ||
+      !('contents' in result) ||
+      typeof result.contents !== 'string'
+    )
+      throw new Error('Expected source contents')
+    expect(result).toEqual({ contents: result.contents, loader: 'js' })
+    const path = join(root, `${name}.mjs`)
+    await Bun.write(path, result.contents)
+    const module: Record<string, unknown> = await import(path)
+    return module
+  }
+
+  it('runs CommonJS that uses Devup UI and exports what it assigns', async () => {
+    const { path, result } = await loadSource(
+      'styled.cjs',
+      "const { css } = require('@devup-ui/react')\nmodule.exports = { cls: css({ color: 'navy' }), file: __filename }",
+    )
+    const exported = require.cache[path]?.exports
+    expect(exported).toEqual({ cls: expect.any(String), file: path })
+    expect({ ...(await importResult('styled', result)) }).toEqual({
+      'module.exports': exported,
+      default: exported,
+      cls: exported.cls,
+      file: path,
+    })
+    expect(writeSync).toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui.css'),
+      expect.stringContaining('navy'),
+      'utf-8',
+    )
+  })
+
+  it('strips TypeScript from CommonJS without fixing its path', async () => {
+    const { result } = await loadSource(
+      'typed.cts',
+      'const directory: string = __dirname\nexport = { directory, env: process.env.NODE_ENV, defined: typeof __filename }',
+    )
+    expect({ ...(await importResult('typed', result)) }).toMatchObject({
+      default: {
+        directory: root,
+        env: process.env.NODE_ENV,
+        defined: 'string',
+      },
+    })
+  })
+
+  it('exports functions, primitives and null as Bun does', async () => {
+    const callable = await loadSource(
+      'callable.cjs',
+      "module.exports = function named() { return 'called' }\nmodule.exports.extra = 1",
+    )
+    const module = await importResult('callable', callable.result)
+    expect(module.default).toBe(module['module.exports'])
+    expect(module.extra).toBe(1)
+    expect(Object.keys(module).sort()).toEqual([
+      'default',
+      'extra',
+      'module.exports',
+    ])
+    for (const [name, value] of [
+      ['text', 'text'],
+      ['nothing', null],
+    ] as const) {
+      const { result } = await loadSource(
+        `${name}.cjs`,
+        `module.exports = ${JSON.stringify(value)}`,
+      )
+      expect({ ...(await importResult(name, result)) }).toEqual({
+        'module.exports': value,
+        default: value,
+      })
+    }
+  })
+
+  it('takes the default export of a compiled ES module', async () => {
+    const { result } = await loadSource(
+      'compiled.cjs',
+      "Object.defineProperty(exports, '__esModule', { value: true })\nexports.default = 'main'\nexports.named = 'named'",
+    )
+    const module = await importResult('compiled', result)
+    expect(module.default).toBe('main')
+    expect(module.named).toBe('named')
+  })
+
+  it('runs a module again when it is loaded again', async () => {
+    const { path } = await loadSource('again.cjs', 'exports.at = Math.random()')
+    const first = require.cache[path]
+    await load(path)
+    expect(require.cache[path]).not.toBe(first)
+    expect(require.cache[path]?.loaded).toBe(true)
+  })
+
+  it('drops a module that throws from the require cache', async () => {
+    const path = join(root, 'throws.cjs')
+    await Bun.write(path, "exports.before = 1\nthrow new Error('boom')")
+    await register({ engine: 'wasm' })
+    await expect(load(path)).rejects.toThrow('boom')
+    expect(require.cache[path]).toBeUndefined()
+  })
+
+  for (const [name, source, loader] of [
+    ['module-syntax.cjs', "export const kind = 'module'", 'js'],
+    ['top-level-await.cjs', 'module.exports = await Promise.resolve(1)', 'js'],
+    ['broken.cts', 'module.exports = (', 'ts'],
+  ] as const)
+    it(`leaves ${name} to Bun`, async () => {
+      const { result } = await loadSource(name, source)
+      expect(result).toEqual({ contents: source, loader })
+    })
+
+  it('hands CommonJS to Bun.build, which bundles it', async () => {
+    const entry = join(root, 'bundled-entry.mjs')
+    await Bun.write(
+      join(root, 'bundled.cjs'),
+      "const { css } = require('@devup-ui/react')\nmodule.exports = { cls: css({ color: 'teal' }) }",
+    )
+    await Bun.write(
+      join(root, 'bundled.cts'),
+      "import { css } from '@devup-ui/react'\nexport = { cls: css({ color: 'olive' }) }",
+    )
+    await Bun.write(
+      entry,
+      "export { default as cjs } from './bundled.cjs'\nexport { default as cts } from './bundled.cts'",
+    )
+    const result = await Bun.build({
+      entrypoints: [entry],
+      target: 'bun',
+      external: ['@devup-ui/react'],
+      outdir: join(root, 'bundled'),
+      plugins: [DevupUI({ engine: 'wasm' })],
+    })
+    expect(result.success).toBe(true)
+    const css = await Promise.all(
+      result.outputs
+        .filter((output) => output.path.endsWith('.css'))
+        .map((output) => output.text()),
+    )
+    expect(css.join('')).toMatch(/color:\s*teal/)
+    expect(css.join('')).toMatch(/color:\s*olive/)
+    const output = result.outputs.find(({ path }) => path.endsWith('.js'))
+    if (!output) throw new Error('Expected a bundle')
+    // Run the bundle in its own process, so its code stays out of coverage
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        '-e',
+        `console.log(JSON.stringify(await import(${JSON.stringify(output.path)})))`,
+      ],
+      { cwd: root, stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(child.stderr.toString()).toBe('')
+    expect(JSON.parse(child.stdout.toString())).toEqual({
+      cjs: { cls: expect.any(String) },
+      cts: { cls: expect.any(String) },
+    })
+  })
+
+  it('keeps exports through the registered runtime plugin', async () => {
+    const required = join(root, 'required.cjs')
+    const imported = join(root, 'imported.cts')
+    await Bun.write(required, "exports.kind = 'required'")
+    await Bun.write(imported, "export = { kind: 'imported' as string }")
+    expect(createRequire(import.meta.url)(required)).toEqual({
+      kind: 'required',
+    })
+    const module: Record<string, unknown> = await import(imported)
+    expect(module.default).toEqual({ kind: 'imported' })
+    expect(module.kind).toBe('imported')
   })
 })
 

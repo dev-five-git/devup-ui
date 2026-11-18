@@ -1,0 +1,16 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+const constants = {
+	"wide": "@media (min-width: 600px)",
+	"hover": ":hover"
+};
+const s = { "r": "a-a a-b a-c" };
+export const p = { className: "a-a a-b a-c" };
+
+Static(ExtractStaticStyle { property: "color", value: "blue", level: 0, selector: Some(At { kind: Media, query: "(min-width:600px)", selector: None, outer: [], file: None }), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "green", level: 0, selector: Some(Selector("&:hover")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: None, style_order: None, layer: None })

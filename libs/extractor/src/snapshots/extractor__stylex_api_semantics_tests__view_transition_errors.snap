@@ -1,0 +1,9 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+stylex.tsx:2:50: `stylex.viewTransitionClass()` cannot use `animationDuration` at build time: it takes the groups `group`, `imagePair`, `old` and `new`, each an object of declarations
+stylex.tsx:2:80: `stylex.viewTransitionClass()` cannot use `"x"` at build time: each group takes an object of declarations
+stylex.tsx:2:101: `stylex.viewTransitionClass()` cannot use `later` at build time: its values must be literals, theme tokens or constants, or be computed from them
+stylex.tsx:2:110: `stylex.viewTransitionClass()` cannot use `...rest` at build time: write every entry out, as its keys must be known
+stylex.tsx:2:120: `stylex.viewTransitionClass()` cannot use `[k]` at build time: its keys must be known

@@ -18,6 +18,7 @@ import type {
   StyleXScalar,
   StyleXTypes,
   StyleXVariableValue,
+  StyleXViewTransitionGroups,
 } from '../types/stylex-values'
 
 export type {
@@ -39,6 +40,7 @@ export type {
   StyleXTypes,
   StyleXValue,
   StyleXVariableValue,
+  StyleXViewTransitionGroups,
 } from '../types/stylex-values'
 
 export function create<
@@ -110,8 +112,9 @@ export function positionTry<const D extends StyleXFlatDeclarations>(
   throw new Error('Cannot run on the runtime')
 }
 
-export function viewTransitionClass<const D extends StyleXFlatDeclarations>(
-  _styles: D & Record<Exclude<keyof D, keyof StyleXFlatDeclarations>, never>,
+export function viewTransitionClass<const D extends StyleXViewTransitionGroups>(
+  _styles: D &
+    Record<Exclude<keyof D, keyof StyleXViewTransitionGroups>, never>,
 ): string {
   throw new Error('Cannot run on the runtime')
 }

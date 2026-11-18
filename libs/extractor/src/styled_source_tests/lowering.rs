@@ -54,11 +54,11 @@ fn output_parses_when_original_suffix_excludes_jsx(
 #[case("styled('Widget', {})", Target::Tag("Widget".into()))]
 #[case("styled('motion.div', {})", Target::Tag("motion.div".into()))]
 #[case("styled('my-card', {})", Target::Tag("my-card".into()))]
-#[case("styled(Component, {})", Target::Component("Component".into()))]
-#[case("styled(motion.div, {})", Target::Member("motion.div".into()))]
-#[case("styled(Motion.Div.Inner, {})", Target::Member("Motion.Div.Inner".into()))]
+#[case("styled(Component, {})", Target::Member("Component.__devupBase || Component".into()))]
+#[case("styled(motion.div, {})", Target::Member("((c) => c.__devupBase || c)(motion.div)".into()))]
+#[case("styled(Motion.Div.Inner, {})", Target::Member("((c) => c.__devupBase || c)(Motion.Div.Inner)".into()))]
 #[case("styled(Box, {})", Target::Tag("div".into()))]
-#[case("styled(forwardRef((props, ref) => createElement('div', { ...props, ref })))({})", Target::Component("DevupStyled".into()))]
+#[case("styled(forwardRef((props, ref) => createElement('div', { ...props, ref })))({})", Target::Member("DevupStyled.__devupBase || DevupStyled".into()))]
 #[serial]
 fn render_target_is_preserved_when_styled_emits_a_call(
     #[case] factory: &str,

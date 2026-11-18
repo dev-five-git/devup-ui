@@ -147,7 +147,13 @@ fn literal_namespace_retargets_match_dot_with_and_without_trigger(#[case] trigge
     // expression, not imports, forwarding, target selection or render stages.
     let receiver = "(UI[\"Dyn\"] as typeof UI.Dyn)!";
     assert_eq!(actual.code.matches(receiver).count(), 1);
-    assert_eq!(expected.code.matches("UI.Dyn").count(), 1);
+    // and the base the call renders as its own reads the member as written
+    assert_eq!(expected.code.matches("UI.Dyn").count(), 2);
+    assert!(
+        expected
+            .code
+            .contains("__devupAs(UI.Dyn.__devupBase, \"a\")")
+    );
     assert_eq!(actual.code.replace(receiver, "UI.Dyn"), expected.code);
     assert!(!actual.code.contains(".withComponent("));
     assert!(actual.code.contains("import * as UI from \"./base\";"));
@@ -186,10 +192,17 @@ fn admitted_retargets_preserve_shadowed_occurrences(
         "export function untouched({shadow}) {{\n\treturn {receiver}.withComponent(\"section\");\n}}"
     )));
     assert!(output.code.contains(&import.replace('\'', "\"")));
-    // The two receivers remain, plus any named import and parameter bindings.
-    // The admitted call must not copy the origin's dynamic callback.
+    // The two receivers remain, plus the base the admitted call renders as
+    // its own (the Emotion component's selector belongs to it alone) and any
+    // named import and parameter bindings. The admitted call must not copy
+    // the origin's dynamic callback.
+    let base = format!(
+        "__devupAs({}.__devupBase, \"a\")",
+        receiver.replace("[\"Dyn\"]", ".Dyn")
+    );
+    assert!(output.code.contains(&base), "{}", output.code);
     assert_eq!(
-        output.code.matches(&receiver).count(),
+        output.code.replace(&base, "").matches(&receiver).count(),
         2 + import.matches(expression).count() + shadow.matches(expression).count()
     );
     assert!(!output.code.contains("20px"));

@@ -50,7 +50,7 @@ fn rejects_dead_declarations_when_entering_public_expression_apis(
         "valueObject" => format!("const e = <Box color={{{{ {camel}:'1' }}}} />;"),
         "positionTry" => format!("const p = stylex.positionTry({{ {camel}:'1' }});"),
         "viewTransitionClass" => {
-            format!("const v = stylex.viewTransitionClass({{ {camel}:'1' }});")
+            format!("const v = stylex.viewTransitionClass({{ old: {{ {camel}:'1' }} }});")
         }
         _ => unreachable!(),
     };

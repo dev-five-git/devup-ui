@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
@@ -29,6 +29,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
+import { commonJsSource } from './commonjs'
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
 import { createTailwindWatcher } from './tailwind-watch'
 
@@ -85,8 +86,9 @@ export interface DevupUIBunPluginOptions {
    */
   licenseBanner?: boolean
   /**
-   * Packages whose published `.js` files are compiled as well, as in the
-   * other plugins: a library that ships Devup UI components uncompiled.
+   * Packages whose published `.js` and `.cjs` files are compiled as well, as
+   * in the other plugins: a library that ships Devup UI components
+   * uncompiled, as ES modules or CommonJS.
    * Each name matches that whole package (`pkg` is not `pkg-extra` or
    * `@scope/pkg`), not the dependencies in its own `node_modules`.
    */
@@ -99,21 +101,22 @@ const SEPARATOR = '[\\/\\\\]'
 
 /**
  * The files the plugin loads: TypeScript (`.mts` and `.cts` included) and JSX
- * sources anywhere, `.js` under Devup UI, and `.js` of the packages in
- * `include`. An included package is the directory right under the innermost
+ * sources anywhere, `.js` and `.cjs` outside `node_modules`, and `.js` and
+ * `.cjs` of Devup UI and of the packages in `include`, in `Bun.build` and
+ * under the runtime alike. A package is the directory right under the innermost
  * `node_modules` (pnpm and Bun stores included), matched the way
  * `createNodeModulesExcludeRegex` matches it.
  */
 function createSourceFilter(include: readonly string[]): RegExp {
-  const sources = `\\.(?:[mc]?ts|tsx|jsx|mjs)$|${SEPARATOR}@devup-ui${SEPARATOR}.*\\.js$`
-  if (include.length === 0) return new RegExp(sources)
-  const names = include
-    .map((name) =>
+  const packages = [
+    '@devup-ui',
+    ...include.map((name) =>
       name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', SEPARATOR),
-    )
-    .join('|')
+    ),
+  ].join('|')
+  const nodeModules = `${SEPARATOR}node_modules${SEPARATOR}`
   return new RegExp(
-    `${sources}|${SEPARATOR}node_modules${SEPARATOR}(?!.*${SEPARATOR}node_modules${SEPARATOR})(?:${names})${SEPARATOR}.*\\.js$`,
+    `\\.(?:[mc]?ts|tsx|jsx|mjs)$|^(?!.*${nodeModules}).*\\.c?js$|${nodeModules}(?!.*${nodeModules})(?:${packages})${SEPARATOR}.*\\.c?js$`,
   )
 }
 
@@ -250,25 +253,32 @@ function importsCompiledPackage(
   }
 }
 
-async function loadSourceFile(
+// Synchronous: Bun cannot `require()` a module whose `onLoad` is async
+function loadSourceFile(
   compiler: DevupCompiler,
   filePath: string,
   bundling: boolean,
   { cssDir, importAliases, compiledPackages }: BunProject,
 ) {
   const loader = sourceLoader(filePath)
-  const contents = await Bun.file(filePath).text()
+  let contents = readFileSync(filePath, 'utf-8')
+  let stylesheet: string | undefined
+  let dependencies: readonly string[] = []
 
   if (
     isProjectJsx(filePath, importAliases) ||
     importsCompiledPackage(contents, loader, compiledPackages) ||
     compiler.hasDevupUI(filePath, contents, libPackage, importAliases)
   ) {
+    const cssImportDir = relative(dirname(filePath), cssDir).replaceAll(
+      '\\',
+      '/',
+    )
     using code = compiler.codeExtract(
       filePath,
       contents,
       libPackage,
-      relative(dirname(filePath), cssDir).replaceAll('\\', '/'),
+      cssImportDir,
       singleCss,
       true,
       false,
@@ -282,12 +292,23 @@ async function loadSourceFile(
     const sheet = code.css
     if (!bundling && sheet !== undefined)
       writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
-    return {
-      contents: withDependencyImports(code.code, filePath, code.dependencies),
-      loader,
-    }
+    contents = code.code
+    stylesheet = `${cssImportDir}/devup-ui.css`
+    dependencies = code.dependencies
   }
-  return { contents, loader }
+  // `Bun.build` bundles the CommonJS it is handed; the runtime does not run it
+  const commonJs = bundling
+    ? undefined
+    : commonJsSource(filePath, contents, loader, stylesheet)
+  // The dependency imports go to ES modules only: an `import` would make
+  // CommonJS an ES module again and lose its exports. (The extractor reads
+  // dependencies through `import`, so CommonJS has none today.)
+  return commonJs === undefined
+    ? {
+        contents: withDependencyImports(contents, filePath, dependencies),
+        loader,
+      }
+    : { contents: commonJs, loader: 'js' as const }
 }
 
 /**
@@ -409,27 +430,20 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         },
       )
 
-      const loadSource = ({ path }: { readonly path: string }) => {
-        if (reservationPending) {
-          reserveFiles()
-          reservationPending = false
-        }
-        return loadSourceFile(compiler, path, bundling, project)
-      }
-      // Load source files from packages directory (file namespace)
+      // Load every TypeScript and JavaScript source, ES module or CommonJS,
+      // in `Bun.build` and under the runtime alike. JavaScript in
+      // node_modules is left to Bun, except Devup UI's own and that of the
+      // packages in `include`.
       build.onLoad(
         { filter: createSourceFilter(options.include ?? []) },
-        loadSource,
+        ({ path }) => {
+          if (reservationPending) {
+            reserveFiles()
+            reservationPending = false
+          }
+          return loadSourceFile(compiler, path, bundling, project)
+        },
       )
-      // A bundle also takes the project's own `.js` and `.cjs` modules. Bun
-      // loads one itself when the hook returns nothing, which the runtime
-      // does not allow, so dependencies are left to Bun here.
-      if (bundling)
-        build.onLoad({ filter: /\.c?js$/ }, (args) =>
-          !/[\\/]node_modules[\\/]/.test(args.path)
-            ? loadSource(args)
-            : undefined,
-        )
     },
   } satisfies BunPlugin
 }
