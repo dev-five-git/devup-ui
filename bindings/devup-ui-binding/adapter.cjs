@@ -102,6 +102,7 @@ exports.createBinding = function createBinding(raw) {
     importFileRoutes: (value) => call(raw.importFileRoutes, value),
     importSheet: (value) => call(raw.importSheet, value),
     isDebug: raw.isDebug,
+    isLicenseBanner: raw.isLicenseBanner,
     registerShorthands: (value) => call(raw.registerShorthands, value),
     registerTheme: (value) => call(raw.registerTheme, value),
     removeFile: (filename) => raw.removeFile(filename),
@@ -113,6 +114,7 @@ exports.createBinding = function createBinding(raw) {
     selectSession: (id) => raw.selectSession(id),
     setAtomHoist: (value) => raw.setAtomHoist(index(value)),
     setDebug: (value) => raw.setDebug(value),
+    setLicenseBanner: (value) => raw.setLicenseBanner(value),
     setModuleResolver,
     setPrefix: (value) => raw.setPrefix(value == null ? undefined : value),
     setStylexStyleResolution: (value) =>

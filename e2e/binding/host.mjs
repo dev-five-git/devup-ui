@@ -68,7 +68,7 @@ save('provenance.json', {
   scenarios: corpus.map((c) => c.name),
 })
 const names =
-  'Output codeExtract codeExtractWithoutSourceMap createSession dropSession exportCanonicalMap exportClassMap exportFileMap exportSheet getCss getDefaultTheme getPrefix getThemeInterface getUnreservedClassSlotCount hasDevupUI importCanonicalMap importClassMap importFileMap importFileRoutes importSheet isDebug registerShorthands registerTheme removeFile reserveClassSlots resetBuildState resetStateForTesting seedFileMap selectSession setAtomHoist setDebug setModuleResolver setPrefix setStylexStyleResolution'.split(
+  'Output codeExtract codeExtractWithoutSourceMap createSession dropSession exportCanonicalMap exportClassMap exportFileMap exportSheet getCss getDefaultTheme getPrefix getThemeInterface getUnreservedClassSlotCount hasDevupUI importCanonicalMap importClassMap importFileMap importFileRoutes importSheet isDebug isLicenseBanner registerShorthands registerTheme removeFile reserveClassSlots resetBuildState resetStateForTesting seedFileMap selectSession setAtomHoist setDebug setLicenseBanner setModuleResolver setPrefix setStylexStyleResolution'.split(
     ' ',
   )
 const abi = {
@@ -117,6 +117,7 @@ const snapshot = () => ({
     [
       'getPrefix',
       'isDebug',
+      'isLicenseBanner',
       'getDefaultTheme',
       'getUnreservedClassSlotCount',
     ].map((name) => [name, capture(() => w[name]())]),

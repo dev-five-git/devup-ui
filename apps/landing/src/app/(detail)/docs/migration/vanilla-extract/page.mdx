@@ -76,7 +76,7 @@ export const a = "a";
 With an empty theme, the same probe emits:
 
 ```text
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */@layer b;@layer b{body{margin:0}}.a{color:red}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */@layer b;@layer b{body{margin:0}}.a{color:red}
 ```
 
 Generated names depend on the class prefix and extraction state. The
@@ -107,7 +107,7 @@ export const button = "b c";
 Generated CSS:
 
 ```text
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.c{color:blue}.a{color:red}.b{padding:8px}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.c{color:blue}.a{color:red}.b{padding:8px}
 ```
 
 `button` does not include the conflicting red class. Unknown external classes

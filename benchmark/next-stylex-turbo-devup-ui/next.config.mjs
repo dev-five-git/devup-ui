@@ -2,5 +2,5 @@ import { DevupUI } from '@devup-ui/next-plugin'
 
 export default DevupUI(
   { experimental: { useTypeScriptCli: true } },
-  { singleCss: true },
+  { singleCss: true, licenseBanner: false },
 )

@@ -156,6 +156,17 @@ pub fn is_debug() -> bool {
     binding_core::is_debug()
 }
 
+#[wasm_bindgen(js_name = "setLicenseBanner")]
+pub fn set_license_banner(enabled: bool) {
+    binding_core::set_license_banner(enabled);
+}
+
+#[wasm_bindgen(js_name = "isLicenseBanner")]
+#[must_use]
+pub fn is_license_banner() -> bool {
+    binding_core::is_license_banner()
+}
+
 /// Set the CSS class name prefix
 ///
 /// # Example (Vite Config)
@@ -979,10 +990,8 @@ mod tests {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
         }
-        assert_eq!(
-            get_css(None, false).unwrap().split("*/").nth(1).unwrap(),
-            ""
-        );
+        // An empty sheet is emitted empty, without even the banner
+        assert_eq!(get_css(None, false).unwrap(), "");
 
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -1307,6 +1316,17 @@ mod tests {
         assert!(is_debug());
         set_debug(false);
         assert!(!is_debug());
+    }
+
+    #[test]
+    #[serial]
+    fn test_license_banner() {
+        let _state = TestStateGuard::new();
+        assert!(is_license_banner());
+        set_license_banner(false);
+        assert!(!is_license_banner());
+        set_license_banner(true);
+        assert!(is_license_banner());
     }
 
     #[test]
