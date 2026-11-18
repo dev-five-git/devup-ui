@@ -161,17 +161,40 @@ export function trend(history, target, control) {
     .join('\n')
 }
 
-/** JSON as Prettier prints it here: two spaces, short arrays of numbers or strings on one line */
+/**
+ * A long array of numbers as Prettier fills it: as many items on each line as
+ * fit, every line but the last ending in a comma
+ */
+function fillNumbers(indent, key, values) {
+  const inner = `${indent}  `
+  const lines = []
+  let line = inner
+  for (const [index, value] of values.entries()) {
+    const item = index < values.length - 1 ? `${value},` : value
+    const next = line === inner ? `${inner}${item}` : `${line} ${item}`
+    if (line !== inner && next.length > PRINT_WIDTH) {
+      lines.push(line)
+      line = `${inner}${item}`
+    } else line = next
+  }
+  return `${indent}${key}[\n${[...lines, line].join('\n')}\n${indent}]`
+}
+
+/**
+ * JSON as Prettier prints it here: two spaces, short arrays of numbers or
+ * strings on one line, and longer arrays of numbers filled over lines
+ */
 export function formatJson(value) {
   return (
     JSON.stringify(value, null, 2).replace(
       /^( *)(.*)\[\n((?:\1 {2}(?:-?[\d.e+-]+|"[^"\n]*"|null),?\n)+)\1\]/gm,
       (whole, indent, key, items) => {
-        const line = `${indent}${key}[${items
-          .trim()
-          .split(/,\n */)
-          .join(', ')}]`
-        return line.length + 1 <= PRINT_WIDTH ? line : whole
+        const values = items.trim().split(/,\n */)
+        const line = `${indent}${key}[${values.join(', ')}]`
+        if (line.length + 1 <= PRINT_WIDTH) return line
+        return values.every((item) => /^-?[\d.e+-]+$/.test(item))
+          ? fillNumbers(indent, key, values)
+          : whole
       },
     ) + '\n'
   )
