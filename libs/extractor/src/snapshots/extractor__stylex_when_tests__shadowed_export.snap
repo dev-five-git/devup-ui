@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+stylex.tsx:3:33: `stylex.defineMarker()` cannot use `` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`

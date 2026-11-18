@@ -83,6 +83,11 @@ impl Bindings {
         })
     }
 
+    /// Whether `symbol` is declared at the module's top level
+    pub fn is_module_binding(&self, symbol: SymbolId) -> bool {
+        self.scoping.symbol_scope_id(symbol) == self.scoping.root_scope_id()
+    }
+
     /// Remember the bindings the reads in `expression` stand for, before code
     /// that copies it without their references, which the visit then reads
     /// again

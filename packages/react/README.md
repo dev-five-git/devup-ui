@@ -75,7 +75,7 @@ npm install @devup-ui/webpack-plugin
 
 <!-- benchmark:start -->
 
-[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/44310194244) (commit `389b6a35`, Devup UI 1.0.44, 2026-11-18) on `ubuntu-26.04` with Next.js 16.4.6. Every row is the median of 3 cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`, which CI refreshes after every merge to main and records in `benchmark/history.json`, one entry per commit, so a slower build can be traced to the merge that caused it.
+[Latest CI benchmark](https://github.com/dev-five-git/devup-ui/actions/runs/44335949127) (commit `12e1fb07`, Devup UI 1.0.44, 2026-11-18) on `ubuntu-26.04` with Next.js 16.4.6. Every row is the median of 3 cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, `benchmark-results.json`, which CI refreshes after every merge to main and records in `benchmark/history.json`, one entry per commit, so a slower build can be traced to the merge that caused it.
 
 Client Size is the JavaScript and CSS shipped to the browser, uncompressed: `.next/static/**/*.{js,css}` or vinext `dist/client/**/*.{js,css}`. Build Size (incl. caches) is every byte of the build output directory (`.next`, or `dist` for vinext); most of it is the bundler cache and server output, and it moves by a few kilobytes between identical builds, so it is kept for continuity rather than as what users download. CSS Size counts only browser-shipped CSS: `.next/static/**/*.css` (Webpack `static/css` and Turbopack `static/chunks`) or vinext `dist/client/**/*.css`, excluding caches and server CSS. A missing browser-assets directory is an error; an existing directory with no CSS counts zero. Every size is measured on every sample and shown as the median; `benchmark-results.json` keeps the samples with their range, and rows measured before Client Size was recorded show n/a. Approved CSS measurement corrections are limited to explicitly named `devup-ui`, `devup-ui-single` and `vinext-devup-ui` rows. `bun benchmark-check.js --write-css-baseline devup-ui` retains the per-file mode; `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui` selects only the other two rows in one comma-separated argument. Only selected existing rows' CSS bytes change; unlike `--write-baseline`, this preserves sample count, build bytes, ratios, tolerances, all unselected rows and calibration history. Missing or unsupported names and conflicting writer modes are rejected.
 
@@ -83,25 +83,25 @@ Webpack:
 
 | Library                     | Version | Median Build Time | Range           | Client Size     | Build Size (incl. caches) | CSS Size     |
 | --------------------------- | ------- | ----------------- | --------------- | --------------- | ------------------------- | ------------ |
-| tailwindcss                 | 4.3.5   | 12.04s            | 12.04s - 12.10s | 924,183 bytes   | 69,758,062 bytes          | 717 bytes    |
-| styleX                      | 0.19.2  | 24.75s            | 24.66s - 24.81s | 2,021,525 bytes | 97,730,525 bytes          | 661 bytes    |
-| vanilla-extract             | 1.21.3  | 11.04s            | 10.92s - 11.05s | 923,721 bytes   | 70,450,925 bytes          | 398 bytes    |
-| kuma-ui                     | 1.6.4   | 12.63s            | 12.62s - 12.69s | 956,158 bytes   | 77,760,484 bytes          | 354 bytes    |
-| panda-css                   | 2.5.0   | 12.60s            | 12.53s - 12.74s | 980,282 bytes   | 75,835,595 bytes          | 18,567 bytes |
-| chakra-ui                   | 3.38.0  | 18.67s            | 18.65s - 18.73s | 1,175,910 bytes | 211,191,580 bytes         | 0 bytes      |
-| mui                         | 9.5.0   | 13.35s            | 13.30s - 13.42s | 993,400 bytes   | 103,208,731 bytes         | 0 bytes      |
-| **devup-ui (per-file CSS)** | 1.0.44  | **10.59s**        | 10.58s - 10.76s | 923,753 bytes   | 69,831,677 bytes          | 355 bytes    |
-| **devup-ui (single CSS)**   | 1.0.44  | **10.70s**        | 10.69s - 10.86s | 923,689 bytes   | 69,816,301 bytes          | 325 bytes    |
+| tailwindcss                 | 4.3.5   | 9.98s             | 9.42s - 10.06s  | 924,183 bytes   | 69,758,565 bytes          | 717 bytes    |
+| styleX                      | 0.19.2  | 20.57s            | 19.84s - 21.14s | 2,021,525 bytes | 97,729,696 bytes          | 661 bytes    |
+| vanilla-extract             | 1.21.3  | 9.04s             | 8.77s - 9.36s   | 923,721 bytes   | 70,449,544 bytes          | 398 bytes    |
+| kuma-ui                     | 1.6.4   | 10.50s            | 9.94s - 10.75s  | 956,158 bytes   | 77,761,056 bytes          | 354 bytes    |
+| panda-css                   | 2.5.0   | 10.14s            | 10.13s - 10.14s | 980,282 bytes   | 75,835,456 bytes          | 18,567 bytes |
+| chakra-ui                   | 3.38.0  | 15.19s            | 15.16s - 15.25s | 1,175,910 bytes | 211,189,371 bytes         | 0 bytes      |
+| mui                         | 9.5.0   | 11.02s            | 10.82s - 11.09s | 993,400 bytes   | 103,208,017 bytes         | 0 bytes      |
+| **devup-ui (per-file CSS)** | 1.0.44  | **8.90s**         | 8.63s - 9.02s   | 923,753 bytes   | 69,831,312 bytes          | 355 bytes    |
+| **devup-ui (single CSS)**   | 1.0.44  | **8.80s**         | 8.66s - 8.89s   | 923,689 bytes   | 69,815,303 bytes          | 325 bytes    |
 
 Turbopack:
 
 | Library                                | Version | Median Build Time | Range         | Client Size   | Build Size (incl. caches) | CSS Size  |
 | -------------------------------------- | ------- | ----------------- | ------------- | ------------- | ------------------------- | --------- |
-| tailwindcss                            | 4.3.5   | 4.46s             | 4.45s - 4.54s | 571,738 bytes | 30,519,594 bytes          | 653 bytes |
-| **devup-ui (direct APIs, single CSS)** | 1.0.44  | **4.40s**         | 4.34s - 4.42s | 571,234 bytes | 28,900,131 bytes          | 325 bytes |
-| **devup-ui (static `.css.ts`)**        | 1.0.44  | **4.37s**         | 4.37s - 4.43s | 571,331 bytes | 28,963,365 bytes          | 376 bytes |
+| tailwindcss                            | 4.3.5   | 3.71s             | 3.66s - 4.29s | 571,738 bytes | 30,529,655 bytes          | 653 bytes |
+| **devup-ui (direct APIs, single CSS)** | 1.0.44  | **3.75s**         | 3.66s - 3.85s | 571,234 bytes | 28,906,459 bytes          | 325 bytes |
+| **devup-ui (static `.css.ts`)**        | 1.0.44  | **3.68s**         | 3.67s - 3.69s | 571,331 bytes | 28,961,671 bytes          | 376 bytes |
 
-The Turbopack ranges do not overlap, so the direct-API median is 0.05s (1.2%) ahead of Tailwind on this fixture. The 3 cold samples were Tailwind `4.45s, 4.54s, 4.46s`, direct Devup UI `4.34s, 4.40s, 4.42s`, and static `.css.ts` `4.43s, 4.37s, 4.37s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. Every `.css.ts` module runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one. CI compares the Devup UI rows with a checked baseline (see `benchmark-gate.js` for the rule) and fails on a regression beyond the measured noise.
+The Turbopack ranges overlap, so the direct-API median is 0.05s (1.2%) behind Tailwind on this fixture and the two are effectively at parity. The 3 cold samples were Tailwind `4.29s, 3.66s, 3.71s`, direct Devup UI `3.66s, 3.75s, 3.85s`, and static `.css.ts` `3.67s, 3.68s, 3.69s`. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. Every `.css.ts` module runs on the full Boa evaluator, which adds about 20 ms for the first module and under 1 ms for each further one. CI compares the Devup UI rows with a checked baseline (see `benchmark-gate.js` for the rule) and fails on a regression beyond the measured noise.
 <!-- benchmark:end -->
 
 ## How it works

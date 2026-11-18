@@ -211,6 +211,59 @@ The bindings read as their names in `create()`, and a dashed ident on a property
 
 `include()` is not part of the current StyleX API. StyleX deprecated it and current `@stylexjs/stylex` releases no longer export it; StyleX composes namespaces by passing several of them to `props()` instead. Only the `@devup-ui/react/compat/stylex` declarations still type it. Devup UI still compiles the legacy `...stylex.include(base.root)` spread inside `create()` as a Devup UI extension, so code written for older StyleX keeps building. The argument must be a namespace that a `create()` call earlier in the same file defines; anything else is a build error. The spread merges the included namespace's keys where it is written: a key written after the `include()` overrides the included one, so `{ ...stylex.include(base.root), color: 'blue' }` keeps only the blue class for `color`, and a later `include()` likewise overrides the keys before it. This is resolved at build time, including when the namespace is passed to `props()`. A dynamic (arrow function) namespace has no keys to merge, so its classes are only added before the namespace's own. Passing both namespaces to `props()` (`stylex.props(base.root, styles.fancy)`) composes them the same way in StyleX and Devup UI.
 
+## Relational conditions and markers
+
+`when.ancestor()`, `when.descendant()`, `when.anySibling()`, `when.siblingBefore()` and `when.siblingAfter()` style an element by the state of a marked element around it. They compile at build time to the same `:where(...)` condition keys StyleX writes, so no StyleX code runs:
+
+```tsx
+// markers.stylex.ts
+export const cardMarker = stylex.defineMarker()
+```
+
+```tsx
+import { cardMarker } from './markers.stylex'
+
+const styles = stylex.create({
+  title: {
+    color: {
+      default: 'black',
+      [stylex.when.ancestor(':hover')]: 'blue',
+      [stylex.when.siblingBefore(':focus', cardMarker)]: 'red',
+    },
+  },
+})
+
+const el = (
+  <div {...stylex.props(stylex.defaultMarker())}>
+    <h2 {...stylex.props(styles.title)} />
+  </div>
+)
+```
+
+```css
+.a {
+  color: black;
+}
+.b.b:where(.x-default-marker:hover *) {
+  color: blue;
+}
+.c.c:where(.d:focus ~ *) {
+  color: red;
+}
+```
+
+| Condition                  | Selector                         |
+| -------------------------- | -------------------------------- |
+| `when.ancestor(p, m)`      | `:where(.m p *)`                 |
+| `when.descendant(p, m)`    | `:where(:has(.m p))`             |
+| `when.anySibling(p, m)`    | `:where(.m p ~ *, :has(~ .m p))` |
+| `when.siblingBefore(p, m)` | `:where(.m p ~ *)`               |
+| `when.siblingAfter(p, m)`  | `:where(:has(~ .m p))`           |
+
+`p` is a pseudo-class or an attribute selector (`':hover'`, `'[data-open]'`) written as a string; a pseudo-element, or anything not starting with `:` or `[`, is a build error with StyleX's message. The marker `m` defaults to `stylex.defaultMarker()`, the class `x-default-marker`. `stylex.defineMarker()` names a marker of its own after its file and export, so a module importing it reads the same class; as in StyleX it must be bound to a named export, and anything else is a build error. StyleX also only names markers in `.stylex` files; Devup UI names them in any file. Pass a marker to `props()` or `attrs()` to mark the element.
+
+The class is written twice, as StyleX does, so a condition keeps a pseudo-class's specificity, and the conditions sort before the pseudo-classes in StyleX's order (`ancestor`, `descendant`, `anySibling`, `siblingBefore`, `siblingAfter`). Inside an at-rule Devup UI does not repeat the class once more per at-rule as StyleX does: it writes at-rules after the rules they refine instead, as for every StyleX condition.
+
 ## Unsupported APIs
 
-Devup UI compiles `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks` and `types`, plus the legacy `include` described above. Any other export of `@stylexjs/stylex` (`when`, `env`, `defaultMarker`, ...) would stay a StyleX call that throws at runtime, so importing it or reading it from the package is a build error naming it.
+Devup UI compiles `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `types`, `when`, `defineMarker` and `defaultMarker`, plus the legacy `include` described above. Any other export of `@stylexjs/stylex` (`env`, ...) would stay a StyleX call that throws at runtime, so importing it or reading it from the package is a build error naming it.

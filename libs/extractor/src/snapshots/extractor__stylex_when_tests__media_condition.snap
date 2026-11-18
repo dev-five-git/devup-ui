@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+const s = { "a": "a-a" };
+export const p = { className: "a-a" };
+
+Static(ExtractStaticStyle { property: "background-color", value: "yellow", level: 0, selector: Some(At { kind: Media, query: "(min-width:600px)", selector: Some("&&:where(.x-default-marker:focus-visible *)"), outer: [], file: None }), style_order: None, layer: None })

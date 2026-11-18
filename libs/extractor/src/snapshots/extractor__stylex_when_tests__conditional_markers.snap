@@ -1,0 +1,14 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+export const card = "a-a";
+const s = { "a": "a-b a-c" };
+export const f = (on) => ({ className: `a-b a-c ${on ? "a-a" : ""} ${on ? "x-default-marker" : ""}` });
+export const g = { className: "a-a x-default-marker a-b a-c" };
+export const h = (extra) => ({ className: `a-b a-c ${[extra()].flat(Infinity).filter(Boolean).join(" ")}` });
+
+Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: None, style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: Some(Selector("&&:where(.a-a:hover *)")), style_order: None, layer: None })

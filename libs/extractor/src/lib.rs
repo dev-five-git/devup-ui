@@ -104,6 +104,8 @@ mod styled_compat_contract_tests;
 mod styled_computed_tag_tests;
 #[cfg(test)]
 mod stylex_api_semantics_tests;
+#[cfg(test)]
+mod stylex_when_tests;
 
 mod peephole;
 mod source_map;
@@ -18060,10 +18062,10 @@ const styles = create({ base: { color: 'green' } });",
     #[serial]
     fn test_stylex_unsupported_api_is_located_error() {
         let errors: Vec<(&str, Option<String>)> = [
-            "import { create, when, type StyleXStyles } from '@stylexjs/stylex';\nexport const a = when.ancestor(':hover');",
+            "import { create, env, type StyleXStyles } from '@stylexjs/stylex';\nexport const a = env.tokens;",
             "import { env as e } from '@stylexjs/stylex';\nexport const a = e.tokens;",
             "import stylex from '@stylexjs/stylex';\nexport const a = stylex.when.ancestor(':hover');\nexport const b = stylex.env;\nexport const c = stylex.defaultMarker();",
-            "import * as sx from '@stylexjs/stylex';\nconst styles = sx.create({ a: { color: { default: 'red', [sx.when.ancestor(':hover')]: 'blue' } } });\nexport const p = sx.props(styles.a);",
+            "import * as sx from '@stylexjs/stylex';\nconst styles = sx.create({ a: { color: { default: 'red', [sx.env.hover]: 'blue' } } });\nexport const p = sx.props(styles.a);",
         ]
         .into_iter()
         .map(|code| {
