@@ -5,7 +5,9 @@ import {
   create,
   createTheme,
   createThemeContract,
+  defaultMarker,
   defineConsts,
+  defineMarker,
   defineVars,
   firstThatWorks,
   include,
@@ -14,6 +16,7 @@ import {
   props,
   types,
   viewTransitionClass,
+  when,
 } from '../stylex'
 
 describe('stylex', () => {
@@ -44,6 +47,20 @@ describe('stylex', () => {
     expect(() => viewTransitionClass({ old: { opacity: '0' } })).toThrowError(
       'Cannot run on the runtime',
     )
+  })
+
+  it('markers and when conditions should throw at runtime', () => {
+    expect(() => defineMarker()).toThrowError('Cannot run on the runtime')
+    expect(() => defaultMarker()).toThrowError('Cannot run on the runtime')
+    for (const relation of [
+      when.ancestor,
+      when.descendant,
+      when.anySibling,
+      when.siblingBefore,
+      when.siblingAfter,
+    ]) {
+      expect(() => relation(':hover')).toThrowError('Cannot run on the runtime')
+    }
   })
 
   it('keyframes should throw at runtime', () => {

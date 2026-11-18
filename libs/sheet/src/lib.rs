@@ -45,9 +45,21 @@ const TYPOGRAPHY_LAYER: &str = "t";
 /// Shared owner from extractor's private `tailwind::PROPERTY_RULES_FILE`, not a source file.
 const TAILWIND_PROPERTY_RULES_FILE: &str = "@devup-ui/tailwind";
 
-/// Plain rules first, then pseudo selectors in `SELECTOR_ORDER`.
-fn selector_group(selector: Option<&str>) -> (u8, u8) {
-    selector.map_or((0, 0), |selector| (1, get_selector_order(selector)))
+/// Plain rules first, then the `StyleX` `when.*()` conditions in the order
+/// `StyleX` gives them, then pseudo selectors in `SELECTOR_ORDER`.
+fn selector_group(selector: Option<&str>) -> (u8, u16) {
+    selector.map_or((0, 0), |selector| {
+        stylex_condition_priority(selector).map_or_else(
+            || (2, u16::from(get_selector_order(selector))),
+            |priority| (1, priority),
+        )
+    })
+}
+
+/// The priority `StyleX` gives a `:where(...)` condition, which its class
+/// written twice (`&&`) marks as compiled from `StyleX`
+fn stylex_condition_priority(selector: &str) -> Option<u16> {
+    css::relational_selector::relational_priority(selector.strip_prefix("&&")?)
 }
 
 /// Typography preset declarations come first so a declaration written directly
@@ -69,9 +81,9 @@ fn prop_cmp(a: &StyleSheetProperty, b: &StyleSheetProperty) -> std::cmp::Orderin
 }
 
 /// (selector group, level, selector)
-type RuleOrder<'a> = ((u8, u8), u8, &'a str);
+type RuleOrder<'a> = ((u8, u16), u8, &'a str);
 /// (enclosing at-rules outermost first, selector group, level, selector)
-type AtRuleOrder<'a> = (Vec<(u8, (u8, i64), &'a str)>, (u8, u8), u8, &'a str);
+type AtRuleOrder<'a> = (Vec<(u8, (u8, i64), &'a str)>, (u8, u16), u8, &'a str);
 
 /// The blocks a rule sits in: its breakpoint level and at-rule chain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1755,6 +1767,36 @@ mod tests {
         assert_eq!(sheet.create_css(Some("other.tsx"), false), "");
         css::license_banner::set_license_banner(true);
         assert_eq!(sheet.create_css(None, false), with_banner);
+    }
+
+    /// `StyleX` `when.*()` conditions follow the plain rule in the order
+    /// `StyleX` gives them, ahead of the pseudo-classes they share a
+    /// specificity with
+    #[test]
+    #[serial]
+    fn test_stylex_condition_order() {
+        let _state = css::test_state::TestStateGuard::new();
+        css::license_banner::set_license_banner(false);
+        let mut sheet = StyleSheet::default();
+        for (class, value, selector) in [
+            ("h", "gray", Some("&:hover")),
+            ("s", "teal", Some("&&:where(:has(~ .m:hover))")),
+            ("d", "blue", Some("&&:where(:has(.m:focus))")),
+            ("b", "black", None),
+            ("o", "pink", Some("&&:where(.m:hover ~ *)")),
+            ("a", "red", Some("&&:where(.m:hover *)")),
+            (
+                "y",
+                "green",
+                Some("&&:where(.m:active ~ *, :has(~ .m:active))"),
+            ),
+            ("w", "white", Some("&&:hover")),
+        ] {
+            let selector = selector.map(|selector| StyleSelector::Selector(selector.to_string()));
+            sheet.add_property(class, "color", 0, value, selector.as_ref(), Some(255), None);
+        }
+        insta::assert_snapshot!(sheet.create_css(None, false));
+        css::license_banner::set_license_banner(true);
     }
 
     #[test]

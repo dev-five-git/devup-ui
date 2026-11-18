@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+const s = { "a": "a-a a-b a-c a-d a-e a-f" };
+export const p = { className: "x-default-marker a-a a-b a-c a-d a-e a-f" };
+
+Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: None, style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "blue", level: 0, selector: Some(Selector("&&:where(:has(.x-default-marker:focus))")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "green", level: 0, selector: Some(Selector("&&:where(.x-default-marker:active ~ *, :has(~ .x-default-marker:active))")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "pink", level: 0, selector: Some(Selector("&&:where(.x-default-marker:hover ~ *)")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: Some(Selector("&&:where(.x-default-marker:hover *)")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "teal", level: 0, selector: Some(Selector("&&:where(:has(~ .x-default-marker[data-open]))")), style_order: None, layer: None })
