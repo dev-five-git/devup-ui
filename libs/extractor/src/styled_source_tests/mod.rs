@@ -1,6 +1,7 @@
 pub(crate) mod captured_render;
 mod compatibility;
 mod component_selector_extension;
+mod component_selector_markers;
 mod css_prop_captures;
 mod css_prop_execution;
 mod css_prop_markers;
