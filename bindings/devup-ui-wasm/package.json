@@ -25,6 +25,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "sideEffects": false,
   "main": "./pkg/index.js",
   "module": "./pkg/index.js",
