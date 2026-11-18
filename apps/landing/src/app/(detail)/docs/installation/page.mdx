@@ -157,6 +157,31 @@ await Bun.build({
 preload = ["@devup-ui/bun-plugin"]
 ```
 
+## License Banner
+
+Every stylesheet Devup UI emits starts with a
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` comment, which
+minifiers keep. It is on by default. Every build plugin takes a
+`licenseBanner` option; `licenseBanner: false` drops the banner from every
+stylesheet. A stylesheet without any rule is emitted empty, banner included.
+
+```ts
+// next.config.ts
+export default DevupUI(nextConfig, { licenseBanner: false })
+
+// vite.config.ts
+DevupUI({ licenseBanner: false })
+
+// rsbuild.config.ts
+DevupUIRsbuildPlugin({ licenseBanner: false })
+
+// webpack.config.js
+new DevupUIWebpackPlugin({ licenseBanner: false })
+
+// build.ts (Bun)
+DevupUI({ licenseBanner: false })
+```
+
 ## Project Examples
 
 - [Next.js Example](https://github.com/dev-five-git/devup-ui/tree/main/apps/next)

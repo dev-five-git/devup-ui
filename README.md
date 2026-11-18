@@ -136,7 +136,7 @@ const example = <div className="a b c" />;
 With CSS:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.b{background:red}.c{padding:16px}.a:hover{background:blue}
 ```
 
 **Dynamic values become CSS variables:**
@@ -159,7 +159,7 @@ const example = <div className="a" style={{ "--b": colorVariable }} />;
 With CSS:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
 ```
 
 **Complex expressions and responsive arrays:**
@@ -182,7 +182,7 @@ const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": d
 With responsive CSS for each breakpoint:
 
 ```css
-/*! devup-ui v1.0.82, | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
 ```
 
 **Type-safe theming:**

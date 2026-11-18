@@ -43,7 +43,7 @@ const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
 export interface DevupUIRsbuildPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine' | 'stylex'
+  'engine' | 'licenseBanner' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -152,6 +152,7 @@ export const DevupUI = ({
   debug = false,
   singleCss = false,
   prefix,
+  licenseBanner = true,
   shorthands,
   stylex,
   engine,
@@ -190,6 +191,7 @@ export const DevupUI = ({
         userImportAliases,
         readJsxImportSource(projectRoot),
       )
+      compiler.setLicenseBanner(licenseBanner)
 
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')

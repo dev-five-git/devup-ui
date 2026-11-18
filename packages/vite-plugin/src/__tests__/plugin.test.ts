@@ -2486,6 +2486,21 @@ export const a = <div css={{ color: 'red' }} />`
     await plugin.configResolved()
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
+
+  it.each([
+    [undefined, true],
+    [true, true],
+    [false, false],
+  ] as const)(
+    'sets the license banner from licenseBanner=%s',
+    async (licenseBanner, expected) => {
+      using setLicenseBanner = spyOn(wasm, 'setLicenseBanner').mockReturnValue(
+        undefined,
+      )
+      await createPlugin({ licenseBanner }).configResolved()
+      expect(setLicenseBanner).toHaveBeenCalledWith(expected)
+    },
+  )
 })
 
 describe('module resolver', () => {

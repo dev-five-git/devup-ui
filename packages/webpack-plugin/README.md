@@ -207,6 +207,17 @@ Selection applies to the plugin, source loader, CSS loader and delayed build
 callbacks as one unit. Native state, like WASM state, does not support
 concurrent independent builds in the same process.
 
+## License banner
+
+Every emitted stylesheet starts with a
+`/*! devup-ui v… | Apache License 2.0 | https://devup-ui.com */` comment, which
+minifiers keep. It is on by default; `licenseBanner: false` drops it from every
+stylesheet. A stylesheet without any rule is emitted empty, banner included.
+
+```ts
+new DevupUIWebpackPlugin({ licenseBanner: false })
+```
+
 ## Project root
 
 Relative `devupFile`, `distDir` and `cssDir` paths, the `tsconfig.json` the
