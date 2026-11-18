@@ -4021,7 +4021,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     with_statics(
                         &self.ast,
                         expression,
-                        identity.component_id.as_deref(),
+                        (
+                            identity.component_id.as_deref(),
+                            identity.display_name.as_deref(),
+                        ),
                         base,
                     ),
                     emotion,
@@ -4087,7 +4090,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .iter()
                     .flat_map(ExtractStyleProp::extract),
             );
-            *it = with_runtime_component(&self.ast, with_statics(&self.ast, component, None, base));
+            *it = with_runtime_component(
+                &self.ast,
+                with_statics(&self.ast, component, (None, None), base),
+            );
             let takes_styles = definition.takes_styles;
             self.pending_styled = Some((
                 start,
