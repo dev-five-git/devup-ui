@@ -30,7 +30,7 @@ use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::KeyframesExtractResult;
 use crate::extractor::extract_keyframes_from_expression::extract_keyframes_with_location;
 use crate::extractor::extract_style_from_stylex::{
-    extract_stylex_declarations, extract_stylex_namespace_styles,
+    extract_stylex_declarations, extract_stylex_namespace_styles, extract_view_transition_groups,
 };
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
@@ -39,7 +39,8 @@ use crate::extractor::{
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::{
         FORWARD_REF, Naming, STYLED_MARKING, StyledBindings, StyledDefinition, StyledExtraction,
-        extended, extract_style_from_styled, read_forward, take_styled_modifiers, with_component,
+        WITH_COMPONENT_MARKING, base_as, extended, extract_style_from_styled, read_forward,
+        read_identity, take_styled_modifiers, with_component, with_runtime_component, with_statics,
     },
     rule_array_evaluation::{self, composes_array_under_condition},
     styled_capability::StyledCapability,
@@ -60,7 +61,7 @@ use crate::style_collector::StyleCollector;
 use crate::stylex::{
     StylexDynamicInfo, StylexFunction, StylexIncludeRef, StylexNamespaceValue, create_theme_class,
     css_variable_block, css_variable_rules, define_vars_variable, joined_key_classes,
-    merge_included_keys, unsupported_stylex_error, variable_values,
+    merge_included_keys, typed_variable_rule, unsupported_stylex_error, variable_values,
 };
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
@@ -72,10 +73,10 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, ArrayExpressionElement, BinaryOperator, CallExpression, ChainElement,
-    ComputedMemberExpression, ExportDefaultDeclaration, Expression, ExpressionStatement,
-    FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
-    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
+    Argument, ArrayExpressionElement, AssignmentTarget, BinaryOperator, CallExpression,
+    ChainElement, ComputedMemberExpression, ExportDefaultDeclaration, Expression,
+    ExpressionStatement, FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration,
+    ImportOrExportKind, JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXElementName,
     JSXExpressionContainer, JSXOpeningElement, ObjectExpression, ObjectProperty,
     ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str,
     StringLiteral, UnaryOperator, VariableDeclarator,
@@ -92,6 +93,7 @@ use oxc_syntax::operator::LogicalOperator;
 use oxc_syntax::symbol::SymbolId;
 
 use crate::extractor::style_inputs::StyleInputs;
+use crate::global_component::{GLOBAL_CLASS, global_class_styles};
 use crate::utils::{
     CLASS_NAMES_CALL, CLASS_NAMES_CHILD, CLASS_NAMES_CLASS_MAP, CLASS_NAMES_PART, CSS_PROP_SPREAD,
     CSS_PROP_VALUE, LOCAL_STYLES, ParsedStyleOrder, RUNTIME_VALUE, STYLE_OBJECT, StyleArguments,
@@ -178,12 +180,16 @@ fn coalesce_keeps_left(logical: &oxc_ast::ast::LogicalExpression<'_>) -> bool {
 /// `Component.withComponent(...)` on a styled component, given a target the
 /// build cannot render: the component compiles to a plain function, so the
 /// call cannot stay for the runtime
-fn with_component_error(call: &CallExpression<'_>) -> String {
+fn with_component_error(call: &CallExpression<'_>, runtime: bool) -> String {
     let target: Vec<String> = call.arguments.iter().map(readable_argument).collect();
     build_time_error(
         "withComponent",
         &target.join(", "),
-        "it takes one tag name, as `'aside'`, or a component written as a name or `a.b`, as the styled component compiles to a plain function with no `withComponent` at runtime. Fix: pass the tag or component directly, or render the styled component with `as`",
+        if runtime {
+            "it takes one tag or component, as options beside it would give the component classes and props the build cannot see. Fix: pass the tag or component alone, or create the component with `styled(tag, options)`"
+        } else {
+            "it takes one tag name, as `'aside'`, or a component written as a name or `a.b`, as the styled component compiles to a plain function with no `withComponent` at runtime. Fix: pass the tag or component directly, or render the styled component with `as`"
+        },
     )
 }
 
@@ -333,8 +339,10 @@ pub struct DevupVisitor<'a> {
     /// The styled component an anonymous `export default` defines
     default_definition: Option<StyledDefinition<'a>>,
     /// Whether a generated styled component forwards refs through React's
-    /// `forwardRef`, which the program then imports
-    forwards_refs: bool,
+    /// `forwardRef`, which the program then imports, with the declarations
+    /// that follow it: those giving a component `withComponent` at runtime,
+    /// when one takes it
+    forwards_refs: Option<&'static str>,
     /// The styled components the file binds to a `const`, which a component
     /// extending one renders in its place
     styled_definitions: FxHashMap<oxc_syntax::symbol::SymbolId, StyledDefinition<'a>>,
@@ -353,6 +361,8 @@ pub struct DevupVisitor<'a> {
     changed_bindings: crate::imported_constants::Changed,
     /// Which elements take Emotion's `css` prop
     css_prop: CssProp,
+    /// The names the file imports Emotion's `styled` as
+    emotion_styled: Vec<String>,
     /// Bindings declared to an object, an array, a function or text, which a
     /// `css` prop cannot compose as a class, besides the top-level constants
     /// the build reads in its place
@@ -765,6 +775,89 @@ impl<'a> DevupVisitor<'a> {
                         _ => None,
                     })
             })
+    }
+
+    /// The rules `<Global styles={expression}>` gives, as Emotion reads them:
+    /// an array composes its entries in order, skipping `false`, `null` and
+    /// `undefined`; a function of the theme gives its rules with each read of
+    /// the theme the CSS variable `ThemeProvider` sets; a `css()` class gives
+    /// the selector rules it holds; an object holds rules by selector
+    fn global_component_styles(&mut self, name: &str, expression: &mut Expression<'a>) {
+        match unwrap_syntax_only_mut(expression) {
+            Expression::ArrayExpression(array) => {
+                for element in &mut array.elements {
+                    match element {
+                        ArrayExpressionElement::SpreadElement(spread) => self.errors.push((
+                            spread.span.start,
+                            element_error(
+                                name,
+                                &format!("...{}", readable_code(&spread.argument)),
+                                "write every entry of its array out",
+                            ),
+                        )),
+                        ArrayExpressionElement::Elision(_) => {}
+                        entry => {
+                            if let Some(entry) = entry.as_expression_mut() {
+                                self.global_component_styles(name, entry);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+            Expression::BooleanLiteral(_) | Expression::NullLiteral(_) => return,
+            Expression::Identifier(identifier) if identifier.name == "undefined" => return,
+            function @ (Expression::ArrowFunctionExpression(_)
+            | Expression::FunctionExpression(_)) => {
+                match theme_rules_of(&self.ast, function, &|identifier| {
+                    self.bindings.symbol(identifier)
+                }) {
+                    Ok(mut rules) => self.global_component_styles(name, &mut rules),
+                    Err((code, requirement)) => self.errors.push((
+                        code.span().start,
+                        element_error(name, &readable_code(&code), requirement),
+                    )),
+                }
+                return;
+            }
+            _ => {}
+        }
+        if let Some(known) = self.known_styles(expression).map(<[_]>::to_vec) {
+            match global_class_styles(&known, &self.filename) {
+                Some(styles) => self.styles.extend(styles),
+                None => self.errors.push((
+                    expression.span().start,
+                    element_error(name, &readable_code(expression), GLOBAL_CLASS),
+                )),
+            }
+            return;
+        }
+        self.style_values.read_in(&self.ast, expression);
+        let offset = expression.span().start;
+        let GlobalExtractResult { styles, .. } = extract_global_style_from_expression(
+            &self.ast,
+            expression,
+            &crate::extractor::global_inputs::GlobalInputs {
+                file: &self.filename,
+                values: &self.style_values,
+            },
+        );
+        if let Some((offset, value)) = crate::dead_properties::located_value(&styles, offset, true)
+        {
+            self.errors.push((
+                offset,
+                element_error(name, &value.0, value.1.unwrap_or(RUNTIME_VALUE)),
+            ));
+        }
+        self.styles.extend(
+            styles
+                .into_iter()
+                .flat_map(ExtractStyleProp::into_extract)
+                .map(|mut style| {
+                    style.set_style_order(0);
+                    style
+                }),
+        );
     }
 
     fn copy_known_parts(&self, parts: &[KnownPart<'a>]) -> Vec<KnownPart<'a>> {
@@ -1316,7 +1409,7 @@ impl<'a> DevupVisitor<'a> {
             local_markers: 0,
             imported_styled: FxHashMap::default(),
             default_definition: None,
-            forwards_refs: false,
+            forwards_refs: None,
             styled_definitions: FxHashMap::default(),
             imported_css: FxHashMap::default(),
             unknown_bindings: crate::imported_constants::Unknown::default(),
@@ -1325,6 +1418,7 @@ impl<'a> DevupVisitor<'a> {
             unknown_parts: Vec::new(),
             changed_bindings: crate::imported_constants::Changed::default(),
             css_prop: CssProp::Off,
+            emotion_styled: Vec::new(),
             local_styles: FxHashSet::default(),
             local_objects: FxHashSet::default(),
         }
@@ -1332,6 +1426,75 @@ impl<'a> DevupVisitor<'a> {
 
     pub const fn takes_css_prop(&mut self, css_prop: CssProp) {
         self.css_prop = css_prop;
+    }
+
+    /// Hand the visitor the names the file imports Emotion's `styled` as
+    pub fn styles_with_emotion(&mut self, names: Vec<String>) {
+        self.emotion_styled = names;
+    }
+
+    /// The compiled styled `component`: one made with Emotion's `styled`
+    /// takes `withComponent` wherever it goes, as Emotion's components do
+    fn emitted_styled(&mut self, component: Expression<'a>, emotion: bool) -> Expression<'a> {
+        if !emotion {
+            return component;
+        }
+        self.forwards_refs = Some(WITH_COMPONENT_MARKING);
+        with_runtime_component(&self.ast, component)
+    }
+
+    /// Whether the styled factory `factory` reads Emotion's `styled`, whose
+    /// component selector picks out the component alone, not its extensions:
+    /// a binding of the import, read before the walk reaches the import too
+    fn emotion_factory(&self, factory: &Expression<'_>) -> bool {
+        match unwrap_syntax_only(factory) {
+            Expression::CallExpression(call) => self.emotion_factory(&call.callee),
+            Expression::StaticMemberExpression(member) => self.emotion_factory(&member.object),
+            root => {
+                (self.bindings.is_styled(root)
+                    || self
+                        .style_values
+                        .symbol(root)
+                        .and_then(|symbol| self.style_values.import_name(symbol))
+                        .is_some())
+                    && matches!(root, Expression::Identifier(identifier)
+                        if self.emotion_styled.iter().any(|name| identifier.name == name.as_str()))
+            }
+        }
+    }
+
+    /// Whether `init` makes a component with Emotion's `styled`
+    fn emotion_component(&self, init: &Expression<'_>) -> bool {
+        match init {
+            Expression::CallExpression(call) => self.emotion_factory(&call.callee),
+            Expression::TaggedTemplateExpression(tag) => self.emotion_factory(&tag.tag),
+            _ => false,
+        }
+    }
+
+    /// The component the Emotion components selected or exported as
+    /// `withComponent` results share the target of, which takes a marker for
+    /// them, as they render it
+    fn shared_targets(&self, program: &Program<'a>) -> Vec<oxc_syntax::symbol::SymbolId> {
+        let emotion = |init: &Expression<'_>| self.emotion_component(init);
+        crate::emotion_retargets::read(program, &self.style_values, &emotion)
+            .into_iter()
+            .filter(|(symbol, name, _)| {
+                self.selected_components.contains(symbol) || !self.exports.of(name).is_empty()
+            })
+            .map(|(.., root)| root)
+            .collect()
+    }
+
+    /// For a `withComponent` result of an Emotion component, the classes that
+    /// component is selected by, which the result shares instead of a marker
+    /// of its own
+    fn shared_target(&self, init: Option<&Expression<'a>>) -> Option<Vec<String>> {
+        init.map(unwrap_syntax_only)
+            .and_then(crate::emotion_retargets::receiver)
+            .and_then(|receiver| self.definition_of(receiver))
+            .filter(|definition| definition.is_emotion())
+            .map(|definition| definition.selectors().to_vec())
     }
 
     /// Hand the visitor the styled components other modules define
@@ -1424,7 +1587,7 @@ impl<'a> DevupVisitor<'a> {
                 .root_symbol(binding)
                 .and_then(|symbol| self.styled_definitions.get(&symbol))
                 .map(|definition| ImportedComponent {
-                    markers: definition.markers().to_vec(),
+                    markers: definition.selectors().to_vec(),
                     definition: Some(definition.clone_in(allocator)),
                 })
                 .or_else(|| {
@@ -1442,7 +1605,7 @@ impl<'a> DevupVisitor<'a> {
             components.insert(
                 "default".to_string(),
                 ImportedComponent {
-                    markers: definition.markers().to_vec(),
+                    markers: definition.selectors().to_vec(),
                     definition: Some(definition.clone_in(allocator)),
                 },
             );
@@ -2653,6 +2816,15 @@ impl<'a> DevupVisitor<'a> {
         Some((key, prop))
     }
 
+    /// The name a `positionTry` (`kind` `p`) or `viewTransitionClass` (`v`)
+    /// rule takes, named after what it declares so two rules in a file differ
+    fn stylex_rule_name(&self, kind: &str, rules: &impl std::fmt::Debug) -> String {
+        keyframes_to_keyframes_name(
+            &format!("sxp-{}-{kind}-{rules:?}", self.filename),
+            self.split_filename.as_deref(),
+        )
+    }
+
     fn string_property(&self, key: &str, value: &str) -> ObjectPropertyKind<'a> {
         ObjectPropertyKind::new_object_property(
             SPAN,
@@ -3390,6 +3562,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 
     fn visit_expression_statement(&mut self, it: &mut ExpressionStatement<'a>) {
+        if let Expression::AssignmentExpression(assignment) = &it.expression
+            && let AssignmentTarget::StaticMemberExpression(member) = &assignment.left
+            && member.property.name == "defaultProps"
+            && self.definition_of(&member.object).is_some()
+        {
+            self.errors.push((
+                member.property.span.start,
+                format!(
+                    "`{}` cannot take `defaultProps` at build time: it compiles to a function component, whose `defaultProps` React 19 ignores, so its styles would not see them. Fix: give the default where the prop is read, as `${{(p) => p.$tone ?? 'red'}}`, or pass the prop where the component is rendered",
+                    readable_code(&member.object)
+                ),
+            ));
+        }
         walk_expression_statement(self, it);
         // `globalCss()` gives nothing, which a statement need not write out
         if matches!(&it.expression, Expression::UnaryExpression(unary)
@@ -3464,6 +3649,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
             self.selected_components = crate::style_values::selected(it, &self.style_values);
+            let shared = self.shared_targets(it);
+            self.selected_components.extend(shared);
             self.rendered = crate::style_values::rendered(it);
             let imported: Vec<_> = self
                 .selected_components
@@ -3490,15 +3677,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.bindings.remove_aliases(it);
             self.report_compiled_reads(it);
         }
-        if self.forwards_refs {
+        if let Some(helpers) = self.forwards_refs {
             let source = self
                 .ast
                 .allocator()
                 .alloc_str(&if it.source_type.is_commonjs() {
-                    format!("const {FORWARD_REF} = require('react').forwardRef;{STYLED_MARKING}")
+                    format!(
+                        "const {FORWARD_REF} = require('react').forwardRef;{STYLED_MARKING}{helpers}"
+                    )
                 } else {
                     format!(
-                        "import {{ forwardRef as {FORWARD_REF} }} from 'react';{STYLED_MARKING}"
+                        "import {{ forwardRef as {FORWARD_REF} }} from 'react';{STYLED_MARKING}{helpers}"
                     )
                 });
             let mut program =
@@ -3611,10 +3800,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         {
             configs.insert(0, options.into_expression());
         }
-        let (forward, forward_error) = read_forward(&configs.iter().collect::<Vec<_>>());
+        let options = configs.iter().collect::<Vec<_>>();
+        let (forward, forward_error) = read_forward(&options);
         if let Some(error) = forward_error {
             self.errors.push(error);
         }
+        let (identity, identity_errors) = read_identity(&options, &|identifier| {
+            self.bindings.symbol(identifier).is_none()
+        });
+        self.errors.extend(identity_errors);
+        let emotion = self.emotion_component(it);
         self.chained_attrs(it);
         let mut refused_array_controllers = Vec::new();
         if self.is_styled_call(it)
@@ -3707,10 +3902,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .is_some_and(|definition| definition.takes_styles)
             });
             let start = it.span().start;
-            let markers = self
+            let selected = self
                 .pending_marker
                 .take_if(|(at, _)| *at == start)
                 .map_or_default(|(_, markers)| self.marker_classes(&markers));
+            // Emotion's component selector reads the component's `target`, which
+            // its extensions render without, as they do the target itself
+            let (mut markers, selectors) = if emotion {
+                (Vec::new(), selected)
+            } else {
+                (selected, Vec::new())
+            };
+            markers.extend(identity.classes);
+            let targets: Vec<String> = selectors.into_iter().chain(identity.targets).collect();
+            // Emotion renders a component extending one with a `target` on its
+            // base, without the target: the component holds itself without them
+            let untargeted = (!targets.is_empty()).then(|| {
+                (
+                    markers.clone(),
+                    it.clone_in_with_semantic_ids(self.ast.allocator()),
+                    forward.clone(),
+                )
+            });
+            markers.extend(targets.iter().cloned());
             let inherited = extended(it).and_then(|base| {
                 self.definition_of(base)
                     .filter(|definition| definition.extendable())
@@ -3751,10 +3965,51 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .flat_map(ExtractStyleProp::into_extract),
             );
             if definition.is_some() {
-                self.forwards_refs = true;
+                self.forwards_refs.get_or_insert("");
             }
-            *it = expression;
-            self.pending_styled = definition.map(|mut definition| {
+            let base = untargeted.filter(|_| definition.is_some()).map(
+                |(markers, mut source, forward)| {
+                    extract_style_from_styled(
+                        StyleInputs::with_values(&self.ast, &self.style_values),
+                        &mut source,
+                        Naming {
+                            split_filename: self.split_filename.as_deref(),
+                            markers: &markers,
+                        },
+                        StyledBindings {
+                            imports: &|expression| self.bindings.kind(expression),
+                            values: &self.style_values,
+                            inline_css: &self.inline_css_styles,
+                        },
+                        (&attrs, forward, &refused_array_controllers),
+                        inherited.as_ref(),
+                        StyledContext {
+                            filename: &self.filename,
+                            jsx: &mut self.styled_jsx,
+                            capability: self.styled_capability.as_ref(),
+                            shared: !self.private_styled.contains(&start),
+                        },
+                    )
+                    .expression
+                },
+            );
+            *it = match definition {
+                Some(_) => self.emitted_styled(
+                    with_statics(
+                        &self.ast,
+                        expression,
+                        identity.component_id.as_deref(),
+                        base,
+                    ),
+                    emotion,
+                ),
+                None => expression,
+            };
+            self.pending_styled = definition.map(|definition| {
+                let mut definition = definition
+                    .with_targets(targets)
+                    .taking_with_component(emotion)
+                    .made_by_emotion(emotion);
                 definition.takes_styles = takes_styles;
                 (start, definition, takes_styles)
             });
@@ -3773,6 +4028,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Some(definition) = self
                 .definition_of(unwrap_syntax_only(&member.object))
                 .map(|definition| definition.used_as(&self.ast, &member.object))
+            && let emotion = definition.is_emotion()
             && let pending = self
                 .pending_marker
                 .as_ref()
@@ -3795,8 +4051,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             )
         {
             let start = call.span.start;
+            // Its base, as Emotion's: the base of the component, as the target
+            let base = definition
+                .has_targets()
+                .then(|| base_as(&self.ast, &member.object, call.arguments[0].to_expression()));
             self.pending_marker.take_if(|(at, _)| *at == start);
-            self.forwards_refs = true;
+            self.forwards_refs = Some(WITH_COMPONENT_MARKING);
             self.styles.use_layers(definition.styles());
             self.styles.extend(
                 definition
@@ -3804,18 +4064,27 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .iter()
                     .flat_map(ExtractStyleProp::extract),
             );
-            *it = component;
+            *it = with_runtime_component(&self.ast, with_statics(&self.ast, component, None, base));
             let takes_styles = definition.takes_styles;
-            self.pending_styled = Some((start, definition, takes_styles));
+            self.pending_styled = Some((
+                start,
+                definition
+                    .taking_with_component(true)
+                    .made_by_emotion(emotion),
+                takes_styles,
+            ));
         } else if let Expression::CallExpression(call) = it
             && let Expression::StaticMemberExpression(member) = &call.callee
             && member.property.name == "withComponent"
-            && self
+            && let Some(runtime) = self
                 .definition_of(unwrap_syntax_only(&member.object))
-                .is_some()
+                .map(StyledDefinition::takes_with_component)
+            // A component taking `withComponent` at runtime renders any one target
+            && !(runtime
+                && matches!(call.arguments.as_slice(), [argument] if argument.is_expression()))
         {
             self.errors
-                .push((call.span.start, with_component_error(call)));
+                .push((call.span.start, with_component_error(call, runtime)));
         }
 
         // Handle StyleX: stylex.create({...}) calls
@@ -4015,6 +4284,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 let variable =
                     define_vars_variable(&self.filename, &key, self.split_filename.as_deref());
+                match typed_variable_rule(&variable, &prop.value, &values, &|callee| {
+                    self.bindings.stylex_function(callee)
+                }) {
+                    Some(Ok(css)) => {
+                        self.styles.insert(ExtractStyleValue::Css(ExtractCss {
+                            file: self.filename.clone(),
+                            order: 0,
+                            css,
+                        }));
+                    }
+                    Some(Err(error)) => self.errors.push((prop.value.span().start, error)),
+                    None => {}
+                }
                 variables.push((variable.clone(), values));
                 properties.push(self.string_property(&key, &format!("var({variable})")));
                 contract.insert(key, variable);
@@ -4112,35 +4394,47 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             })
             && let [Argument::ObjectExpression(arg)] = call.arguments.as_slice()
         {
-            let generated = keyframes_to_keyframes_name(
-                &format!("sxp-{}-{}", self.filename, u8::from(is_position_try)),
-                self.split_filename.as_deref(),
-            );
-            let name = if is_position_try {
-                format!("--{generated}")
+            let (name, css) = if is_position_try {
+                let declarations = extract_stylex_declarations(
+                    "stylex.positionTry",
+                    arg,
+                    &mut self.errors,
+                    &|callee| self.bindings.stylex_function(callee),
+                );
+                let name = format!("--{}", self.stylex_rule_name("p", &declarations));
+                let css = css_variable_block(&format!("@position-try {name}"), &declarations);
+                (
+                    name,
+                    if declarations.is_empty() {
+                        String::new()
+                    } else {
+                        css
+                    },
+                )
             } else {
-                generated
+                let groups = extract_view_transition_groups(arg, &mut self.errors, &|callee| {
+                    self.bindings.stylex_function(callee)
+                });
+                let name = self.stylex_rule_name("v", &groups);
+                let css = groups
+                    .iter()
+                    .filter(|(_, declarations)| !declarations.is_empty())
+                    .map(|(pseudo, declarations)| {
+                        css_variable_block(&format!("{pseudo}(*.{name})"), declarations)
+                    })
+                    .collect::<String>();
+                (name, css)
             };
-            let api = if is_position_try {
-                "stylex.positionTry"
-            } else {
-                "stylex.viewTransitionClass"
-            };
-            let declarations = extract_stylex_declarations(api, arg, &mut self.errors, &|callee| {
-                self.bindings.stylex_function(callee)
-            });
-            if !declarations.is_empty() {
-                let css = if is_position_try {
-                    css_variable_block(&format!("@position-try {name}"), &declarations)
-                } else {
-                    css_variable_block(&format!(".{name}"), &declarations)
-                };
+            if !css.is_empty() {
                 self.styles.insert(ExtractStyleValue::Css(ExtractCss {
                     file: self.filename.clone(),
                     order: 0,
                     css,
                 }));
             }
+            // `create()` reads the name where the binding is used as a value,
+            // as `positionTryFallbacks: fallback` or `viewTransitionClass: fade`
+            self.stylex_pending_keyframe_name = Some(name.clone());
             *it = Expression::new_string_literal(
                 SPAN,
                 Str::from_in(&name, self.ast.allocator()),
@@ -5135,7 +5429,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.local_objects.insert(symbol);
         }
 
+        // A `withComponent` result of an Emotion component is selected by the
+        // target it shares, as Emotion's, and takes no marker of its own
+        let shared = self.shared_target(it.init.as_ref());
+        if let Some((symbol, class)) = styled_binding
+            .filter(|symbol| self.selected_components.contains(symbol))
+            .zip(shared.iter().flatten().next())
+        {
+            self.style_values.insert(
+                symbol,
+                crate::style_values::StyleValue::Component(format!(".{class}")),
+            );
+        }
         let marked = styled_binding
+            .filter(|_| shared.is_none())
             .zip(start)
             .zip(it.id.get_binding_identifier().map(|id| id.name.to_string()))
             .and_then(|((symbol, start), name)| {
@@ -5456,37 +5763,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && let Some(JSXAttributeValue::ExpressionContainer(container)) = &mut attr.value
                     && let Some(expression) = container.expression.as_expression_mut()
                 {
-                    let offset = expression.span().start;
-                    self.style_values.read_in(&self.ast, expression);
-                    let GlobalExtractResult {
-                        styles,
-                        style_order,
-                    } = extract_global_style_from_expression(
-                        &self.ast,
-                        expression,
-                        &crate::extractor::global_inputs::GlobalInputs {
-                            file: &self.filename,
-                            values: &self.style_values,
-                        },
-                    );
-                    if let Some((offset, value)) =
-                        crate::dead_properties::located_value(&styles, offset, true)
-                    {
-                        self.errors.push((
-                            offset,
-                            element_error(&name, &value.0, value.1.unwrap_or(RUNTIME_VALUE)),
-                        ));
-                    }
-                    let style_order = style_order.unwrap_or(0);
-                    self.styles.extend(
-                        styles
-                            .into_iter()
-                            .flat_map(ExtractStyleProp::into_extract)
-                            .map(|mut style| {
-                                style.set_style_order(style_order);
-                                style
-                            }),
-                    );
+                    self.global_component_styles(&name, expression);
                 }
                 elem.opening_element.attributes.remove(i);
             }

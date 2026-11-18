@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });\nconst transition = stylex.viewTransitionClass({ animationDuration: '300ms' });\"))"
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });\nconst transition = stylex.viewTransitionClass({ old: { animationDuration: '300ms' } });\"))"
 ---
 ToBTreeSet {
     styles: {
@@ -8,14 +8,14 @@ ToBTreeSet {
             ExtractCss {
                 file: "test.tsx",
                 order: 1,
-                css: "@position-try --a{top:0;inset-block-end:auto;}",
+                css: "@position-try --a{top:0;inset-block-end:auto}",
             },
         ),
         Css(
             ExtractCss {
                 file: "test.tsx",
                 order: 2,
-                css: ".b{animation-duration:300ms;}",
+                css: "::view-transition-old(*.b){animation-duration:300ms}",
             },
         ),
     },

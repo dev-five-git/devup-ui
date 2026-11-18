@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/styled_compat_contract_tests.rs
+expression: compile(code)
+---
+compat.tsx:3:42: `styled()` cannot use `make()` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+compat.tsx:4:51: `styled()` cannot use `1` at build time: styled-components throws on a `componentId` that is not a string; write it as a string
+compat.tsx:5:51: `styled()` cannot use `null` at build time: styled-components throws on a `componentId` that is not a string; write it as a string
+compat.tsx:6:51: `styled()` cannot use `id` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+compat.tsx:7:51: `styled()` cannot use `name` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+compat.tsx:8:51: `styled()` cannot use `5` at build time: styled-components throws on a truthy `displayName` that is not a string beside a `componentId`; write it as a string
+compat.tsx:9:42: `styled()` cannot use `[...parts]` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+compat.tsx:10:42: `styled()` cannot use `{ toString: () => "h" }` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+compat.tsx:11:42: `styled()` cannot use `{ ...parts }` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals

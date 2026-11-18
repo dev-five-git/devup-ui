@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+export const v = {
+	"count": "var(--a-a)",
+	"tone": "var(--a-b)",
+	"plain": "var(--a-c)"
+};
+
+Css(ExtractCss { file: "stylex.tsx", order: 1, css: "@property --a-a{syntax:\"<integer>\";inherits:true;initial-value:3}" })
+Css(ExtractCss { file: "stylex.tsx", order: 2, css: "@property --a-b{syntax:\"<color>\";inherits:true;initial-value:red}" })
+Css(ExtractCss { file: "stylex.tsx", order: 3, css: ":root{--a-a:3;--a-b:red;--a-c:x}@media(prefers-color-scheme:dark){:root{--a-b:white}}" })

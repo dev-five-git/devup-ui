@@ -46,20 +46,20 @@ function declarations(
   theme: StyledTheme | undefined,
   prefix: string,
   path = '',
-): string {
-  let css = ''
+): string[] {
+  const result: string[] = []
   for (const [key, value] of Object.entries(shape)) {
     const next = path ? `${path}-${key}` : key
     const themed = theme?.[key]
     if (value !== null && typeof value === 'object') {
       if (themed !== null && typeof themed === 'object') {
-        css += declarations(value, themed, prefix, next)
+        result.push(...declarations(value, themed, prefix, next))
       }
     } else if (themed !== undefined && typeof themed !== 'object') {
-      css += `--${prefix}${next}:${themed};`
+      result.push(`--${prefix}${next}:${themed}`)
     }
   }
-  return css
+  return result
 }
 
 /**
@@ -80,7 +80,7 @@ export function createTheme<T extends StyledTheme>(
   function GlobalStyle() {
     const theme = useContext(StyledThemeContext)
     return (
-      <style>{`${selector}{${declarations(defaultTheme, theme, prefix)}}`}</style>
+      <style>{`${selector}{${declarations(defaultTheme, theme, prefix).join(';')}}`}</style>
     )
   }
   return Object.assign(refs, {

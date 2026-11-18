@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/stylex_api_semantics_tests.rs
+expression: "compile(\"stylex.tsx\", &format!(\"{IMPORT}{code}\"))"
+---
+stylex.tsx:2:58: `stylex.create()` cannot use `[later]` at build time: its keys must be known

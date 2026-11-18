@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test'
 
 import { deepMerge, loadDevupConfig, loadDevupConfigSync } from '../load-config'
 
@@ -72,8 +72,44 @@ describe('deepMerge', () => {
 
 describe('loadDevupConfigSync', () => {
   it('should return empty object for non-existent file', () => {
-    const result = loadDevupConfigSync(join(testDir, 'non-existent.json'))
-    expect(result).toEqual({})
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = loadDevupConfigSync(join(testDir, 'non-existent.json'))
+      expect(result).toEqual({})
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('should warn about a nested extended file that does not exist', () => {
+    const dir = join(testDir, 'sync-missing-extends')
+    mkdirSync(dir, { recursive: true })
+    const configPath = join(dir, 'devup.json')
+    const sharedPath = join(dir, 'shared.json')
+    writeFileSync(configPath, JSON.stringify({ extends: ['./shared.json'] }))
+    writeFileSync(
+      sharedPath,
+      JSON.stringify({
+        extends: ['./gone.json'],
+        theme: { colors: { default: { text: 'black' } } },
+      }),
+    )
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const inputs = new Set<string>()
+      const result = loadDevupConfigSync(configPath, inputs)
+      expect(result).toEqual({
+        theme: { colors: { default: { text: 'black' } } },
+      })
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toBe(
+        `[devup-ui] ${resolve(sharedPath)} extends ${resolve(dir, 'gone.json')}, which does not exist, so it adds nothing to the theme. Create the file or fix the \`extends\` entry.`,
+      )
+      expect(inputs.has(resolve(dir, 'gone.json'))).toBe(true)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('should load simple config', () => {
@@ -262,8 +298,43 @@ describe('loadDevupConfigSync', () => {
 
 describe('loadDevupConfig', () => {
   it('should return empty object for non-existent file', async () => {
-    const result = await loadDevupConfig(join(testDir, 'non-existent.json'))
-    expect(result).toEqual({})
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = await loadDevupConfig(join(testDir, 'non-existent.json'))
+      expect(result).toEqual({})
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('should warn about an extended file that does not exist', async () => {
+    const dir = join(testDir, 'async-missing-extends')
+    mkdirSync(dir, { recursive: true })
+    const configPath = join(dir, 'devup.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        extends: ['./missing.json'],
+        theme: { colors: { default: { text: 'black' } } },
+      }),
+    )
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const inputs = new Set<string>()
+      const result = await loadDevupConfig(configPath, inputs)
+      expect(result).toEqual({
+        theme: { colors: { default: { text: 'black' } } },
+      })
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toBe(
+        `[devup-ui] ${resolve(configPath)} extends ${resolve(dir, 'missing.json')}, which does not exist, so it adds nothing to the theme. Create the file or fix the \`extends\` entry.`,
+      )
+      // Still an input, so a watcher reloads once the file is created
+      expect(inputs.has(resolve(dir, 'missing.json'))).toBe(true)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('should report invalid JSON with its path', async () => {

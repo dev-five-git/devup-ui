@@ -20,9 +20,40 @@ use oxc_span::GetSpan;
 use rustc_hash::FxHashMap;
 
 use crate::utils::{
-    build_time_error, get_str_by_property_key, get_string_by_property_key, key_error,
-    readable_code, runtime_value_error, spread_error,
+    build_time_error, get_str_by_property_key, get_string_by_literal_expression,
+    get_string_by_property_key, key_error, readable_code, runtime_value_error, spread_error,
 };
+use std::borrow::Cow;
+
+/// Properties whose value names something by a dashed ident (`--name`), which
+/// `StyleX` keeps as written instead of reading it as a custom property
+static DASHED_IDENT_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
+    "anchor-name",
+    "anchor-scope",
+    "animation-timeline",
+    "font-palette",
+    "position-anchor",
+    "position-try",
+    "position-try-fallbacks",
+    "position-try-options",
+    "scroll-timeline",
+    "scroll-timeline-name",
+    "timeline-scope",
+    "view-timeline",
+    "view-timeline-name",
+};
+
+/// `value` on `property` as CSS: `optimize_value()`, except that a dashed
+/// ident naming an anchor, a timeline or a `@position-try` rule stays a name
+/// instead of becoming `var(--name)`
+fn stylex_css_value(property: &str, value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with("--") && DASHED_IDENT_PROPERTIES.contains(property) {
+        trimmed.to_string()
+    } else {
+        optimize_value(value).into_owned()
+    }
+}
 
 /// Construct a static style directly — bypass `convert_value()` to avoid devup-ui
 /// spacing transformations. `StyleX` values are raw CSS, only `optimize_value()`.
@@ -32,8 +63,8 @@ fn raw_static_style<'a>(
     selector: Option<StyleSelector>,
 ) -> ExtractStyleProp<'a> {
     ExtractStyleProp::Static(ExtractStyleValue::Static(ExtractStaticStyle {
+        value: stylex_css_value(&property, value),
         property,
-        value: optimize_value(value).into_owned(),
         level: 0,
         selector,
         style_order: None,
@@ -73,7 +104,10 @@ pub fn extract_stylex_declarations(
             continue;
         }
         match stylex_value(&name, &property.value) {
-            Some(value) => declarations.push((name, optimize_value(&value).into_owned())),
+            Some(value) => {
+                let value = stylex_css_value(&name, &value);
+                declarations.push((name, value));
+            }
             None => errors.push((
                 property.value.span().start,
                 declaration_error(api, &property.value, resolver),
@@ -81,6 +115,70 @@ pub fn extract_stylex_declarations(
         }
     }
     declarations
+}
+
+/// The pseudo-element each group `stylex.viewTransitionClass()` takes styles
+const VIEW_TRANSITION_GROUPS: [(&str, &str); 4] = [
+    ("group", "::view-transition-group"),
+    ("imagePair", "::view-transition-image-pair"),
+    ("old", "::view-transition-old"),
+    ("new", "::view-transition-new"),
+];
+
+/// The API whose groups `extract_view_transition_groups` reads
+const VIEW_TRANSITION_API: &str = "stylex.viewTransitionClass";
+
+/// The declarations of each group a `stylex.viewTransitionClass()` object
+/// gives, as the pseudo-element they style
+pub fn extract_view_transition_groups(
+    object: &ObjectExpression<'_>,
+    errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
+) -> Vec<(&'static str, Vec<(String, String)>)> {
+    let mut groups = vec![];
+    for property in &object.properties {
+        let property = match property {
+            ObjectPropertyKind::ObjectProperty(property) => property,
+            ObjectPropertyKind::SpreadProperty(spread) => {
+                errors.push(spread_error(VIEW_TRANSITION_API, spread));
+                continue;
+            }
+        };
+        let Some(key) = get_str_by_property_key(&property.key) else {
+            errors.push(key_error(VIEW_TRANSITION_API, &property.key));
+            continue;
+        };
+        let Some((_, pseudo)) = VIEW_TRANSITION_GROUPS
+            .iter()
+            .find(|(group, _)| *group == key.as_ref())
+        else {
+            errors.push((
+                property.key.span().start,
+                build_time_error(
+                    VIEW_TRANSITION_API,
+                    &key,
+                    "it takes the groups `group`, `imagePair`, `old` and `new`, each an object of declarations",
+                ),
+            ));
+            continue;
+        };
+        let Expression::ObjectExpression(declarations) = &property.value else {
+            errors.push((
+                property.value.span().start,
+                build_time_error(
+                    VIEW_TRANSITION_API,
+                    &readable_code(&property.value),
+                    "each group takes an object of declarations",
+                ),
+            ));
+            continue;
+        };
+        groups.push((
+            *pseudo,
+            extract_stylex_declarations(VIEW_TRANSITION_API, declarations, errors, resolver),
+        ));
+    }
+    groups
 }
 
 /// Why `value` is no declaration value: a genuine `StyleX` helper is read only
@@ -103,20 +201,28 @@ fn declaration_error(api: &str, value: &Expression<'_>, resolver: StylexResolver
     }
 }
 
-/// Resolve a `vars.key` member access against the contracts `stylex.defineVars()`
-/// produced, yielding the `var(--x)` reference the value compiles to.
+/// Resolve a `vars.key` or `vars['--key']` member access against the contracts
+/// `stylex.defineVars()` produced, yielding the `var(--x)` reference the value
+/// compiles to.
 fn var_reference<'v>(
     value: &Expression<'_>,
     var_refs: &'v FxHashMap<String, String>,
 ) -> Option<&'v str> {
-    let Expression::StaticMemberExpression(member) = value else {
-        return None;
+    let (object, key) = match value {
+        Expression::StaticMemberExpression(member) => {
+            (&member.object, Cow::Borrowed(member.property.name.as_str()))
+        }
+        Expression::ComputedMemberExpression(member) => (
+            &member.object,
+            get_string_by_literal_expression(&member.expression)?,
+        ),
+        _ => return None,
     };
-    let Expression::Identifier(object) = &member.object else {
+    let Expression::Identifier(object) = object else {
         return None;
     };
     var_refs
-        .get(&format!("{}.{}", object.name, member.property.name))
+        .get(&format!("{}.{key}", object.name))
         .map(String::as_str)
 }
 
@@ -197,7 +303,7 @@ pub fn extract_stylex_namespace_styles<'a>(
         match &prop.value {
             Expression::ArrowFunctionExpression(arrow) => {
                 let Some((styles, css_vars)) =
-                    extract_stylex_dynamic_namespace(arrow, &leaf, errors)
+                    extract_stylex_dynamic_namespace(arrow, &leaf, errors, resolver)
                 else {
                     errors.push((
                         prop.value.span().start,
@@ -495,6 +601,34 @@ fn include(
     )))
 }
 
+/// Marks a decomposed value that is a parameter of a dynamic namespace; no CSS
+/// value starts with a NUL
+const PARAM_MARK: char = '\0';
+
+/// Which of `params` `value` reads, when it is one of them
+fn param_index(params: &[String], value: &Expression<'_>) -> Option<usize> {
+    let Expression::Identifier(ident) = value else {
+        return None;
+    };
+    params.iter().position(|param| param == ident.name.as_str())
+}
+
+/// A style setting `property` under `selector` to the CSS variable the
+/// parameter `param` (its index and name) is assigned to where it is called
+fn push_dynamic(
+    styles: &mut Vec<ExtractStyleProp<'_>>,
+    css_vars: &mut Vec<(usize, String, &'static str)>,
+    property: &str,
+    (index, name): (usize, &str),
+    selector: Option<StyleSelector>,
+) {
+    let style = ExtractDynamicStyle::new(property, 0, name, selector);
+    let selector = crate::extract_style::class_selector(style.selector(), None);
+    let variable = sheet_to_variable_name(property, 0, selector.as_deref());
+    css_vars.push((index, variable, dynamic_number_suffix(property)));
+    styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(style)));
+}
+
 /// Extract styles from a dynamic `StyleX` namespace (arrow function).
 /// Returns (`styles_for_css`, `css_vars`) where `css_vars` maps `param_index` to a CSS variable
 /// name and the unit a number passed for it gets; `None` when the function is
@@ -504,6 +638,7 @@ fn extract_stylex_dynamic_namespace<'a>(
     arrow: &ArrowFunctionExpression<'_>,
     leaf: &Leaf<'_>,
     errors: &mut Vec<(u32, String)>,
+    resolver: StylexResolver<'_>,
 ) -> Option<(
     Vec<ExtractStyleProp<'a>>,
     Vec<(usize, String, &'static str)>,
@@ -552,20 +687,52 @@ fn extract_stylex_dynamic_namespace<'a>(
         let is_dynamic = if prop.shorthand {
             // Shorthand: { height } is equivalent to { height: height }
             param_names.iter().position(|p| p == &prop_name)
-        } else if let Expression::Identifier(ident) = &prop.value {
-            param_names.iter().position(|p| p == ident.name.as_str())
         } else {
-            None
+            param_index(&param_names, &prop.value)
         };
 
         if let Some(param_idx) = is_dynamic {
             // Dynamic property: generate CSS variable
-            let var_name = sheet_to_variable_name(&css_property, 0, None);
-            css_vars.push((param_idx, var_name, dynamic_number_suffix(&css_property)));
-            let param_name = &param_names[param_idx];
-            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                ExtractDynamicStyle::new(&css_property, 0, param_name, None),
-            )));
+            push_dynamic(
+                &mut styles,
+                &mut css_vars,
+                &css_property,
+                (param_idx, &param_names[param_idx]),
+                None,
+            );
+            continue;
+        }
+        if let Expression::ObjectExpression(_) = &prop.value {
+            // Contextual values: each parameter under a condition gets its own variable
+            let param_leaf = |property: &str, value: &Expression<'_>| {
+                param_index(&param_names, value)
+                    .map(|index| format!("{PARAM_MARK}{index}"))
+                    .or_else(|| leaf(property, value))
+            };
+            let decomposed = decompose_value_conditions(
+                &css_property,
+                &prop.value,
+                &[],
+                &param_leaf,
+                errors,
+                resolver,
+            );
+            for style in decomposed {
+                let Some(value) = style.value else { continue };
+                match value
+                    .strip_prefix(PARAM_MARK)
+                    .and_then(|index| index.parse::<usize>().ok())
+                {
+                    Some(index) => push_dynamic(
+                        &mut styles,
+                        &mut css_vars,
+                        &css_property,
+                        (index, &param_names[index]),
+                        style.selector,
+                    ),
+                    None => styles.push(raw_static_style(style.property, &value, style.selector)),
+                }
+            }
             continue;
         }
         match leaf(&css_property, &prop.value) {

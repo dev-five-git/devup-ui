@@ -135,17 +135,26 @@ If you are using Bun as the bundler, install the Bun plugin with Devup UI.
 bun add @devup-ui/react @devup-ui/bun-plugin
 ```
 
-Import the plugin before running your Bun build so it can register itself with Bun.
+Pass the plugin to `Bun.build`.
 
 ```ts
 // build.ts
 
-import '@devup-ui/bun-plugin'
+import { DevupUI } from '@devup-ui/bun-plugin/register'
 
 await Bun.build({
   entrypoints: ['./src/index.tsx'],
   outdir: './dist',
+  plugins: [DevupUI()],
 })
+```
+
+`Bun.build` only runs the plugins in its `plugins` list. Importing `@devup-ui/bun-plugin` registers a runtime plugin instead: it compiles the files Bun loads at runtime, such as in `bun test`, but not the files `Bun.build` bundles. For tests, preload it:
+
+```toml
+# bunfig.toml
+[test]
+preload = ["@devup-ui/bun-plugin"]
 ```
 
 ## Project Examples

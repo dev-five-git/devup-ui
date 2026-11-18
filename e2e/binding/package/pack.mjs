@@ -39,6 +39,9 @@ export function validateManifest(manifest, row, version) {
   assert.equal(manifest.version, version)
   assert.equal(manifest.license, 'Apache-2.0')
   assert.equal(manifest.publishConfig.access, 'public')
+  // Every build-time package shares one Node floor: Node 18 is past its end
+  // of life and lacks the globalThis.crypto the WASM fallback reads
+  assert.deepEqual(manifest.engines, { node: '>=20' })
   assert.ok(
     !Object.keys(manifest.scripts || {}).some((key) => hooks.test(key)),
     'lifecycle hook',
