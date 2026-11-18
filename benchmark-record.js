@@ -188,10 +188,11 @@ export function formatJson(value) {
   return (
     JSON.stringify(value, null, 2).replace(
       /^( *)(.*)\[\n((?:\1 {2}(?:-?[\d.e+-]+|"[^"\n]*"|null),?\n)+)\1\]/gm,
-      (whole, indent, key, items) => {
+      (whole, indent, key, items, offset, json) => {
         const values = items.trim().split(/,\n */)
         const line = `${indent}${key}[${values.join(', ')}]`
-        if (line.length + 1 <= PRINT_WIDTH) return line
+        const comma = json[offset + whole.length] === ',' ? 1 : 0
+        if (line.length + comma <= PRINT_WIDTH) return line
         return values.every((item) => /^-?[\d.e+-]+$/.test(item))
           ? fillNumbers(indent, key, values)
           : whole
