@@ -10,6 +10,13 @@ import {
 
 import { formatPortFile, removeOwnPortFile } from './coordinator-port'
 import { elapsedMs, profileStart, reportProfile } from './profile'
+import {
+  type SessionStateContents,
+  type SessionStateFiles,
+  sessionStateManifestFile,
+  writeSessionState,
+  writeSessionStateSync,
+} from './session-state'
 import { type DevupWasm, withModuleResolver } from './wasm'
 
 export interface CoordinatorOptions {
@@ -148,42 +155,70 @@ export function takeExtractOutput(
 // FIFO queue), and total disk IO drops dramatically because N stale snapshots
 // for the same file are collapsed into 1 effective write.
 const writeChain = new Map<string, Promise<void>>()
-const latestContent = new Map<string, string>()
-/** The content of the write running for each path */
-const writingContent = new Map<string, string>()
 
-function safeWrite(path: string, content: string): Promise<void> {
-  // Always record the most recent content for this path so a queued write
-  // picks up the latest snapshot when it runs.
-  latestContent.set(path, content)
+interface PendingWrite {
+  run: () => Promise<void>
+  runSync: () => void
+}
+
+const latestWrite = new Map<string, PendingWrite>()
+/** The write running for each key */
+const runningWrite = new Map<string, PendingWrite>()
+
+function enqueueWrite(key: string, write: PendingWrite): Promise<void> {
+  // Always record the most recent write for this key so a queued run picks
+  // up the latest snapshot when it runs.
+  latestWrite.set(key, write)
 
   // Swallow any prior error solely for chaining purposes — the actual caller
   // that hit the error already saw it via the returned promise, but we must
-  // not let one failure poison every subsequent write for this path.
-  const prev = (writeChain.get(path) ?? Promise.resolve()).catch(() => {})
+  // not let one failure poison every subsequent write for this key.
+  const prev = (writeChain.get(key) ?? Promise.resolve()).catch(() => {})
 
-  const next = prev.then(
-    () =>
+  const next = prev.then(async () => {
+    const final = latestWrite.get(key)
+    // An earlier chained run already consumed the latest write for this key;
+    // nothing new to write.
+    if (final === undefined) return
+    latestWrite.delete(key)
+    runningWrite.set(key, final)
+    try {
+      await final.run()
+    } finally {
+      runningWrite.delete(key)
+    }
+  })
+
+  writeChain.set(key, next)
+  return next
+}
+
+function safeWrite(path: string, content: string): Promise<void> {
+  return enqueueWrite(path, {
+    run: () =>
       new Promise<void>((resolve, reject) => {
-        const final = latestContent.get(path)
-        if (final === undefined) {
-          // An earlier chained run already consumed the latest content for
-          // this path; nothing new to write. Resolve as a no-op.
-          resolve()
-          return
-        }
-        latestContent.delete(path)
-        writingContent.set(path, final)
-        writeFile(path, final, 'utf-8', (err) => {
-          writingContent.delete(path)
+        writeFile(path, content, 'utf-8', (err) => {
           if (err) reject(err)
           else resolve()
         })
       }),
-  )
+    runSync: () => writeFileSync(path, content, 'utf-8'),
+  })
+}
 
-  writeChain.set(path, next)
-  return next
+/**
+ * Write the sheet, class map and file map as one snapshot: each file is
+ * replaced atomically, and the manifest written after them lets a restore
+ * tell a complete snapshot from a mix of two (see `readSessionState`).
+ */
+function persistState(
+  files: SessionStateFiles,
+  contents: SessionStateContents,
+): Promise<void> {
+  return enqueueWrite(sessionStateManifestFile(files), {
+    run: () => writeSessionState(files, contents),
+    runSync: () => writeSessionStateSync(files, contents),
+  })
 }
 
 /** Wait for every pending serialized write to settle. */
@@ -192,14 +227,14 @@ function flushPendingWrites(): Promise<void> {
 }
 
 /**
- * Write the newest content of every path whose write is queued or still
+ * Write the newest content of every key whose write is queued or still
  * running, synchronously: `close` runs from `process.on('exit')`, where
  * nothing asynchronous completes. Outside of `exit` the queued writes still
  * run afterwards and write the same newest content again.
  */
 function writePendingSync(): void {
-  for (const [path, content] of new Map([...writingContent, ...latestContent]))
-    writeFileSync(path, content, 'utf-8')
+  for (const write of new Map([...runningWrite, ...latestWrite]).values())
+    write.runSync()
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -616,6 +651,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   const extract =
     options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
+  const stateFiles: SessionStateFiles = [sheetFile, classMapFile, fileMapFile]
   const state = createState(options)
   const { extractedFiles, extractedSources, fileNumToBucket, transformCache } =
     state
@@ -638,9 +674,11 @@ export function startCoordinator(options: CoordinatorOptions): {
         join(cssDir, 'devup-ui.css'),
         `${getCss(null, false)}\n/* ${Date.now()} */`,
       ),
-      safeWrite(sheetFile, exportSheet()),
-      safeWrite(classMapFile, exportClassMap()),
-      safeWrite(fileMapFile, exportFileMap()),
+      persistState(stateFiles, [
+        exportSheet(),
+        exportClassMap(),
+        exportFileMap(),
+      ]),
     ])
   }
 
@@ -868,9 +906,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           }
           promises.push(
             safeWrite(join(cssDir, basename(result.cssFile)), css),
-            safeWrite(sheetFile, sheet),
-            safeWrite(classMapFile, classMap),
-            safeWrite(fileMapFile, fileMap),
+            persistState(stateFiles, [sheet, classMap, fileMap]),
           )
 
           // In non-singleCss mode, imports are rewritten from devup-ui-N.css to
@@ -996,6 +1032,6 @@ export const resetCoordinator = () => {
   }
   apps.clear()
   writeChain.clear()
-  latestContent.clear()
-  writingContent.clear()
+  latestWrite.clear()
+  runningWrite.clear()
 }

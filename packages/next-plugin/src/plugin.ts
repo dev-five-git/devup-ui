@@ -46,6 +46,11 @@ import {
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
+import {
+  readSessionState,
+  type SessionStateFiles,
+  writeSessionStateSync,
+} from './session-state'
 import { type DevupWasm, loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
@@ -153,30 +158,59 @@ function setupWarning(step: string, error: unknown, impact: string): string {
  * `distDir`, all together or none: a mix of one session's sheet with another
  * session's (or no) class names would give new styles names that clash with
  * restored ones. A missing or unreadable file starts fresh (first run); state
- * that does not import (another release wrote it) is dropped and starts fresh.
+ * that does not import (another release wrote it) or whose files are not one
+ * write's (see `readSessionState`) is dropped and starts fresh.
+ *
+ * Returns the restored source files that no longer exist: they were deleted
+ * or renamed while no coordinator ran, so nothing extracts them again and the
+ * engine forgets them here.
  */
 export function restoreSessionState(
   wasm: Pick<
     DevupWasm,
-    'importSheet' | 'importClassMap' | 'importFileMap' | 'resetBuildState'
+    | 'importSheet'
+    | 'importClassMap'
+    | 'importFileMap'
+    | 'removeFile'
+    | 'resetBuildState'
   >,
-  [sheetFile, classMapFile, fileMapFile]: readonly [string, string, string],
-): void {
-  let state: unknown[]
+  files: SessionStateFiles,
+  cwd: string = process.cwd(),
+): string[] {
+  const state = readSessionState(files)
+  if (state === undefined) return []
   try {
-    state = [sheetFile, classMapFile, fileMapFile].map((file) =>
-      JSON.parse(readFileSync(file, 'utf-8')),
-    )
-  } catch {
-    return
-  }
-  try {
+    if (state === null) throw new Error('mixed state')
     wasm.importSheet(state[0])
     wasm.importClassMap(state[1])
     wasm.importFileMap(state[2])
   } catch {
     wasm.resetBuildState()
+    return []
   }
+  const removed = restoredSources(state[0], state[2]).filter(
+    (file) => !existsSync(resolve(cwd, file)),
+  )
+  for (const file of removed) wasm.removeFile(file)
+  return removed
+}
+
+/**
+ * The source files a restored state holds styles of: those with a file number
+ * of their own, and those that wrote global CSS.
+ */
+function restoredSources(sheet: unknown, fileMap: unknown): string[] {
+  const files = new Set(
+    fileMap !== null && typeof fileMap === 'object' ? Object.keys(fileMap) : [],
+  )
+  const globalCssFiles =
+    sheet !== null && typeof sheet === 'object'
+      ? (sheet as { global_css_files?: unknown }).global_css_files
+      : undefined
+  if (Array.isArray(globalCssFiles))
+    for (const file of globalCssFiles)
+      if (typeof file === 'string') files.add(file)
+  return [...files]
 }
 
 interface SharedSlotOptions {
@@ -382,11 +416,30 @@ export function DevupUI(
     // starts empty and CSS for cached files would be missing.
     // Always restore from the shared `distDir` state: a process writing its
     // own state dir still starts from what the cache was built against.
-    restoreSessionState(wasm, [
+    const removedSources = restoreSessionState(wasm, [
       join(distDir, 'sheet.json'),
       join(distDir, 'classMap.json'),
       join(distDir, 'fileMap.json'),
     ])
+    // The coordinator only writes state once something is extracted again, so
+    // a restart that extracts nothing would restore the deleted files' styles
+    // every time.
+    if (removedSources.length > 0) {
+      try {
+        writeSessionStateSync(
+          [sheetFile, classMapFile, fileMapFile],
+          [exportSheet(), exportClassMap(), exportFileMap()],
+        )
+      } catch (error) {
+        console.warn(
+          setupWarning(
+            'state write',
+            error,
+            'The styles of deleted files are dropped from this session, and are dropped again on the next start.',
+          ),
+        )
+      }
+    }
     // After the restore: dropping a state that does not import resets these.
     setPrefix(prefix ?? null)
     setDebug(debug)
