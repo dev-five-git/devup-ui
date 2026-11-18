@@ -53,24 +53,24 @@ fn markers(code: &str) -> Vec<String> {
 )]
 #[case::private_base_of_an_export(
     "const Child = styled.div`color: red;`;\nexport const Wide = styled(Child)`width: 1px;`;",
-    &["a--a"]
+    &[("Wide", 0)]
 )]
 #[case::private_selected(
     "const Child = styled.div`color: red;`;\nconst Parent = styled.div`${Child} { color: blue; }`;\nexport const App = () => <Parent><Child /></Parent>;",
-    &["a--b"]
+    &[("Child", 1)]
 )]
 #[case::exported(
     "export const Child = styled.div`color: red;`;",
-    &["a--a"]
+    &[("Child", 0)]
 )]
 #[case::exported_by_default(
     "const Child = styled.div`color: red;`;\nexport default Child;",
-    &["a--a"]
+    &[("default", 0)]
 )]
 fn markers_go_only_where_a_selector_can_read_them(
     #[values(EMOTION, STYLED_COMPONENTS)] import: &str,
     #[case] source: &str,
-    #[case] expected: &[&str],
+    #[case] expected: &[(&str, usize)],
 ) {
     // Given
     reset_class_map();
@@ -79,16 +79,20 @@ fn markers_go_only_where_a_selector_can_read_them(
     let output = extract("test.tsx", &format!("{import}{source}"), option())
         .unwrap_or_else(|error| panic!("{source}\n{error}"));
     // Then
-    assert_eq!(markers(&output.code), expected, "{import}{source}");
+    assert_eq!(
+        markers(&output.code),
+        expected_markers(expected),
+        "{import}{source}"
+    );
 }
 
 #[rstest]
 #[serial]
 #[case::private("const Other = Child.withComponent('a');\nexport const App = () => <><Child /><Other /></>;", &[])]
-#[case::exported("export const Other = Child.withComponent('a');", &["a--b"])]
+#[case::exported("export const Other = Child.withComponent('a');", &[("Other", 1)])]
 fn emotion_with_component_results_share_a_marker_only_when_they_can_be_selected(
     #[case] source: &str,
-    #[case] expected: &[&str],
+    #[case] expected: &[(&str, usize)],
 ) {
     // Given
     reset_class_map();
@@ -98,5 +102,14 @@ fn emotion_with_component_results_share_a_marker_only_when_they_can_be_selected(
     let output =
         extract("test.tsx", &code, option()).unwrap_or_else(|error| panic!("{code}\n{error}"));
     // Then
-    assert_eq!(markers(&output.code), expected, "{code}");
+    assert_eq!(markers(&output.code), expected_markers(expected), "{code}");
+}
+
+/// The classes of the markers `test.tsx` gives its components, by name and
+/// index among the components of the file
+fn expected_markers(expected: &[(&str, usize)]) -> Vec<String> {
+    expected
+        .iter()
+        .map(|(name, index)| css::component_marker(name, *index, "test.tsx"))
+        .collect()
 }
