@@ -16,6 +16,7 @@ exports[`recommended export recommended config 1`] = `
               },
               "messages": {
                 "cssUtilsLiteralOnly": "CSS utils should only be used with values known at build time: literals, constants, or what exact built-ins and the functions of this file compute from them.",
+                "functionValue": "A function is not a style value: the build never calls a function given as a value. Call it here, or write the value it gives.",
                 "missingGlobal": "\`{{name}}\` does not exist where the build evaluates a stylesheet (\`.css.ts\`, \`.css.js\`).",
               },
               "schema": [],
