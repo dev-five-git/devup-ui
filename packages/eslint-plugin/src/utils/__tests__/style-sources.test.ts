@@ -62,17 +62,11 @@ function elsewhere(source: string) {
 
 describe('style sources: no-duplicate-value', () => {
   const fixes: Case[] = [
-    [LIBRARIES, 'css({ w: [1, 1] })', 'css({ w: [1, null] })'],
+    [['devup'], 'css({ w: [1, 1] })', 'css({ w: [1, null] })'],
     [
-      [...LIBRARIES, 'vanilla'],
+      ['devup'],
       'keyframes({ from: { w: [1, 1] } })',
       'keyframes({ from: { w: [1, null] } })',
-    ],
-    [['vanilla'], 'style({ w: [1, 1] })', 'style({ w: [1, null] })'],
-    [
-      ['vanilla'],
-      'globalStyle("body", { w: [1, 1] })',
-      'globalStyle("body", { w: [1, null] })',
     ],
     [
       ['devup'],
@@ -85,34 +79,29 @@ describe('style sources: no-duplicate-value', () => {
       'createGlobalStyle({ body: { w: [1, null] } })',
     ],
     [
-      ['emotion'],
-      '<Global styles={{ body: { w: [1, 1] } }} data-x={{ w: [1, 1] }} />',
-      '<Global styles={{ body: { w: [1, null] } }} data-x={{ w: [1, 1] }} />',
-    ],
-    [
-      LIBRARIES,
+      ['devup'],
       'styled("div", { w: [1, 1] })',
       'styled("div", { w: [1, null] })',
     ],
-    [LIBRARIES, 'styled.div({ w: [1, 1] })', 'styled.div({ w: [1, null] })'],
+    [['devup'], 'styled.div({ w: [1, 1] })', 'styled.div({ w: [1, null] })'],
     [
-      LIBRARIES,
+      ['devup'],
       'styled("div")({ w: [1, 1] })',
       'styled("div")({ w: [1, null] })',
     ],
     [
-      LIBRARIES,
+      ['devup'],
       'styled(Base)({ w: [3, 3] }, { p: [4, 4] })',
       'styled(Base)({ w: [3, null] }, { p: [4, null] })',
       2,
     ],
     [
-      LIBRARIES,
+      ['devup'],
       'styled.div.attrs({ w: [1, 1] })({ p: [3, 3] })',
       'styled.div.attrs({ w: [1, 1] })({ p: [3, null] })',
     ],
     [
-      LIBRARIES,
+      ['devup'],
       'styled.div.withConfig({ w: [1, 1] })({ p: [3, 3] })',
       'styled.div.withConfig({ w: [1, 1] })({ p: [3, null] })',
     ],
@@ -120,11 +109,6 @@ describe('style sources: no-duplicate-value', () => {
       ['devup'],
       'Devup.styled.div({ w: [1, 1] })',
       'Devup.styled.div({ w: [1, null] })',
-    ],
-    [
-      ['emotion'],
-      'Namespaced.div({ w: [1, 1] })',
-      'Namespaced.div({ w: [1, null] })',
     ],
     [
       ['devup'],
@@ -201,11 +185,9 @@ describe('style sources: no-useless-tailing-nulls', () => {
     ],
     invalid: invalid(
       [
-        [LIBRARIES, 'css({ w: [1, null] })', 'css({ w: [1] })'],
-        [['vanilla'], 'style({ w: [1, null] })', 'style({ w: [1] })'],
-        [['vanilla'], 'style({ w: [1, 2, null] })', 'style({ w: [1, 2] })'],
+        [['devup'], 'css({ w: [1, null] })', 'css({ w: [1] })'],
         [
-          LIBRARIES,
+          ['devup'],
           'styled.div({ w: [1, 2, null] })',
           'styled.div({ w: [1, 2] })',
         ],
@@ -215,9 +197,9 @@ describe('style sources: no-useless-tailing-nulls', () => {
           'const s = { w: [1] };\ncss(s)',
         ],
         [
-          ['emotion'],
-          '<Global styles={{ body: { w: [1, null] } }} />',
-          '<Global styles={{ body: { w: [1] } }} />',
+          ['styledComponents'],
+          'createGlobalStyle({ body: { w: [1, null] } })',
+          'createGlobalStyle({ body: { w: [1] } })',
         ],
       ],
       'uselessTailingNulls',
@@ -238,9 +220,8 @@ describe('style sources: no-useless-responsive', () => {
     ],
     invalid: invalid(
       [
-        [LIBRARIES, 'css({ w: [1] })', 'css({ w: 1 })'],
-        [['vanilla'], 'style({ w: [1] })', 'style({ w: 1 })'],
-        [LIBRARIES, 'styled.div({ w: [1] })', 'styled.div({ w: 1 })'],
+        [['devup'], 'css({ w: [1] })', 'css({ w: 1 })'],
+        [['devup'], 'styled.div({ w: [1] })', 'styled.div({ w: 1 })'],
         [
           ['devup'],
           'const s = { w: [1] };\ncss(s)',
@@ -252,9 +233,9 @@ describe('style sources: no-useless-responsive', () => {
           'const arr = 1;\n<Box w={arr} />',
         ],
         [
-          ['emotion'],
-          '<Global styles={{ body: { w: [1] } }} />',
-          '<Global styles={{ body: { w: 1 } }} />',
+          ['styledComponents'],
+          'createGlobalStyle({ body: { w: [1] } })',
+          'createGlobalStyle({ body: { w: 1 } })',
         ],
         [
           ['devup'],

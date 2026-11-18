@@ -61,7 +61,7 @@ of code can be reported by several rules: `css({ w: [1] })` is correct for
 
 The rules follow the build: the style props of Devup UI components, the arguments of `css`, `globalCss`, `keyframes` and `createGlobalStyle`, and the same through the import aliases the build compiles by default: `@emotion/react`, `@emotion/styled`, `styled-components` and `@vanilla-extract/css` (`styled`, `Global`, `style`, `globalStyle`). Props the component passes through (`data-*`, `aria-*`, handlers, `props`, `styleVars`), `.attrs()` arguments and plain data elsewhere are left alone. Vanilla-extract stylesheets (`.css.ts`, `.css.js`) are run as they are by the build, so the style rules skip them.
 
-The rules follow the build: the style props of Devup UI components, the arguments of `css`, `globalCss`, `keyframes` and `createGlobalStyle`, and the same through the import aliases the build compiles by default: `@emotion/react`, `@emotion/styled`, `styled-components` and `@vanilla-extract/css` (`styled`, `Global`, `style`, `globalStyle`). Props the component passes through (`data-*`, `aria-*`, handlers, `props`, `styleVars`), `.attrs()` arguments and plain data elsewhere are left alone. Vanilla-extract stylesheets (`.css.ts`, `.css.js`) are run as they are by the build, so the style rules skip them.
+In the rules of Emotion, styled-components and vanilla-extract, the build declares a property's array as fallbacks in one rule, as these libraries do (`color: ['red', 'blue']` becomes `color:red;color:blue`), not as breakpoints. So `no-duplicate-value`, `no-useless-responsive` and `no-useless-tailing-nulls` skip those arrays. Packages added with `importAliases` read arrays as Devup UI does, so the rules check them.
 
 ## Build options
 
