@@ -401,6 +401,10 @@ jobs:
   landing-next-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Render the frozen e2e/fixtures/benchmark-results.json, so a benchmark
+      # refresh on main never changes a screenshot. This build is never deployed.
+      LANDING_BENCHMARK_DATA: fixture
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -885,9 +889,13 @@ jobs:
           # changepacks compares the change against a local main, which a pull request checkout does not have
           git fetch --no-tags origin main:refs/heads/main
           bunx @changepacks/cli@latest check --format json
+      # The e2e builds render the frozen e2e/fixtures/benchmark-results.json, so
+      # a benchmark refresh on main never changes a screenshot. The site is
+      # deployed from a separate build of the live benchmark-results.json below.
       - name: Build Landing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANDING_BENCHMARK_DATA: fixture
         run: |
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
@@ -921,6 +929,7 @@ jobs:
       - name: Build Landing (singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANDING_BENCHMARK_DATA: fixture
         run: |
           rm -rf apps/landing/dist apps/landing/.next apps/landing/.vinext apps/landing/df
           DEVUP_SINGLE_CSS=1 bun run --filter landing build
@@ -933,6 +942,15 @@ jobs:
           name: playwright-report-singlecss
           path: playwright-report/
           retention-days: 1
+      # The same singleCss build as above, with the live benchmark numbers.
+      - name: Build Landing for deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf apps/landing/dist apps/landing/.next apps/landing/.vinext apps/landing/df
+          DEVUP_SINGLE_CSS=1 bun run --filter landing build
+          grep -q 'data-benchmark-source="live"' apps/landing/dist/client/index.html
       - name: Upload the site for deployment
         uses: actions/upload-pages-artifact@v5
         with:
@@ -1053,3 +1071,101 @@ jobs:
           NATIVE_RELEASE_BUNDLE: ${{ runner.temp }}/native-release-bundle
         with:
           publish: true
+
+  # Publishes the numbers `benchmark` measured on a push to main: rewrites
+  # benchmark-results.json (the README sections and the landing page read it),
+  # appends the run to benchmark/history.json, and pushes that as one commit to
+  # main, so every merge leaves its numbers next to it and a slower build can be
+  # traced to the merge that caused it (`bun benchmark-refresh.js --trend <row>`).
+  #
+  # It cannot release or loop: it waits for `release` to finish so it never
+  # races changepacks, it runs no build, publish or changepacks step, and the
+  # commit it pushes is made with GITHUB_TOKEN (whose pushes start no workflow)
+  # and carries [skip ci]. It records a failed gate too, so the regression is in
+  # the history, and skips a run whose artifact is missing.
+  #
+  # A commit older than the published results is only added to the history
+  # (benchmark-refresh.js checks the ancestry). If main moves during the job it
+  # rebuilds the commit on the new HEAD; if pushing to main keeps failing (for
+  # example once a ruleset protects main without a bypass for GitHub Actions),
+  # it pushes the commit to `chore/benchmark-refresh` and keeps one pull request
+  # open for it instead.
+  benchmark-refresh:
+    needs: [benchmark, release]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.benchmark.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: benchmark-refresh-main
+      cancel-in-progress: false
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Download the measured run
+        id: measured
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: benchmark-run
+          path: ${{ runner.temp }}/benchmark-run
+      - name: Checkout main
+        if: steps.measured.outcome == 'success'
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          # benchmark-refresh.js compares commits and reads their baselines
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        if: steps.measured.outcome == 'success'
+        with:
+          bun-version: latest
+        name: Install bun
+      - name: Record the run and push it to main
+        if: steps.measured.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MEASURED: ${{ runner.temp }}/benchmark-run/benchmark-run.json
+          MESSAGE: "chore(benchmark): record run ${{ github.run_id }} of ${{ github.sha }} [skip ci]"
+          BRANCH: chore/benchmark-refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # The scripts need no dependencies; only the files they write are staged.
+          record() {
+            git fetch -q origin main
+            git reset -q --hard origin/main
+            cp "$MEASURED" benchmark-run.json
+            bun benchmark-refresh.js
+            bun render-benchmark-readme.js
+            rm benchmark-run.json
+            git add -- benchmark-results.json benchmark/history.json README.md README_ko.md 'packages/*/README.md'
+          }
+
+          for attempt in 1 2 3; do
+            record
+            if git diff --cached --quiet; then
+              echo "Nothing to record for ${GITHUB_SHA}"
+              exit 0
+            fi
+            git commit -q -m "$MESSAGE"
+            if git push origin HEAD:refs/heads/main; then
+              exit 0
+            fi
+            echo "Push to main failed (attempt ${attempt}); rebuilding on the new HEAD"
+          done
+
+          echo "::warning::Could not push the benchmark refresh to main; updating ${BRANCH} instead"
+          git push --force origin "HEAD:refs/heads/${BRANCH}"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title 'chore(benchmark): record the latest main benchmark' \
+              --body 'Written by the `benchmark-refresh` job because it could not push to main. It carries the latest main run only; merging it publishes the numbers and its history entry.'
+          fi

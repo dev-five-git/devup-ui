@@ -2,7 +2,8 @@
 // READMEs that npm publishes from one checked result file, so every copy shows
 // the same run and the same numbers.
 // Every row is the median of the same number of cold samples, shown with its
-// range. `benchmark-check.js --write-results` refreshes the file from a run.
+// range. CI refreshes the file after every merge to main (benchmark-refresh.js);
+// `benchmark-check.js --write-results` does the same by hand.
 //
 //   bun render-benchmark-readme.js          rewrite the sections
 //   bun render-benchmark-readme.js --check  fail when a README differs from them
@@ -34,9 +35,9 @@ const TEXT = {
       ].map((name) => `packages/${name}/README.md`),
     ],
     intro: ({ run, samples }) =>
-      `[Latest CI benchmark](${run.url}) (commit \`${run.commit}\`, Devup UI ${run.devupUi}) on \`${run.runner}\` with Next.js ${run.next}. Every row is the median of ${samples} cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, \`benchmark-results.json\`.`,
+      `[Latest CI benchmark](${run.url}) (commit \`${run.commit}\`, Devup UI ${run.devupUi}, ${run.date.slice(0, 10)}) on \`${run.runner}\` with Next.js ${run.next}. Every row is the median of ${samples} cold builds that ran in rotating order, shown with the range of the samples. All Next.js builds use the native TypeScript 7 CLI for type checking. The English and Korean tables are generated from the same checked result file, \`benchmark-results.json\`, which CI refreshes after every merge to main and records in \`benchmark/history.json\`, one entry per commit, so a slower build can be traced to the merge that caused it.`,
     sizes:
-      "Build Size is every byte of the build output directory (`.next`, or `dist` for vinext), including caches and server output. The checked table retains its original historical CSS measurements, which recursively counted `.css` files throughout that output. New runs count only browser-shipped CSS: `.next/static/**/*.css` (Webpack `static/css` and Turbopack `static/chunks`) or vinext `dist/client/**/*.css`, excluding caches and server CSS. A missing browser-assets directory is an error; an existing directory with no CSS counts zero. Approved CSS measurement corrections are limited to explicitly named `devup-ui`, `devup-ui-single` and `vinext-devup-ui` rows. `bun benchmark-check.js --write-css-baseline devup-ui` retains the per-file mode; `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui` selects only the other two rows in one comma-separated argument. Only selected existing rows' CSS bytes change; unlike `--write-baseline`, this preserves sample count, build bytes, ratios, tolerances, all unselected rows and calibration history. Missing or unsupported names and conflicting writer modes are rejected.",
+      "Client Size is the JavaScript and CSS shipped to the browser, uncompressed: `.next/static/**/*.{js,css}` or vinext `dist/client/**/*.{js,css}`. Build Size (incl. caches) is every byte of the build output directory (`.next`, or `dist` for vinext); most of it is the bundler cache and server output, and it moves by a few kilobytes between identical builds, so it is kept for continuity rather than as what users download. CSS Size counts only browser-shipped CSS: `.next/static/**/*.css` (Webpack `static/css` and Turbopack `static/chunks`) or vinext `dist/client/**/*.css`, excluding caches and server CSS. A missing browser-assets directory is an error; an existing directory with no CSS counts zero. Every size is measured on every sample and shown as the median; `benchmark-results.json` keeps the samples with their range, and rows measured before Client Size was recorded show n/a. Approved CSS measurement corrections are limited to explicitly named `devup-ui`, `devup-ui-single` and `vinext-devup-ui` rows. `bun benchmark-check.js --write-css-baseline devup-ui` retains the per-file mode; `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui` selects only the other two rows in one comma-separated argument. Only selected existing rows' CSS bytes change; unlike `--write-baseline`, this preserves sample count, build bytes, ratios, tolerances, all unselected rows and calibration history. Missing or unsupported names and conflicting writer modes are rejected.",
     webpack: 'Webpack:',
     turbopack: 'Turbopack:',
     columns: {
@@ -44,7 +45,8 @@ const TEXT = {
       version: 'Version',
       time: 'Median Build Time',
       range: 'Range',
-      size: 'Build Size',
+      client: 'Client Size',
+      size: 'Build Size (incl. caches)',
       css: 'CSS Size',
     },
     note: ({ samples }, [tailwind, direct, stylesheet]) => {
@@ -59,9 +61,9 @@ const TEXT = {
   ko: {
     files: ['README_ko.md'],
     intro: ({ run, samples }) =>
-      `[최신 CI 벤치마크](${run.url}) (커밋 \`${run.commit}\`, Devup UI ${run.devupUi})는 \`${run.runner}\`에서 Next.js ${run.next}로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build ${samples}회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 \`benchmark-results.json\`에서 생성합니다.`,
+      `[최신 CI 벤치마크](${run.url}) (커밋 \`${run.commit}\`, Devup UI ${run.devupUi}, ${run.date.slice(0, 10)})는 \`${run.runner}\`에서 Next.js ${run.next}로 실행했습니다. 모든 행은 순서를 돌려 가며 측정한 cold build ${samples}회의 중앙값이며 샘플의 범위를 함께 보여줍니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다. 영어와 한국어 표는 같은 결과 파일 \`benchmark-results.json\`에서 생성합니다. CI는 main에 병합될 때마다 이 파일을 갱신하고 커밋마다 하나씩 \`benchmark/history.json\`에 기록하므로, 빌드가 느려지면 원인이 된 병합을 찾을 수 있습니다.`,
     sizes:
-      '빌드 사이즈는 캐시와 서버 출력을 포함한 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트입니다. 체크인된 표는 출력 전체의 `.css` 파일을 재귀적으로 합산한 기존 CSS 측정값을 그대로 보존합니다. 새 실행은 브라우저에 제공되는 CSS만 측정합니다: `.next/static/**/*.css`(Webpack `static/css`, Turbopack `static/chunks`) 또는 vinext `dist/client/**/*.css`. 캐시와 서버 CSS는 제외합니다. 브라우저 에셋 디렉터리가 없으면 오류이며, 존재하지만 CSS가 없으면 0입니다. 승인된 CSS 측정 보정은 명시적으로 지정한 `devup-ui`, `devup-ui-single`, `vinext-devup-ui` 행으로 제한됩니다. `bun benchmark-check.js --write-css-baseline devup-ui`는 기존 per-file 모드를 유지하며, `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui`는 쉼표로 구분한 인자 하나로 나머지 두 행만 선택합니다. 선택한 기존 행의 CSS 바이트만 바꾸고, `--write-baseline`과 달리 샘플 수, 빌드 바이트, 비율, 허용 오차, 선택하지 않은 모든 행과 보정 이력을 보존합니다. 이름 누락, 지원하지 않는 이름, 다른 쓰기 모드와의 혼용은 오류입니다.',
+      '클라이언트 사이즈는 브라우저에 제공되는 JavaScript와 CSS의 압축 전 크기입니다: `.next/static/**/*.{js,css}` 또는 vinext `dist/client/**/*.{js,css}`. 빌드 사이즈(캐시 포함)는 빌드 출력 디렉터리(`.next`, vinext는 `dist`)의 모든 바이트입니다. 대부분이 번들러 캐시와 서버 출력이고 같은 빌드끼리도 수 KB씩 달라지므로, 사용자가 받는 크기가 아니라 이전 결과와의 연속성을 위해 남겨 둡니다. CSS 사이즈는 브라우저에 제공되는 CSS만 측정합니다: `.next/static/**/*.css`(Webpack `static/css`, Turbopack `static/chunks`) 또는 vinext `dist/client/**/*.css`. 캐시와 서버 CSS는 제외합니다. 브라우저 에셋 디렉터리가 없으면 오류이며, 존재하지만 CSS가 없으면 0입니다. 모든 사이즈는 샘플마다 측정해 중앙값으로 보여 주며, `benchmark-results.json`에는 샘플과 범위가 함께 남습니다. 클라이언트 사이즈를 기록하기 전에 측정한 행은 n/a로 표시합니다. 승인된 CSS 측정 보정은 명시적으로 지정한 `devup-ui`, `devup-ui-single`, `vinext-devup-ui` 행으로 제한됩니다. `bun benchmark-check.js --write-css-baseline devup-ui`는 기존 per-file 모드를 유지하며, `bun benchmark-check.js --write-css-baseline devup-ui-single,vinext-devup-ui`는 쉼표로 구분한 인자 하나로 나머지 두 행만 선택합니다. 선택한 기존 행의 CSS 바이트만 바꾸고, `--write-baseline`과 달리 샘플 수, 빌드 바이트, 비율, 허용 오차, 선택하지 않은 모든 행과 보정 이력을 보존합니다. 이름 누락, 지원하지 않는 이름, 다른 쓰기 모드와의 혼용은 오류입니다.',
     webpack: 'Webpack:',
     turbopack: 'Turbopack:',
     columns: {
@@ -69,7 +71,8 @@ const TEXT = {
       version: '버전',
       time: '빌드 시간 중앙값',
       range: '범위',
-      size: '빌드 사이즈',
+      client: '클라이언트 사이즈',
+      size: '빌드 사이즈(캐시 포함)',
       css: 'CSS 사이즈',
     },
     note: ({ samples }, [tailwind, direct, stylesheet]) => {
@@ -90,6 +93,7 @@ function table(text, rows) {
     columns.version,
     columns.time,
     columns.range,
+    columns.client,
     columns.size,
     columns.css,
   ]
@@ -100,6 +104,7 @@ function table(text, rows) {
       row.version,
       bold(seconds(row.median)),
       range(row),
+      row.clientBytes === null ? 'n/a' : bytes(row.clientBytes),
       bytes(row.bytes),
       bytes(row.cssBytes),
     ]
