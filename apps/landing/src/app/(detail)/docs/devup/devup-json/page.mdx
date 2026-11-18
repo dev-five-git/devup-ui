@@ -277,8 +277,9 @@ across the packages of a monorepo:
 - Objects merge key by key, so the example keeps every color the shared file
   defines and replaces only `primary`. Arrays, such as responsive values and
   `breakpoints`, are replaced as a whole.
-- A path to a file that does not exist adds nothing, without an error. Check
-  the path when a shared token is missing.
+- A path to a file that does not exist adds nothing. The build warns, naming
+  the file that extends it and the missing path, and picks the file up once it
+  is created.
 - Files that extend each other in a loop are an error naming the chain.
 
 The development servers of the Vite, webpack, Rsbuild and Next.js plugins
