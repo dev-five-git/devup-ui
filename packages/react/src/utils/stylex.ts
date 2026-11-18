@@ -7,11 +7,14 @@ import type {
   StyleXCompiledStyle,
   StyleXConstants,
   StyleXInclude,
+  StyleXMarker,
   StyleXNamespace,
   StyleXProps,
   StyleXStyleInput,
   StyleXThemeOverrides,
   StyleXVarGroup,
+  StyleXWhen,
+  StyleXWhenCondition,
 } from '../types/stylex'
 import type {
   StyleXFlatDeclarations,
@@ -26,12 +29,17 @@ export type {
   StyleXCompiledStyle,
   StyleXInclude,
   StyleXInlineStyle,
+  StyleXMarker,
   StyleXProps,
   StyleXRawStyles,
   StyleXStyleInput,
   StyleXStyles,
   StyleXThemeOverrides,
   StyleXVarGroup,
+  StyleXWhen,
+  StyleXWhenCondition,
+  StyleXWhenPseudo,
+  StyleXWhenRelation,
 } from '../types/stylex'
 export type {
   StyleXDeclarations,
@@ -117,6 +125,26 @@ export function viewTransitionClass<const D extends StyleXViewTransitionGroups>(
     Record<Exclude<keyof D, keyof StyleXViewTransitionGroups>, never>,
 ): string {
   throw new Error('Cannot run on the runtime')
+}
+
+export function defineMarker(): StyleXMarker {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function defaultMarker(): StyleXMarker {
+  throw new Error('Cannot run on the runtime')
+}
+
+function whenRelation(): StyleXWhenCondition {
+  throw new Error('Cannot run on the runtime')
+}
+
+export const when: StyleXWhen = {
+  ancestor: whenRelation,
+  descendant: whenRelation,
+  anySibling: whenRelation,
+  siblingBefore: whenRelation,
+  siblingAfter: whenRelation,
 }
 
 export const types: StyleXTypes = new Proxy({} as StyleXTypes, {

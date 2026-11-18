@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: "sheet.create_css(None, false)"
+---
+.b{color:black}.a.a:where(.m:hover *){color:red}.d.d:where(:has(.m:focus)){color:blue}.y.y:where(.m:active ~ *, :has(~ .m:active)){color:green}.o.o:where(.m:hover ~ *){color:pink}.s.s:where(:has(~ .m:hover)){color:teal}.w.w:hover{color:white}.h:hover{color:gray}

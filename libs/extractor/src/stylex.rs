@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use css::at_rule::{normalize_query, split_at_rule_key};
 use css::keyframes_to_keyframes_name;
 use css::style_selector::{AtRuleKind, StyleSelector, write_at_rule};
-use oxc_ast::ast::{Argument, Expression, ObjectPropertyKind};
+use oxc_ast::ast::{Argument, Expression, ObjectPropertyKind, PropertyKey};
 use oxc_span::GetSpan;
 
 use crate::utils::{
@@ -31,13 +31,17 @@ pub enum StylexFunction {
     Include,
     /// The `types` object, whose members wrap a `stylex.defineVars()` value
     Types,
+    /// The `when` object, whose members give a condition key of `stylex.create()`
+    When,
+    DefineMarker,
+    DefaultMarker,
 }
 
 /// Tells which `StyleX` API a callee or member object reads, by the binding it
 /// reads and not by its spelling
 pub type StylexResolver<'r> = &'r dyn Fn(&Expression<'_>) -> Option<StylexFunction>;
 
-const STYLEX_EXPORTS: [(&str, StylexFunction); 13] = [
+const STYLEX_EXPORTS: [(&str, StylexFunction); 16] = [
     ("create", StylexFunction::Create),
     ("props", StylexFunction::Props),
     ("attrs", StylexFunction::Attrs),
@@ -51,6 +55,9 @@ const STYLEX_EXPORTS: [(&str, StylexFunction); 13] = [
     ("firstThatWorks", StylexFunction::FirstThatWorks),
     ("include", StylexFunction::Include),
     ("types", StylexFunction::Types),
+    ("when", StylexFunction::When),
+    ("defineMarker", StylexFunction::DefineMarker),
+    ("defaultMarker", StylexFunction::DefaultMarker),
 ];
 
 impl StylexFunction {
@@ -76,17 +83,26 @@ impl StylexFunction {
     #[must_use]
     pub const fn requirement(&self) -> Option<&'static str> {
         match self {
-            Self::Props | Self::Attrs | Self::FirstThatWorks | Self::Include | Self::Types => None,
+            Self::Props
+            | Self::Attrs
+            | Self::FirstThatWorks
+            | Self::Include
+            | Self::Types
+            | Self::When => None,
             Self::CreateTheme => Some(
                 "it takes a `defineVars()` group, of this file or imported, and an object literal",
             ),
+            Self::DefineMarker => Some(
+                "it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`",
+            ),
+            Self::DefaultMarker => Some("it takes no arguments"),
             _ => Some("it takes one object literal"),
         }
     }
 }
 
 /// `name`, an export of `@stylexjs/stylex` Devup UI does not compile, as
-/// `when` or `env`: it would stay a `StyleX` call at runtime, which throws
+/// `env`: it would stay a `StyleX` call at runtime, which throws
 /// with no `StyleX` compiler run
 #[must_use]
 pub fn unsupported_stylex_error(name: &str) -> String {
@@ -119,6 +135,50 @@ pub fn define_vars_variable(filename: &str, key: &str, split_filename: Option<&s
 #[must_use]
 pub fn create_theme_class(filename: &str, contract: &str, split_filename: Option<&str>) -> String {
     keyframes_to_keyframes_name(&format!("sxt-{filename}-{contract}"), split_filename)
+}
+
+/// The class `stylex.defaultMarker()` gives, as `StyleX` names it with its
+/// default `classNamePrefix` of `x`
+pub const DEFAULT_MARKER: &str = "x-default-marker";
+
+/// The class `stylex.defineMarker()` in `filename` gives the marker it binds
+/// to `name`; a module importing it computes the same class
+#[must_use]
+pub fn define_marker_class(filename: &str, name: &str, split_filename: Option<&str>) -> String {
+    keyframes_to_keyframes_name(&format!("sxm-{filename}-{name}"), split_filename)
+}
+
+/// The relations `stylex.when` gives conditions on
+const WHEN_RELATIONS: &str =
+    "`when` gives `ancestor`, `descendant`, `anySibling`, `siblingBefore` and `siblingAfter`";
+
+/// The condition key `stylex.when[relation](pseudo, marker)` gives, the
+/// `:where(...)` selector `StyleX` writes for it, or why it gives none
+pub fn when_condition(relation: &str, pseudo: &str, marker: &str) -> Result<String, &'static str> {
+    validate_when_pseudo(pseudo)?;
+    let target = format!(".{marker}{pseudo}");
+    Ok(match relation {
+        "ancestor" => format!(":where({target} *)"),
+        "descendant" => format!(":where(:has({target}))"),
+        "anySibling" => format!(":where({target} ~ *, :has(~ {target}))"),
+        "siblingBefore" => format!(":where({target} ~ *)"),
+        "siblingAfter" => format!(":where(:has(~ {target}))"),
+        _ => return Err(WHEN_RELATIONS),
+    })
+}
+
+/// The checks `StyleX` makes of the pseudo-class a `when` condition takes
+fn validate_when_pseudo(pseudo: &str) -> Result<(), &'static str> {
+    if !(pseudo.starts_with(':') || pseudo.starts_with('[')) {
+        return Err("Pseudo selector must start with \":\" or \"[\"");
+    }
+    if pseudo.starts_with("::") {
+        return Err("Pseudo selector cannot start with \"::\" (pseudo-elements are not supported)");
+    }
+    if pseudo.starts_with('[') && !pseudo.ends_with(']') {
+        return Err("Attribute selector must end with \"]\"");
+    }
+    Ok(())
 }
 
 /// At-rules a `StyleX` condition sets a value under, outermost first
@@ -743,7 +803,7 @@ pub fn decompose_value_conditions(
                 .as_expression()
                 .and_then(|key| leaf(css_property, key))
         }) else {
-            errors.push(key_error("stylex.create", &prop.key));
+            errors.extend(condition_key_error(&prop.key, resolver));
             continue;
         };
 
@@ -779,6 +839,41 @@ pub fn decompose_value_conditions(
     results
 }
 
+/// The error a `stylex.create()` key known only at runtime gives; none for
+/// a `when.*()` call, which reports why it gives no key itself
+pub fn condition_key_error(
+    key: &PropertyKey<'_>,
+    resolver: StylexResolver<'_>,
+) -> Option<(u32, String)> {
+    let is_when = matches!(key.as_expression(), Some(Expression::CallExpression(call))
+        if matches!(&call.callee, Expression::StaticMemberExpression(member)
+            if resolver(&member.object) == Some(StylexFunction::When)));
+    (!is_when).then(|| key_error("stylex.create", key))
+}
+
+/// The pseudo-classes and pseudo-elements of `parent_selectors` as one
+/// selector, each run of pseudo-classes between pseudo-elements sorted as
+/// `StyleX` sorts them, so `:hover` inside `:focus` reads `:focus:hover`
+fn sorted_pseudos(parent_selectors: &[SelectorPart]) -> Option<String> {
+    let mut runs: Vec<Vec<&str>> = vec![];
+    for part in parent_selectors {
+        let SelectorPart::Pseudo(pseudo) = part else {
+            continue;
+        };
+        match runs.last_mut() {
+            Some(run) if !pseudo.starts_with("::") && !run[0].starts_with("::") => run.push(pseudo),
+            _ => runs.push(vec![pseudo]),
+        }
+    }
+    if runs.is_empty() {
+        return None;
+    }
+    for run in &mut runs {
+        run.sort_unstable();
+    }
+    Some(runs.concat().concat())
+}
+
 /// A leaf style under `parent_selectors`, or `None` when those conditions can
 /// never match together (e.g. `@media print` inside `@media screen`).
 fn decomposed_leaf(
@@ -786,13 +881,13 @@ fn decomposed_leaf(
     value: Option<String>,
     parent_selectors: &[SelectorPart],
 ) -> Option<DecomposedStyle> {
-    let mut pseudo_str: Option<String> = None;
-    for p in parent_selectors {
-        if let SelectorPart::Pseudo(s) = p {
-            pseudo_str
-                .get_or_insert_with(|| String::from("&"))
-                .push_str(s);
-        }
+    let mut pseudo_str = sorted_pseudos(parent_selectors).map(|pseudos| format!("&{pseudos}"));
+    // A `:where()` condition, as `when.*()` gives, adds no specificity, so
+    // `StyleX` writes the class twice to keep that of a pseudo-class
+    if let Some(pseudo) = pseudo_str.as_mut()
+        && pseudo.contains(":where(")
+    {
+        pseudo.insert(0, '&');
     }
 
     // Every enclosing at-rule applies, outermost first.
@@ -842,6 +937,27 @@ mod tests {
         assert_eq!(normalize_stylex_property("fontSize"), "font-size");
         assert_eq!(normalize_stylex_property("color"), "color");
         assert_eq!(normalize_stylex_property("zIndex"), "z-index");
+    }
+
+    #[rstest::rstest]
+    #[case(&[], None)]
+    #[case(&[":hover", ":focus"], Some(":focus:hover"))]
+    #[case(&[":where(.m:hover *)", ":focus"], Some(":focus:where(.m:hover *)"))]
+    #[case(&[":hover", "::before", ":focus", ":active"], Some(":hover::before:active:focus"))]
+    #[case(&["::before", "::after"], Some("::before::after"))]
+    fn test_sorted_pseudos_sorts_runs_of_pseudo_classes(
+        #[case] pseudos: &[&str],
+        #[case] expected: Option<&str>,
+    ) {
+        let parts: Vec<SelectorPart> = pseudos
+            .iter()
+            .map(|pseudo| SelectorPart::Pseudo((*pseudo).to_string()))
+            .chain([SelectorPart::AtRule {
+                kind: AtRuleKind::Media,
+                query: "print".to_string(),
+            }])
+            .collect();
+        assert_eq!(sorted_pseudos(&parts).as_deref(), expected);
     }
 
     #[test]

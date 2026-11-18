@@ -1,0 +1,14 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import { create, props, when, defaultMarker, defineMarker } from "@stylexjs/stylex";
+export const card = "a-a";
+const s = { "a": "a-b a-c a-d" };
+export const p = { className: "a-a a-d a-b a-c" };
+export const q = { className: "x-default-marker" };
+
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: Some(Selector("&&:where(.a-a:hover *)")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "opacity", value: ".5", level: 0, selector: Some(Selector("&&:hover:where(:has(.x-default-marker:focus))")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "opacity", value: "1", level: 0, selector: None, style_order: None, layer: None })

@@ -129,6 +129,7 @@ pub(crate) use selected_capture::{INHERITED, own_key};
 #[cfg(test)]
 mod semantics_helpers_tests;
 mod style_order;
+mod stylex_markers;
 
 pub(crate) use css_prop_bindings::css_prop_reads;
 pub(crate) use element_props::is_unknown_spread;
@@ -271,6 +272,9 @@ pub struct DevupVisitor<'a> {
     stylex_var_names: FxHashMap<SymbolId, FxHashMap<String, String>>,
     /// `createTheme` bindings as `theme` -> `class`, so `stylex.props(theme)` resolves.
     stylex_theme_classes: FxHashMap<SymbolId, String>,
+    /// `defineMarker` bindings as `marker` -> `class`; an imported marker
+    /// reads as the class its module gives, inlined as a constant
+    stylex_marker_classes: FxHashMap<SymbolId, String>,
     /// `StyleX` variables and themes the program imports from other modules,
     /// by the name it binds them to
     imported_stylex: (
@@ -1385,6 +1389,7 @@ impl<'a> DevupVisitor<'a> {
             stylex_var_refs: FxHashMap::default(),
             stylex_var_names: FxHashMap::default(),
             stylex_theme_classes: FxHashMap::default(),
+            stylex_marker_classes: FxHashMap::default(),
             imported_stylex: (FxHashMap::default(), FxHashMap::default()),
             stylex_pending_vars: None,
             stylex_pending_theme_class: None,
@@ -3095,6 +3100,15 @@ impl<'a> DevupVisitor<'a> {
             Expression::BooleanLiteral(literal) if !literal.value => return Some(Vec::new()),
             Expression::NullLiteral(_) => return Some(Vec::new()),
             Expression::Identifier(ident) if ident.name == "undefined" => return Some(Vec::new()),
+            // A marker sets the one key its class names, as `StyleX` gives it
+            Expression::Identifier(ident) => {
+                let class = self.stylex_marker(self.bindings.symbol(ident)?)?;
+                return Some(vec![(class.clone(), class.clone())]);
+            }
+            Expression::StringLiteral(literal) => {
+                let class = literal.value.as_str()?.to_string();
+                return Some(vec![(class.clone(), class)]);
+            }
             Expression::StaticMemberExpression(member) => {
                 (&member.object, member.property.name.to_string())
             }
@@ -3408,12 +3422,24 @@ impl<'a> DevupVisitor<'a> {
             Expression::ComputedMemberExpression(member) => {
                 self.resolve_stylex_computed_member(member)
             }
-            // darkTheme → Identifier bound to a stylex.createTheme() class
+            // darkTheme → Identifier bound to a stylex.createTheme() class or
+            // a stylex.defineMarker() marker
             Expression::Identifier(ident) if ident.name != "undefined" => self
                 .bindings
                 .symbol(ident)
-                .and_then(|symbol| self.stylex_theme_classes.get(&symbol))
+                .and_then(|symbol| {
+                    self.stylex_theme_classes
+                        .get(&symbol)
+                        .or_else(|| self.stylex_marker(symbol))
+                })
                 .and_then(|class_name| self.stylex_class_literal(class_name)),
+            // A class, as stylex.defaultMarker() compiles to
+            Expression::StringLiteral(literal) => {
+                return literal
+                    .value
+                    .as_str()
+                    .and_then(|class_name| self.stylex_class_literal(class_name));
+            }
             Expression::ChainExpression(chain) => match &chain.expression {
                 ChainElement::StaticMemberExpression(member) => {
                     self.resolve_stylex_static_member(member)
@@ -3519,12 +3545,11 @@ impl<'a> DevupVisitor<'a> {
                     (None, None) => None,
                 }
             }
-            // false, null, undefined, 0, "" → falsy, skip
+            // false, null, undefined, 0 → falsy, skip ("" is a class, read above)
             Expression::BooleanLiteral(b) if !b.value => None,
             Expression::NullLiteral(_) => None,
             Expression::Identifier(ident) if ident.name == "undefined" => None,
             Expression::NumericLiteral(n) if n.value == 0.0 => None,
-            Expression::StringLiteral(s) if s.value.is_empty() => None,
             _ => Some(runtime_classes(&self.ast, expr)),
         }
     }
@@ -3942,6 +3967,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         };
         walk_expression(self, it);
         self.report_lowered_reads(it);
+        self.compile_stylex_markers(it);
 
         // Handle styled function calls
         if self.is_styled_call(it) {
@@ -5453,6 +5479,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
 
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
+        self.compile_define_marker(it);
         let style_result = match &it.init {
             Some(Expression::CallExpression(call)) => self.util_type(&call.callee),
             Some(Expression::TaggedTemplateExpression(tag)) => self.util_type(&tag.tag),

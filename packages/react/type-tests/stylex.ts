@@ -8,6 +8,7 @@ import stylex, {
   type StyleXRawStyles,
   type StyleXStyles,
   type StyleXVarGroup,
+  when as namedWhen,
 } from '@stylexjs/stylex'
 
 import * as direct from '../src/utils/stylex'
@@ -35,6 +36,10 @@ type InvalidConditionInput = Parameters<
 >[0]
 type InvalidGroupInput = Parameters<
   typeof direct.defineVars<InvalidVariableGroup>
+>[0]
+type WidenedVariable = { readonly text: { readonly [key: string]: 'red' } }
+type WidenedVariableInput = Parameters<
+  typeof direct.defineVars<WidenedVariable>
 >[0]
 type OfficialTransitionInput = Parameters<
   typeof direct.viewTransitionClass<OfficialTransitionOptions>
@@ -102,6 +107,24 @@ export const reactProps = namedProps(
   [externalClass, ['nested-external']],
 )
 export const domAttrs = stylex.attrs(composition, base.dynamic(10, 'red'))
+export const cardMarker = stylex.defineMarker()
+const conditioned = stylex.create({
+  root: {
+    color: {
+      default: 'red',
+      [stylex.when.ancestor(':hover')]: 'blue',
+      [namedWhen.siblingAfter('[data-open]', cardMarker)]: 'green',
+    },
+    [stylex.when.descendant(':focus', stylex.defaultMarker())]: {
+      color: 'black',
+    },
+  },
+})
+export const markerProps = stylex.props(
+  stylex.defaultMarker(),
+  cardMarker,
+  conditioned.root,
+)
 export const tryName = stylex.positionTry({ top: 0, insetBlockEnd: 'auto' })
 export const transitionName = stylex.viewTransitionClass({
   old: { animationDuration: '1s' },
@@ -209,8 +232,16 @@ export type StyleXContractChecks = [
       | 'url'
     >
   >,
-  Assert<Equal<Extract<'when' | 'env', keyof typeof direct>, never>>,
-  Assert<Equal<Extract<'when' | 'env', keyof typeof stylex>, never>>,
+  Assert<Equal<Extract<'env', keyof typeof direct>, never>>,
+  Assert<Equal<Extract<'env', keyof typeof stylex>, never>>,
+  Assert<Equal<typeof direct.when, typeof namedWhen>>,
+  Assert<Equal<ReturnType<typeof direct.when.ancestor>, `:where(${string})`>>,
+  Assert<Rejects<'hover', Parameters<typeof direct.when.ancestor>[0]>>,
+  Assert<Accepts<'[data-open]', Parameters<typeof direct.when.anySibling>[0]>>,
+  Assert<Accepts<typeof cardMarker, StyleXStyles>>,
+  Assert<Rejects<typeof cardMarker, Parameters<typeof direct.include>[0]>>,
+  Assert<Equal<keyof typeof markerProps, 'className' | 'style'>>,
+  Assert<Rejects<WidenedVariable, WidenedVariableInput>>,
   Assert<Equal<typeof direct.create, typeof namedCreate>>,
   Assert<Equal<keyof typeof reactProps, 'className' | 'style'>>,
   Assert<Equal<keyof typeof domAttrs, 'class' | 'style'>>,
