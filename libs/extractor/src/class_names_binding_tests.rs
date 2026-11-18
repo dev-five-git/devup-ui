@@ -111,7 +111,7 @@ fn class_names_binding_shadow_calls_keep_effects(#[case] title: &str) {
 fn class_names_binding_numeric_shadow_keeps_values() {
     // Given: aliases and independent css/cx calls taking numbers and arrays.
     let output = compile(
-        "import {ClassNames as Names} from '@emotion/react';const App=()=> <Names>{({css:style,cx:join})=> ({local:((style,join)=>[style({padding:[1,2]}),join({kept:2})])(x=>x,x=>x),className:join(style({padding:[3,4]}),'caller')})}</Names>;",
+        "import {ClassNames as Names} from '@emotion/react';const App=()=> <Names>{({css:style,cx:join})=> ({local:((style,join)=>[style({padding:[1,2]}),join({kept:2})])(x=>x,x=>x),className:join(style({padding:['3px',4]}),'caller')})}</Names>;",
     );
     // When: execute the actual output, not a string-token approximation of the pass.
     let value = execute(&output);

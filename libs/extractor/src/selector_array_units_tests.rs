@@ -9,8 +9,8 @@ use std::collections::HashMap;
 #[rstest]
 #[case::selector_array("css({ _hover: [{ padding: A }] })", ("4px", true))]
 #[case::selector_constant_array("css({ _hover: selectorValues })", ("4px", true))]
-#[case::singleton("css({ padding: [A] })", ("4px", false))]
-#[case::fallback("css({ padding: [A, B] })", ("1px;padding:2px", false))]
+#[case::singleton("css({ padding: [S] })", ("4px", false))]
+#[case::fallback("css({ padding: [T, B] })", ("1px;padding:2px", false))]
 #[serial]
 fn units_when_library_arrays_have_distinct_rule_contexts(
     #[case] expression: &str,
@@ -22,7 +22,7 @@ fn units_when_library_arrays_have_distinct_rule_contexts(
     reset_class_map();
     reset_file_map();
     let source = format!(
-        "import {{ css }} from '@emotion/react';\nconst A=1, B=2; const selectorValues=[{{ padding: A }}];\nexport const a = {expression};"
+        "import {{ css }} from '@emotion/react';\nconst A=1, B=2, S='4px', T='1px'; const selectorValues=[{{ padding: A }}];\nexport const a = {expression};"
     );
     // When: the complete library alias and constant-inlining pipeline extracts it.
     let output = extract(

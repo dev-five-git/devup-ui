@@ -104,12 +104,12 @@ fn class_names_numeric_map_conditions_keep_truthiness() {
 }
 
 #[rstest]
-#[case("cx(css({padding:[1,2],opacity:[0,0.5]}),'caller')")]
-#[case("cx([css({padding:[1,2],opacity:[0,0.5]}),['caller']])")]
-#[case("cx(css({padding:[1,2],opacity:[0,0.5]}),'caller',1,0)")]
+#[case("cx(css({padding:['1px',2],opacity:['0',0.5]}),'caller')")]
+#[case("cx([css({padding:['1px',2],opacity:['0',0.5]}),['caller']])")]
+#[case("cx(css({padding:['1px',2],opacity:['0',0.5]}),'caller',1,0)")]
 #[serial]
 fn class_names_numeric_rules_keep_fallbacks(#[case] expression: &str) {
-    // Given: numeric CSS fallback arrays alongside ordinary class arguments.
+    // Given: Emotion fallback arrays with numbers alongside ordinary class arguments.
     let output = compile(expression).unwrap_or_else(|error| panic!("{expression}\n{error}"));
     let mut styles: Vec<_> = output
         .styles
