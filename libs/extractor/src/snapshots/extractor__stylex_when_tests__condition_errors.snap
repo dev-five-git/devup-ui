@@ -1,0 +1,12 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+stylex.tsx:2:60: `stylex.when.ancestor()` cannot use `"::before"` at build time: Pseudo selector cannot start with "::" (pseudo-elements are not supported)
+stylex.tsx:2:103: `stylex.when.ancestor()` cannot use `"hover"` at build time: Pseudo selector must start with ":" or "["
+stylex.tsx:2:143: `stylex.when.ancestor()` cannot use `"[open"` at build time: Attribute selector must end with "]"
+stylex.tsx:2:183: `stylex.when.ancestor()` cannot use `pseudo` at build time: it takes a pseudo-class or an attribute selector as a string literal, and optionally a marker: `stylex.defaultMarker()`, a `stylex.defineMarker()` export of this file or imported, or a class name
+stylex.tsx:2:222: `stylex.when.ancestor()` cannot use `":hover", unknown` at build time: it takes a pseudo-class or an attribute selector as a string literal, and optionally a marker: `stylex.defaultMarker()`, a `stylex.defineMarker()` export of this file or imported, or a class name
+stylex.tsx:2:272: `stylex.when.ancestor()` cannot use `` at build time: it takes a pseudo-class or an attribute selector as a string literal, and optionally a marker: `stylex.defaultMarker()`, a `stylex.defineMarker()` export of this file or imported, or a class name
+stylex.tsx:2:305: `stylex.when.near()` cannot use `":hover"` at build time: `when` gives `ancestor`, `descendant`, `anySibling`, `siblingBefore` and `siblingAfter`
+stylex.tsx:2:342: `stylex.when.ancestor()` cannot use `":hover", marker.member` at build time: it takes a pseudo-class or an attribute selector as a string literal, and optionally a marker: `stylex.defaultMarker()`, a `stylex.defineMarker()` export of this file or imported, or a class name

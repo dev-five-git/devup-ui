@@ -1,0 +1,11 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+stylex.tsx:2:15: `stylex.defineMarker()` cannot use `` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`
+stylex.tsx:3:29: `stylex.defineMarker()` cannot use `"x"` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`
+stylex.tsx:4:16: `stylex.defineMarker()` cannot use `` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`
+stylex.tsx:5:37: `stylex.defineMarker()` cannot use `` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`
+stylex.tsx:6:18: `stylex.defaultMarker()` cannot use `"x"` at build time: it takes no arguments
+stylex.tsx:7:1: `stylex.defineMarker()` cannot use `` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`
+stylex.tsx:8:33: `stylex.defineMarker()` cannot use `` at build time: it takes no arguments and its value is bound to a named export of the module's top level, as `export const marker = stylex.defineMarker()`

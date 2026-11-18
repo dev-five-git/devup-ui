@@ -5,7 +5,9 @@ declare module '@stylexjs/stylex' {
   export const create: typeof stylex.create
   export const createTheme: typeof stylex.createTheme
   export const createThemeContract: typeof stylex.createThemeContract
+  export const defaultMarker: typeof stylex.defaultMarker
   export const defineConsts: typeof stylex.defineConsts
+  export const defineMarker: typeof stylex.defineMarker
   export const defineVars: typeof stylex.defineVars
   export const firstThatWorks: typeof stylex.firstThatWorks
   export const include: typeof stylex.include
@@ -14,6 +16,7 @@ declare module '@stylexjs/stylex' {
   export const props: typeof stylex.props
   export const types: typeof stylex.types
   export const viewTransitionClass: typeof stylex.viewTransitionClass
+  export const when: typeof stylex.when
 
   export type StyleXAttrs = stylex.StyleXAttrs
   export type StyleXCompiledStyle<P = unknown> = stylex.StyleXCompiledStyle<P>
@@ -22,6 +25,7 @@ declare module '@stylexjs/stylex' {
   export type StyleXFlatDeclarations = stylex.StyleXFlatDeclarations
   export type StyleXInclude<P = unknown> = stylex.StyleXInclude<P>
   export type StyleXInlineStyle = stylex.StyleXInlineStyle
+  export type StyleXMarker = stylex.StyleXMarker
   export type StyleXProps = stylex.StyleXProps
   export type StyleXRawStyles = stylex.StyleXRawStyles
   export type StyleXStyleInput<P = unknown> = stylex.StyleXStyleInput<P>
@@ -35,6 +39,10 @@ declare module '@stylexjs/stylex' {
   export type StyleXVarGroup<K extends string = string> =
     stylex.StyleXVarGroup<K>
   export type StyleXViewTransitionGroups = stylex.StyleXViewTransitionGroups
+  export type StyleXWhen = stylex.StyleXWhen
+  export type StyleXWhenCondition = stylex.StyleXWhenCondition
+  export type StyleXWhenPseudo = stylex.StyleXWhenPseudo
+  export type StyleXWhenRelation = stylex.StyleXWhenRelation
 
   export default stylex
 }

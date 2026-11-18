@@ -20,11 +20,25 @@ export type StyleXValue<T = StyleXScalar> =
       readonly [condition: StyleXAtRule | `:${string}`]: StyleXValue<T>
     }
 
+/**
+ * `V` with each key outside `C` rejected. Where `C` takes pseudo-class keys,
+ * a computed key TypeScript widens to `string`, as `stylex.when.*()` gives,
+ * is left to the build to read.
+ */
 export type StyleXCheckedValue<V, C extends string> = V extends object
   ? {
-      readonly [K in keyof V]: K extends C ? StyleXCheckedValue<V[K], C> : never
+      readonly [K in keyof V]: K extends C
+        ? StyleXCheckedValue<V[K], C>
+        : StyleXWidenedKey<K, C, StyleXCheckedValue<V[K], C>>
     }
   : V
+
+/** `T` for a widened computed key where `C` takes pseudo-classes, else `never` */
+export type StyleXWidenedKey<K, C extends string, T> = string extends K
+  ? `:${string}` extends C
+    ? T
+    : never
+  : never
 
 export type StyleXCheckedVariableValue<V> = StyleXCheckedValue<
   V,

@@ -3,9 +3,9 @@ use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::stylex::{
-    DecomposedStyle, SelectorPart, StylexIncludeRef, StylexResolver, decompose_value_conditions,
-    dynamic_number_suffix, is_first_that_works_call, is_include_call_static, is_types_call,
-    normalize_stylex_property, stylex_value,
+    DecomposedStyle, SelectorPart, StylexIncludeRef, StylexResolver, condition_key_error,
+    decompose_value_conditions, dynamic_number_suffix, is_first_that_works_call,
+    is_include_call_static, is_types_call, normalize_stylex_property, stylex_value,
 };
 use crate::stylex_resolution::{self, Expansion};
 use css::optimize_value::optimize_value;
@@ -364,7 +364,7 @@ fn extract_stylex_namespace<'a>(
             }
         };
         let Some(prop_name) = get_str_by_property_key(&style_prop.key) else {
-            errors.push(key_error("stylex.create", &style_prop.key));
+            errors.extend(condition_key_error(&style_prop.key, resolver));
             continue;
         };
 

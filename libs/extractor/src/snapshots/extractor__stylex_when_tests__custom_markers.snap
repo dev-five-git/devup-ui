@@ -1,0 +1,16 @@
+---
+source: libs/extractor/src/stylex_when_tests.rs
+expression: compile(&source)
+---
+import "@devup-ui/react/devup-ui-0.css";
+import * as stylex from "@stylexjs/stylex";
+export const card = "a-a";
+const row = "a-b";
+export { row };
+const s = { "a": "a-c a-d a-e a-f" };
+export const p = { className: "a-a a-b a-c a-d a-e a-f" };
+
+Static(ExtractStaticStyle { property: "color", value: "black", level: 0, selector: None, style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "blue", level: 0, selector: Some(Selector("&&:where(:has(~ .a-b:focus))")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "green", level: 0, selector: Some(Selector("&&:where(.my-class:active *)")), style_order: None, layer: None })
+Static(ExtractStaticStyle { property: "color", value: "red", level: 0, selector: Some(Selector("&&:where(.a-a:hover *)")), style_order: None, layer: None })

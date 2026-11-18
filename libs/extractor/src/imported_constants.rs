@@ -2333,7 +2333,9 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
         }
         if let Some(init) = self.declarations.remove(name) {
             self.active.insert(name.to_string());
-            let constant = self.evaluate(modules, init);
+            let constant = self
+                .marker_class(modules, name, init)
+                .or_else(|| self.evaluate(modules, init));
             self.active.remove(name);
             if let Some(constant) = constant {
                 self.locals.insert(name.to_string(), constant.clone());
@@ -2392,6 +2394,28 @@ impl<'p, 'a> ModuleScope<'p, 'a> {
                     .semantic
                     .into_scoping()
             })
+        })
+    }
+
+    /// The class of the marker `stylex.defineMarker()` binds to `name`, the
+    /// one this module's own extraction writes in place of the call
+    fn marker_class(
+        &self,
+        modules: &Modules<'_>,
+        name: &str,
+        init: &Expression<'_>,
+    ) -> Option<Constant> {
+        let Expression::CallExpression(call) = init else {
+            return None;
+        };
+        (call.arguments.is_empty()
+            && self.stylex_function(&call.callee) == Some(StylexFunction::DefineMarker))
+        .then(|| {
+            Constant::String(crate::stylex::define_marker_class(
+                self.path,
+                name,
+                crate::css_bucket(self.path, modules.option).as_deref(),
+            ))
         })
     }
 

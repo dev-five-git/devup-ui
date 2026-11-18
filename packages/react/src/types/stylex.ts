@@ -5,19 +5,50 @@ import type {
   StyleXDeclarations,
   StyleXDynamicDeclarations,
   StyleXVariableValue,
+  StyleXWidenedKey,
 } from './stylex-values'
 
 declare const compiledStyle: unique symbol
 declare const variableGroup: unique symbol
 declare const includedStyle: unique symbol
+declare const marker: unique symbol
 
 /** Opaque build output, not a raw CSS object or a user-provided class string. */
 export type StyleXCompiledStyle<P = unknown> = {
   readonly [compiledStyle]: P
 }
 
+/** A class `stylex.when.*()` conditions read, compiled to its class name. */
+export type StyleXMarker = {
+  readonly [marker]: true
+}
+
 export type StyleXStyles<P = unknown> =
-  StyleXCompiledStyle<P> | false | null | undefined | readonly StyleXStyles<P>[]
+  | StyleXCompiledStyle<P>
+  | StyleXMarker
+  | false
+  | null
+  | undefined
+  | readonly StyleXStyles<P>[]
+
+/** The state a `stylex.when.*()` condition reads: a pseudo-class or an attribute. */
+export type StyleXWhenPseudo = `:${string}` | `[${string}]`
+
+/** The `:where(...)` condition key a `stylex.when.*()` call compiles to. */
+export type StyleXWhenCondition = `:where(${string})`
+
+export type StyleXWhenRelation = (
+  pseudo: StyleXWhenPseudo,
+  marker?: StyleXMarker | string,
+) => StyleXWhenCondition
+
+export type StyleXWhen = {
+  readonly ancestor: StyleXWhenRelation
+  readonly descendant: StyleXWhenRelation
+  readonly anySibling: StyleXWhenRelation
+  readonly siblingBefore: StyleXWhenRelation
+  readonly siblingAfter: StyleXWhenRelation
+}
 
 export type StyleXStyleInput<P = unknown> =
   StyleXStyles<P> | string | readonly StyleXStyleInput<P>[]
@@ -58,7 +89,7 @@ type CheckedRawStyles<S> = {
       ? CheckedDeclarations<S[K]>
       : K extends typeof includedStyle
         ? S[K]
-        : never
+        : StyleXWidenedKey<K, `:${string}`, S[K]>
 }
 
 export type StyleXCompiledNamespaces<S> = {

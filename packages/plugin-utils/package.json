@@ -45,6 +45,7 @@
     "@devup-ui/wasm": "workspace:^"
   },
   "devDependencies": {
+    "@stylexjs/babel-plugin": "^0.19.2",
     "typescript": "^7.0.2"
   }
 }
