@@ -5,18 +5,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::Ordering;
 
 use crate::{
-    atom_hoist, class_map, debug, file_map, file_routes, slot_reservation, tailwind_definitions,
-    theme_tokens,
+    atom_hoist, class_map, debug, file_map, file_routes, slot_reservation, style_resolution,
+    tailwind_definitions, theme_tokens,
 };
 
-/// The prefix, debug flag, atom hoisting, class and file numbering, routes,
-/// shorthands, theme tokens and Tailwind definitions of one engine session.
+/// The prefix, debug flag, `StyleX` style resolution, atom hoisting, class and
+/// file numbering, routes, shorthands, theme tokens and Tailwind definitions
+/// of one engine session.
 ///
 /// The default value is a clean engine, as after a full reset.
 #[derive(Default)]
 pub struct CssState {
     prefix: Option<String>,
     debug: bool,
+    resolution: style_resolution::StyleResolution,
     hoist: Option<usize>,
     plan: Option<BTreeSet<String>>,
     reservation: slot_reservation::State,
@@ -37,6 +39,8 @@ impl CssState {
         crate::set_prefix(std::mem::replace(&mut self.prefix, prefix));
         let debug = debug::is_debug();
         debug::set_debug(std::mem::replace(&mut self.debug, debug));
+        let resolution = style_resolution::style_resolution();
+        style_resolution::set_style_resolution(std::mem::replace(&mut self.resolution, resolution));
         let hoist = atom_hoist::atom_hoist_threshold();
         atom_hoist::set_atom_hoist(std::mem::replace(&mut self.hoist, hoist));
         let plan = atom_hoist::atom_plan();

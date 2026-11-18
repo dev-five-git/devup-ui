@@ -51,6 +51,11 @@ export const positions = [
   ['setDebug', 'debug:b', () => [true]],
   ['setModuleResolver', 'resolver:resolver', () => [null]],
   ['setPrefix', 'prefix:prefix', () => ['valid-']],
+  [
+    'setStylexStyleResolution',
+    'resolution:prefix',
+    () => ['application-order'],
+  ],
 ].flatMap(([fn, slots, args]) =>
   slots.split(' ').map((slot, index) => {
     const [parameter, kind] = slot.split(':')
@@ -158,6 +163,6 @@ export const cases = positions.flatMap((position) =>
         .map((good, index) => (index === position.index ? value : good)),
   })),
 )
-assert.equal(positions.length, 48)
-assert.equal(new Set(positions.map((p) => p.fn)).size, 21)
+assert.equal(positions.length, 49)
+assert.equal(new Set(positions.map((p) => p.fn)).size, 22)
 assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)

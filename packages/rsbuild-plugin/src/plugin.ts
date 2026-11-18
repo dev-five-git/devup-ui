@@ -25,6 +25,7 @@ import {
   loadDevupConfig,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
   resolveDevupFile,
@@ -42,7 +43,7 @@ const PLUGIN_NAME = 'devup-ui-rsbuild-plugin'
 
 export interface DevupUIRsbuildPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -152,14 +153,17 @@ export const DevupUI = ({
   singleCss = false,
   prefix,
   shorthands,
+  stylex,
   engine,
   atomHoist = 2,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
   const normalizedShorthands = normalizeShorthands(shorthands ?? {})
+  const styleResolution = normalizeStylexOptions(stylex)
   const excludeRegex = createNodeModulesExcludeRegex(include)
   const compiler = loadCompiler(engine)
   compiler.registerShorthands(normalizedShorthands)
+  compiler.setStylexStyleResolution(styleResolution)
   const stateWriter = createStateWriter((path, content, encoding) =>
     encoding ? writeFile(path, content, encoding) : writeFile(path, content),
   )

@@ -89,6 +89,13 @@ export {
   writeFileAtomically,
 } from './state-writer'
 export {
+  normalizeStylexOptions,
+  STYLEX_STYLE_RESOLUTIONS,
+  StylexConfigError,
+  type StylexOptions,
+  type StylexStyleResolution,
+} from './stylex-options'
+export {
   findTailwindCss,
   TAILWIND_CSS_CANDIDATES,
   tailwindCssFiles,

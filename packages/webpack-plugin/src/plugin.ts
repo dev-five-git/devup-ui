@@ -27,6 +27,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   normalizeShorthands,
+  normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
   resolveDevupFile,
@@ -34,6 +35,7 @@ import {
   seedFileNumbers,
   setupWarning,
   SOURCE_FILE_REGEX,
+  type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
   withTailwindCss,
@@ -46,7 +48,7 @@ import { reconcileWatchCss } from './watch-css'
 
 export interface DevupUIWebpackPluginOptions extends Pick<
   DevupUIBasePluginOptions,
-  'engine'
+  'engine' | 'stylex'
 > {
   package: string
   cssDir: string
@@ -87,6 +89,7 @@ export class DevupUIWebpackPlugin {
   fileMapFile: string
   private importAliases: WasmImportAliases = {}
   private readonly normalizedShorthands: Record<string, readonly string[]>
+  private readonly styleResolution: StylexStyleResolution
   private readonly compiler: DevupCompiler
   /** The path options as given, resolved against the project root */
   private readonly paths: Pick<
@@ -108,13 +111,16 @@ export class DevupUIWebpackPlugin {
     engine = 'native',
     prefix,
     shorthands,
+    stylex,
     atomHoist = 2,
     productionPrewarmFiles,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
+    this.styleResolution = normalizeStylexOptions(stylex)
     this.compiler = loadCompiler(engine)
     this.compiler.registerShorthands(this.normalizedShorthands)
+    this.compiler.setStylexStyleResolution(this.styleResolution)
     this.paths = {
       cssDir,
       devupFile,
@@ -362,6 +368,7 @@ export class DevupUIWebpackPlugin {
     this.compiler.setDebug(this.options.debug)
     this.compiler.setPrefix(this.options.prefix ?? null)
     this.compiler.registerShorthands(this.normalizedShorthands)
+    this.compiler.setStylexStyleResolution(this.styleResolution)
     if (!existsSync(this.options.distDir))
       mkdirSync(this.options.distDir, { recursive: true })
     writeFileSync(join(this.options.distDir, '.gitignore'), '*', 'utf-8')
