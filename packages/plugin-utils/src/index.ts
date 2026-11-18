@@ -58,6 +58,7 @@ export {
   type ReservationInventory,
 } from './reservation-discovery'
 export { reservationGraph } from './reservation-graph'
+export { isRuntimePackage, RUNTIME_PACKAGE } from './runtime-package'
 export {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
