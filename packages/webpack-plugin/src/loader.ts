@@ -62,6 +62,7 @@ function setRootModuleResolver(
   let moduleResolver = moduleResolvers.get(key)
   if (!moduleResolver) {
     moduleResolver = createModuleResolver({
+      cwd: root,
       conditions,
       toId: (path) => relative(root, path).replaceAll('\\', '/'),
     })

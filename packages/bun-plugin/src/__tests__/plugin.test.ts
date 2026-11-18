@@ -934,6 +934,40 @@ describe('project root', () => {
     expect(written).toContain(join(buildRoot, 'df', 'devup-ui', 'devup-ui.css'))
   })
 
+  it('resolves imports with the tsconfig.json of the root of Bun.build when started from a parent directory', async () => {
+    // The tsconfig.json under the root is real here
+    exists.mockImplementation(realExists)
+    const buildRoot = fs.mkdtempSync(join(tmpdir(), 'devup-ui-bun-root-'))
+    using setModuleResolver = spyOn(
+      pluginUtils.loadCompiler('wasm'),
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      await Bun.write(
+        join(buildRoot, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { paths: { '@root-fixture/*': ['./src/*'] } },
+        }),
+      )
+      await Bun.write(join(buildRoot, 'src', 'tokens.ts'), 'export const a = 1')
+      await setupBuild(buildRoot)
+      const resolveModule = setModuleResolver.mock.calls.at(-1)?.[0]
+      if (typeof resolveModule !== 'function')
+        throw new Error('No module resolver')
+      expect(
+        resolveModule(
+          '@root-fixture/tokens',
+          join(buildRoot, 'src', 'App.tsx'),
+        ),
+      ).toEqual({
+        path: join(buildRoot, 'src', 'tokens.ts'),
+        code: 'export const a = 1',
+      })
+    } finally {
+      fs.rmSync(buildRoot, { recursive: true, force: true })
+    }
+  })
+
   it('keeps writing df in the cwd without a root', async () => {
     const written = await setupBuild(undefined)
     expect(written).toContain(join('df', '.gitignore'))

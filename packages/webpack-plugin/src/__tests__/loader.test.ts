@@ -311,6 +311,50 @@ describe('devupUILoader', () => {
     }
   })
 
+  it('resolves the imports of root-relative ids under the project root when started from a parent directory', async () => {
+    // A monorepo tool starts the build from the workspace root, so the
+    // working directory is a parent of the project webpack builds
+    const root = mkdtempSync(join(tmpdir(), 'devup-ui-loader-root-'))
+    const setModuleResolverSpy = spyOn(
+      wasm,
+      'setModuleResolver',
+    ).mockReturnValue(undefined)
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true })
+      writeFileSync(
+        join(root, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: { paths: { '@root-fixture/*': ['./src/*'] } },
+        }),
+      )
+      writeFileSync(join(root, 'src', 'tokens.ts'), 'export const a = 1')
+      codeExtractSpy.mockReturnValue(createCodeExtractResult())
+      const callback = mock()
+      devupUILoader.bind(
+        createLoaderContext(
+          { package: 'package', root, cssDir: join(root, 'df'), watch: false },
+          callback,
+          join(root, 'src', 'App.tsx'),
+        ),
+      )(Buffer.from('code'), 'App.tsx')
+      await waitFor(() => expect(callback).toHaveBeenCalled())
+      expect(codeExtractSpy.mock.calls[0]?.[0]).toBe('src/App.tsx')
+      const resolveModule = setModuleResolverSpy.mock.calls[0][0] as (
+        specifier: string,
+        importer: string,
+      ) => { path: string; code: string } | undefined
+      // The engine passes the importer under the id it extracted it as
+      for (const specifier of ['./tokens', '@root-fixture/tokens'])
+        expect(resolveModule(specifier, 'src/App.tsx')).toEqual({
+          path: 'src/tokens.ts',
+          code: 'export const a = 1',
+        })
+    } finally {
+      setModuleResolverSpy.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it.each(
     createTestMatrix({
       updatedBaseStyle: [true, false],

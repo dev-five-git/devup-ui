@@ -222,7 +222,9 @@ async function initialize(
   compiler.registerShorthands(shorthands)
   compiler.setStylexStyleResolution(styleResolution)
   compiler.setPrefix(null)
-  compiler.setModuleResolver(createModuleResolver({ conditions }))
+  compiler.setModuleResolver(
+    createModuleResolver({ cwd: project.root, conditions }),
+  )
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeFile(

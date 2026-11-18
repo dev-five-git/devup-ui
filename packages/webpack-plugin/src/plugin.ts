@@ -284,6 +284,7 @@ export class DevupUIWebpackPlugin {
       // stylesheets extract to the classes the loader emits
       this.compiler.setModuleResolver(
         createModuleResolver({
+          cwd,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
           conditions: esmImportConditions(resolveOptions),
         }),

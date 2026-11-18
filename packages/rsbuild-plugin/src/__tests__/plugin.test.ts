@@ -342,6 +342,37 @@ describe('DevupUIRsbuildPlugin', () => {
       }
     })
 
+    it("resolves imports with the Rsbuild root's tsconfig.json when started from a parent directory", async () => {
+      // The tsconfig.json under the root is real here
+      existsSyncSpy.mockImplementation(realExistsSync)
+      const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-rsbuild-root-'))
+      using setModuleResolver = spyOn(
+        wasm,
+        'setModuleResolver',
+      ).mockReturnValue(undefined)
+      try {
+        await Bun.write(
+          join(root, 'tsconfig.json'),
+          JSON.stringify({
+            compilerOptions: { paths: { '@root-fixture/*': ['./src/*'] } },
+          }),
+        )
+        await Bun.write(join(root, 'src', 'tokens.ts'), 'export const a = 1')
+        await setupAt(root)
+        const resolveModule = setModuleResolver.mock.calls.at(-1)?.[0]
+        assert(typeof resolveModule === 'function')
+        expect(
+          resolveModule('@root-fixture/tokens', join(root, 'src', 'App.tsx')),
+        ).toEqual({
+          path: join(root, 'src', 'tokens.ts'),
+          code: 'export const a = 1',
+        })
+      } finally {
+        existsSyncSpy.mockReturnValue(false)
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    })
+
     it('keeps the paths as given when the root is the cwd', async () => {
       const { cssTest, written } = await setupAt(process.cwd())
 
