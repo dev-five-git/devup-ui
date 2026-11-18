@@ -20,6 +20,8 @@ The build inlines constants, folds `Math` and runs the file's own functions at b
 
 The rule reports parameters, `let` variables, globals such as `Date` or `window`, `Math.random` and approximate `Math` functions (also through an alias such as `const { sin } = Math`), `**`, `toString` other than called at once without a radix, locale methods (`toLocaleString`, `localeCompare`, `normalize`), and functions the build does not run: imported ones, and those using `this`, `new`, classes, regular expressions, `try`, getters, `async` code, generators, JSX or a method chosen at runtime, or writing a module-level binding. It also reports a constant or an import the file changes — a member assignment, `delete`, `++`, a changing method such as `push` or `sort`, `Object.assign`, changing its elements in a `for...of` loop or a `forEach`/`map` callback, calling a method of it that uses `this`, or handing it to a function the rule does not know — as the build no longer reads it as written.
 
+A function given as a value itself is reported too (`css({ color: () => 'red' })`, `` createGlobalStyle`color: ${(p) => p.color};` ``): these functions have no props to call it with, and the build never calls it. A function called in the value (`[1, 2].map((n) => n * 4)`) is fine. StyleX `create` is not checked for this, as it takes dynamic styles as functions.
+
 A lint rule sees one file, so two cases are left to the build: code in another module changing an imported object, and an import whose module computes its value (`export const DARK = darken(PRIMARY)`), which the build does not run. Keep objects styles read unchanged, and export the values styles read as literals.
 
 ### Examples
@@ -65,6 +67,17 @@ function tint(pick: (n: number) => string) {
   // The build cannot run a function it is given at runtime
   return css({ color: pick(1) })
 }
+```
+
+```tsx
+import { createGlobalStyle } from 'styled-components'
+
+// A function is not a value: these functions have no props to call it with
+export const GlobalStyle = createGlobalStyle`
+  body {
+    color: ${(props) => props.color};
+  }
+`
 ```
 
 ```tsx

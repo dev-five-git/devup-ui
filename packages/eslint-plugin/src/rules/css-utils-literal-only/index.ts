@@ -123,6 +123,37 @@ function rootOf(node: TSESTree.Node): TSESTree.Node {
     : node
 }
 
+/** Whether the node `path` ends with is itself a value the style API `root` reads, rather than a function called or a part of what is computed at build time: `path` leads down from `root` */
+function heldAsValue(
+  root: TSESTree.Node,
+  path: readonly TSESTree.Node[],
+): boolean {
+  for (let index = 1; index < path.length - 1; index++) {
+    const parent = path[index]
+    const child = path[index + 1]
+    switch (parent.type) {
+      case AST_NODE_TYPES.Property:
+        if (parent.value !== child) return false
+        break
+      case AST_NODE_TYPES.ConditionalExpression:
+        if (parent.test === child) return false
+        break
+      case AST_NODE_TYPES.ObjectExpression:
+      case AST_NODE_TYPES.ArrayExpression:
+      case AST_NODE_TYPES.LogicalExpression:
+      case AST_NODE_TYPES.TemplateLiteral:
+      case AST_NODE_TYPES.JSXExpressionContainer:
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+        break
+      default:
+        return false
+    }
+  }
+  return root.type !== AST_NODE_TYPES.CallExpression || root.callee !== path[1]
+}
+
 /** Whether the end of `path`, which leads down from an argument of a style API, is in a value the build reads: in a rule object or CSS text, rather than a part `css()` composes as a class or what chooses between parts */
 function inValue(api: Api, path: TSESTree.Node[]): boolean {
   const [node, next] = path
@@ -1045,6 +1076,8 @@ export const cssUtilsLiteralOnly = createRule({
     messages: {
       cssUtilsLiteralOnly:
         'CSS utils should only be used with values known at build time: literals, constants, or what exact built-ins and the functions of this file compute from them.',
+      functionValue:
+        'A function is not a style value: the build never calls a function given as a value. Call it here, or write the value it gives.',
       missingGlobal:
         '`{{name}}` does not exist where the build evaluates a stylesheet (`.css.ts`, `.css.js`).',
     },
@@ -1093,6 +1126,8 @@ export const cssUtilsLiteralOnly = createRule({
         | TSESTree.TaggedTemplateExpression
         | TSESTree.JSXAttribute
       takes: Api
+      /** Whether a function given as a value is an error, as everywhere but StyleX, whose `create` takes dynamic styles as functions */
+      refusesFunctions: boolean
     } | null = null
     const apiOf = (callee: TSESTree.Node): Api | undefined => {
       if (callee.type === AST_NODE_TYPES.Identifier) {
@@ -1119,11 +1154,34 @@ export const cssUtilsLiteralOnly = createRule({
       callee: TSESTree.Node,
     ) => {
       const takes = api ? undefined : apiOf(callee)
-      if (takes) api = { node, takes }
+      const root = rootOf(callee)
+      if (takes)
+        api = {
+          node,
+          takes,
+          refusesFunctions: !(
+            root.type === AST_NODE_TYPES.Identifier && isStylex(root.name)
+          ),
+        }
     }
     const exit = (node: TSESTree.Node) => {
       if (api?.node === node) api = null
     }
+    /** The nodes from `root` down to the parent of `node` */
+    const ancestorsBelow = (root: TSESTree.Node, node: TSESTree.Node) =>
+      context.sourceCode
+        .getAncestors(node)
+        .slice(context.sourceCode.getAncestors(root).length)
+    /** Whether `path`, leading down from what `api` reads, ends outside a value the build reads */
+    const outsideValue = (
+      { node, takes }: NonNullable<typeof api>,
+      path: TSESTree.Node[],
+    ) =>
+      node.type === AST_NODE_TYPES.TaggedTemplateExpression
+        ? path[0] !== node.quasi
+        : node.type === AST_NODE_TYPES.JSXAttribute
+          ? !inValue(takes, path)
+          : path[0] === node.callee || !inValue(takes, path)
     if (importStorage.vanilla) return vanillaGlobals(context)
     return {
       ImportDeclaration(node) {
@@ -1150,24 +1208,26 @@ export const cssUtilsLiteralOnly = createRule({
       'TaggedTemplateExpression:exit': exit,
       JSXAttribute(node) {
         if (api || !isGlobalStyles(node)) return
-        api = { node, takes: 'rules' }
+        api = { node, takes: 'rules', refusesFunctions: true }
       },
       'JSXAttribute:exit': exit,
+      'ArrowFunctionExpression, FunctionExpression'(
+        node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      ) {
+        if (!api?.refusesFunctions) return
+        const an = ancestorsBelow(api.node, node)
+        if (
+          !outsideValue(api, [...an.slice(1), node]) &&
+          heldAsValue(api.node, [...an, node])
+        )
+          context.report({ node, messageId: 'functionValue' })
+      },
       Identifier(node) {
         if (!api || node.name === 'undefined') return
 
-        const an = context.sourceCode
-          .getAncestors(node)
-          .slice(context.sourceCode.getAncestors(api.node).length)
+        const an = ancestorsBelow(api.node, node)
         const path = [...an.slice(1), node]
-        if (
-          api.node.type === AST_NODE_TYPES.TaggedTemplateExpression
-            ? path[0] !== api.node.quasi
-            : api.node.type === AST_NODE_TYPES.JSXAttribute
-              ? !inValue(api.takes, path)
-              : path[0] === api.node.callee || !inValue(api.takes, path)
-        )
-          return
+        if (outsideValue(api, path)) return
         const scope = scopeOf(node)
         // A binding the value declares itself, such as a callback's parameter
         const declared = findVariable(scope, node.name)?.defs[0]?.name.range
