@@ -658,9 +658,12 @@ describe('devupUIWebpackPlugin', () => {
     }
     reservationSpy.mockReturnValue(manager)
     const compiler = createCompiler()
+    using _warn = spyOn(console, 'warn').mockReturnValue(undefined)
     new DevupUIWebpackPlugin({ engine: 'wasm' }).apply(asCompiler(compiler))
-    await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+    // The discovery the plan is made from
     expect(manager.reserve).toHaveBeenCalledTimes(1)
+    await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
+    expect(manager.reserve).toHaveBeenCalledTimes(2)
   })
 
   describe.each(
@@ -1248,7 +1251,12 @@ describe('devupUIWebpackPlugin', () => {
       )
       try {
         for (const [path, code] of [
-          ['index.tsx', "import './lib/view'\nimport '@slot/ui'"],
+          [
+            'index.tsx',
+            "import './lib/view'\nimport '@slot/ui'\nimport './node_modules/other/index.js'",
+          ],
+          ['node_modules/other/index.js', "import './lazy.js'"],
+          ['node_modules/runtime/index.js', 'export {}'],
           ['lib/view.tsx', 'export const view = 1'],
           ['app/a.tsx', 'export {}'],
           ['src/b.tsx', 'export {}'],
@@ -1261,7 +1269,10 @@ describe('devupUIWebpackPlugin', () => {
           await Bun.write(join(project, path), code)
         const compiler = createCompiler()
         compiler.options.context = project
-        compiler.options.entry = { main: { import: ['./index.tsx'] } }
+        // A bundler runtime entry adds no route
+        compiler.options.entry = {
+          main: { import: ['./index.tsx', './node_modules/runtime/index.js'] },
+        }
         applyAndRun(
           new DevupUIWebpackPlugin({
             engine: 'wasm',
@@ -1273,7 +1284,8 @@ describe('devupUIWebpackPlugin', () => {
         const [{ graph }] = buildCanonicalMapSpy.mock.calls.at(-1) as [
           { graph: { files: string[] } },
         ]
-        // An entry outside `src` and `app` and its imports count too
+        // An entry outside `src` and `app` and its imports count too, the
+        // packages the loader skips do not
         expect(new Set(graph.files)).toEqual(
           new Set(
             [
@@ -1610,7 +1622,7 @@ describe('devupUIWebpackPlugin', () => {
         const compiler = createCompiler()
         try {
           // When its lifecycle stage runs, the original error reaches webpack.
-          if (stage === 'numbering') {
+          if (stage === 'canonical' || stage === 'numbering') {
             expect(() => plugin.apply(asCompiler(compiler))).toThrow(failure)
           } else {
             plugin.apply(asCompiler(compiler))
@@ -1627,21 +1639,6 @@ describe('devupUIWebpackPlugin', () => {
         }
       },
     )
-
-    it('pre-warms only the reached files the loader transforms', () => {
-      computeReachableFilesSpy.mockReturnValue([
-        resolve('node_modules', 'other', 'index.js'),
-        resolve('node_modules', '@slot', 'ui', 'index.js'),
-        resolve('src', 'a.tsx'),
-      ])
-      applyAndRun(
-        new DevupUIWebpackPlugin({ engine: 'wasm', include: ['@slot/ui'] }),
-      )
-      expect(codeExtractSpy.mock.calls.map(([filename]) => filename)).toEqual([
-        'node_modules/@slot/ui/index.js',
-        'src/a.tsx',
-      ])
-    })
 
     it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})
@@ -1763,28 +1760,40 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
 
-    it('configures atom hoisting at webpack run, before any compilation, once per build', () => {
+    it('plans once, when applied, before any compiler sharing the engine runs, and warms up from that graph', () => {
       computeFileReachSpy.mockReturnValue({
         'src/a.tsx': [0],
         'src/b.tsx': [1],
       })
+      inventory = createInventory([resolve('src', 'a.tsx')])
       const compiler = createCompiler()
       new DevupUIWebpackPlugin({ engine: 'wasm', atomHoist: 2 }).apply(
         asCompiler(compiler),
       )
-      // The bundler's entries are only final once webpack runs
-      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(setAtomHoistSpy).toHaveBeenCalledTimes(1)
+      // The reservations webpack runs neither discover for the plan nor plan again
+      inventory = createInventory([resolve('src', 'b.tsx')])
       const run = compiler.hooks.run.tap.mock.calls[0][1]
       run()
-      expect(setAtomHoistSpy).toHaveBeenCalledTimes(1)
-      // A later discovery feeds the warm-up but never plans again
-      inventory = createInventory([resolve('src', 'a.tsx')])
       run()
       expect(buildCanonicalMapSpy).toHaveBeenCalledTimes(1)
       expect(setAtomHoistSpy).toHaveBeenCalledTimes(1)
       expect(computeReachableFilesSpy).toHaveBeenLastCalledWith(
         expect.objectContaining({ entries: [resolve('src', 'a.tsx')] }),
       )
+    })
+
+    it('warns, and warms up nothing, when the discovery finds nothing', () => {
+      reservationSpy.mockReturnValue({
+        invalidate: mock(),
+        reserve: mock().mockReturnValue(false),
+      })
+      using warn = spyOn(console, 'warn').mockReturnValue(undefined)
+      applyAndRun(new DevupUIWebpackPlugin({ engine: 'wasm' }))
+      expect(warn).toHaveBeenCalledWith(
+        '[devup-ui] webpack import graph failed: no files were discovered. Classes are not merged across files only one module imports, and atom hoisting is off.',
+      )
+      expect(computeReachableFilesSpy).not.toHaveBeenCalled()
     })
   })
 

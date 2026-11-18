@@ -7,13 +7,18 @@ import {
 } from './import-graph'
 import type { ReservationInventory } from './reservation-discovery'
 
-/** Project only cached physical sources and resolved edges; never discover files. */
+/**
+ * Project only cached physical sources and resolved edges; never discover files.
+ * `keep` limits the graph to the files it accepts, such as the ones the
+ * bundler's transform takes.
+ */
 export function reservationGraph(
   inventory: ReservationInventory,
+  keep: (path: string) => boolean = () => true,
 ): StaticImportGraph {
-  const sources = [...inventory.sources].sort(([a], [b]) =>
-    a < b ? -1 : a > b ? 1 : 0,
-  )
+  const sources = [...inventory.sources]
+    .filter(([key]) => keep(resolve(key)))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   const files = sources.map(([key]) => resolve(key))
   const fileSet = new Set(files)
   const staticImports = new Map<string, Set<string>>()
@@ -63,14 +68,16 @@ export function reservationGraph(
 /**
  * The routes atom hoisting counts in a reservation graph, as `computeFileReach`
  * entries: the entries the bundler resolved and the files they lazy-load.
- * When the bundler names no entry, the project files no other file imports and
+ * When no entry is in the graph, the project files no other file imports and
  * the lazy-loaded ones: the files of an included package are not routes.
  */
 export function reservationRoutes(
   graph: StaticImportGraph,
   inventory: ReservationInventory,
 ): string[] {
-  const entries = inventory.resolutions.entries.map((entry) => resolve(entry))
+  const entries = inventory.resolutions.entries
+    .map((entry) => resolve(entry))
+    .filter((entry) => graph.fileSet.has(entry))
   if (entries.length === 0)
     return graph.files.filter(
       (file) =>

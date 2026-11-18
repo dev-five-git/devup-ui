@@ -71,7 +71,7 @@ export const entry = [css({ display: 'grid' }), child, dist];`,
     rmSync(join(fixture, 'src'), { recursive: true })
     put(
       'src/entry.js',
-      `import { css } from '@devup-ui/react'; import './0-Generated.js'; export const entry = css({ display: 'grid' });
+      `import { css } from '@devup-ui/react'; export const entry = css({ display: 'grid' });
 ${physicalImports}`,
     )
   }

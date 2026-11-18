@@ -295,7 +295,12 @@ export const DevupUI = ({
         | undefined
       const discover = (inventory: ReservationInventory) => {
         const installed = discovered !== undefined
-        const graph = reservationGraph(inventory)
+        // The files the transform takes: an entry Rspack resolves into a
+        // package adds no route
+        const graph = reservationGraph(
+          inventory,
+          (path) => !excludeRegex.test(path),
+        )
         discovered = {
           graph,
           entries: inventory.resolutions.entries.map((entry) => resolve(entry)),
@@ -371,7 +376,6 @@ export const DevupUI = ({
                 graph: discovered.graph,
               })
             : []) {
-            if (excludeRegex.test(file)) continue
             let extractCssDir = relative(dirname(file), cssDir).replaceAll(
               '\\',
               '/',

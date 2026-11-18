@@ -264,16 +264,18 @@ export class DevupUIWebpackPlugin {
   /**
    * Merge the files only one module imports into its stylesheet (single-importer
    * collapse, always) and, with `atomHoist`, plan the atoms the routes share,
-   * from the graph of the files the reservation discovered. The webpack loader
-   * passes the id relative to the project root as the extraction filename, so
-   * the graph maps use root-relative keys (keyBy: 'cwd-relative', with the
-   * root as `cwd`). Mirrors next-plugin's pre-pass.
+   * from the graph of the files `discover` finds, which it returns. The
+   * webpack loader passes the id relative to the project root as the
+   * extraction filename, so the graph maps use root-relative keys (keyBy:
+   * 'cwd-relative', with the root as `cwd`). Mirrors next-plugin's pre-pass.
    */
   private installGraph(
-    { graph, routes }: DiscoveredGraph,
+    discover: () => DiscoveredGraph,
     atomHoist: number | undefined,
-  ) {
+  ): DiscoveredGraph | undefined {
     try {
+      const discovered = discover()
+      const { graph, routes } = discovered
       const cwd = this.root
       const canonicalMap = buildCanonicalMap({
         srcDir: cwd,
@@ -282,7 +284,7 @@ export class DevupUIWebpackPlugin {
         graph,
       })
       this.compiler.importCanonicalMap(canonicalMap)
-      if (atomHoist === undefined) return
+      if (atomHoist === undefined) return discovered
       const plan = planAtomHoist(
         canonicalMap,
         computeFileReach({
@@ -302,6 +304,7 @@ export class DevupUIWebpackPlugin {
           '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
         )
       }
+      return discovered
     } catch (error) {
       if (
         !this.options.watch &&
@@ -387,18 +390,14 @@ export class DevupUIWebpackPlugin {
     }
   }
 
-  /**
-   * The files of the discovered graph webpack's entries reach and the loader
-   * transforms, in path order
-   */
+  /** The files of the discovered graph webpack's entries reach, in path order */
   private reachableFiles(discovered: DiscoveredGraph | undefined): string[] {
     if (!discovered) return []
-    const excluded = createNodeModulesExcludeRegex(this.options.include)
     return computeReachableFiles({
       srcDir: this.root,
       entries: discovered.entries,
       graph: discovered.graph,
-    }).filter((file) => !excluded.test(file))
+    })
   }
 
   /**
@@ -487,20 +486,34 @@ export class DevupUIWebpackPlugin {
     // One discovery serves the canonical map, the routes and the warm-up, as
     // in the Vite plugin: the reservation's, over the `src` and `app`
     // directories, the closures of webpack's entries and the included
-    // packages. The graph is installed once per build, before the first
-    // extraction; the warm-up follows the latest discovery.
-    let discovered: DiscoveredGraph | undefined
-    const discover = (inventory: ReservationInventory) => {
-      const installed = discovered !== undefined
-      const graph = reservationGraph(inventory)
-      discovered = {
-        graph,
-        entries: inventory.resolutions.entries.map((entry) => resolve(entry)),
-        routes: reservationRoutes(graph, inventory),
-      }
-      if (!installed)
-        this.installGraph(discovered, atomMode ? atomHoist : undefined)
-    }
+    // packages. It runs here, with a reservation that reserves nothing:
+    // compilers that share the engine in one process (Next's server and
+    // client) must all install their plan before any of them extracts.
+    const discoverOnly = createWebpackReservation(
+      this.options,
+      this.importAliases,
+      { reserveClassSlots() {}, setModuleResolver() {} },
+    )
+    const discovered = this.installGraph(
+      () => {
+        let found: ReservationInventory | undefined
+        discoverOnly(compiler.options, (inventory) => {
+          found = inventory
+        })
+        if (!found) throw new Error('no files were discovered')
+        // The files the loader transforms: an entry webpack resolves into a
+        // package (Next's client runtime) adds no route, so every compiler of
+        // a project plans the same
+        const excluded = createNodeModulesExcludeRegex(this.options.include)
+        const graph = reservationGraph(found, (path) => !excluded.test(path))
+        return {
+          graph,
+          entries: found.resolutions.entries.map((entry) => resolve(entry)),
+          routes: reservationRoutes(graph, found),
+        }
+      },
+      atomMode ? atomHoist : undefined,
+    )
 
     // Number every file the build can extract in path order, so class
     // prefixes do not depend on which file a worker reaches first. Numbers
@@ -549,7 +562,7 @@ export class DevupUIWebpackPlugin {
       this.compiler,
     )
     const reserveBeforeCompile = () => {
-      reserve(compiler.options, discover)
+      reserve(compiler.options)
       if (this.options.watch) return
       this.prewarmExtractor(discovered, compiler.options)
     }
@@ -595,7 +608,7 @@ export class DevupUIWebpackPlugin {
         if (lastModifiedTime && lastModifiedTime !== modifiedTime)
           this.writeDataFiles()
         lastModifiedTime = modifiedTime
-        reserve(compiler.options, discover)
+        reserve(compiler.options)
       })
     }
     compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {

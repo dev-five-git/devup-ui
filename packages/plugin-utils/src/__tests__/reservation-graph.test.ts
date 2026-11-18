@@ -176,3 +176,30 @@ it('routes the project files nothing imports, not included packages, without ent
     ['src/a.js', 'src/b.js', 'src/lazy.js'].map(native),
   )
 })
+
+it('keeps the files it is asked to, and routes no entry outside them', () => {
+  using project = fixture()
+  project.write('src/a.js', "import './b.js'")
+  project.write('src/b.js', STYLE)
+  project.write('src/c.js', STYLE)
+  project.write('node_modules/runtime/index.js', "import '../../src/a.js'")
+  const inventory = collectReservationInputs({
+    roots: ['src'],
+    cwd: project.root,
+    entries: [
+      { request: './node_modules/runtime/index.js', context: project.root },
+    ],
+    package: '@devup-ui/react',
+    importAliases: {},
+  })
+  const native = (path: string) => resolve(project.root, path)
+  const graph = reservationGraph(
+    inventory,
+    (path) => !path.includes('node_modules'),
+  )
+  expect(graph.files).toEqual(['src/a.js', 'src/b.js', 'src/c.js'].map(native))
+  // The only entry is outside the graph: the files nothing imports route
+  expect(reservationRoutes(graph, inventory)).toEqual(
+    ['src/a.js', 'src/c.js'].map(native),
+  )
+})

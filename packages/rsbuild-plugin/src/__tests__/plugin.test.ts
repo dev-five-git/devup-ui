@@ -1327,7 +1327,12 @@ const App = () => <Box></Box>`,
       )
       try {
         for (const [path, code] of [
-          ['index.tsx', "import './lib/view'\nimport '@slot/ui'"],
+          [
+            'index.tsx',
+            "import './lib/view'\nimport '@slot/ui'\nimport './node_modules/other/index.js'",
+          ],
+          ['node_modules/other/index.js', 'export {}'],
+          ['node_modules/runtime/index.js', 'export {}'],
           ['lib/view.tsx', 'export const view = 1'],
           ['app/a.tsx', 'export {}'],
           ['src/b.tsx', 'export {}'],
@@ -1353,7 +1358,11 @@ const App = () => <Box></Box>`,
           environment: { name: 'web' },
         })
         config.plugins![0]!.apply({
-          options: { entry: { main: ['./index.tsx'] }, context: project },
+          // A bundler runtime entry adds no route
+          options: {
+            entry: { main: ['./index.tsx', './node_modules/runtime/index.js'] },
+            context: project,
+          },
           hooks: {
             run: { tap: mock() },
             watchRun: { tap: mock() },
@@ -1690,10 +1699,6 @@ const App = () => <Box></Box>`,
 
     it('extracts the files the entries reach before building', async () => {
       const { onBeforeBuild } = await setup({ atomHoist: 0 })
-      computeReachableFilesSpy.mockReturnValue([
-        resolve('node_modules', 'other', 'index.js'),
-        resolve('src', 'App.tsx'),
-      ])
       codeExtractSpy.mockClear()
       onBeforeBuild.mock.calls[0][0]({
         environments: {
@@ -1716,7 +1721,6 @@ const App = () => <Box></Box>`,
         ),
         graph: expect.objectContaining({ files: expect.any(Array) }),
       })
-      // The transform skips the packages that are not included
       expect(codeExtractSpy.mock.calls).toEqual([
         [
           resolve('src', 'App.tsx'),
