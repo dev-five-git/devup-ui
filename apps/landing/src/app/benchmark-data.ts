@@ -12,5 +12,29 @@ import fixture from '../../../../e2e/fixtures/benchmark-results.json'
 export const BENCHMARK_SOURCE =
   process.env.LANDING_BENCHMARK_DATA === 'fixture' ? 'fixture' : 'live'
 
-export const benchmarkResults: typeof live =
+/**
+ * What the landing page reads of a benchmark-results.json. Both files fit it:
+ * the frozen fixture records no client bytes (`null`), while a live run does,
+ * so neither file's inferred type can stand for the other.
+ */
+export interface BenchmarkResults {
+  run: {
+    id: string
+    url: string
+    commit: string
+    next: string
+    devupUi: string
+    sha: string
+  }
+  samples: number
+  rows: readonly {
+    table: string
+    target: string
+    version: string
+    median: number
+    bytes: number
+  }[]
+}
+
+export const benchmarkResults: BenchmarkResults =
   BENCHMARK_SOURCE === 'fixture' ? fixture : live
