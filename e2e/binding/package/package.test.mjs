@@ -210,6 +210,13 @@ for (const [name, change, message] of [
     /Expected values/,
   ],
   [
+    'an older Node floor',
+    (value) => {
+      value.engines = { node: '>=18.0.0' }
+    },
+    /Expected values/,
+  ],
+  [
     'install hook',
     (value) => {
       value.scripts.install = 'node evil.cjs'

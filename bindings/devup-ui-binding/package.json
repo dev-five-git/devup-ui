@@ -7,6 +7,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./pkg/index.cjs",
   "module": "./index.mjs",
   "types": "./index.d.cts",
