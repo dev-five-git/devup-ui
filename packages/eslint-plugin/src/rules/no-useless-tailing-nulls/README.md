@@ -69,8 +69,9 @@ This rule is auto-fixable. ESLint will automatically remove trailing null values
 The rule checks what the build reads as styles:
 
 - the style props of `Box`, `Flex` and the other Devup UI components, and the arguments of `css`, `globalCss`, `keyframes` and `createGlobalStyle`
-- the same calls through the import aliases the build compiles by default: `css`, `keyframes` and `createGlobalStyle` from `@emotion/react` and `styled-components`, `style` and `globalStyle` from `@vanilla-extract/css` (outside stylesheets), and `<Global styles={...}>` from `@emotion/react`
-- the rules of `styled` from `@emotion/styled` and `styled-components`: `styled.div({ ... })`, `styled('div')({ ... })`, `styled(Base)({ ... }, { ... })` and `styled('div', { ... })`. The arguments of `.attrs()` and `.withConfig()`, and CSS text, are not styles
+- `createGlobalStyle` from `styled-components`, and the calls and `styled` rules of packages added with the build's `importAliases` option (see [Build options](../../../README.md#build-options)), which read arrays as Devup UI does. The arguments of `.attrs()` and `.withConfig()`, and CSS text, are not styles
 - a module-level `const` object or array that is not exported, is never changed and is read only as a style (`const s = { w: [1, 1] }; css(s)`), where it is declared
 
 Nothing is checked in vanilla-extract stylesheets (`.css.ts`, `.css.js`): the build runs them as they are, and an array there is vanilla-extract's, not a responsive array.
+
+Nothing is checked either in the rules of Emotion (`css`, `keyframes`, `<Global styles>`, `styled`, and `css`, `keyframes`, `injectGlobal` of `@emotion/css`), styled-components (`css`, `keyframes`, `styled`) and vanilla-extract outside stylesheets (`style`, `globalStyle`, `keyframes`). There the build declares a property's array as fallbacks in one rule, as these libraries do, not as breakpoints: `color: ['red', 'blue']` becomes `color:red;color:blue`. A fix such as `[4, 4, 8]` to `[4, null, 8]` would turn those fallbacks into breakpoints.
