@@ -114,6 +114,10 @@ fn library_arrays_render_as_their_runtime(
     "import { globalStyle, keyframes } from '@vanilla-extract/css'\nglobalStyle('body', { margin: ['1px', '2px'] })\nexport const k = keyframes({ from: { color: ['red', 'blue'] } })",
     &[("color", "red;color:blue", 0), ("margin", "1px;margin:2px", 0)]
 )]
+#[case::vanilla_extract_global_keyframes(
+    "import { globalKeyframes } from '@vanilla-extract/css'\nglobalKeyframes('fade', { from: { color: ['red', 'blue'] } })",
+    &[("color", "red;color:blue", 0)]
+)]
 #[case::vanilla_extract_rules(
     "import { style } from '@vanilla-extract/css'\nexport const a = style({ _hover: [{ color: 'red' }], p: [1, 2] })",
     &[("color", "red", 0), ("padding", "4px", 0), ("padding", "8px", 1)]
