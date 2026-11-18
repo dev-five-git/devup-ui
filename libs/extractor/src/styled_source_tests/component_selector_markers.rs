@@ -42,7 +42,6 @@ fn markers(code: &str) -> Vec<String> {
 }
 
 #[rstest]
-#[serial]
 #[case::private_rendered(
     "const Child = styled.div`color: red;`;\nexport const App = () => <Child />;",
     &[]
@@ -67,6 +66,7 @@ fn markers(code: &str) -> Vec<String> {
     "const Child = styled.div`color: red;`;\nexport default Child;",
     &[("default", 0)]
 )]
+#[serial]
 fn markers_go_only_where_a_selector_can_read_them(
     #[values(EMOTION, STYLED_COMPONENTS)] import: &str,
     #[case] source: &str,
@@ -87,9 +87,9 @@ fn markers_go_only_where_a_selector_can_read_them(
 }
 
 #[rstest]
-#[serial]
 #[case::private("const Other = Child.withComponent('a');\nexport const App = () => <><Child /><Other /></>;", &[])]
 #[case::exported("export const Other = Child.withComponent('a');", &[("Other", 1)])]
+#[serial]
 fn emotion_with_component_results_share_a_marker_only_when_they_can_be_selected(
     #[case] source: &str,
     #[case] expected: &[(&str, usize)],
@@ -124,7 +124,6 @@ fn child_module(specifier: &str, _: &str) -> Option<crate::ResolvedModule> {
 }
 
 #[rstest]
-#[serial]
 #[case::exported("export const Child = styled.div`color: red;`;", &[("Child", 0)], &[])]
 #[case::exported_anonymous_default("export default styled.div`color: red;`;", &[("default", 0)], &[])]
 #[case::exported_and_selected_here(
@@ -142,6 +141,7 @@ fn child_module(specifier: &str, _: &str) -> Option<crate::ResolvedModule> {
     &[("Parent", 1), ("Child", 2)],
     &[("Child", 2)]
 )]
+#[serial]
 fn extraction_lists_the_markers_it_gives_and_selects_by(
     #[case] source: &str,
     #[case] given: &[(&str, usize)],
@@ -173,7 +173,6 @@ fn sorted(mut markers: Vec<String>) -> Vec<String> {
 }
 
 #[rstest]
-#[serial]
 #[case::named(
     "import { Child } from './child';\nexport const Parent = styled.div`${Child} { color: green; }`;",
     1
@@ -182,6 +181,7 @@ fn sorted(mut markers: Vec<String>) -> Vec<String> {
     "import * as kit from './child';\nexport const Parent = styled.div`${kit.Child} { color: green; }`;",
     1
 )]
+#[serial]
 fn markers_of_imported_components_are_selected_by_the_importer(
     #[case] source: &str,
     #[case] selected: usize,
