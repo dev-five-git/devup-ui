@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "A production prewarm no longer fails the build on a file it cannot extract. The Next.js prewarm still extracts every source file, but a file that does not parse (for example dead source no route imports) is now skipped with a warning naming the file and the error. If Next.js or webpack compiles that file, its loader still fails the build with the same error. Output for projects without such files is unchanged.",
+  "date": "2026-11-19T00:00:00.000Z"
+}

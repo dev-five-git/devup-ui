@@ -1533,7 +1533,7 @@ describe('devupUIWebpackPlugin', () => {
       },
     )
 
-    it.each(['canonical', 'numbering', 'read', 'extract'])(
+    it.each(['canonical', 'numbering', 'read'])(
       'propagates genuine %s errors for an explicit complete set',
       (stage) => {
         // Given a failing correctness-prewarm dependency.
@@ -1550,7 +1550,6 @@ describe('devupUIWebpackPlugin', () => {
         if (stage === 'canonical') buildCanonicalMapSpy.mockImplementation(fail)
         if (stage === 'numbering') numbering.mockImplementation(fail)
         if (stage === 'read') readFileSyncSpy.mockImplementation(fail)
-        if (stage === 'extract') codeExtractSpy.mockImplementation(fail)
         const plugin = new DevupUIWebpackPlugin({
           engine: 'wasm',
           debug: stage === 'numbering',
@@ -1576,6 +1575,38 @@ describe('devupUIWebpackPlugin', () => {
         }
       },
     )
+
+    it('skips a file of an explicit complete set it cannot extract, with a warning', () => {
+      // Given a complete set holding a dead file that does not parse.
+      readFileSyncSpy.mockImplementation((path: string) => String(path))
+      codeExtractSpy.mockImplementation(
+        (filename: string, contents: string) => {
+          if (filename === 'src/dead.tsx')
+            throw new Error('Cannot parse source: Unexpected token')
+          return createCodeExtractResult(contents)
+        },
+      )
+      const plugin = new DevupUIWebpackPlugin({
+        engine: 'wasm',
+        productionPrewarmFiles: ['src/a.tsx', 'src/dead.tsx', 'src/z.tsx'],
+      })
+      const compiler = createCompiler()
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        plugin.apply(asCompiler(compiler))
+        // When the warm-up runs, the build goes on past the dead file.
+        expect(() => compiler.hooks.run.tap.mock.calls[0][1]()).not.toThrow()
+        // Then every file is still tried, and the dead one is named.
+        expect(codeExtractSpy.mock.calls.map(([filename]) => filename)).toEqual(
+          ['src/a.tsx', 'src/dead.tsx', 'src/z.tsx'],
+        )
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack stylesheet warm-up of src/dead.tsx failed: Cannot parse source: Unexpected token. The file is skipped; if webpack compiles it, the build fails with this error.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    })
 
     it('pre-warms without collapse, from no entries when they are a function', () => {
       buildCanonicalMapSpy.mockReturnValue({})
@@ -1613,11 +1644,41 @@ describe('devupUIWebpackPlugin', () => {
         throw new Error('extract boom')
       })
       const plugin = new DevupUIWebpackPlugin({ engine: 'wasm' })
-      // apply must still complete without throwing
-      const compiler = createCompiler()
-      plugin.apply(asCompiler(compiler))
-      compiler.hooks.run.tap.mock.calls[0][1]()
-      expect(codeExtractSpy).toHaveBeenCalled()
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        // apply must still complete without throwing
+        const compiler = createCompiler()
+        plugin.apply(asCompiler(compiler))
+        compiler.hooks.run.tap.mock.calls[0][1]()
+        expect(codeExtractSpy).toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack stylesheet warm-up of src/parent.tsx failed: extract boom. The file is skipped; if webpack compiles it, the build fails with this error.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('stops a generic pre-warm it cannot read, with a warning', () => {
+      const parent = resolve(process.cwd(), 'src', 'parent.tsx')
+      computeReachableFilesSpy.mockReturnValue([parent])
+      readFileSyncSpy.mockImplementation((path: string) => {
+        if (path === parent) throw new Error('read boom')
+        return '{}'
+      })
+      const plugin = new DevupUIWebpackPlugin({ engine: 'wasm' })
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const compiler = createCompiler()
+        plugin.apply(asCompiler(compiler))
+        compiler.hooks.run.tap.mock.calls[0][1]()
+        expect(codeExtractSpy).not.toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] webpack stylesheet warm-up failed: read boom. A stylesheet webpack builds before every file it holds is extracted can miss their styles.',
+        )
+      } finally {
+        warn.mockRestore()
+      }
     })
 
     it('composes collapse + hoist and folds reach onto the canonical bucket', () => {
