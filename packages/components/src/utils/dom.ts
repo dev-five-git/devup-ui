@@ -14,6 +14,15 @@ export function mergeRefs<T>(
   }
 }
 
+/** Empties an input with a real input event, so the change reaches React and the owner as it does when the user types */
+export function clearInput(input: HTMLInputElement): void {
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )?.set?.call(input, '')
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 /** A space separated token list of the ids given, without the missing ones */
 export function joinIds(
   ...ids: (string | false | null | undefined)[]

@@ -1,3 +1,49 @@
-import { ComingSoon } from '@/components/ComingSoon'
+import { PropsTable } from '@/components/PropsTable'
 
-<ComingSoon />
+###### API
+
+`Search` props extend the `Input` props (except `type`), so `value`, `defaultValue`, `onChange`, `error`, `errorMessage`, `classNames` and `colors` work as they do on [Textbox](/components/textbox). It renders an `<input type="search">`, which assistive technology announces as a search box.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'onSearch',
+      description:
+        'Callback with the current query when Enter is pressed (not on the Enter that confirms an IME composition)',
+      type: '`(value: string) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'icon',
+      description: 'Icon on the left side of the input; `null` hides it',
+      type: '`React.ReactNode`',
+      default: 'magnifier icon',
+    },
+    {
+      property: 'allowClear',
+      description:
+        'Whether a clear button appears when there is a query, and Escape clears it',
+      type: '`boolean`',
+      default: '`true`',
+    },
+    {
+      property: 'onClear',
+      description:
+        'Callback when the query is cleared with the clear button or Escape',
+      type: '`() => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'enterKeyHint',
+      description: 'Label of the Enter key on virtual keyboards',
+      type: '`string`',
+      default: "`'search'`",
+    },
+    {
+      property: 'disabled',
+      description: 'Whether the search input is disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+  ]}
+/>

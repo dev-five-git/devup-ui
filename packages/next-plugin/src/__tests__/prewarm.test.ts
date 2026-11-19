@@ -151,6 +151,36 @@ describe('collectProductionPrewarmFiles', () => {
     ])
   })
 
+  it('neither reads nor lists the runtime package, from the app or from another Devup UI package', () => {
+    // Given the runtime package and a component package importing it.
+    writePackage('@devup-ui/react', './index.js', {
+      'index.js': 'export { Box } from "./Box.js"',
+      'Box.js': 'export const Box = 1',
+      'stylex.js': 'export const props = 1',
+    })
+    writePackage('@devup-ui/components', './index.js', {
+      'index.js':
+        'import { Box } from "@devup-ui/react"; import "@devup-ui/react/stylex.js"; export const Button = Box',
+    })
+    // When collecting the extraction set of an app importing both.
+    const files = collectProductionPrewarmFiles({
+      cwd,
+      graph: makeGraph(
+        [],
+        [
+          '@devup-ui/react',
+          '@devup-ui/react/stylex.js',
+          '@devup-ui/components',
+        ],
+      ),
+      expectedBaseFiles: [],
+      libPackage: '@devup-ui/react',
+      include: [],
+    })
+    // Then only the component package is extracted ahead of the bundler.
+    expect(files).toEqual(['node_modules/@devup-ui/components/index.js'])
+  })
+
   it('propagates a genuine accepted-package collection error', () => {
     // Given a malformed accepted package manifest.
     writePackage('design-system', './index.js', { 'index.js': '' })

@@ -276,8 +276,9 @@ export class DevupUIWebpackPlugin {
    * happened to build first. Mirrors the loader's `codeExtract` call (same
    * filename keying + options) so re-extraction during compilation is
    * idempotent. Generic entry discovery remains best-effort; an adapter's
-   * complete set is authoritative and its read/extraction failures must fail
-   * the build.
+   * complete set is authoritative and its read failures must fail the build.
+   * A file that fails to extract is skipped with a warning either way: its
+   * loader reports the error if webpack compiles it.
    */
   private prewarmExtractor(
     entries: string[],
@@ -289,6 +290,7 @@ export class DevupUIWebpackPlugin {
       // stylesheets extract to the classes the loader emits
       this.compiler.setModuleResolver(
         createModuleResolver({
+          cwd,
           toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
           conditions: esmImportConditions(resolveOptions),
         }),
@@ -312,17 +314,33 @@ export class DevupUIWebpackPlugin {
           '/',
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-        const output = this.compiler.codeExtract(
-          relativePath,
-          readFileSync(file, 'utf-8'),
-          this.options.package,
-          relCssDir,
-          this.options.singleCss,
-          false,
-          true,
-          this.importAliases,
-        )
-        output.free()
+        const source = readFileSync(file, 'utf-8')
+        try {
+          this.compiler
+            .codeExtract(
+              relativePath,
+              source,
+              this.options.package,
+              relCssDir,
+              this.options.singleCss,
+              false,
+              true,
+              this.importAliases,
+            )
+            .free()
+        } catch (error) {
+          // Next's set covers every source file, including ones no route
+          // imports, so a file the warm-up cannot extract must not fail the
+          // build. It stays out of the warm-up: when webpack compiles it, its
+          // loader extracts it again and fails the build with the same error.
+          console.warn(
+            setupWarning(
+              `webpack stylesheet warm-up of ${relativePath}`,
+              error,
+              'The file is skipped; if webpack compiles it, the build fails with this error.',
+            ),
+          )
+        }
       }
     } catch (error) {
       if (this.options.productionPrewarmFiles !== undefined) throw error

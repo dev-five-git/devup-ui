@@ -29,7 +29,9 @@ export function createWebpackReservation(
     // The loaders extract files under ids relative to the project root
     const toId = (path: string) => relative(root, path).replaceAll('\\', '/')
     const conditions = esmImportConditions(resolveOptions)
-    compiler.setModuleResolver(createModuleResolver({ toId, conditions }))
+    compiler.setModuleResolver(
+      createModuleResolver({ cwd: root, toId, conditions }),
+    )
     slots.invalidate()
     slots.reserve(
       {
