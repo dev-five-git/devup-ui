@@ -40,6 +40,7 @@ impl Rewritten<'_> {
             }),
             css_file: None,
             dependencies: Vec::new(),
+            component_markers: crate::ComponentMarkers::default(),
         }
     }
 }

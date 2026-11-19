@@ -17,12 +17,13 @@ export function createWebpackReservation(
   compiler: Pick<DevupCompiler, 'reserveClassSlots' | 'setModuleResolver'>,
 ) {
   const slots = createSharedSlotReservation(compiler)
-  return ({
+  return Object.assign(reserve, { slots })
+  function reserve({
     context,
     entry,
     resolve: resolveOptions,
   }: Pick<Compiler['options'], 'context' | 'entry'> &
-    Partial<Pick<Compiler['options'], 'resolve'>>) => {
+    Partial<Pick<Compiler['options'], 'resolve'>>) {
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
     // The loaders extract files under ids relative to the project root
