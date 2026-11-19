@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot hold text on React Native: it renders a `View`, and React Native renders text only inside a `Text`. Fix: wrap the text in `<Text>`
+test.tsx:3:10: `<Button>` cannot hold text on React Native: it renders a `Pressable`, and React Native renders text only inside a `Text`. Fix: wrap the text in `<Text>`
+test.tsx:4:8: `<Flex>` cannot hold text on React Native: it renders a `View`, and React Native renders text only inside a `Text`. Fix: wrap the text in `<Text>`
+test.tsx:5:7: `<Box>` cannot hold text on React Native: it renders a `View`, and React Native renders text only inside a `Text`. Fix: wrap the text in `<Text>`

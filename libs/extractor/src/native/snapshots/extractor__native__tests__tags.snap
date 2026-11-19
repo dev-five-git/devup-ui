@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `as` on React Native: React Native renders components, not HTML tags or values chosen at runtime. Fix: pass a capitalized component, such as `as={Pressable}`
+test.tsx:3:6: `<Box>` cannot use `as` on React Native: React Native renders components, not HTML tags or values chosen at runtime. Fix: pass a capitalized component, such as `as={Pressable}`
+test.tsx:4:6: `<Box>` cannot use `as` on React Native: React Native renders components, not HTML tags or values chosen at runtime. Fix: pass a capitalized component, such as `as={Pressable}`

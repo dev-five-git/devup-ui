@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 4 },
+	b: { flexDirection: "row" }
+});
+<Pressable style={__s.a}>text</Pressable>;
+<Animated.View style={__s.b} />;
+<Link>Go</Link>;

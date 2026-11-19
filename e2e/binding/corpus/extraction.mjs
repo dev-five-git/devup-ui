@@ -199,4 +199,35 @@ add('located-extractor-error', (h) => {
     `import {css} from '${pkg}';\nexport const cls=css({color:window.name});`,
   )
 })
+add('react-native-target', (h) => {
+  const native = `import { Flex, Text } from '${pkg}'\nexport const view = <Flex bg="red" p={2} _ios={{ opacity: 0.5 }} _android={{ opacity: 0.8 }}><Text color={on ? 'blue' : color}>Hi</Text></Flex>`
+  for (const [code, platform, runtime] of [
+    [native, 'ios', true],
+    [native, 'android', false],
+    [native, 'web', true],
+    ['export const value = 1', 'ios', true],
+    [box('p={[1, 2]}'), 'ios', false],
+    [native, 'windows', true],
+  ])
+    h.step(
+      'codeExtractNative',
+      () => {
+        const out = h.w.codeExtractNative(file, code, pkg, platform, runtime)
+        try {
+          return {
+            instanceOfOutput: out instanceof h.w.Output,
+            ...Object.fromEntries(
+              h.fields.map((key) => [
+                key,
+                key in out ? out[key] : { tag: 'absent' },
+              ]),
+            ),
+          }
+        } finally {
+          out.free()
+        }
+      },
+      [code, platform, runtime],
+    )
+})
 export const extraction = cases

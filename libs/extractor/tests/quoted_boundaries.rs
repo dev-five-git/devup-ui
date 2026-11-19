@@ -45,6 +45,7 @@ fn options() -> ExtractOption {
         single_css: true,
         import_main_css: false,
         import_aliases: HashMap::new(),
+        ..Default::default()
     }
 }
 

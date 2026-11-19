@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Ios, runtime, &code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `p` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give one value
+test.tsx:2:17: `<Box>` cannot use `_themeDark` on React Native: a theme variant is chosen by the theme the app shows, which needs the React Native runtime that this version does not include yet. Fix: give the value for one theme
+test.tsx:2:33: `<Box>` cannot use `_pressed` on React Native: a press style is chosen while the element is pressed, which needs the React Native runtime that this version does not include yet. Fix: pass a function to the `style` of a React Native `Pressable`, reading `pressed`

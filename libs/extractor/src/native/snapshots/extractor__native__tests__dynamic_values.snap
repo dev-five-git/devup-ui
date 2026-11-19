@@ -1,0 +1,16 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+<Box style={[
+	{ backgroundColor: color },
+	{
+		paddingLeft: space,
+		paddingRight: space
+	},
+	{ margin: (a, b) },
+	{ opacity: props.opacity },
+	{ padding: pad },
+	{ top: -y }
+]} />;

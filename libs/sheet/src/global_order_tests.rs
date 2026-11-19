@@ -28,6 +28,7 @@ fn shared_tailwind_registrations_survive_source_updates(
         single_css,
         import_main_css: false,
         import_aliases: std::collections::HashMap::new(),
+        ..Default::default()
     };
     let mut sources = [
         (
@@ -244,6 +245,7 @@ fn global_css_keeps_authored_cascade_order(
             single_css: true,
             import_main_css: false,
             import_aliases: std::collections::HashMap::new(),
+            ..Default::default()
         },
     )?;
     sheet.update_styles(&output.styles, "global-order.tsx", true);

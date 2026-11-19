@@ -6,8 +6,8 @@ mod output;
 mod value;
 
 pub use host::{
-    Resolved, create_session, drop_session, extract, has_devup_ui, init, reserve, reset,
-    select_session, set_resolver,
+    Resolved, create_session, drop_session, extract, extract_native, has_devup_ui, init, reserve,
+    reset, select_session, set_resolver,
 };
 pub use output::NativeOutput;
 

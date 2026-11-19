@@ -1,0 +1,40 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({ a: {
+	padding: 4,
+	margin: 8,
+	paddingLeft: 8,
+	paddingRight: 8,
+	paddingTop: 3,
+	paddingBottom: 3,
+	width: 16,
+	height: 16,
+	maxWidth: 16,
+	minHeight: 32,
+	fontSize: 16,
+	letterSpacing: -.5,
+	rowGap: 4,
+	columnGap: 8,
+	borderRadius: 8,
+	opacity: .5,
+	zIndex: 10,
+	flex: 1,
+	flexGrow: 2,
+	aspectRatio: "16 / 9",
+	fontWeight: "700",
+	lineHeight: 24,
+	backgroundColor: "#fff",
+	color: "red",
+	display: "none",
+	position: "absolute",
+	top: 0,
+	left: 0,
+	textDecorationLine: "underline",
+	transform: "rotate(45deg)",
+	boxShadow: "0 1px 2px #0003"
+} });
+<Box style={__s.a} />;

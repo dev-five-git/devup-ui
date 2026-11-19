@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: A spread on a Devup UI element must be a name or a member on React Native: the element merges the `style` it gives with its own. Fix: assign the spread object to a variable first

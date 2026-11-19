@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `_hover` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state
+test.tsx:2:29: `<Box>` cannot use `_focus` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state
+test.tsx:2:53: `<Box>` cannot use `selectors` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state

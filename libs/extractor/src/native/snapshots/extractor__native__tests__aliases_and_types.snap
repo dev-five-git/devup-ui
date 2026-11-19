@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Android, true, code)"
+---
+import { View as B } from "react-native";
+import { type DevupProps, DevupTheme } from "@devup-ui/react";
+import type { DevupThemeTypography } from "@devup-ui/react";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({ a: { padding: 4 } });
+export const C = (props: DevupProps) => <B style={__s.a} />;

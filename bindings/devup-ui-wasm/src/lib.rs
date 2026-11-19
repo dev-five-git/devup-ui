@@ -531,6 +531,7 @@ fn code_extract_internal_impl(
         single_css,
         import_main_css: import_main_css_in_code,
         import_aliases,
+        ..Default::default()
     };
     let check = || resolver_state.map_or(Ok(()), |state| state.borrow().check());
     binding_core::code_extract(
@@ -723,6 +724,37 @@ pub fn code_extract_without_source_map(
         import_aliases,
         SourceMapMode::Skip,
     )
+}
+
+/// Internal function to compile a source for React Native (testable without
+/// `JsValue`)
+pub fn code_extract_native_internal(
+    filename: &str,
+    code: &str,
+    package: &str,
+    platform: &str,
+    runtime: bool,
+) -> Result<Output, String> {
+    binding_core::code_extract_native((filename, code), package, platform, runtime)
+        .map(Output::from)
+}
+
+/// Compile a source for React Native on `platform` (`ios`, `android` or `web`).
+///
+/// Devup UI elements become React Native components whose styles are hoisted
+/// into one `StyleSheet.create`; the output has the code and its source map
+/// but no CSS. `runtime: false` makes what needs the React Native runtime a
+/// build error.
+#[cfg(not(tarpaulin_include))]
+#[wasm_bindgen(js_name = "codeExtractNative")]
+pub fn code_extract_native(
+    filename: &str,
+    code: &str,
+    package: &str,
+    platform: &str,
+    runtime: bool,
+) -> Result<Output, JsValue> {
+    code_extract_native_internal(filename, code, package, platform, runtime).map_err(js_error)
 }
 
 /// Internal function to register theme (testable without `JsValue`)
@@ -1024,6 +1056,35 @@ mod tests {
         }
 
         assert_debug_snapshot!(get_css(None, false).unwrap().split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn test_code_extract_native() {
+        let _state = TestStateGuard::new();
+        let output = code_extract_native_internal(
+            "view.tsx",
+            "import { Text } from '@devup-ui/react'\n<Text color=\"red\">Hi</Text>\n",
+            "@devup-ui/react",
+            "ios",
+            true,
+        )
+        .unwrap();
+        assert!(
+            output
+                .code()
+                .contains("import { Text } from \"react-native\"")
+        );
+        assert!(output.code().contains("color: \"red\""));
+        assert!(output.map().is_some());
+        assert_eq!(output.css(), None);
+        assert_eq!(output.css_file(), None);
+        assert!(!output.updated_base_style());
+        // The sheet is not touched
+        assert_eq!(get_css(None, false).unwrap(), "");
+        assert!(
+            code_extract_native_internal("view.tsx", "", "@devup-ui/react", "tv", true).is_err()
+        );
     }
 
     #[test]
@@ -1406,6 +1467,7 @@ mod tests {
                 single_css: false,
                 import_main_css: false,
                 import_aliases: HashMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -1508,6 +1570,7 @@ mod tests {
                 single_css: true,
                 import_main_css: true,
                 import_aliases: HashMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
