@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(b ? \"div\" : \"section\", {\n\tclassName: \"a a\",\n\tstyle: {\n\t\t\"--b\": variable,\n\t\tcolor: \"blue\"\n\t},\n\tanimate: { duration: 1 }\n});\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(b ? \"div\" : \"section\", {\n\tclassName: \"a a\",\n\tstyle: {\n\t\t\"--b\": __devupScale(variable),\n\t\tcolor: \"blue\"\n\t},\n\tanimate: { duration: 1 }\n});\nfunction __devupScale(v, s = 4, u = \"px\") {\n\treturn typeof v === \"number\" || typeof v === \"string\" && /^[+-]?(\\d+\\.?\\d*|\\.\\d+)(e[+-]?\\d+)?$/i.test(v) ? v * s + u : v;\n}\n",
 }

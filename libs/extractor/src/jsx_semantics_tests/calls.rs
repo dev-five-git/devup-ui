@@ -62,7 +62,7 @@ fn calls_when_runtime_style_is_explicit_ignore_raw_absence() {
     for rest in ["{ p: undefined }", "{}"] {
         assert_eq!(
             whole::evaluate(&source, &format!("Object.values(a({rest},5).props.style)")).element,
-            serde_json::json!([5])
+            serde_json::json!(["20px"])
         );
     }
 }

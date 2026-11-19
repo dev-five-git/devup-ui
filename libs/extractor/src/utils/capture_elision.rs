@@ -85,7 +85,8 @@ fn scalar_literal(value: &Expression<'_>) -> bool {
 
 /// Whether the eager prefix reaches `name`, ends inertly, or encounters work.
 fn prefix(value: &Expression<'_>, name: &str, locals: &Captures<'_>) -> Flow {
-    match unwrap_syntax_only(value) {
+    // The unit helper reads its value and runs nothing the value holds
+    match crate::runtime_units::converted(unwrap_syntax_only(value)) {
         Expression::Identifier(identifier) => {
             if identifier.name == name {
                 Flow::Read

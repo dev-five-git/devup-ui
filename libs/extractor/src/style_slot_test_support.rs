@@ -138,6 +138,7 @@ pub(crate) fn assert_variables(
             class_name,
             variable_name,
             identifier,
+            ..
         } = style.extract(bucket.as_deref())
         else {
             panic!("expected variable metadata");
@@ -147,10 +148,16 @@ pub(crate) fn assert_variables(
             panic!("public variable absent from JSX");
         };
         assert_eq!(supplied.len(), 1);
-        assert!(
-            expression_eq(&supplied[0], expected_expression),
-            "{property}: {output:?}"
-        );
+        // A number the value holds is converted where the element sets it
+        let converted = style.runtime_units()
+            && crate::runtime_units::unit(property).is_some()
+            && output.code.contains("function __devupScale(");
+        let set = if converted {
+            format!("__devupScale({expected_expression})")
+        } else {
+            expected_expression.clone()
+        };
+        assert!(expression_eq(&supplied[0], &set), "{property}: {output:?}");
         assert_eq!(
             slots
                 .classes

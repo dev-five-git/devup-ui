@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a\" style={{\n\t\"--b\": color,\n\t\"--variable\": \"red\",\n\t\"--d\": \"red\"\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a\" style={{\n\t\"--b\": __devupScale(color),\n\t\"--variable\": \"red\",\n\t\"--d\": \"red\"\n}} />;\nfunction __devupScale(v, s = 4, u = \"px\") {\n\treturn typeof v === \"number\" || typeof v === \"string\" && /^[+-]?(\\d+\\.?\\d*|\\.\\d+)(e[+-]?\\d+)?$/i.test(v) ? v * s + u : v;\n}\n",
 }
