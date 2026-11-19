@@ -18,11 +18,12 @@ export function createWebpackReservation(
   compiler: Pick<DevupCompiler, 'reserveClassSlots' | 'setModuleResolver'>,
 ) {
   const slots = createSharedSlotReservation(compiler)
+  return Object.assign(reserve, { slots })
   /**
    * Reserve the slots of the files webpack's options reach, handing their
    * inventory to `beforeReserve` first whenever it changed
    */
-  return (
+  function reserve(
     {
       context,
       entry,
@@ -30,7 +31,7 @@ export function createWebpackReservation(
     }: Pick<Compiler['options'], 'context' | 'entry'> &
       Partial<Pick<Compiler['options'], 'resolve'>>,
     beforeReserve?: (inventory: ReservationInventory) => void,
-  ) => {
+  ) {
     const cwd = process.cwd()
     const root = resolve(context ?? cwd)
     // The loaders extract files under ids relative to the project root

@@ -16,6 +16,8 @@ export type DevupCompilerOutput = Pick<
   | 'cssFile'
   | 'map'
   | 'dependencies'
+  | 'givenMarkers'
+  | 'selectedMarkers'
   | 'updatedBaseStyle'
   | 'free'
   | typeof Symbol.dispose

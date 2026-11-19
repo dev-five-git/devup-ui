@@ -224,6 +224,8 @@ export function runDiagnostics(w) {
       'cssFile',
       'updatedBaseStyle',
       'dependencies',
+      'givenMarkers',
+      'selectedMarkers',
       'free',
       Symbol.dispose,
     ]) {

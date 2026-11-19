@@ -193,6 +193,7 @@ styled 컴포넌트는 함수 컴포넌트로 컴파일되며 React 19는 함수
 | `css` prop, `jsx`, JSX runtime pragma    | `className`과 `style`로 컴파일됨                                                |
 | `ClassNames`                             | child가 렌더링하는 결과로 대체되며, 각 `css` / `cx` 호출은 클래스로 컴파일됨    |
 | 컴포넌트 선택자(`${Child}`)              | marker 클래스. Emotion의 확장 컴포넌트는 Emotion에서처럼 이를 제외하고 렌더링함 |
+| 어느 모듈도 선택하지 않는 marker         | Vite·webpack 일회성 production 빌드에서 제거됨                                  |
 | `.attrs()`, `.withConfig()`              | attrs는 props 위에 병합됨. 빌드 타임 `shouldForwardProp`. `componentId` 클래스  |
 
 ## 제한 사항

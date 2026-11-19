@@ -7,6 +7,7 @@ import {
   beginBuild,
   buildCanonicalMap,
   collectNumberedFiles,
+  ComponentMarkerLedger,
   computeFileReach,
   computeReachableFiles,
   createCompatTypes,
@@ -27,6 +28,7 @@ import {
   normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
+  registerMarkerLedger,
   reservationGraph,
   type ReservationInventory,
   reservationRoutes,
@@ -43,6 +45,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import { type Compiler, type RuleSetRule } from 'webpack'
 
+import { stripComponentMarkers } from './component-markers'
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
 import { reconcileWatchCss } from './watch-css'
@@ -108,6 +111,8 @@ export class DevupUIWebpackPlugin {
   > & { readonly productionPrewarmFiles?: readonly string[] }
   /** Webpack's `context` once applied; the working directory before */
   private root = process.cwd()
+  /** What the scan and the loaders report of component-selector markers */
+  private readonly markers = new ComponentMarkerLedger()
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -492,7 +497,7 @@ export class DevupUIWebpackPlugin {
     const discoverOnly = createWebpackReservation(
       this.options,
       this.importAliases,
-      { reserveClassSlots() {}, setModuleResolver() {} },
+      { reserveClassSlots: () => [], setModuleResolver() {} },
     )
     const discovered = this.installGraph(
       () => {
@@ -561,8 +566,14 @@ export class DevupUIWebpackPlugin {
       this.importAliases,
       this.compiler,
     )
+    registerMarkerLedger(compiler, this.markers)
     const reserveBeforeCompile = () => {
+      this.markers.clear()
       reserve(compiler.options)
+      this.markers.scanned(
+        reserve.slots.markerSelections,
+        reserve.slots.reservedIds,
+      )
       if (this.options.watch) return
       this.prewarmExtractor(discovered, compiler.options)
     }
@@ -645,6 +656,25 @@ export class DevupUIWebpackPlugin {
           // must hold every style extracted so far
           if (!existsSync(basePath) || readFileSync(basePath, 'utf-8') !== base)
             writeFileSync(basePath, base, 'utf-8')
+          // A one-shot production build drops the markers no module selects
+          if (compiler.options.mode === 'production')
+            compilation.hooks.processAssets.tap(
+              {
+                name: 'DevupUIWebpackPluginComponentMarkers',
+                stage:
+                  compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE,
+              },
+              () => {
+                if (compiler.watchMode) return
+                stripComponentMarkers(
+                  compiler,
+                  compilation,
+                  this.markers,
+                  this.root,
+                  relative,
+                )
+              },
+            )
           let stale: string[] = []
           compilation.hooks.finishModules.tap('DevupUIWebpackPlugin', () => {
             if (compiler.watchMode) return
