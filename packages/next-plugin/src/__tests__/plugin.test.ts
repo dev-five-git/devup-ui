@@ -27,6 +27,7 @@ import {
   resetTurboSetupCacheForTesting,
   restoreSessionState,
 } from '../plugin'
+import * as singleRouteModule from '../single-route'
 import {
   loadWasm,
   setWasmForTesting,
@@ -473,6 +474,40 @@ describe('DevupUINextPlugin', () => {
       },
     )
 
+    it.each([
+      ['a one-route production build', {}, {}, { singleCss: true }],
+      [
+        'an explicit per-file request',
+        { singleCss: false },
+        {},
+        { singleCss: false },
+      ],
+      ['a dev build', {}, { dev: true }, {}],
+    ])(
+      'gives one stylesheet to %s only',
+      (_name, options, context, expected) => {
+        // Given an app the graph sees serving one route
+        delete process.env.TURBOPACK
+        const singleRoute = spyOn(
+          singleRouteModule,
+          'isSingleRouteApp',
+        ).mockReturnValue(true)
+        try {
+          // When Next configures its compilers
+          const ret = DevupUI({}, options)
+          ret.webpack!(createWebpackConfig(), createWebpackContext(context))
+          ret.webpack!(createWebpackConfig(), createWebpackContext(context))
+          // Then every compiler of the build gets the same layout
+          for (const [received] of devupUIWebpackPluginSpy.mock.calls)
+            expect((received as { singleCss?: boolean }).singleCss).toBe(
+              (expected as { singleCss?: boolean }).singleCss,
+            )
+        } finally {
+          singleRoute.mockRestore()
+        }
+      },
+    )
+
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
 
@@ -611,6 +646,52 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
+    it.each([
+      ['production', 'production', {}, true],
+      [
+        'an explicit per-file request',
+        'production',
+        { singleCss: false },
+        false,
+      ],
+      ['dev', 'development', {}, false],
+    ])(
+      'gives a one-route app one stylesheet in %s only',
+      (_name, env, options, expected) => {
+        // Given an app the graph sees serving one route
+        setNodeEnv(env)
+        process.env.TURBOPACK = '1'
+        const filename = resolve('src/app/page.tsx')
+        const graphSpy = spyOn(
+          importGraphModule,
+          'buildStaticImportGraph',
+        ).mockReturnValue(createSingleFileGraph(filename))
+        const singleRoute = spyOn(
+          singleRouteModule,
+          'isSingleRouteApp',
+        ).mockReturnValue(true)
+        try {
+          // When
+          const config = DevupUI({}, options) as {
+            turbopack: {
+              rules: Record<
+                string,
+                { loaders: { options: { singleCss: boolean } }[] }
+              >
+            }
+          }
+          // Then the loaders extract into the layout chosen
+          expect(
+            config.turbopack.rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}']
+              .loaders[0].options.singleCss,
+          ).toBe(expected)
+        } finally {
+          singleRoute.mockRestore()
+          graphSpy.mockRestore()
+        }
+      },
+    )
+
     it('reuses production setup across Next config module reloads', () => {
       setNodeEnv('production')
       process.env.TURBOPACK = '1'

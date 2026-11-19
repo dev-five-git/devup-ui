@@ -52,6 +52,7 @@ import { collectCompiledMdxFiles, collectNumberedMdxFiles } from './mdx'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 import { readSessionState, writeSessionStateSync } from './session-state'
+import { isSingleRouteApp } from './single-route'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
@@ -72,6 +73,7 @@ interface ProductionTurboSetupCache {
   owner: string
   prewarmedFiles: number
   rules: TurboRules
+  singleCss: boolean
   token: string
 }
 
@@ -289,7 +291,7 @@ export function DevupUI(
       package: libPackage = '@devup-ui/react',
       distDir = 'df',
       cssDir = resolve(distDir, 'devup-ui'),
-      singleCss = false,
+      singleCss: requestedSingleCss,
       devupFile = 'devup.json',
       include = [],
       prefix,
@@ -300,7 +302,7 @@ export function DevupUI(
     } = options
 
     const requestedAtomHoist =
-      !singleCss &&
+      !requestedSingleCss &&
       atomHoist !== undefined &&
       Number.isFinite(atomHoist) &&
       atomHoist > 0
@@ -341,7 +343,7 @@ export function DevupUI(
       licenseBanner,
       prefix,
       shorthands: normalizedShorthands,
-      singleCss,
+      singleCss: requestedSingleCss,
       sourceMap,
       styleResolution,
     })
@@ -362,7 +364,7 @@ export function DevupUI(
         durationMs: elapsedMs(pluginStartedAt),
         pid: process.pid,
         prewarmedFiles: cachedSetup.prewarmedFiles,
-        singleCss,
+        singleCss: cachedSetup.singleCss,
         watch,
       })
       return config
@@ -483,6 +485,8 @@ export function DevupUI(
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
     let staticGraph: StaticImportGraph | undefined
+    // A one-route production build gets one stylesheet, unless asked otherwise
+    let singleRoute = false
     const graphStartedAt = profileStart()
     try {
       const srcDir = sourceDir(process.cwd())
@@ -491,6 +495,10 @@ export function DevupUI(
       // One scan+parse of the source tree, shared by all three consumers below.
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
       staticGraph = graph
+      singleRoute =
+        !watch &&
+        requestedSingleCss === undefined &&
+        isSingleRouteApp(srcDir, graph)
       const hoistV = process.env.DEVUP_HOIST_V
         ? Number(process.env.DEVUP_HOIST_V)
         : undefined
@@ -537,6 +545,7 @@ export function DevupUI(
         failed: true,
       })
     }
+    const singleCss = requestedSingleCss ?? singleRoute
     // The MDX documents the build compiles. The graph cannot read MDX and the
     // prewarm cannot extract it before its compiler runs, so the coordinator
     // waits for their loaders instead: Turbopack hands each compiled document
@@ -885,6 +894,7 @@ export function DevupUI(
         key: productionSetupKey,
         prewarmedFiles: prewarmedFiles.length,
         rules,
+        singleCss,
       })
     }
     reportProfile('next.setup', {
@@ -900,6 +910,8 @@ export function DevupUI(
 
   const { webpack } = config
   let productionPrewarmFiles: readonly string[] | undefined
+  // A one-route production build gets one stylesheet, unless asked otherwise
+  let singleRoute = false
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     // Next's project directory, which it also hands webpack as `context`: the
@@ -915,6 +927,8 @@ export function DevupUI(
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      singleRoute =
+        options.singleCss === undefined && isSingleRouteApp(srcDir, graph)
       productionPrewarmFiles = collectProductionPrewarmFiles({
         cwd,
         graph,
@@ -936,6 +950,7 @@ export function DevupUI(
         productionPrewarmFiles: _options.dev
           ? undefined
           : productionPrewarmFiles,
+        ...(!_options.dev && singleRoute ? { singleCss: true } : {}),
       }),
     )
     if (typeof webpack === 'function') return webpack(config, _options)
