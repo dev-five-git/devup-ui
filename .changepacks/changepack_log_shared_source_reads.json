@@ -1,0 +1,9 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Read each source file once per build in the passes that run before the bundler. The import graph, the class-slot reservation and the prewarm read the same files, and a Next production build runs them once per compiler (server, edge, client): they now share a stamp-checked source cache (`withSourceCache` / `readSource` in plugin-utils), which Next passes to the webpack plugin of each compiler. Watch and dev builds keep reading the disk on every compilation. Output is unchanged.",
+  "date": "2026-11-19T00:00:00.000Z"
+}

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { contextImports } from './context-imports'
@@ -14,6 +13,7 @@ import {
   reservationSource,
 } from './reservation-source'
 import { createNodeModulesExcludeRegex } from './shared'
+import { readSource } from './source-cache'
 import type { WasmImportAliases } from './types'
 
 export type ReservationInput = {
@@ -151,7 +151,7 @@ export function collectReservationInputs(
     const code =
       overlay?.code ??
       sources.get(key) ??
-      reservationSource(() => readFileSync(physicalPath, 'utf-8'))
+      reservationSource(() => readSource(physicalPath))
     if (code === undefined) continue
     const filename = overlay?.filename ?? toId(physicalPath)
     sources.set(key, code)

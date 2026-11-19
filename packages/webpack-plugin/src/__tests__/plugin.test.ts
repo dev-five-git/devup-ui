@@ -1514,6 +1514,32 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
 
+    it("prewarms from the build's shared sources, read once by an earlier compiler", () => {
+      // Given a source an earlier compiler of the build already read.
+      const file = import.meta.path
+      const sourceCache: pluginUtils.SourceCache = new Map()
+      pluginUtils.withSourceCache(
+        () => pluginUtils.readSource(file),
+        sourceCache,
+      )
+      const [[key, entry]] = [...sourceCache]
+      sourceCache.set(key, { ...entry, code: 'read before' })
+      const plugin = new DevupUIWebpackPlugin({
+        engine: 'wasm',
+        productionPrewarmFiles: [file],
+        sourceCache,
+      })
+      const compiler = createCompiler()
+      // When this compiler prepares its compilation.
+      plugin.apply(asCompiler(compiler))
+      compiler.hooks.run.tap.mock.calls[0][1]()
+      // Then it extracts what was read, without reading the file again.
+      expect(codeExtractSpy.mock.calls.map(([, code]) => code)).toEqual([
+        'read before',
+      ])
+      expect(globalThis.__devupSourceCache).toBeUndefined()
+    })
+
     it.each([false, true])(
       'does not prewarm when the complete set is empty or watch=%s',
       (watch) => {

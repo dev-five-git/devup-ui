@@ -100,6 +100,7 @@ export {
   ShorthandConfigError,
   type ShorthandErrorLocation,
 } from './shorthands'
+export { readSource, type SourceCache, withSourceCache } from './source-cache'
 export { SOURCE_EXTENSIONS, SOURCE_FILE_REGEX } from './source-extensions'
 export {
   createStateWriter,

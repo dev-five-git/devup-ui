@@ -26,9 +26,12 @@ import {
   normalizeShorthands,
   normalizeStylexOptions,
   readJsxImportSource,
+  readSource,
   seedFileNumbers,
+  type SourceCache,
   type StaticImportGraph,
   type WasmImportAliases,
+  withSourceCache,
 } from '@devup-ui/plugin-utils'
 import { type NextConfig } from 'next'
 
@@ -427,13 +430,18 @@ export function DevupUI(
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
     let staticGraph: StaticImportGraph | undefined
+    // The graph and the prewarm read the same sources
+    const sourceCache: SourceCache = new Map()
     const graphStartedAt = profileStart()
     try {
       const srcDir = sourceDir(process.cwd())
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
-      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      const graph = withSourceCache(
+        () => buildStaticImportGraph(srcDir, tsconfigPath),
+        sourceCache,
+      )
       staticGraph = graph
       const hoistV = process.env.DEVUP_HOIST_V
         ? Number(process.env.DEVUP_HOIST_V)
@@ -538,13 +546,18 @@ export function DevupUI(
       const cwd = process.cwd()
       const collectStartedAt =
         prewarmStartedAt === undefined ? undefined : performance.now()
-      const prewarmFiles = collectProductionPrewarmFiles({
-        cwd,
-        graph: staticGraph,
-        expectedBaseFiles,
-        libPackage,
-        include,
-      })
+      const graph = staticGraph
+      const prewarmFiles = withSourceCache(
+        () =>
+          collectProductionPrewarmFiles({
+            cwd,
+            graph,
+            expectedBaseFiles,
+            libPackage,
+            include,
+          }),
+        sourceCache,
+      )
       const collectDurationMs = elapsedMs(collectStartedAt)
       for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
@@ -554,7 +567,10 @@ export function DevupUI(
         ).replaceAll('\\', '/')}`
         const readStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const source = readFileSync(resourcePath, 'utf-8')
+        const source = withSourceCache(
+          () => readSource(resourcePath),
+          sourceCache,
+        )
         if (readStartedAt !== undefined) {
           prewarmReadMs += performance.now() - readStartedAt
           prewarmSourceBytes += Buffer.byteLength(source)
@@ -794,6 +810,9 @@ export function DevupUI(
 
   const { webpack } = config
   let productionPrewarmFiles: readonly string[] | undefined
+  // A production build runs its compilers in turn: their plugins read each
+  // source once
+  const sourceCache: SourceCache = new Map()
   config.webpack = (config, _options) => {
     const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     // Next's project directory, which it also hands webpack as `context`: the
@@ -808,19 +827,21 @@ export function DevupUI(
       const cwd = root
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
-      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
-      productionPrewarmFiles = collectProductionPrewarmFiles({
-        cwd,
-        graph,
-        expectedBaseFiles: computeCompiledFiles({
+      productionPrewarmFiles = withSourceCache(() => {
+        const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+        return collectProductionPrewarmFiles({
           cwd,
-          srcDir,
-          tsconfigPath,
           graph,
-        }),
-        libPackage: options.package ?? '@devup-ui/react',
-        include: options.include ?? [],
-      })
+          expectedBaseFiles: computeCompiledFiles({
+            cwd,
+            srcDir,
+            tsconfigPath,
+            graph,
+          }),
+          libPackage: options.package ?? '@devup-ui/react',
+          include: options.include ?? [],
+        })
+      }, sourceCache)
     }
     config.plugins.push(
       new DevupUIWebpackPlugin({
@@ -830,6 +851,7 @@ export function DevupUI(
         productionPrewarmFiles: _options.dev
           ? undefined
           : productionPrewarmFiles,
+        sourceCache: _options.dev ? undefined : sourceCache,
       }),
     )
     if (typeof webpack === 'function') return webpack(config, _options)
