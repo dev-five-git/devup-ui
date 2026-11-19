@@ -46,6 +46,7 @@ if [ "${1:-}" = install ]; then
       if curl -fsL --connect-timeout 10 --speed-limit 51200 --speed-time 15 \
         --max-time 300 -o "$tmp" "$candidate" &&
         echo "$sum  $tmp" | "$checker" --status -c; then
+        chmod 644 "$tmp"
         mv "$tmp" "$archives/$file"
         return 0
       fi

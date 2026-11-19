@@ -93,7 +93,8 @@ if [ -n "$apt_cache" ]; then
   mkdir -p "$apt_cache"
   find "$apt_cache" -name '*.deb' -delete
   if compgen -G "$archives/*.deb" > /dev/null; then
-    cp "$archives"/*.deb "$apt_cache/"
+    sudo cp "$archives"/*.deb "$apt_cache/"
+    sudo chown "$(id -u):$(id -g)" "$apt_cache"/*.deb
   fi
   echo "Kept $(find "$apt_cache" -name '*.deb' | wc -l) package(s) for the apt cache"
 fi
