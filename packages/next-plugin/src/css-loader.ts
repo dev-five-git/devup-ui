@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import {
   type DevupCompiler,
@@ -10,11 +11,21 @@ import type { RawLoaderDefinitionFunction } from 'webpack'
 import { callCoordinator, resetCoordinatorClient } from './coordinator-client'
 import { loadWasm } from './wasm'
 
-export interface DevupUICssLoaderOptions {
-  engine?: DevupEngine
-  // turbo
+/** Options of a loader that fetches the CSS from the coordinator (Turbopack). */
+export interface DevupUICoordinatorCssLoaderOptions {
+  coordinatorPortFile: string
+  /** Every file the theme is read from, relative to the project root or absolute */
+  themeFiles?: string[]
   watch: boolean
-  coordinatorPortFile?: string
+  /** Changes with the setup state, so Turbopack re-runs the loader then */
+  stateKey?: string
+}
+
+/** Options of a loader that reads the CSS in its own process. */
+export interface DevupUIStandaloneCssLoaderOptions {
+  engine?: DevupEngine
+  watch: boolean
+  coordinatorPortFile?: undefined
   sheetFile: string
   classMapFile: string
   fileMapFile: string
@@ -25,6 +36,15 @@ export interface DevupUICssLoaderOptions {
   defaultSheet: object
   defaultClassMap: object
   defaultFileMap: object
+}
+
+export type DevupUICssLoaderOptions =
+  DevupUICoordinatorCssLoaderOptions | DevupUIStandaloneCssLoaderOptions
+
+function isCoordinatorOptions(
+  options: DevupUICssLoaderOptions,
+): options is DevupUICoordinatorCssLoaderOptions {
+  return !!options.coordinatorPortFile
 }
 
 let initializedCompilers = new WeakSet<DevupCompiler>()
@@ -65,25 +85,13 @@ function fetchCssFromCoordinator(
 
 const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
   function (source, map, meta) {
-    const {
-      watch,
-      engine,
-      coordinatorPortFile,
-      sheetFile,
-      classMapFile,
-      fileMapFile,
-      themeFile,
-      themeFiles = [],
-      theme,
-      defaultClassMap,
-      defaultFileMap,
-      defaultSheet,
-    } = this.getOptions()
+    const options = this.getOptions()
 
     // Coordinator mode: fetch live CSS from coordinator (disk content is stale)
-    if (coordinatorPortFile) {
+    if (isCoordinatorOptions(options)) {
+      const { coordinatorPortFile, themeFiles = [], watch } = options
       // The sheet holds the theme's variables: re-run when the theme changes.
-      for (const file of themeFiles) this.addDependency(file)
+      for (const file of themeFiles) this.addDependency(resolve(file))
       const callback = this.async()
       // Check both resourcePath and resourceQuery for ?fileNum=N
       // Turbopack may embed query in resourcePath or provide it via resourceQuery
@@ -101,6 +109,19 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       )
       return
     }
+
+    const {
+      watch,
+      engine,
+      sheetFile,
+      classMapFile,
+      fileMapFile,
+      themeFile,
+      theme,
+      defaultClassMap,
+      defaultFileMap,
+      defaultSheet,
+    } = options
 
     let content: string | typeof source
     try {

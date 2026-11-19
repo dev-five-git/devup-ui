@@ -24,6 +24,7 @@ interface Row {
   cssBytes: number
 }
 interface Run {
+  run?: { bytesDefinition?: string }
   samples: number
   rows: Record<string, Row>
 }
@@ -196,6 +197,26 @@ describe('benchmark gate', () => {
     expect(evaluation.results[0].target).toBe('(policy)')
   })
 
+  it('does not compare bytes counted another way than the baseline', () => {
+    const deployable = {
+      ...normalRun(),
+      run: { bytesDefinition: 'deployable' },
+    }
+
+    const evaluation = evaluate(deployable, baseline)
+    expect(evaluation.failed).toBe(true)
+    expect(evaluation.results[0]).toEqual({
+      target: '(policy)',
+      failures: [
+        'the run measured bytes as deployable, the baseline as output-dir; rewrite the baseline from a run of the new definition',
+      ],
+    })
+
+    const rewritten = { ...baseline, bytesDefinition: 'deployable' }
+    expect(evaluate(deployable, rewritten).failed).toBe(false)
+    expect(evaluate(normalRun(), rewritten).results[0].target).toBe('(policy)')
+  })
+
   it('fails a row whose control is missing from the run', () => {
     const run = normalRun()
     delete run.rows.tailwind
@@ -210,6 +231,14 @@ describe('benchmark baseline', () => {
 
     expect(Object.keys(baseline.rows)).toEqual(['devup-ui', 'devup-ui-turbo'])
     expect(baseline.samples).toBe(3)
+    expect(baseline.bytesDefinition).toBe('output-dir')
+    expect(
+      nextBaseline(
+        { ...normalRun(), run: { bytesDefinition: 'deployable' } },
+        manifest,
+        undefined,
+      ).bytesDefinition,
+    ).toBe('deployable')
     expect(baseline.rows['devup-ui']).toMatchObject({
       control: 'tailwind',
       bytes: 67_400_000,

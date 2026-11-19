@@ -5,7 +5,7 @@
 // `benchmark-refresh.js` appends it to benchmark/history.json, one entry per
 // commit of main, so a regression can be traced to the merge that caused it.
 
-import { evaluate, median } from './benchmark-gate.js'
+import { bytesDefinition, evaluate, median } from './benchmark-gate.js'
 
 export const HISTORY_LIMIT = 500
 export const HISTORY_COLUMNS = [
@@ -67,6 +67,8 @@ export function applyRun(results, run) {
       runner: run.run.runner ?? results.run.runner,
       next: run.run.next ?? results.run.next,
       devupUi: run.run.devupUi ?? results.run.devupUi,
+      // The bytes of every row come from this run
+      bytesDefinition: bytesDefinition(run.run),
     },
     samples: run.samples,
     rows: results.rows.map((row) => {
@@ -99,6 +101,8 @@ export function historyEntry(run, baseline, committedAt) {
     measuredAt: run.run.date ?? null,
     devupUi: run.run.devupUi ?? null,
     samples: run.samples,
+    // Entries without it counted the whole output directory (`output-dir`)
+    bytesDefinition: bytesDefinition(run.run),
     gate: evaluation.failed ? 'fail' : 'pass',
     regressions: evaluation.results
       .filter((result) => result.failures.length)
@@ -147,7 +151,7 @@ export function refreshPlan({ measured, head, published }, isAncestor) {
   return { history: true, results: true, reason: 'newer or the same commit' }
 }
 
-/** One line per history entry for a row: its time against the control of the same run */
+/** One line per history entry for a row: its time against the control of the same run, and its sizes */
 export function trend(history, target, control) {
   return history.entries
     .filter((entry) => entry.rows[target])
@@ -156,7 +160,8 @@ export function trend(history, target, control) {
       const base = entry.rows[control]?.[0]
       const ratio = base ? ` ${(time / base).toFixed(3)}x ${control}` : ''
       const client = clientBytes === null ? '' : `, client ${clientBytes}`
-      return `${entry.sha.slice(0, 8)} ${entry.committedAt} ${entry.gate} ${time.toFixed(2)}s${ratio}, ${bytes} bytes, css ${cssBytes}${client}`
+      // Bytes of different definitions are not comparable: name it on every line
+      return `${entry.sha.slice(0, 8)} ${entry.committedAt} ${entry.gate} ${time.toFixed(2)}s${ratio}, ${bytes} ${bytesDefinition(entry)} bytes, css ${cssBytes}${client}`
     })
     .join('\n')
 }

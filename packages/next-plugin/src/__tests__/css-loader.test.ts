@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as http from 'node:http'
+import * as path from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import {
@@ -197,7 +198,8 @@ describe('devupUICssLoader', () => {
           ...defaultOptions,
           watch: true,
           coordinatorPortFile: portFile,
-          themeFiles: ['/project/devup.json', '/project/app.css'],
+          // Relative to the project root, as the plugin passes them
+          themeFiles: ['devup.json', 'app.css'],
         }),
         resourcePath: 'devup-ui-1.css',
       } as unknown as CssLoaderThis)(
@@ -210,8 +212,8 @@ describe('devupUICssLoader', () => {
     expect(result).toBe('.a{color:red}')
     // A theme edit re-fetches the sheet with its new variables.
     expect(addDependency.mock.calls).toEqual([
-      ['/project/devup.json'],
-      ['/project/app.css'],
+      [path.resolve('devup.json')],
+      [path.resolve('app.css')],
     ])
 
     // NO WASM functions should be called

@@ -15,7 +15,9 @@
 // Output sizes are deterministic to about 0.05% between runs. A row fails when
 // its bytes grow beyond baseline * 1.01, or its CSS bytes beyond the baseline
 // plus the larger of 5% and 32 bytes. A change that grows a size on purpose
-// updates benchmark-baseline.json in the same pull request.
+// updates benchmark-baseline.json in the same pull request. Bytes count only
+// the deployable build output (`isDeployed` in benchmark-output.js); a run and
+// a baseline that count bytes differently (`bytesDefinition`) are not compared.
 
 export const MIN_TIME_TOLERANCE = 0.1
 export const SPREAD_FACTOR = 2
@@ -56,6 +58,16 @@ export function timeTolerance(calibration) {
   )
 }
 
+/**
+ * What the `bytes` of a run (its `run` metadata), baseline or history entry
+ * count: `deployable` (benchmark-output.js), or `output-dir` for what was
+ * recorded before the definition was named, the whole output directory with
+ * its caches.
+ */
+export function bytesDefinition(record) {
+  return record?.bytesDefinition ?? 'output-dir'
+}
+
 /** Checks the run against the baseline: one entry per gated row, and whether any failed */
 export function evaluate(run, baseline) {
   const results = []
@@ -64,6 +76,15 @@ export function evaluate(run, baseline) {
       target: '(policy)',
       failures: [
         `the run took ${run.samples} samples per row, the baseline was made with ${baseline.samples}`,
+      ],
+    })
+  const runBytes = bytesDefinition(run.run)
+  const baselineBytes = bytesDefinition(baseline)
+  if (runBytes !== baselineBytes)
+    results.push({
+      target: '(policy)',
+      failures: [
+        `the run measured bytes as ${runBytes}, the baseline as ${baselineBytes}; rewrite the baseline from a run of the new definition`,
       ],
     })
   for (const [target, expected] of Object.entries(baseline.rows)) {
@@ -115,7 +136,11 @@ export function nextBaseline(run, manifest, previous) {
       cssBytes: run.rows[name].cssBytes,
     }
   }
-  return { samples: run.samples, rows }
+  return {
+    samples: run.samples,
+    bytesDefinition: bytesDefinition(run.run),
+    rows,
+  }
 }
 
 /** The rows whose CSS baseline may be replaced alone, without recalibrating */

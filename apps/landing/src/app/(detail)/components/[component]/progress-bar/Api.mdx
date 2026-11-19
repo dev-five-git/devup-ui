@@ -1,3 +1,48 @@
-import { ComingSoon } from '@/components/ComingSoon'
+import { PropsTable } from '@/components/PropsTable'
 
-<ComingSoon />
+###### API
+
+`ProgressBar` props extend the div HTML attributes (except `children` and `role`). It renders a `progressbar` with `aria-valuemin`, `aria-valuemax` and `aria-valuenow`.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'value',
+      description: 'How much is done, clamped between 0 and `max`',
+      type: '`number`',
+      default: '-',
+    },
+    {
+      property: 'max',
+      description:
+        'The value that means done; the number of steps for the `step` variant',
+      type: '`number`',
+      default: '`100`',
+    },
+    {
+      property: 'variant',
+      description: 'One continuous bar, or one segment per step',
+      type: "`'bar' | 'step'`",
+      default: "`'bar'`",
+    },
+    {
+      property: 'showValue',
+      description:
+        'Whether to show the progress above the bar (`50%`, or `3/6` for steps)',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'classNames',
+      description: 'Custom class names for inner elements',
+      type: '```{<br>  track?: string<br>  indicator?: string<br>  value?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the progress bar',
+      type: '```{<br>  primary?: string<br>  track?: string<br>  text?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

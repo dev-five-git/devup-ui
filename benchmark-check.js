@@ -12,7 +12,9 @@
 //
 // A change that makes a build slower or larger on purpose runs the two writes
 // on a CI run's `benchmark-run` artifact and commits the files in the same pull
-// request. After a merge, CI rewrites benchmark-results.json on main itself and
+// request. So does a change of what `bytes` counts (`bytesDefinition`, see
+// benchmark-output.js): the gate refuses to compare across definitions until
+// `--write-baseline` records the new one. After a merge, CI rewrites benchmark-results.json on main itself and
 // records the run in benchmark/history.json (benchmark-refresh.js).
 import { readFileSync, writeFileSync } from 'node:fs'
 
