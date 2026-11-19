@@ -35,7 +35,7 @@ fn compile(code: &str) -> String {
 #[rstest]
 #[case::components(
     "components",
-    r##"export const App = () => (
+    r#"export const App = () => (
   <VStack gap={2}>
     <Box w={10} />
     <Flex />
@@ -48,26 +48,26 @@ fn compile(code: &str) -> String {
     <Input placeholder="name" />
     <Button onPress={go}><Text>Go</Text></Button>
   </VStack>
-)"##
+)"#
 )]
 #[case::shorthands_and_units(
     "shorthands_and_units",
-    r##"<Box p={1} m="2" px={2} py="3px" w="50%" h="auto" maxW="1rem" minH="2em" boxSize={4}
+    r#"<Box p={1} m="2" px={2} py="3px" w="50%" h="auto" maxW="1rem" minH="2em" boxSize={4}
   fontSize="16px" letterSpacing="-0.5px" gap="4px 8px" rowGap={1} borderRadius={2} opacity={0.5}
   zIndex={10} flex={1} flexGrow="2" aspectRatio="16 / 9" fontWeight={700} lineHeight="24px"
   bgColor={`#fff`} color="red" display="none" pos="absolute" top={-1} positioning="top-left"
-  textDecoration="underline" transform="rotate(45deg)" boxShadow="0 1px 2px #0003" />"##
+  textDecoration="underline" transform="rotate(45deg)" boxShadow="0 1px 2px #0003" />"#
 )]
 #[case::box_sides(
     "box_sides",
-    r##"<Box m="1px 2px" p="1px 2px 3px" mx="1px" />;
-<Box m="1px 2px 3px 4px" />"##
+    r#"<Box m="1px 2px" p="1px 2px 3px" mx="1px" />;
+<Box m="1px 2px 3px 4px" />"#
 )]
 #[case::backgrounds_and_borders(
     "backgrounds_and_borders",
-    r##"<Box bg="linear-gradient(red, blue)" border="1px solid rgba(0, 0, 0, 0.5)" />;
+    r#"<Box bg="linear-gradient(red, blue)" border="1px solid rgba(0, 0, 0, 0.5)" />;
 <Box bg="red" border="none" />;
-<Box bgImage="radial-gradient(red, blue)" border="2px dashed" />"##
+<Box bgImage="radial-gradient(red, blue)" border="2px dashed" />"#
 )]
 #[case::dynamic_values(
     "dynamic_values",
@@ -75,43 +75,43 @@ fn compile(code: &str) -> String {
 )]
 #[case::conditional_values(
     "conditional_values",
-    r##"<Box bg={on ? 'red' : 'blue'} p={big && 4} m={a > 1 ? 2 : undefined}
-  color={a ? 'red' : b ? c : null} w={x ?? 1} h={off ? null : 2} opacity={false} />"##
+    r"<Box bg={on ? 'red' : 'blue'} p={big && 4} m={a > 1 ? 2 : undefined}
+  color={a ? 'red' : b ? c : null} w={x ?? 1} h={off ? null : 2} opacity={false} />"
 )]
 #[case::merge_order(
     "merge_order",
-    r##"<Box bg={on ? 'red' : 'blue'} p={1} bg="green" m={2} bg="black" />;
+    r#"<Box bg={on ? 'red' : 'blue'} p={1} bg="green" m={2} bg="black" />;
 <Box px={1} pl={2} />;
-<Flex flexDir="column" />"##
+<Flex flexDir="column" />"#
 )]
 #[case::given_styles(
     "given_styles",
-    r##"<Box {...props} p={1} {...a.b} style={s} />;
+    r#"<Box {...props} p={1} {...a.b} style={s} />;
 <Box {...props} style={s} />;
-<Box style={s} key="k" />"##
+<Box style={s} key="k" />"#
 )]
 #[case::shared_objects(
     "shared_objects",
-    r##"<Box p={1} />;
+    r#"<Box p={1} />;
 <Box p="4px" />;
-<Box p={on ? 1 : 2} />"##
+<Box p={on ? 1 : 2} />"#
 )]
 #[case::retagged(
     "retagged",
-    r##"<Box as={Pressable} p={1}>text</Box>;
+    r"<Box as={Pressable} p={1}>text</Box>;
 <Flex as={Animated.View} />;
-<Button as={Link}>Go</Button>"##
+<Button as={Link}>Go</Button>"
 )]
 #[case::nested_elements(
     "nested_elements",
-    r##"<Box p={1} icon={<Text color="red">!</Text>} render={() => <Box m={1} />}>
+    r#"<Box p={1} icon={<Text color="red">!</Text>} render={() => <Box m={1} />}>
   {items.map((item) => <Text key={item}>{item}</Text>)}
   {/* a comment */}
-</Box>"##
+</Box>"#
 )]
 #[case::no_styles(
     "no_styles",
-    r##"<Box {...props} onLayout={f} testID="box" disabled />"##
+    r#"<Box {...props} onLayout={f} testID="box" disabled />"#
 )]
 #[case::empty_values("empty_values", "<Box bg={undefined} p={null} m={true} />")]
 #[case::namespaced_prop("namespaced_prop", "<Box xml:lang=\"en\" p={1} />")]
@@ -136,37 +136,37 @@ fn platform_blocks(#[case] platform: NativePlatform) {
 #[rstest]
 #[case::aliases_and_types(
     "aliases_and_types",
-    r##"import { Box as B, type DevupProps, DevupTheme } from "@devup-ui/react"
+    r#"import { Box as B, type DevupProps, DevupTheme } from "@devup-ui/react"
 import type { DevupThemeTypography } from '@devup-ui/react'
-export const C = (props: DevupProps) => <B p={1} />"##
+export const C = (props: DevupProps) => <B p={1} />"#
 )]
 #[case::name_collisions(
     "name_collisions",
-    r##"import { StyleSheet, View } from 'react-native'
+    r"import { StyleSheet, View } from 'react-native'
 import { Box, Text } from '@devup-ui/react'
 const __s = StyleSheet.create({ a: { flex: 1 } })
-export const C = () => <View style={__s.a}><Box p={1} /><Text>t</Text></View>"##
+export const C = () => <View style={__s.a}><Box p={1} /><Text>t</Text></View>"
 )]
 #[case::no_components(
     "no_components",
-    r##"import type { DevupProps } from '@devup-ui/react'
-export const value: DevupProps = {}"##
+    r"import type { DevupProps } from '@devup-ui/react'
+export const value: DevupProps = {}"
 )]
 #[case::unused_import("unused_import", "import { Box } from '@devup-ui/react'\n")]
 #[case::types_read(
     "types_read",
-    r##"import { Box } from '@devup-ui/react'
+    r"import { Box } from '@devup-ui/react'
 type P = React.ComponentProps<typeof Box>
-export const C = (props: P) => <Box {...props} />"##
+export const C = (props: P) => <Box {...props} />"
 )]
 #[case::without_package("without_package", "export const value = 1\n")]
 #[case::sheet_after_imports(
     "sheet_after_imports",
-    r##"'use client'
+    r"'use client'
 import { Box } from '@devup-ui/react'
 import { a } from './a'
 const element = <Box p={1} />
-import { b } from './b'"##
+import { b } from './b'"
 )]
 fn compiles_files(#[case] name: &str, #[case] code: &str) {
     assert_snapshot!(name, compile_for(NativePlatform::Android, true, code));
@@ -197,9 +197,9 @@ fn compiles_files(#[case] name: &str, #[case] code: &str) {
 )]
 #[case::unsupported_values(
     "unsupported_values",
-    r##"<Box display="grid" position="fixed" w="10vw" h="calc(100% - 4px)" maxW="var(--w)"
+    r#"<Box display="grid" position="fixed" w="10vw" h="calc(100% - 4px)" maxW="var(--w)"
   minW="1px !important" lineHeight={1.5} opacity="half" m="1px 2px 3px 4px 5px"
-  bg="url(a.png)" positioning={1} flexDir="row" maxH="1ch" />"##
+  bg="url(a.png)" positioning={1} flexDir="row" maxH="1ch" />"#
 )]
 #[case::missing_and_object_values(
     "missing_and_object_values",
@@ -214,7 +214,7 @@ fn compiles_files(#[case] name: &str, #[case] code: &str) {
 #[case::image_source("image_source", "<Image src={images[0]} />")]
 #[case::platform_shapes(
     "platform_shapes",
-    r##"<Box _ios={styles} _android={{ ...base, [key]: 1, onPress: f, _hover: {}, _pressed: {}, _web: styles, as: A, bg: [1] }} />"##
+    r"<Box _ios={styles} _android={{ ...base, [key]: 1, onPress: f, _hover: {}, _pressed: {}, _web: styles, as: A, bg: [1] }} />"
 )]
 #[case::text_children(
     "text_children",
@@ -262,8 +262,7 @@ fn unsupported_file_extension_is_an_error() {
         option(NativePlatform::Ios, true),
     )
     .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
+    .map_or_else(String::new, |error| error.to_string());
     assert!(error.starts_with("test.vue:1:1: "), "{error}");
 }
 

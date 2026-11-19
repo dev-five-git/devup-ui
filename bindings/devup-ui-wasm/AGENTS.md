@@ -6,6 +6,7 @@ Rust → WebAssembly → JavaScript bridge. Exposes extraction engine to build p
 
 ### Core Functions
 - `codeExtract(filename, code, pkg, cssDir, singleCss, importMainCss, importCssInCss)` → Output
+- `codeExtractNative(filename, code, pkg, platform, runtime)` → Output (React Native: `StyleSheet.create` styles, no CSS)
 - `hasDevupUI(filename, code, package)` → boolean
 - `getCss(fileNum?, importMainCss)` → string
 
