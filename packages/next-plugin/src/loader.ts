@@ -19,7 +19,17 @@ const stateWriter = createStateWriter((path, content, encoding) =>
   encoding ? writeFile(path, content, encoding) : writeFile(path, content),
 )
 
-export interface DevupUILoaderOptions {
+/** Options of a loader that sends every file to the coordinator (Turbopack). */
+export interface DevupUICoordinatorLoaderOptions {
+  coordinatorPortFile: string
+  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  themeFiles?: string[]
+  /** Changes with the setup state, so Turbopack re-runs the loader then */
+  stateKey?: string
+}
+
+/** Options of a loader that extracts in its own process. */
+export interface DevupUIStandaloneLoaderOptions {
   engine?: DevupEngine
   package: string
   cssDir: string
@@ -31,13 +41,21 @@ export interface DevupUILoaderOptions {
   themeFiles?: string[]
   watch: boolean
   singleCss: boolean
-  coordinatorPortFile?: string
-  // turbo
+  coordinatorPortFile?: undefined
   theme?: object
   defaultSheet: object
   defaultClassMap: object
   defaultFileMap: object
   importAliases?: Record<string, string | null>
+}
+
+export type DevupUILoaderOptions =
+  DevupUICoordinatorLoaderOptions | DevupUIStandaloneLoaderOptions
+
+function isCoordinatorOptions(
+  options: DevupUILoaderOptions,
+): options is DevupUICoordinatorLoaderOptions {
+  return !!options.coordinatorPortFile
 }
 let initializedCompilers = new WeakSet<DevupCompiler>()
 
@@ -135,27 +153,11 @@ function coordinatorExtract(
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
-    const {
-      watch,
-      engine,
-      package: libPackage,
-      cssDir,
-      sheetFile,
-      classMapFile,
-      fileMapFile,
-      themeFile,
-      singleCss,
-      coordinatorPortFile,
-      theme,
-      themeFiles = [],
-      defaultClassMap,
-      defaultFileMap,
-      defaultSheet,
-      importAliases = {},
-    } = this.getOptions()
+    const options = this.getOptions()
 
     // Coordinator mode: delegate to HTTP server
-    if (coordinatorPortFile) {
+    if (isCoordinatorOptions(options)) {
+      const { coordinatorPortFile, themeFiles = [] } = options
       this.addDependency(coordinatorPortFile)
       // Extraction reads theme tokens: re-run when the theme changes (the
       // coordinator registers the new theme before it answers).
@@ -187,6 +189,23 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       )
       return
     }
+
+    const {
+      watch,
+      engine,
+      package: libPackage,
+      cssDir,
+      sheetFile,
+      classMapFile,
+      fileMapFile,
+      themeFile,
+      singleCss,
+      theme,
+      defaultClassMap,
+      defaultFileMap,
+      defaultSheet,
+      importAliases = {},
+    } = options
 
     // Non-coordinator mode retains one selected compiler through callbacks.
     const callback = this.async()

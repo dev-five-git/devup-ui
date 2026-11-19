@@ -809,25 +809,10 @@ describe('DevupUINextPlugin', () => {
               {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
-                  engine: 'native',
-                  watch: false,
                   coordinatorPortFile: join('df', 'coordinator.port'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  themeFile: 'devup.json',
                   themeFiles: [resolve('devup.json')],
-                  theme: {},
-                  defaultClassMap: {},
-                  defaultFileMap: {},
-                  defaultSheet: {
-                    css: {},
-                    font_faces: {},
-                    global_css_files: [],
-                    imports: {},
-                    keyframes: {},
-                    properties: {},
-                  },
+                  watch: false,
+                  stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                 },
               },
             ],
@@ -836,36 +821,9 @@ describe('DevupUINextPlugin', () => {
                 {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
-                    engine: 'native',
-                    package: '@devup-ui/react',
-                    cssDir: resolve('df', 'devup-ui'),
                     coordinatorPortFile: join('df', 'coordinator.port'),
-                    sheetFile: join('df', 'sheet.json'),
-                    classMapFile: join('df', 'classMap.json'),
-                    fileMapFile: join('df', 'fileMap.json'),
-                    themeFile: 'devup.json',
                     themeFiles: [resolve('devup.json')],
-                    watch: false,
-                    singleCss: false,
-                    theme: {},
-                    defaultClassMap: {},
-                    defaultFileMap: {},
-                    importAliases: {
-                      '@emotion/react': null,
-                      '@emotion/styled': 'styled',
-                      '@emotion/css': null,
-                      '@vanilla-extract/css': null,
-                      '@vanilla-extract/css-utils': null,
-                      'styled-components': 'styled',
-                    },
-                    defaultSheet: {
-                      css: {},
-                      font_faces: {},
-                      global_css_files: [],
-                      imports: {},
-                      keyframes: {},
-                      properties: {},
-                    },
+                    stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                   },
                 },
               ],
@@ -895,25 +853,10 @@ describe('DevupUINextPlugin', () => {
               {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
-                  engine: 'native',
-                  watch: false,
                   coordinatorPortFile: join('df', 'coordinator.port'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  themeFile: 'devup.json',
                   themeFiles: [resolve('devup.json')],
-                  theme: {},
-                  defaultClassMap: {},
-                  defaultFileMap: {},
-                  defaultSheet: {
-                    css: {},
-                    font_faces: {},
-                    global_css_files: [],
-                    imports: {},
-                    keyframes: {},
-                    properties: {},
-                  },
+                  watch: false,
+                  stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                 },
               },
             ],
@@ -929,36 +872,9 @@ describe('DevupUINextPlugin', () => {
                 {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
-                    engine: 'native',
-                    package: '@devup-ui/react',
-                    cssDir: resolve('df', 'devup-ui'),
                     coordinatorPortFile: join('df', 'coordinator.port'),
-                    sheetFile: join('df', 'sheet.json'),
-                    classMapFile: join('df', 'classMap.json'),
-                    fileMapFile: join('df', 'fileMap.json'),
-                    importAliases: {
-                      '@emotion/react': null,
-                      '@emotion/styled': 'styled',
-                      '@emotion/css': null,
-                      '@vanilla-extract/css': null,
-                      '@vanilla-extract/css-utils': null,
-                      'styled-components': 'styled',
-                    },
-                    watch: false,
-                    singleCss: false,
-                    theme: {},
-                    defaultClassMap: {},
-                    defaultFileMap: {},
-                    defaultSheet: {
-                      css: {},
-                      font_faces: {},
-                      global_css_files: [],
-                      imports: {},
-                      keyframes: {},
-                      properties: {},
-                    },
-                    themeFile: 'devup.json',
                     themeFiles: [resolve('devup.json')],
+                    stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                   },
                 },
               ],
@@ -989,25 +905,10 @@ describe('DevupUINextPlugin', () => {
               {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
-                  engine: 'native',
-                  watch: false,
                   coordinatorPortFile: join('df', 'coordinator.port'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  themeFile: 'devup.json',
                   themeFiles: [resolve('devup.json')],
-                  theme: 'theme',
-                  defaultClassMap: {},
-                  defaultFileMap: {},
-                  defaultSheet: {
-                    css: {},
-                    font_faces: {},
-                    global_css_files: [],
-                    imports: {},
-                    keyframes: {},
-                    properties: {},
-                  },
+                  watch: false,
+                  stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                 },
               },
             ],
@@ -1023,36 +924,9 @@ describe('DevupUINextPlugin', () => {
                 {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
-                    engine: 'native',
-                    package: '@devup-ui/react',
-                    cssDir: resolve('df', 'devup-ui'),
                     coordinatorPortFile: join('df', 'coordinator.port'),
-                    sheetFile: join('df', 'sheet.json'),
-                    classMapFile: join('df', 'classMap.json'),
-                    fileMapFile: join('df', 'fileMap.json'),
-                    watch: false,
-                    singleCss: false,
-                    theme: 'theme',
-                    defaultClassMap: {},
-                    defaultFileMap: {},
-                    importAliases: {
-                      '@emotion/react': null,
-                      '@emotion/styled': 'styled',
-                      '@emotion/css': null,
-                      '@vanilla-extract/css': null,
-                      '@vanilla-extract/css-utils': null,
-                      'styled-components': 'styled',
-                    },
-                    defaultSheet: {
-                      css: {},
-                      font_faces: {},
-                      global_css_files: [],
-                      imports: {},
-                      keyframes: {},
-                      properties: {},
-                    },
-                    themeFile: 'devup.json',
                     themeFiles: [resolve('devup.json')],
+                    stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                   },
                 },
               ],
@@ -1583,6 +1457,31 @@ export const box = style({ color: 'red' })`
       // Verify stale port file was deleted before starting coordinator
       expect(unlinkSyncSpy).toHaveBeenCalledWith(join('df', 'coordinator.port'))
     })
+    it('keys the loaders on the setup state without shipping it in the config', () => {
+      process.env.TURBOPACK = '1'
+      existsSyncSpy.mockReturnValue(true)
+      mkdirSyncSpy.mockReturnValue('')
+      writeFileSyncSpy.mockReturnValue(undefined)
+      const setup = (theme: string) => {
+        readFileSyncSpy.mockReturnValue(JSON.stringify({ theme }))
+        const rules = DevupUI({}).turbopack?.rules as {
+          './df/devup-ui/*.css': { options: { stateKey: string } }[]
+          '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
+            loaders: { options: { stateKey: string } }[]
+          }
+        }
+        const css = rules['./df/devup-ui/*.css'][0].options
+        const source =
+          rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'].loaders[0].options
+        expect(source.stateKey).toBe(css.stateKey)
+        return { rules, stateKey: source.stateKey }
+      }
+
+      const first = setup('first')
+      expect(JSON.stringify(first.rules)).not.toContain('first')
+      expect(setup('first').stateKey).toBe(first.stateKey)
+      expect(setup('second').stateKey).not.toBe(first.stateKey)
+    })
     it('writes its own state next to another live process on the same distDir', () => {
       process.env.TURBOPACK = '1'
       const stateDir = join('df', `state.${process.pid}`)
@@ -1627,10 +1526,10 @@ export const box = style({ color: 'red' })`
         const rule = config.turbopack?.rules?.[
           '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}'
         ] as {
-          loaders: { options: { sheetFile: string } }[]
+          loaders: { options: { coordinatorPortFile: string } }[]
         }
-        expect(rule.loaders[0].options.sheetFile).toBe(
-          join(stateDir, 'sheet.json'),
+        expect(rule.loaders[0].options.coordinatorPortFile).toBe(
+          join('df', `coordinator.${process.pid}.port`),
         )
       } finally {
         portSpy.mockRestore()
