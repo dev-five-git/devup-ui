@@ -19,7 +19,7 @@ fn print(value: &Expression<'_>) -> String {
 fn run(value: &str, scale: &str) -> String {
     let script = format!(
         "{}JSON.stringify(__devupScale({value}{scale}) ?? null)",
-        declaration("__devupScale")
+        module_script()
     );
     boa_engine::Context::default()
         .eval(boa_engine::Source::from_bytes(&script))
@@ -186,11 +186,64 @@ fn applies_only_where_numbers_follow_devup_units(
 }
 
 #[rstest]
-#[case("a(h(m));", true)]
-#[case("a(m);", false)]
-fn declare_appends_the_helper_only_when_called(#[case] code: &str, #[case] expected: bool) {
-    let mut output = code.to_owned();
-    declare(&mut output, "h");
-    assert_eq!(output.contains("function h("), expected);
-    assert!(output.starts_with(code));
+#[case(
+    WEB_EXPORT,
+    "__devupScale",
+    false,
+    "import { __devupScale } from \"p/scale\";\n"
+)]
+#[case(
+    WEB_EXPORT,
+    "h",
+    false,
+    "import { __devupScale as h } from \"p/scale\";\n"
+)]
+#[case(
+    NATIVE_EXPORT,
+    "__u",
+    false,
+    "import { __devupNativeScale as __u } from \"p/scale\";\n"
+)]
+#[case(
+    WEB_EXPORT,
+    "h",
+    true,
+    "const h = require(\"p/scale\").__devupScale;\n"
+)]
+fn import_code_binds_the_local_name(
+    #[case] export: &str,
+    #[case] local: &str,
+    #[case] commonjs: bool,
+    #[case] expected: &str,
+) {
+    assert_eq!(import_code("p", export, local, commonjs), expected);
+}
+
+/// `code` with the web conversion imported as `h` when it reads it
+fn imported(code: &str, source_type: oxc_span::SourceType) -> String {
+    let allocator = Allocator::default();
+    let mut program = oxc_parser::Parser::new(&allocator, code, source_type)
+        .parse()
+        .program;
+    import(&allocator, &mut program, "p", "h");
+    Codegen::new().build(&program).code
+}
+
+#[rstest]
+#[case(
+    "import a from \"a\";\na(h(m));\n",
+    "import a from \"a\";\nimport { __devupScale as h } from \"p/scale\";\na(h(m));\n"
+)]
+#[case("a(m);\n", "a(m);\n")]
+#[case("h(m);\n", "import { __devupScale as h } from \"p/scale\";\nh(m);\n")]
+fn import_follows_the_leading_imports_only_when_read(#[case] code: &str, #[case] expected: &str) {
+    assert_eq!(imported(code, oxc_span::SourceType::mjs()), expected);
+}
+
+#[test]
+fn import_requires_in_commonjs() {
+    assert_eq!(
+        imported("h(m);\n", oxc_span::SourceType::cjs()),
+        "const h = require(\"p/scale\").__devupScale;\nh(m);\n"
+    );
 }

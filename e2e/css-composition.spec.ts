@@ -17,6 +17,7 @@ import {
   setModuleResolver,
   setPrefix,
 } from '../bindings/devup-ui-wasm/pkg/index.js'
+import { __devupScale } from '../packages/react/src/scale'
 
 const api = "import { css } from '@devup-ui/react';"
 const leafRules = `{
@@ -533,8 +534,11 @@ export const props = (m) => jsx(Box, { p: m, opacity: m / 4, transitionDuration:
     )
     return { code: output.code, css: getCss(undefined, false) }
   })
-  const script = emitted.code
-    .split('\n')
+  // The output imports the conversion from the package; the page declares it
+  expect(emitted.code).toContain(
+    'import { __devupScale } from "@devup-ui/react/scale";',
+  )
+  const script = [String(__devupScale), ...emitted.code.split('\n')]
     .filter((line) => !line.startsWith('import '))
     .join('\n')
     .replace('export const props', 'const props')

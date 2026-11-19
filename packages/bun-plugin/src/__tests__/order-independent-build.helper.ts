@@ -89,7 +89,8 @@ const result = await Bun.build({
   entrypoints,
   target: 'browser',
   format: 'esm',
-  external: ['react', 'react/jsx-runtime'],
+  // Installed beside Devup UI in an app; the fixture directory has no packages
+  external: ['react', 'react/jsx-runtime', '@devup-ui/react/scale'],
   plugins: [observed],
 })
 assert(result.success, result.logs.map(String).join('\n'))

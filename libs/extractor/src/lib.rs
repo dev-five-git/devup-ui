@@ -1058,13 +1058,13 @@ fn extract_source(
     };
     unwrap_iife::unwrap(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
     peephole::simplify(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
+    if let Some(helper) = &units_helper {
+        runtime_units::import(&allocator, &mut program, &option.package, helper);
+    }
     header_pragmas.reanchor(&mut program);
     let mut result = Codegen::new().with_options(codegen_options).build(&program);
     if visitor.jsx.sequences {
         jsx_emission::parenthesize(&mut result, source_type.with_jsx(true))?;
-    }
-    if let Some(helper) = &units_helper {
-        runtime_units::declare(&mut result.code, helper);
     }
     // A stylesheet's output is generated, so its map stays on that code
     let map = result.map.map(|map| {
@@ -1444,7 +1444,8 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(",");
             let script = format!(
-                "{factories}{}\nconst trace=[]; const props=({invocation}).props;\nconst active=new Set((props.className || '').split(/\\s+/));\nJSON.stringify([trace,[{declarations}].filter(([name])=>active.has(name)).map(([,value])=>value())]);",
+                "{}{factories}{}\nconst trace=[]; const props=({invocation}).props;\nconst active=new Set((props.className || '').split(/\\s+/));\nJSON.stringify([trace,[{declarations}].filter(([name])=>active.has(name)).map(([,value])=>value())]);",
+                runtime_units::linked(&output.code),
                 Codegen::new().build(&program).code
             );
             Context::default()

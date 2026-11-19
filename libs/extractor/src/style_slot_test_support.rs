@@ -151,7 +151,7 @@ pub(crate) fn assert_variables(
         // A number the value holds is converted where the element sets it
         let converted = style.runtime_units()
             && crate::runtime_units::unit(property).is_some()
-            && output.code.contains("function __devupScale(");
+            && output.code.contains("import { __devupScale } from ");
         let set = if converted {
             format!("__devupScale({expected_expression})")
         } else {

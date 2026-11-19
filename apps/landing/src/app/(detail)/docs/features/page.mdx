@@ -62,22 +62,18 @@ const generated = <div className="a" style={{ '--a': colorVariable }} />
 // .a { color: var(--a); }
 ```
 
-A number known only at runtime takes the unit the same number written as a literal takes, so `p={m}` with `m = 2` pads by `8px`, as `p={2}` does. Spacing and sizes are multiplied by 4 into `px`, durations (`transitionDuration`, `animationDelay`...) take `ms`, and unitless properties (`opacity`, `zIndex`, `lineHeight`, `flex`...), colors and custom properties keep the number as it is. A string holding only a number (`'2'`) converts like the number, as a literal string does; any other string (`'2rem'`, `'auto'`) and `null`, `undefined` or `false` pass through unchanged, so the latter still leave the declaration out. The conversion is a small function the build declares once in the file that needs it — nothing is imported and no package runs. Files whose numbers are pixels — Emotion, styled-components and vanilla-extract — keep their own conversion.
+A number known only at runtime takes the unit the same number written as a literal takes, so `p={m}` with `m = 2` pads by `8px`, as `p={2}` does. Spacing and sizes are multiplied by 4 into `px`, durations (`transitionDuration`, `animationDelay`...) take `ms`, and unitless properties (`opacity`, `zIndex`, `lineHeight`, `flex`...), colors and custom properties keep the number as it is. A string holding only a number (`'2'`) converts like the number, as a literal string does; any other string (`'2rem'`, `'auto'`) and `null`, `undefined` or `false` pass through unchanged, so the latter still leave the declaration out. The conversion is a tiny dependency-free function the build imports, once per file that needs it, from the package's `scale` subpath (`@devup-ui/react/scale`, or `<package>/scale` when the `package` option names another one); it loads no component code. Numbers a `styled()` callback returns at runtime convert the same way, so `${p => p.m}` with `m = 3` pads by `12px`, as `p={3}` does. Files whose numbers are pixels — Emotion, styled-components and vanilla-extract — keep their own conversion.
 
 ```tsx
 // You write:
 const example = <Box opacity={o} p={m} />
 
 // Devup UI generates:
+import { __devupScale } from '@devup-ui/react/scale'
+
 const generated = (
   <div className="a b" style={{ '--a': o, '--b': __devupScale(m) }} />
 )
-function __devupScale(v, s = 4, u = 'px') {
-  return typeof v === 'number' ||
-    (typeof v === 'string' && /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(v))
-    ? v * s + u
-    : v
-}
 ```
 
 A value imported from another module stays static when that module declares it with `const` — a string or number literal, a member of an object literal (`as const` included), an alias of another constant, a re-export or a default export:

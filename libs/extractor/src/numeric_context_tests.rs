@@ -280,13 +280,8 @@ fn bare_runtime_numbers_when_native_or_vars_are_read_keep_existing_semantics(
     };
     // When
     let output = extract("numeric.tsx", &code, option)?;
-    // Then: no pixel reading, past the spacing helper Devup UI declares last
-    let read = output
-        .code
-        .split("function __devupScale(")
-        .next()
-        .unwrap_or_default();
-    assert!(!read.contains("typeof"), "{}", output.code);
+    // Then
+    assert!(!output.code.contains("typeof"), "{}", output.code);
     assert!(
         output
             .styles

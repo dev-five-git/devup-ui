@@ -78,14 +78,8 @@ fn grouped_spread_when_the_key_is_written_again_preserves_the_later_boundary_and
         actual.trace,
         serde_json::json!(["old", "first", "new", "last"])
     );
-    // The unit helper the file declares last tests the text of a string
-    let grouping = compiled
-        .code
-        .split("function __devupScale(")
-        .next()
-        .unwrap_or_default();
-    assert_eq!(grouping.matches("\"px\" in ").count(), 0);
-    assert_eq!(grouping.matches(".test(").count(), 0);
+    assert_eq!(compiled.code.matches("\"px\" in ").count(), 0);
+    assert_eq!(compiled.code.matches(".test(").count(), 0);
     assert_eq!(
         static_styles(&compiled),
         vec![("padding-right".into(), "28px".into())]

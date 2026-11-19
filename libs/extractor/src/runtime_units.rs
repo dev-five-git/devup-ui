@@ -3,17 +3,18 @@
 //! A literal number is converted at build time (`p={2}` → `padding:8px`), but
 //! a value read at runtime reached its CSS variable as written, and `2` is no
 //! CSS length. While a file is compiled, every such value is passed through a
-//! helper the file declares once, converting a number the way the build
-//! converts a literal of that property.
+//! conversion the file imports from the package's `scale` subpath, converting
+//! a number the way the build converts a literal of that property.
 
 use std::cell::RefCell;
 
-use oxc_allocator::{FromIn, GetAllocator};
+use oxc_allocator::{Allocator, FromIn, GetAllocator};
 use oxc_ast::{
-    ast::{Argument, Expression, NumberBase, Str},
+    ast::{Argument, Expression, IdentifierReference, NumberBase, Program, Statement, Str},
     builder::AstBuilder,
 };
-use oxc_span::SPAN;
+use oxc_ast_visit::Visit;
+use oxc_span::{SPAN, SourceType};
 
 use crate::extract_style::constant::{
     TIME_PROPERTIES, is_maintain_value_property, strip_vendor_prefix,
@@ -54,8 +55,8 @@ impl std::hash::Hash for Marked {
     fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
 
-/// The base of the helper's name, made unique in each file
-pub(crate) const HELPER_BASE: &str = "__devupScale";
+/// The base of the helper's local name, made unique in each file
+pub(crate) const HELPER_BASE: &str = WEB_EXPORT;
 
 /// Lets values read at runtime be converted while compiling one file, and
 /// restores the outer file's helper when it ends
@@ -175,14 +176,26 @@ pub(crate) fn converted<'s, 'a>(value: &'s Expression<'a>) -> &'s Expression<'a>
     }
 }
 
-/// The helper `name` declares: a number, or a string holding only one, as
-/// Devup UI reads a literal, times `s` in the unit `u`; any other value as it
-/// is, so `null`, `undefined` and `false` still remove the declaration. It
-/// converts no object to text, so it runs no code of the value's own
-pub(crate) fn declaration(name: &str) -> String {
-    format!(
-        "function {name}(v, s = 4, u = \"px\") {{\n\treturn typeof v === \"number\" || typeof v === \"string\" && /^[+-]?(\\d+\\.?\\d*|\\.\\d+)(e[+-]?\\d+)?$/i.test(v) ? v * s + u : v;\n}}\n"
-    )
+/// The subpath of the package the conversions are imported from
+pub(crate) const SUBPATH: &str = "scale";
+
+/// What the web conversion is exported as
+pub(crate) const WEB_EXPORT: &str = "__devupScale";
+
+/// What the React Native conversion is exported as
+pub(crate) const NATIVE_EXPORT: &str = "__devupNativeScale";
+
+/// The statement binding `local` to the conversion `export` of `package`'s
+/// conversions: an import, or a `require` in a `CommonJS` file
+pub(crate) fn import_code(package: &str, export: &str, local: &str, commonjs: bool) -> String {
+    let module = format!("{package}/{SUBPATH}");
+    if commonjs {
+        format!("const {local} = require(\"{module}\").{export};\n")
+    } else if local == export {
+        format!("import {{ {export} }} from \"{module}\";\n")
+    } else {
+        format!("import {{ {export} as {local} }} from \"{module}\";\n")
+    }
 }
 
 /// Whether `source` is compiled with Devup UI's units: no element takes
@@ -201,14 +214,88 @@ pub(crate) fn applies(
             .any(|package| source.contains(package.as_str()))
 }
 
-/// `code` with the helper declared at its end, when it calls it; a function
-/// declaration is hoisted, so every call before it already reads it
-pub(crate) fn declare(code: &mut String, name: &str) {
-    if code.contains(&format!("{name}(")) {
-        code.push_str(&declaration(name));
+/// Whether `program` reads `name`
+fn reads(program: &Program<'_>, name: &str) -> bool {
+    struct Reads<'n> {
+        name: &'n str,
+        found: bool,
+    }
+    impl<'a> Visit<'a> for Reads<'_> {
+        fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
+            self.found |= identifier.name == self.name;
+        }
+    }
+    let mut reads = Reads { name, found: false };
+    reads.visit_program(program);
+    reads.found
+}
+
+/// `program` importing the web conversion of `package` as `local` after its
+/// leading imports, when it calls it
+pub(crate) fn import<'a>(
+    allocator: &'a Allocator,
+    program: &mut Program<'a>,
+    package: &str,
+    local: &str,
+) {
+    if !reads(program, local) {
+        return;
+    }
+    let commonjs = program.source_type.is_commonjs();
+    let source = allocator.alloc_str(&import_code(package, WEB_EXPORT, local, commonjs));
+    let mut statements = oxc_parser::Parser::new(allocator, source, SourceType::mjs())
+        .parse()
+        .program;
+    crate::utils::clear_generated_program_spans(&mut statements);
+    let at = program
+        .body
+        .iter()
+        .take_while(|statement| matches!(statement, Statement::ImportDeclaration(_)))
+        .count();
+    for statement in statements.body.into_iter().rev() {
+        program.body.insert(at, statement);
     }
 }
 
 #[cfg(test)]
 #[path = "runtime_units_tests.rs"]
 mod tests;
+
+/// The conversions' module, as the package publishes it, as a plain script
+/// declaring them
+#[cfg(test)]
+pub(crate) fn module_script() -> String {
+    crate::jsx_semantics_tests::whole::plain_script(include_str!(
+        "../../../packages/react/src/scale.ts"
+    ))
+}
+
+/// The script a test runs before `code`, the build's output with its imports
+/// left out: the conversions' module as `__devupScaleModule`, which a test's
+/// `require` can return, and each local name `code` imports from it
+#[cfg(test)]
+pub(crate) fn linked(code: &str) -> String {
+    let mut script = format!(
+        "var __devupScaleModule = (function () {{ {} return {{ {WEB_EXPORT}, {NATIVE_EXPORT} }}; }})();\n",
+        module_script()
+    );
+    let module = format!("/{SUBPATH}\";");
+    for line in code.lines() {
+        let Some((names, _)) = line
+            .strip_prefix("import { ")
+            .filter(|_| line.ends_with(&module))
+            .and_then(|rest| rest.split_once(" }"))
+        else {
+            continue;
+        };
+        for name in names.split(", ") {
+            let (export, local) = name.split_once(" as ").unwrap_or((name, name));
+            script.push_str("var ");
+            script.push_str(local);
+            script.push_str(" = __devupScaleModule.");
+            script.push_str(export);
+            script.push_str(";\n");
+        }
+    }
+    script
+}
