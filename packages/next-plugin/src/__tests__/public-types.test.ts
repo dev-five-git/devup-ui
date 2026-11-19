@@ -39,6 +39,6 @@ it('publishes declarations that do not load webpack', () => {
   // every app reads all they reach (and records it in its tsbuildinfo)
   expect(declarationGraph()).toEqual({
     local: ['./index', './plugin'],
-    packages: ['@devup-ui/plugin-utils', 'next'],
+    packages: ['@devup-ui/plugin-utils/types', 'next'],
   })
 })
