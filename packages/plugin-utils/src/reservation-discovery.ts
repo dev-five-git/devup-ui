@@ -12,6 +12,7 @@ import {
   isReservationReadFailure,
   reservationSource,
 } from './reservation-source'
+import { createNodeModulesExcludeRegex } from './shared'
 import type { WasmImportAliases } from './types'
 
 export type ReservationInput = {
@@ -120,6 +121,8 @@ export function collectReservationInputs(
     allowPackage: (specifier) => allowedPackage(specifier, include),
   })
   const needles = extractedNeedles(options.package, options.importAliases)
+  // A dependency's files the loaders leave to the bundler, by the loaders' rule
+  const leftToBundler = createNodeModulesExcludeRegex(include)
   const records = new Map<string, ReservationInput>()
   const sources = new Map<string, string>()
   const entryTargets = new Set<string>()
@@ -161,6 +164,10 @@ export function collectReservationInputs(
       needles.some((needle) => code.includes(needle))
     )
       seeds.add(key)
+    // No loader extracts what such a file imports, so the crawl stops there:
+    // a bundler entry such as Next's client runtime would otherwise read
+    // hundreds of the framework's own files before every build
+    if (leftToBundler.test(physicalPath)) continue
     const targets = new Set<string>()
     const resolutions = new Map<string, string>()
     imports.set(key, resolutions)
