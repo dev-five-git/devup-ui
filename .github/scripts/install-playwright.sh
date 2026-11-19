@@ -16,7 +16,8 @@
 # `apt-get install` for the packages the browsers need. Firefox and WebKit
 # need about 185 packages (140 MB) the image does not ship, and the Ubuntu
 # mirror of the runner sometimes serves them at a few kB/s, so one install
-# could run until the job timed out. Each attempt here is time-limited;
+# could run until the job timed out. Here the packages are downloaded
+# several at a time with fallback mirrors, each attempt is time-limited, and
 # packages downloaded before a timeout stay in /var/cache/apt/archives, so
 # the next attempt only fetches the rest.
 set -euo pipefail
@@ -27,6 +28,14 @@ if [ "$#" -eq 0 ]; then
 fi
 
 read -r -a cli <<< "${PLAYWRIGHT_CLI:-bunx playwright}"
+
+# One attempt, run by the retry loop below under `timeout`.
+if [ "$1" = --attempt ]; then
+  shift
+  sudo env "PATH=$APT_GET_SHIM:$PATH" "${cli[@]}" install-deps "$@"
+  exec "${cli[@]}" install "$@"
+fi
+
 attempt_timeout="${ATTEMPT_TIMEOUT:-4m}"
 attempts="${ATTEMPTS:-3}"
 apt_cache="${PLAYWRIGHT_APT_CACHE:-}"
@@ -50,16 +59,26 @@ if [ -n "$apt_cache" ] && compgen -G "$apt_cache/*.deb" > /dev/null; then
   sudo cp -n "$apt_cache"/*.deb "$archives/"
 fi
 
+# `install-deps` runs as root so Playwright calls apt-get without sudo, which
+# would reset PATH; the apt-get on PATH is then apt-get-prefetch.sh, which
+# downloads the packages in parallel (with fallback mirrors) before handing
+# over to the real apt-get. The browsers install as the runner user.
+APT_GET_SHIM="$(mktemp -d)"
+export APT_GET_SHIM
+ln -s "$(cd "$(dirname "$0")" && pwd)/apt-get-prefetch.sh" "$APT_GET_SHIM/apt-get"
+
 attempt=1
-until timeout --kill-after=20s "$attempt_timeout" "${cli[@]}" install --with-deps "$@"; do
+until timeout --kill-after=20s "$attempt_timeout" bash "$0" --attempt "$@"; do
   status=$?
   if [ "$attempt" -ge "$attempts" ]; then
     echo "::error::Playwright install failed after $attempt attempt(s) (last exit status $status)"
     exit "$status"
   fi
   echo "::warning::Playwright install attempt $attempt exited with status $status (124 = timed out after $attempt_timeout); retrying"
-  # A killed attempt can leave apt-get behind sudo or dpkg half-configured.
+  # A killed attempt can leave apt-get or its downloads running, or dpkg
+  # half-configured.
   sudo pkill -KILL -x apt-get || true
+  sudo pkill -KILL -x curl || true
   sudo dpkg --configure -a || true
   echo "Packages already downloaded: $(find "$archives" -maxdepth 1 -name '*.deb' | wc -l)"
   attempt=$((attempt + 1))
