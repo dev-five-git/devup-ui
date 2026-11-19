@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Add the `Search` component: an `<input type=\"search\">` with a magnifier icon built on `Input`, which calls `onSearch` with the query on Enter (not on the Enter that confirms an IME composition), clears the query on Escape as its clear button does, and hides the browser's own clear button",
+  "date": "2026-11-19T00:00:00.000Z"
+}
