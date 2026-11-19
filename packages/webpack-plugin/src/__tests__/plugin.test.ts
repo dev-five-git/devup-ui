@@ -500,6 +500,7 @@ describe('devupUIWebpackPlugin', () => {
         engine: 'native',
         licenseBanner: true,
         atomHoist: 2,
+        routeShells: false,
       })
     },
   )
@@ -732,6 +733,7 @@ describe('devupUIWebpackPlugin', () => {
         engine: 'wasm',
         licenseBanner: true,
         atomHoist: 2,
+        routeShells: false,
       })
     })
 
@@ -1356,6 +1358,66 @@ describe('devupUIWebpackPlugin', () => {
       }
     })
 
+    it.each([true, false])(
+      'counts a layout with the routes it wraps when routeShells is %s',
+      async (routeShells) => {
+        const project = fs.mkdtempSync(
+          join(tmpdir(), 'devup-ui-webpack-shells-'),
+        )
+        reservationSpy.mockRestore()
+        readFileSyncSpy.mockRestore()
+        existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
+        using _reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
+          undefined,
+        )
+        try {
+          for (const [path, code] of [
+            ['app/layout.tsx', "import '../lib/header'"],
+            ['app/page.tsx', 'export {}'],
+            ['app/a/page.tsx', 'export {}'],
+            ['lib/header.tsx', 'export {}'],
+          ])
+            await Bun.write(join(project, path), code)
+          const compiler = createCompiler()
+          compiler.options.context = project
+          compiler.options.entry = {
+            layout: { import: ['./app/layout.tsx'] },
+            home: { import: ['./app/page.tsx'] },
+            a: { import: ['./app/a/page.tsx'] },
+          }
+          applyAndRun(
+            new DevupUIWebpackPlugin({ engine: 'wasm', routeShells }),
+            compiler,
+          )
+          const [{ graph, entries }] = computeFileReachSpy.mock.calls.at(
+            -1,
+          ) as [
+            {
+              graph: { staticImports: Map<string, Set<string>> }
+              entries: string[]
+            },
+          ]
+          const layout = join(project, 'app/layout.tsx')
+          // A shell is no route; each page reaches it instead
+          expect(entries.includes(layout)).toBe(!routeShells)
+          expect(
+            graph.staticImports
+              .get(join(project, 'app/a/page.tsx'))
+              ?.has(layout),
+          ).toBe(routeShells)
+          // Collapse still plans over the graph as discovered
+          const [{ graph: planned }] = buildCanonicalMapSpy.mock.calls.at(
+            -1,
+          ) as [{ graph: { staticImports: Map<string, Set<string>> } }]
+          expect(
+            planned.staticImports.get(join(project, 'app/a/page.tsx'))?.size,
+          ).toBe(0)
+        } finally {
+          fs.rmSync(project, { recursive: true, force: true })
+        }
+      },
+    )
+
     it('runs single-importer collapse when atomHoist is explicitly zero, without hoisting', () => {
       // Constraint: single-importer collapse must ALWAYS be on. The canonical
       // map is built + imported unconditionally; only atom HOISTING is gated.
@@ -1621,32 +1683,6 @@ describe('devupUIWebpackPlugin', () => {
         seed.mockRestore()
         shorthands.mockRestore()
       }
-    })
-
-    it("prewarms from the build's shared sources, read once by an earlier compiler", () => {
-      // Given a source an earlier compiler of the build already read.
-      const file = import.meta.path
-      const sourceCache: pluginUtils.SourceCache = new Map()
-      pluginUtils.withSourceCache(
-        () => pluginUtils.readSource(file),
-        sourceCache,
-      )
-      const [[key, entry]] = [...sourceCache]
-      sourceCache.set(key, { ...entry, code: 'read before' })
-      const plugin = new DevupUIWebpackPlugin({
-        engine: 'wasm',
-        productionPrewarmFiles: [file],
-        sourceCache,
-      })
-      const compiler = createCompiler()
-      // When this compiler prepares its compilation.
-      plugin.apply(asCompiler(compiler))
-      compiler.hooks.run.tap.mock.calls[0][1]()
-      // Then it extracts what was read, without reading the file again.
-      expect(codeExtractSpy.mock.calls.map(([, code]) => code)).toEqual([
-        'read before',
-      ])
-      expect(globalThis.__devupSourceCache).toBeUndefined()
     })
 
     it.each([false, true])(

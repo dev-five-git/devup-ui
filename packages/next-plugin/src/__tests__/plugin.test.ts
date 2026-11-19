@@ -470,30 +470,11 @@ describe('DevupUINextPlugin', () => {
           singleCss: true,
           cssDir: resolve('.next/cache', 'devup-ui'),
           productionPrewarmFiles: [],
-          sourceCache: expect.any(Map),
+          routeShells: true,
         })
       },
     )
 
-    it('shares one source cache between the compilers of a production build, none in dev', () => {
-      // Given
-      delete process.env.TURBOPACK
-      const ret = DevupUI({})
-      // When: Next configures its server and client compilers, then a dev one
-      ret.webpack!(createWebpackConfig(), createWebpackContext())
-      ret.webpack!(createWebpackConfig(), createWebpackContext())
-      ret.webpack!(createWebpackConfig(), {
-        ...createWebpackContext(),
-        dev: true,
-      })
-      // Then
-      const [server, client, dev] = devupUIWebpackPluginSpy.mock.calls.map(
-        ([options]) => (options as { sourceCache?: unknown }).sourceCache,
-      )
-      expect(server).toBeInstanceOf(Map)
-      expect(client).toBe(server)
-      expect(dev).toBeUndefined()
-    })
     it.each([
       ['a one-route production build', {}, {}, { singleCss: true }],
       [
@@ -537,7 +518,7 @@ describe('DevupUINextPlugin', () => {
         cssDir: resolve('.next/cache', 'devup-ui'),
         engine: 'native',
         productionPrewarmFiles: [],
-        sourceCache: expect.any(Map),
+        routeShells: true,
       })
     })
 
@@ -641,7 +622,7 @@ describe('DevupUINextPlugin', () => {
         engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
-        sourceCache: expect.any(Map),
+        routeShells: true,
       })
     })
 
@@ -663,7 +644,7 @@ describe('DevupUINextPlugin', () => {
         engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
-        sourceCache: expect.any(Map),
+        routeShells: true,
       })
       expect(webpack).toHaveBeenCalled()
     })
