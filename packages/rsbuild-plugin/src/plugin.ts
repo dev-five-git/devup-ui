@@ -275,6 +275,7 @@ export const DevupUI = ({
       const atomMode = !singleCss && Number.isFinite(atomHoist) && atomHoist > 0
       const moduleResolver = (conditions?: readonly string[]) =>
         createModuleResolver({
+          cwd: projectRoot,
           toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
           conditions,
         })

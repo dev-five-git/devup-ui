@@ -584,6 +584,49 @@ describe('devupUIWebpackPlugin', () => {
       await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
       expect(removeFile.mock.calls).toEqual([['src/a.tsx']])
     })
+
+    it('resolves the imports the warm-up extracts under the context when started from a parent directory', () => {
+      // The files and tsconfig.json under the context are real here
+      for (const spy of [
+        existsSyncSpy,
+        mkdirSyncSpy,
+        readFileSyncSpy,
+        writeFileSyncSpy,
+      ])
+        spy.mockRestore()
+      const root = fs.mkdtempSync(join(tmpdir(), 'devup-ui-prewarm-root-'))
+      using setModuleResolver = spyOn(
+        wasm,
+        'setModuleResolver',
+      ).mockReturnValue(undefined)
+      try {
+        fs.mkdirSync(join(root, 'src'), { recursive: true })
+        fs.writeFileSync(
+          join(root, 'tsconfig.json'),
+          JSON.stringify({
+            compilerOptions: { paths: { '@root-fixture/*': ['./src/*'] } },
+          }),
+        )
+        fs.writeFileSync(join(root, 'src', 'tokens.ts'), 'export const a = 1')
+        const compiler = createCompiler()
+        compiler.options.context = root
+        compiler.options.entry = {}
+        new DevupUIWebpackPlugin({ engine: 'wasm' }).apply(asCompiler(compiler))
+        compiler.hooks.run.tap.mock.calls[0][1]()
+        // The reservation's resolver, then the warm-up's
+        expect(setModuleResolver).toHaveBeenCalledTimes(2)
+        for (const [resolveModule] of setModuleResolver.mock.calls) {
+          assert(typeof resolveModule === 'function')
+          for (const specifier of ['./tokens', '@root-fixture/tokens'])
+            expect(resolveModule(specifier, 'src/App.tsx')).toEqual({
+              path: 'src/tokens.ts',
+              code: 'export const a = 1',
+            })
+        }
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
+    })
   })
 
   it.each([false, true])(
