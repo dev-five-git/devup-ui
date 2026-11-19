@@ -51,8 +51,10 @@ import {
   resolveCoordinatorPortFile,
   resolveStateDir,
 } from './coordinator-port'
+import { collectCompiledMdxFiles, collectNumberedMdxFiles } from './mdx'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
+import { readSessionState, writeSessionStateSync } from './session-state'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
@@ -160,30 +162,61 @@ function setupWarning(step: string, error: unknown, impact: string): string {
  * `distDir`, all together or none: a mix of one session's sheet with another
  * session's (or no) class names would give new styles names that clash with
  * restored ones. A missing or unreadable file starts fresh (first run); state
- * that does not import (another release wrote it) is dropped and starts fresh.
+ * that does not import (another release wrote it) or whose files are not one
+ * write's (see `readSessionState`) is dropped and starts fresh.
+ *
+ * Returns the restored source files that no longer exist: they were deleted
+ * or renamed while no coordinator ran, so nothing extracts them again and the
+ * engine forgets them here.
  */
 export function restoreSessionState(
   wasm: Pick<
     DevupCompiler,
-    'importSheet' | 'importClassMap' | 'importFileMap' | 'resetBuildState'
+    | 'importSheet'
+    | 'importClassMap'
+    | 'importFileMap'
+    | 'removeFile'
+    | 'resetBuildState'
   >,
-  [sheetFile, classMapFile, fileMapFile]: readonly [string, string, string],
-): void {
-  let state: unknown[]
+  // `SessionStateFiles`, spelled out so the published declarations do not
+  // load `./session-state`
+  files: readonly [string, string, string],
+  cwd: string = process.cwd(),
+): string[] {
+  const state = readSessionState(files)
+  if (state === undefined) return []
   try {
-    state = [sheetFile, classMapFile, fileMapFile].map((file) =>
-      JSON.parse(readFileSync(file, 'utf-8')),
-    )
-  } catch {
-    return
-  }
-  try {
+    if (state === null) throw new Error('mixed state')
     wasm.importSheet(state[0])
     wasm.importClassMap(state[1])
     wasm.importFileMap(state[2])
   } catch {
     wasm.resetBuildState()
+    return []
   }
+  const removed = restoredSources(state[0], state[2]).filter(
+    (file) => !existsSync(resolve(cwd, file)),
+  )
+  for (const file of removed) wasm.removeFile(file)
+  return removed
+}
+
+/**
+ * The source files a restored state holds styles of: those with a file number
+ * of their own, and those that wrote global CSS.
+ */
+function restoredSources(sheet: unknown, fileMap: unknown): string[] {
+  const files = new Set(
+    fileMap !== null && typeof fileMap === 'object' ? Object.keys(fileMap) : [],
+  )
+  const globalCssFiles =
+    sheet !== null && typeof sheet === 'object'
+      ? (sheet as { global_css_files?: unknown }).global_css_files
+      : undefined
+  if (Array.isArray(globalCssFiles))
+    for (const file of globalCssFiles)
+      if (typeof file === 'string') files.add(file)
+  return [...files]
 }
 
 interface SharedSlotOptions {
@@ -389,11 +422,30 @@ export function DevupUI(
     // starts empty and CSS for cached files would be missing.
     // Always restore from the shared `distDir` state: a process writing its
     // own state dir still starts from what the cache was built against.
-    restoreSessionState(wasm, [
+    const removedSources = restoreSessionState(wasm, [
       join(distDir, 'sheet.json'),
       join(distDir, 'classMap.json'),
       join(distDir, 'fileMap.json'),
     ])
+    // The coordinator only writes state once something is extracted again, so
+    // a restart that extracts nothing would restore the deleted files' styles
+    // every time.
+    if (removedSources.length > 0) {
+      try {
+        writeSessionStateSync(
+          [sheetFile, classMapFile, fileMapFile],
+          [exportSheet(), exportClassMap(), exportFileMap()],
+        )
+      } catch (error) {
+        console.warn(
+          setupWarning(
+            'state write',
+            error,
+            'The styles of deleted files are dropped from this session, and are dropped again on the next start.',
+          ),
+        )
+      }
+    }
     // After the restore: dropping a state that does not import resets these.
     setPrefix(prefix ?? null)
     setDebug(debug)
@@ -421,7 +473,7 @@ export function DevupUI(
     }
     const { theme, files: themeFiles } = registerProjectTheme()
     // disable turbo parallel
-    const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
+    const excludeRegex = createNodeModulesExcludeRegex(include)
 
     // Collapse and legacy whole-file hoisting remain independent of the deferred
     // Turbopack atom reservation. Never install atom reach/threshold without it.
@@ -493,22 +545,52 @@ export function DevupUI(
         failed: true,
       })
     }
+    // The MDX documents the build compiles. The graph cannot read MDX and the
+    // prewarm cannot extract it before its compiler runs, so the coordinator
+    // waits for their loaders instead: Turbopack hands each compiled document
+    // to the source rule. Added only to a deterministic set, never prewarmed.
+    let expectedMdxFiles: string[] = []
+    if (expectedBaseFiles.length > 0) {
+      try {
+        const cwd = process.cwd()
+        expectedMdxFiles = collectCompiledMdxFiles({
+          cwd,
+          srcDir: sourceDir(cwd),
+          pageExtensions: config.pageExtensions,
+          compiledFiles: expectedBaseFiles,
+        })
+      } catch (error) {
+        console.warn(
+          setupWarning(
+            'MDX scan',
+            error,
+            'The production stylesheet does not wait for MDX documents, so classes only they use can be missing from it.',
+          ),
+        )
+      }
+    }
 
     // Number every file the build can extract in path order, so class prefixes
     // do not depend on the order modules reach a loader. Numbers restored above
     // stay; files that appear later get the numbers after them.
     try {
       const cwd = process.cwd()
+      const roots = ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir))
+      const needles = extractedNeedles(libPackage, importAliases)
       seedFileNumbers(
         { seedFileMap: wasm.seedFileMap },
-        collectNumberedFiles({
-          roots: ['src', 'app', 'pages'].map((dir) => resolve(cwd, dir)),
-          include,
-          cwd,
-          needles: extractedNeedles(libPackage, importAliases),
-          importAliases,
-          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
-        }),
+        [
+          ...collectNumberedFiles({
+            roots,
+            include,
+            cwd,
+            needles,
+            importAliases,
+            toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+          }),
+          // Compiled MDX reaches the loader under the document's own path.
+          ...collectNumberedMdxFiles(roots, cwd, needles),
+        ].sort(),
       )
     } catch (error) {
       // Best-effort; numbering falls back to arrival order.
@@ -678,7 +760,7 @@ export function DevupUI(
       importAliases: importAliases as unknown as Record<string, string | null>,
       coordinatorPortFile,
       canonicalMap,
-      expectedBaseFiles,
+      expectedBaseFiles: [...expectedBaseFiles, ...expectedMdxFiles],
       prewarmedFiles,
       prewarmedOutputs,
       sourceMap,
@@ -776,7 +858,10 @@ export function DevupUI(
       // one (e.g. mts) means those files are never extracted: their
       // Box/styled markup hits the runtime stubs ("Cannot run on the
       // runtime") and the coordinator waits on graph members that never
-      // POST /extract.
+      // POST /extract. It also takes compiled MDX: `@next/mdx` renames its
+      // output with `as: '*.tsx'` and Turbopack matches the rules again on
+      // `page.mdx.tsx`, so this loader runs after the MDX compiler whichever
+      // of `withMDX` and `DevupUI` wraps the other.
       '*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}': {
         loaders: [
           {

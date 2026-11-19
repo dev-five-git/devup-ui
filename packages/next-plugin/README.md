@@ -258,6 +258,25 @@ emitted empty, banner included.
 export default DevupUI(nextConfig, { licenseBanner: false })
 ```
 
+## MDX
+
+With `@next/mdx`, Devup UI components and APIs used directly in an `.mdx`
+document are extracted from the compiled document, under webpack and Turbopack
+alike. The wrapping order does not matter:
+
+```ts
+export default createMDX()(DevupUI(nextConfig))
+// or
+export default DevupUI(createMDX()(nextConfig))
+```
+
+`@next/mdx` hands Turbopack its output as a `.tsx` module, which runs through
+the Devup UI source rule. A production Turbopack build cannot extract a
+document before it compiles, so its stylesheet waits for the MDX route files
+(when `pageExtensions` lists `mdx`) and for the documents those and the
+compiled sources import by a relative path. A document imported only through a
+path alias is not waited for.
+
 ## Turbopack build profiling
 
 Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a

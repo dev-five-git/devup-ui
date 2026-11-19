@@ -32,10 +32,17 @@ let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
 let writeFileSpy: ReturnType<typeof spyOn>
 let writeFileSyncSpy: ReturnType<typeof spyOn>
+let renameSpy: ReturnType<typeof spyOn>
+let renameSyncSpy: ReturnType<typeof spyOn>
 
 const tmpDir = fs.mkdtempSync(join(tmpdir(), 'devup-ui-coordinator-'))
 
 afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }))
+
+/** The file an atomic write of a temporary file replaces */
+function finalPath(path: unknown): string {
+  return String(path).replace(/\.\d+\.\d+\.tmp$/, '')
+}
 
 function makeOptions(
   overrides: Partial<CoordinatorOptions> = {},
@@ -102,6 +109,10 @@ beforeEach(() => {
     },
   )
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
+  renameSpy = spyOn(fs, 'rename').mockImplementation(
+    (_from: any, _to: any, cb: any) => cb(null),
+  )
+  renameSyncSpy = spyOn(fs, 'renameSync').mockReturnValue(undefined)
 })
 
 afterEach(async () => {
@@ -115,6 +126,8 @@ afterEach(async () => {
   exportFileMapSpy.mockRestore()
   writeFileSpy.mockRestore()
   writeFileSyncSpy.mockRestore()
+  renameSpy.mockRestore()
+  renameSyncSpy.mockRestore()
 })
 
 describe('coordinator', () => {
@@ -181,7 +194,10 @@ describe('coordinator', () => {
     coordinator.close()
 
     const written = new Map(
-      writeFileSyncSpy.mock.calls.map(([path, content]) => [path, content]),
+      writeFileSyncSpy.mock.calls.map(([path, content]) => [
+        finalPath(path),
+        content,
+      ]),
     )
     holding = false
     for (const release of held.splice(0)) release()
@@ -272,7 +288,7 @@ describe('coordinator', () => {
     expect(extractOutput.free).toHaveBeenCalledTimes(1)
 
     // Verify files were written (base CSS + per-file CSS + sheet + classmap + filemap)
-    expect(writeFileSpy).toHaveBeenCalledTimes(5)
+    expect(writeFileSpy).toHaveBeenCalledTimes(6)
 
     coordinator.close()
   })
@@ -473,7 +489,7 @@ describe('coordinator', () => {
         cssSnapshotBytes: expect.any(Number),
         fileMapSnapshotBytes: Buffer.byteLength('filemap-json'),
         phase: 'coordinator.extract',
-        scheduledWrites: 5,
+        scheduledWrites: 3,
         sheetSnapshotBytes: Buffer.byteLength('sheet-json'),
         sourceBytes: Buffer.byteLength('const profile = true'),
       })
@@ -522,7 +538,7 @@ describe('coordinator', () => {
         cssSnapshotBytes: expect.any(Number),
         filename: 'src/profile-base.tsx',
         phase: 'coordinator.extract',
-        scheduledWrites: 5,
+        scheduledWrites: 3,
       })
       expect(baseProfile.cssSnapshotMs).toBeTypeOf('number')
     } finally {
@@ -664,7 +680,7 @@ describe('coordinator', () => {
     expect(getCssSpy).toHaveBeenCalledWith(null, true)
 
     // Verify files were written (CSS + sheet + classmap + filemap, no base style update)
-    expect(writeFileSpy).toHaveBeenCalledTimes(4)
+    expect(writeFileSpy).toHaveBeenCalledTimes(5)
 
     coordinator.close()
   })
@@ -1070,7 +1086,7 @@ describe('coordinator', () => {
     expect(res.status).toBe(200)
 
     // 5 writes: per-file CSS + sheet + classmap + filemap + devup-ui.css invalidation
-    expect(writeFileSpy).toHaveBeenCalledTimes(5)
+    expect(writeFileSpy).toHaveBeenCalledTimes(6)
 
     // Verify devup-ui.css was written to trigger Turbopack invalidation
     const devupUiCssWrite = writeFileSpy.mock.calls.find(
@@ -1121,7 +1137,7 @@ describe('coordinator', () => {
     )
 
     // 4 writes: per-file CSS + sheet + classmap + filemap (NO devup-ui.css touch)
-    expect(writeFileSpy).toHaveBeenCalledTimes(4)
+    expect(writeFileSpy).toHaveBeenCalledTimes(5)
 
     // Verify NO devup-ui.css write
     const devupUiCssWrite = writeFileSpy.mock.calls.find(
@@ -1169,7 +1185,7 @@ describe('coordinator', () => {
 
     // 4 writes: CSS file (devup-ui.css via cssFile) + sheet + classmap + filemap
     // NO additional devup-ui.css invalidation write (singleCss=true doesn't need it)
-    expect(writeFileSpy).toHaveBeenCalledTimes(4)
+    expect(writeFileSpy).toHaveBeenCalledTimes(5)
 
     coordinator.close()
   })
@@ -2197,7 +2213,7 @@ describe('coordinator deleted sources', () => {
       ['src/Styled.tsx'],
     ])
     const written = new Map(
-      writeFileSpy.mock.calls.map(([path, data]) => [String(path), data]),
+      writeFileSpy.mock.calls.map(([path, data]) => [finalPath(path), data]),
     )
     expect(written.get(join(tmpDir, 'sheet.json'))).toBe('sheet')
     expect(written.get(join(tmpDir, 'classMap.json'))).toBe('classes')

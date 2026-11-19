@@ -20,6 +20,7 @@ import {
 import * as coordinatorModule from '../coordinator'
 import * as coordinatorPortModule from '../coordinator-port'
 import cssLoader, { resetInit as resetCssInit } from '../css-loader'
+import * as mdxModule from '../mdx'
 import {
   DevupUI,
   reloadTurboSetupModuleForTesting,
@@ -64,6 +65,16 @@ function createCodeExtractResult(contents: string): CodeExtractResult {
     free: mock(),
     [Symbol.dispose]: mock(),
   } as unknown as CodeExtractResult
+}
+
+/** Read state an earlier release wrote, before state manifests */
+function withoutManifest(
+  read: (path: string) => string,
+): (path: fs.PathOrFileDescriptor) => string {
+  return (path) => {
+    if (String(path).endsWith('stateManifest.json')) throw new Error('ENOENT')
+    return read(String(path))
+  }
 }
 
 function createSingleFileGraph(filename: string): StaticImportGraph {
@@ -885,7 +896,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
+                    '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$))',
                   ),
                 },
               },
@@ -934,7 +945,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
+                    '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$))',
                   ),
                 },
               },
@@ -1028,7 +1039,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    '((?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$)))|(.mdx.[tj]sx?$)',
+                    '(?:^|[\\/\\\\])node_modules[\\/\\\\](?!.*[\\/\\\\]node_modules[\\/\\\\])(?!(?:@devup-ui|@devup-editor)(?:[\\/\\\\]|$))',
                   ),
                 },
               },
@@ -1315,6 +1326,10 @@ export const box = style({ color: 'red' })`
     it('numbers the files the scan finds, and survives a failing scan', () => {
       process.env.TURBOPACK = '1'
       const collectSpy = spyOn(importGraphModule, 'collectNumberedFiles')
+      const mdxSpy = spyOn(
+        mdxModule,
+        'collectNumberedMdxFiles',
+      ).mockReturnValue(['src/a.mdx'])
       const seedSpy = spyOn(wasm, 'seedFileMap').mockReturnValue(undefined)
       try {
         collectSpy.mockImplementation((options: any) => {
@@ -1322,10 +1337,20 @@ export const box = style({ color: 'red' })`
             ['src', 'app', 'pages'].map((dir) => resolve(dir)),
           )
           expect(options.toId(resolve('src', 'a.tsx'))).toBe('src/a.tsx')
-          return ['src/a.tsx']
+          return ['src/a.tsx', 'src/b.tsx']
         })
         DevupUI({}, { include: ['@acme/ui'] })
-        expect(seedSpy).toHaveBeenCalledWith(['src/a.tsx'])
+        // Compiled MDX is numbered with the sources, in path order.
+        expect(seedSpy).toHaveBeenCalledWith([
+          'src/a.mdx',
+          'src/a.tsx',
+          'src/b.tsx',
+        ])
+        expect(mdxSpy).toHaveBeenCalledWith(
+          ['src', 'app', 'pages'].map((dir) => resolve(dir)),
+          process.cwd(),
+          expect.arrayContaining(['@devup-ui/react', '@stylexjs/stylex']),
+        )
         expect(collectSpy.mock.calls[0][0]).toMatchObject({
           include: ['@acme/ui'],
         })
@@ -1343,6 +1368,7 @@ export const box = style({ color: 'red' })`
         }
       } finally {
         collectSpy.mockRestore()
+        mdxSpy.mockRestore()
         seedSpy.mockRestore()
       }
     })
@@ -1419,6 +1445,7 @@ export const box = style({ color: 'red' })`
         importSheet: mock(),
         importClassMap: mock(),
         importFileMap: mock(),
+        removeFile: mock(() => true),
         resetBuildState: mock(),
       })
 
@@ -1444,8 +1471,8 @@ export const box = style({ color: 'red' })`
       })
 
       it('drops a state that does not import', () => {
-        readFileSyncSpy.mockImplementation((path: string) =>
-          JSON.stringify({ path }),
+        readFileSyncSpy.mockImplementation(
+          withoutManifest((path) => JSON.stringify({ path })),
         )
         const restored = engine()
         restored.importClassMap.mockImplementation(() => {
@@ -1458,6 +1485,87 @@ export const box = style({ color: 'red' })`
         expect(restored.importFileMap).not.toHaveBeenCalled()
         expect(restored.resetBuildState).toHaveBeenCalledTimes(1)
       })
+
+      it('drops files that are not one write', () => {
+        // The default manifest `{}` vouches for no file
+        const restored = engine()
+        expect(restoreSessionState(restored, files)).toEqual([])
+        expect(restored.importSheet).not.toHaveBeenCalled()
+        expect(restored.resetBuildState).toHaveBeenCalledTimes(1)
+      })
+
+      it('forgets the restored files deleted since', () => {
+        // Given: a state holding styles of files of which only one is left
+        const state: Record<string, unknown> = {
+          'sheet.json': {
+            global_css_files: ['src/Global.tsx', 'src/Kept.tsx', 1],
+          },
+          'fileMap.json': { 'src/Gone.tsx': 0, 'src/Kept.tsx': 1 },
+        }
+        readFileSyncSpy.mockImplementation(
+          withoutManifest((path) => JSON.stringify(state[path] ?? {})),
+        )
+        existsSyncSpy.mockImplementation(
+          (path: fs.PathLike) => path === resolve('/app', 'src/Kept.tsx'),
+        )
+        const restored = engine()
+
+        // Then: the engine forgets the others
+        expect(restoreSessionState(restored, files, '/app')).toEqual([
+          'src/Gone.tsx',
+          'src/Global.tsx',
+        ])
+        expect(restored.removeFile.mock.calls).toEqual([
+          ['src/Gone.tsx'],
+          ['src/Global.tsx'],
+        ])
+      })
+
+      it('finds no files in a state without any', () => {
+        readFileSyncSpy.mockImplementation(withoutManifest(() => 'null'))
+        const restored = engine()
+        expect(restoreSessionState(restored, files)).toEqual([])
+        expect(restored.importSheet).toHaveBeenCalledWith(null)
+      })
+    })
+    describe('state of deleted files', () => {
+      const restoredState = (path: string) =>
+        path === join('df', 'fileMap.json') ? '{"src/Gone.tsx":0}' : '{}'
+
+      it('writes the state without them on start', () => {
+        // Given: a restored state holding a file deleted while no server ran
+        process.env.TURBOPACK = '1'
+        readFileSyncSpy.mockImplementation(withoutManifest(restoredState))
+        using removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+        using renameSync = spyOn(fs, 'renameSync').mockReturnValue(undefined)
+
+        DevupUI({})
+
+        // Then: the engine forgets it, and the state on disk follows at once
+        expect(removeFile).toHaveBeenCalledWith('src/Gone.tsx')
+        expect(renameSync.mock.calls.map(([, to]) => to)).toEqual([
+          join('df', 'sheet.json'),
+          join('df', 'classMap.json'),
+          join('df', 'fileMap.json'),
+          join('df', 'stateManifest.json'),
+        ])
+      })
+
+      it('warns when that state cannot be written', () => {
+        process.env.TURBOPACK = '1'
+        readFileSyncSpy.mockImplementation(withoutManifest(restoredState))
+        using _removeFile = spyOn(wasm, 'removeFile').mockReturnValue(true)
+        using _renameSync = spyOn(fs, 'renameSync').mockImplementation(() => {
+          throw new Error('disk full')
+        })
+        using _rmSync = spyOn(fs, 'rmSync').mockReturnValue(undefined)
+        using warn = spyOn(console, 'warn').mockReturnValue(undefined)
+
+        expect(() => DevupUI({})).not.toThrow()
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] Turbopack state write failed: disk full. The styles of deleted files are dropped from this session, and are dropped again on the next start.',
+        )
+      })
     })
     it('should import previous session state on restart', () => {
       process.env.TURBOPACK = '1'
@@ -1465,7 +1573,7 @@ export const box = style({ color: 'red' })`
         .mockReturnValueOnce(true) // distDir
         .mockReturnValueOnce(true) // cssDir
         .mockReturnValueOnce(true) // gitignoreFile
-        .mockReturnValueOnce(false) // devupFile in loadDevupConfigSync
+        .mockReturnValueOnce(true) // src/App.tsx, restored and still there
 
       // Simulate previous session state files on disk
       const prevSheet = {
@@ -1484,7 +1592,9 @@ export const box = style({ color: 'red' })`
         [join('df', 'classMap.json')]: JSON.stringify(prevClassMap),
         [join('df', 'fileMap.json')]: JSON.stringify(prevFileMap),
       }
-      readFileSyncSpy.mockImplementation((path: string) => files[path] ?? '{}')
+      readFileSyncSpy.mockImplementation(
+        withoutManifest((path) => files[path] ?? '{}'),
+      )
 
       DevupUI({})
 
@@ -1509,8 +1619,10 @@ export const box = style({ color: 'red' })`
         'removeStaleStateDirs',
       ).mockReturnValue(undefined)
       const prevSheet = { css: { a: 'color:red' } }
-      readFileSyncSpy.mockImplementation((path: string) =>
-        path === join('df', 'sheet.json') ? JSON.stringify(prevSheet) : '{}',
+      readFileSyncSpy.mockImplementation(
+        withoutManifest((path) =>
+          path === join('df', 'sheet.json') ? JSON.stringify(prevSheet) : '{}',
+        ),
       )
       try {
         const config = DevupUI({})
@@ -1803,6 +1915,63 @@ export const box = style({ color: 'red' })`
         profileSpy.mockRestore()
         compiledSpy.mockRestore()
         routesSpy.mockRestore()
+      }
+    })
+
+    it('has the coordinator wait for compiled MDX it does not prewarm', () => {
+      process.env.TURBOPACK = '1'
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const mdxSpy = spyOn(
+        mdxModule,
+        'collectCompiledMdxFiles',
+      ).mockReturnValue(['src/app/docs/page.mdx'])
+      try {
+        DevupUI({ pageExtensions: ['tsx', 'mdx'] }, {})
+
+        expect(mdxSpy).toHaveBeenCalledWith({
+          cwd: process.cwd(),
+          srcDir: resolve('src'),
+          pageExtensions: ['tsx', 'mdx'],
+          compiledFiles: ['src/app/page.tsx'],
+        })
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expectedBaseFiles: ['src/app/page.tsx', 'src/app/docs/page.mdx'],
+            prewarmedFiles: ['src/app/page.tsx'],
+          }),
+        )
+
+        // Without a deterministic set there is nothing to add MDX to.
+        mdxSpy.mockClear()
+        compiledSpy.mockReturnValue([])
+        DevupUI({}, {})
+        expect(mdxSpy).not.toHaveBeenCalled()
+
+        compiledSpy.mockReturnValue(['src/app/page.tsx'])
+        mdxSpy.mockImplementation(() => {
+          throw new Error('mdx boom')
+        })
+        const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+          startCoordinatorSpy.mockClear()
+          DevupUI({}, {})
+          expect(warnSpy).toHaveBeenCalledWith(
+            '[devup-ui] Turbopack MDX scan failed: mdx boom. The production stylesheet does not wait for MDX documents, so classes only they use can be missing from it.',
+          )
+          expect(startCoordinatorSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              expectedBaseFiles: ['src/app/page.tsx'],
+            }),
+          )
+        } finally {
+          warnSpy.mockRestore()
+        }
+      } finally {
+        compiledSpy.mockRestore()
+        mdxSpy.mockRestore()
       }
     })
 

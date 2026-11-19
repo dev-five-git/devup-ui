@@ -15,7 +15,11 @@ import {
 } from 'bun:test'
 
 import type { DevupUILoaderOptions } from '../loader'
-import devupUILoader, { resetInit, setWasmForTesting } from '../loader'
+import devupUILoader, {
+  resetInit,
+  setWasmForTesting,
+  sourceFilePath,
+} from '../loader'
 
 type LoaderThis = ThisParameterType<typeof devupUILoader>
 
@@ -295,6 +299,74 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
+      false,
+      true,
+      {},
+    )
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
+    })
+  })
+
+  describe('sourceFilePath', () => {
+    it('keeps a path that is not a renamed MDX module without a stat', () => {
+      expect(sourceFilePath('src/page.tsx')).toBe('src/page.tsx')
+      expect(sourceFilePath('src/page.mdx')).toBe('src/page.mdx')
+      expect(existsSyncSpy).not.toHaveBeenCalled()
+    })
+
+    it('keeps a renamed-looking path that exists on disk', () => {
+      existsSyncSpy.mockImplementation((path) => path === 'src/a.mdx.tsx')
+      expect(sourceFilePath('src/a.mdx.tsx')).toBe('src/a.mdx.tsx')
+    })
+
+    it('names compiled MDX by the document Turbopack renamed it from', () => {
+      existsSyncSpy.mockImplementation((path) => path === 'src/page.mdx')
+      expect(sourceFilePath('src/page.mdx.tsx')).toBe('src/page.mdx')
+      existsSyncSpy.mockImplementation((path) => path === 'src/Doc.MDX')
+      expect(sourceFilePath('src/Doc.MDX.js')).toBe('src/Doc.MDX')
+    })
+
+    it('keeps the renamed path when the document is missing too', () => {
+      expect(sourceFilePath('src/gone.mdx.tsx')).toBe('src/gone.mdx.tsx')
+    })
+  })
+
+  it('extracts compiled MDX under the document path in build mode', async () => {
+    const asyncCallback = mock()
+    const document = join(process.cwd(), 'src', 'page.mdx')
+    existsSyncSpy.mockImplementation((path) => path === document)
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: join(process.cwd(), 'cssDir'),
+        watch: false,
+        singleCss: true,
+        defaultClassMap: {},
+        defaultFileMap: {},
+        defaultSheet: {},
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: `${document}.tsx`,
+      addDependency: mock(),
+    }
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: undefined,
+      free: mock(),
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      [Symbol.dispose]: mock(),
+    })
+    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'page.mdx')
+
+    expect(codeExtractSpy).toHaveBeenCalledWith(
+      'src/page.mdx',
+      'code',
+      'package',
+      './../cssDir',
       true,
       false,
       true,
@@ -674,6 +746,56 @@ export const a = <div css={{ color: 'red' }} />`
 
         // Verify NO WASM functions were called
         expect(codeExtractSpy).not.toHaveBeenCalled()
+      } finally {
+        requestSpy.mockRestore()
+      }
+    })
+
+    it('posts compiled MDX under the document path', async () => {
+      const document = join(process.cwd(), 'src', 'app', 'page.mdx')
+      existsSyncSpy.mockImplementation((path) => path !== `${document}.tsx`)
+      readFileSyncSpy.mockReturnValue('12345')
+      const write = mock()
+      const requestSpy = spyOn(http, 'request').mockImplementation(
+        (_options: any, callback?: any) => {
+          const fakeRes = {
+            statusCode: 200,
+            on: mock((event: string, handler: (...args: unknown[]) => void) => {
+              if (event === 'data') handler(Buffer.from('{"code":"out"}'))
+              if (event === 'end') handler()
+              return fakeRes
+            }),
+          }
+          if (callback) callback(fakeRes)
+          return asClientRequest({ on: mock(() => ({})), write, end: mock() })
+        },
+      )
+
+      try {
+        const asyncCallback = mock()
+        const t = {
+          getOptions: () => ({
+            package: 'package',
+            cssDir: 'cssDir',
+            watch: false,
+            singleCss: false,
+            coordinatorPortFile: 'coordinator.port',
+          }),
+          async: mock().mockReturnValue(asyncCallback),
+          resourcePath: `${document}.tsx`,
+          addDependency: mock(),
+        }
+
+        devupUILoader.bind(asLoaderContext(t))(Buffer.from('compiled'), '')
+
+        await waitFor(() => {
+          expect(asyncCallback).toHaveBeenCalledWith(null, 'out', null)
+        })
+        expect(JSON.parse(write.mock.calls[0]![0] as string)).toEqual({
+          filename: 'src/app/page.mdx',
+          code: 'compiled',
+          resourcePath: document,
+        })
       } finally {
         requestSpy.mockRestore()
       }

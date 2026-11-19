@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 
 import {
   createStateWriter,
@@ -69,6 +69,24 @@ function parseCoordinatorResponse(content: string): CoordinatorResponse {
         )
       : [],
   }
+}
+
+/**
+ * The file on disk a module came from. A Turbopack rule with `as` hands later
+ * rules the module under a renamed path: `@next/mdx` compiles `page.mdx` with
+ * `as: '*.tsx'`, so the source rule receives the compiled JavaScript as
+ * `page.mdx.tsx`, which does not exist. Extracting under that name would make
+ * the coordinator drop its styles as a deleted source, so the original file
+ * names the module instead; the extractor reads `.mdx` as compiled MDX.
+ */
+export function sourceFilePath(resourcePath: string): string {
+  if (!/\.mdx\.[^./\\]+$/i.test(resourcePath) || existsSync(resourcePath))
+    return resourcePath
+  const original = resourcePath.slice(
+    0,
+    resourcePath.length - extname(resourcePath).length,
+  )
+  return existsSync(original) ? original : resourcePath
 }
 
 function parseSourceMap(sourceMap: string | undefined): string | null {
@@ -146,14 +164,15 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       // POSIX-normalize so the engine's bucket key matches the canonical map
       // and FILE_ROUTES keys (both built with forward slashes). Without this,
       // canonical collapse and atom hoisting silently no-op on Windows.
-      const relativePath = relative(
-        process.cwd(),
-        this.resourcePath,
-      ).replaceAll('\\', '/')
+      const resourcePath = sourceFilePath(this.resourcePath)
+      const relativePath = relative(process.cwd(), resourcePath).replaceAll(
+        '\\',
+        '/',
+      )
       const body = JSON.stringify({
         filename: relativePath,
         code: source.toString(),
-        resourcePath: this.resourcePath,
+        resourcePath,
       })
       coordinatorExtract(
         coordinatorPortFile,
@@ -213,7 +232,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         }
         initializedCompilers.add(compiler)
       }
-      const id = this.resourcePath
+      const id = sourceFilePath(this.resourcePath)
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
       // POSIX-normalize (see coordinator-mode note above) so bucket keys match
