@@ -159,12 +159,25 @@ pub enum Forward {
     Is(String),
     In(Vec<String>),
     StartsWith(String),
-    /// A prop React passes to an element, as `isPropValid` or styled-components'
-    /// default validator tells
+    /// A prop React passes to an element, as `isPropValid` or the validator
+    /// Devup UI's own `styled` passes tells
     Valid,
+    /// Whether the element styled-components v6 renders, the second argument
+    /// of its `shouldForwardProp`, is a tag (`typeof element === 'string'`),
+    /// as the build knows it: the target the component is declared with
+    Tag,
     Not(Box<Forward>),
     And(Box<Forward>, Box<Forward>),
     Or(Box<Forward>, Box<Forward>),
+}
+
+/// What the second parameter of `shouldForwardProp` is: the element
+/// styled-components v6 renders, or the validator Devup UI's own `styled`
+/// passes, as styled-components v5 did
+#[derive(Clone, Copy)]
+enum Second<'s> {
+    Element(Option<&'s str>),
+    Validator(Option<&'s str>),
 }
 
 impl Forward {
@@ -178,49 +191,118 @@ impl Forward {
                 left.names(names);
                 right.names(names);
             }
-            Forward::Always(_) | Forward::StartsWith(_) | Forward::Valid => {}
+            Forward::Always(_) | Forward::StartsWith(_) | Forward::Valid | Forward::Tag => {}
         }
     }
 
+    /// Both rules, a prop passing only when each passes it: a rule `left`
+    /// already holds, or one passing every prop, adds nothing
     #[must_use]
-    pub fn forwards(&self, name: &str) -> bool {
+    pub fn and(left: Forward, right: Forward) -> Forward {
+        fn conjuncts(rule: Forward, into: &mut Vec<Forward>) {
+            match rule {
+                Forward::And(left, right) => {
+                    conjuncts(*left, into);
+                    conjuncts(*right, into);
+                }
+                Forward::Always(true) => {}
+                rule if into.contains(&rule) => {}
+                rule => into.push(rule),
+            }
+        }
+        let mut all = Vec::new();
+        conjuncts(left, &mut all);
+        conjuncts(right, &mut all);
+        all.into_iter()
+            .reduce(|left, right| Forward::And(Box::new(left), Box::new(right)))
+            .unwrap_or(Forward::Always(true))
+    }
+
+    /// Whether the rule passes the prop `name` on to an element that is a tag
+    /// when `tag`
+    #[must_use]
+    pub fn forwards(&self, name: &str, tag: bool) -> bool {
         match self {
             Forward::Always(value) => *value,
             Forward::Is(prop) => prop == name,
             Forward::In(props) => props.iter().any(|prop| prop == name),
             Forward::StartsWith(prefix) => name.starts_with(prefix.as_str()),
             Forward::Valid => crate::prop_valid::is_prop_valid(name),
-            Forward::Not(rule) => !rule.forwards(name),
-            Forward::And(left, right) => left.forwards(name) && right.forwards(name),
-            Forward::Or(left, right) => left.forwards(name) || right.forwards(name),
+            Forward::Tag => tag,
+            Forward::Not(rule) => !rule.forwards(name, tag),
+            Forward::And(left, right) => left.forwards(name, tag) && right.forwards(name, tag),
+            Forward::Or(left, right) => left.forwards(name, tag) || right.forwards(name, tag),
         }
     }
 
     /// `shouldForwardProp` as the build evaluates it: a function of the prop
-    /// name comparing it with strings, `includes`, `startsWith`, `isPropValid`
-    /// or the validator styled-components passes, joined by `!`, `&&` and `||`
+    /// name comparing it with strings, `includes`, `startsWith` or
+    /// `isPropValid`, joined by `!`, `&&` and `||`. Its second parameter is
+    /// the element styled-components v6 renders, which it can test with
+    /// `typeof element === 'string'`, or elsewhere the validator Devup UI's
+    /// own `styled` passes.
     #[must_use]
-    pub fn read(expression: &Expression<'_>) -> Option<Self> {
-        let (params, body) = match unwrap_syntax_only(expression) {
-            Expression::ArrowFunctionExpression(arrow) => (
-                &arrow.params,
-                match &arrow.body {
-                    oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => single_expression(body)?,
-                    body => body.as_expression()?,
-                },
-            ),
-            Expression::FunctionExpression(function) => (
-                &function.params,
-                single_expression(function.body.as_ref()?)?,
-            ),
-            _ => return None,
-        };
+    pub fn read(expression: &Expression<'_>, styled_components: bool) -> Option<Self> {
+        let (params, body) = predicate(expression)?;
         let name = |index: usize| match params.items.get(index).map(|p| &p.pattern) {
             Some(BindingPattern::BindingIdentifier(identifier)) => Some(identifier.name.as_str()),
             _ => None,
         };
+        let second = if styled_components {
+            Second::Element(name(1))
+        } else {
+            Second::Validator(name(1))
+        };
         // Without a parameter no identifier reads the prop, so only literals decide
-        rule(body, name(0).unwrap_or_default(), name(1))
+        rule(body, name(0).unwrap_or_default(), second)
+    }
+
+    /// Whether `expression`, a `shouldForwardProp` of styled-components v6,
+    /// calls its second parameter as styled-components v5's validator, which
+    /// v6 replaced with the element it renders
+    #[must_use]
+    pub fn calls_element(expression: &Expression<'_>) -> bool {
+        let Some((params, body)) = predicate(expression) else {
+            return false;
+        };
+        let Some(BindingPattern::BindingIdentifier(element)) =
+            params.items.get(1).map(|p| &p.pattern)
+        else {
+            return false;
+        };
+        let mut calls = CallsName(element.name.as_str(), false);
+        calls.visit_expression(body);
+        calls.1
+    }
+}
+
+/// Whether an expression calls the name
+struct CallsName<'n>(&'n str, bool);
+
+impl<'a> Visit<'a> for CallsName<'_> {
+    fn visit_call_expression(&mut self, it: &oxc_ast::ast::CallExpression<'a>) {
+        self.1 |= matches!(unwrap_syntax_only(&it.callee), Expression::Identifier(callee) if callee.name == self.0);
+        walk::walk_call_expression(self, it);
+    }
+}
+
+/// The parameters of a predicate and the one expression it returns
+fn predicate<'b, 'a>(
+    expression: &'b Expression<'a>,
+) -> Option<(&'b FormalParameters<'a>, &'b Expression<'a>)> {
+    match unwrap_syntax_only(expression) {
+        Expression::ArrowFunctionExpression(arrow) => Some((
+            &arrow.params,
+            match &arrow.body {
+                oxc_ast::ast::ArrowFunctionBody::FunctionBody(body) => single_expression(body)?,
+                body => body.as_expression()?,
+            },
+        )),
+        Expression::FunctionExpression(function) => Some((
+            &function.params,
+            single_expression(function.body.as_ref()?)?,
+        )),
+        _ => None,
     }
 }
 
@@ -233,21 +315,49 @@ fn single_expression<'b, 'a>(
     }
 }
 
-fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Option<Forward> {
+/// `typeof element === 'string'` and its negations, testing whether the
+/// element styled-components renders is a tag
+fn tag_test(binary: &oxc_ast::ast::BinaryExpression<'_>, element: &str) -> Option<Forward> {
+    use oxc_ast::ast::{BinaryOperator, UnaryOperator};
+    let typeof_element = |e: &Expression<'_>| {
+        matches!(unwrap_syntax_only(e), Expression::UnaryExpression(unary)
+            if unary.operator == UnaryOperator::Typeof
+                && matches!(unwrap_syntax_only(&unary.argument), Expression::Identifier(i) if i.name == element))
+    };
+    let string = |e: &Expression<'_>| matches!(unwrap_syntax_only(e), Expression::StringLiteral(literal) if literal.value == "string");
+    if !(typeof_element(&binary.left) && string(&binary.right)
+        || string(&binary.left) && typeof_element(&binary.right))
+    {
+        return None;
+    }
+    match binary.operator {
+        BinaryOperator::StrictEquality | BinaryOperator::Equality => Some(Forward::Tag),
+        BinaryOperator::StrictInequality | BinaryOperator::Inequality => {
+            Some(Forward::Not(Box::new(Forward::Tag)))
+        }
+        _ => None,
+    }
+}
+
+fn rule(expression: &Expression<'_>, prop: &str, second: Second<'_>) -> Option<Forward> {
     use oxc_ast::ast::{BinaryOperator, LogicalOperator, UnaryOperator};
     let is_prop = |e: &Expression<'_>| matches!(unwrap_syntax_only(e), Expression::Identifier(i) if i.name == prop);
     let string = |e: &Expression<'_>| match unwrap_syntax_only(e) {
         Expression::StringLiteral(literal) => literal.value.as_str().map(str::to_string),
         _ => None,
     };
+    let (element, validator) = match second {
+        Second::Element(element) => (element, None),
+        Second::Validator(validator) => (None, validator),
+    };
     Some(match unwrap_syntax_only(expression) {
         Expression::BooleanLiteral(literal) => Forward::Always(literal.value),
         Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::LogicalNot => {
-            Forward::Not(Box::new(rule(&unary.argument, prop, validator)?))
+            Forward::Not(Box::new(rule(&unary.argument, prop, second)?))
         }
         Expression::LogicalExpression(logical) => {
-            let left = Box::new(rule(&logical.left, prop, validator)?);
-            let right = Box::new(rule(&logical.right, prop, validator)?);
+            let left = Box::new(rule(&logical.left, prop, second)?);
+            let right = Box::new(rule(&logical.right, prop, second)?);
             match logical.operator {
                 LogicalOperator::And => Forward::And(left, right),
                 LogicalOperator::Or => Forward::Or(left, right),
@@ -255,6 +365,9 @@ fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Opt
             }
         }
         Expression::BinaryExpression(binary) => {
+            if let Some(tag) = element.and_then(|element| tag_test(binary, element)) {
+                return Some(tag);
+            }
             let value = if is_prop(&binary.left) {
                 string(&binary.right)?
             } else if is_prop(&binary.right) {
@@ -279,7 +392,8 @@ fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Opt
                 Expression::Identifier(callee)
                     if is_prop(argument)
                         && (Some(callee.name.as_str()) == validator
-                            || callee.name == "isPropValid") =>
+                            || callee.name == "isPropValid"
+                                && Some(callee.name.as_str()) != element) =>
                 {
                     Forward::Valid
                 }
@@ -310,7 +424,7 @@ fn rule(expression: &Expression<'_>, prop: &str, validator: Option<&str>) -> Opt
     })
 }
 
-/// What a component styled-components v6 makes forwards: every prop but
+// What a component styled-components v6 makes forwards: every prop but
 /// `theme`, as it no longer validates props, unless `shouldForwardProp` also
 /// decides (`$` props and `as` never reach it). Other libraries keep `forward`.
 #[must_use]
@@ -320,7 +434,7 @@ pub fn library_forward(styled_components: bool, forward: Option<Forward>) -> Opt
     }
     let theme = Forward::Not(Box::new(Forward::Is("theme".to_string())));
     Some(match forward {
-        Some(own) => Forward::And(Box::new(theme), Box::new(own)),
+        Some(own) => Forward::and(theme, own),
         None => theme,
     })
 }
@@ -333,7 +447,7 @@ pub fn passes(name: &str, renders_tag: bool, forward: Option<&Forward>) -> bool 
         return false;
     }
     match forward {
-        Some(forward) => forward.forwards(name),
+        Some(forward) => forward.forwards(name, renders_tag),
         None if renders_tag => name != "theme" && crate::prop_valid::is_prop_valid(name),
         None => true,
     }
