@@ -12,65 +12,13 @@ use oxc_syntax::{
     operator::{BinaryOperator, LogicalOperator},
 };
 
-/// The props a filter leaves out: the names it withholds, and those its
-/// `shouldForwardProp`, as code testing the prop `k` at runtime, rejects
-pub(super) struct Omitted<'s> {
-    pub withheld: &'s [String],
-    pub forward: Option<String>,
-}
-
-impl<'s> Omitted<'s> {
-    /// What `forward` leaves out of what renders `element`: every prop it
-    /// rejects, a spread's included, when the runtime can run it, which then
-    /// decides the withheld names too; otherwise the withheld names
-    pub(super) fn of(
-        withheld: &'s [String],
-        forward: Option<&crate::styled_reads::Forward>,
-        element: &str,
-    ) -> Self {
-        match forward.and_then(|forward| forward.code("k", element)) {
-            Some(code) => Self {
-                withheld: &[],
-                forward: Some(code),
-            },
-            None => Self {
-                withheld,
-                forward: None,
-            },
-        }
-    }
-}
-
-/// `code`, generated, as an expression
-fn parsed<'a>(builder: &AstBuilder<'a>, code: &str) -> Expression<'a> {
-    let options = oxc_parser::ParseOptions {
-        preserve_parens: false,
-        ..oxc_parser::ParseOptions::default()
-    };
-    let mut expression = oxc_parser::Parser::new(
-        builder.allocator(),
-        builder.allocator().alloc_str(code),
-        oxc_span::SourceType::mjs(),
-    )
-    .with_options(options)
-    .parse_expression()
-    // Generated from strings the build quoted, it always parses; were it not
-    // to, its code is still written as it is
-    .unwrap_or_else(|_| {
-        Expression::new_identifier(SPAN, Str::from_in(code, builder.allocator()), builder)
-    });
-    crate::utils::clear_generated_spans(&mut expression);
-    expression
-}
-
 /// Filter only the forwarded copy, leaving styled reads on the original rest
 /// object, and leave out the props the styles withhold from it
 pub(super) fn filter<'a>(
     builder: &AstBuilder<'a>,
     props: Expression<'a>,
-    omitted: &Omitted<'_>,
+    withheld: &[String],
 ) -> Expression<'a> {
-    let withheld = omitted.withheld;
     let key = Expression::new_computed_member_expression(
         SPAN,
         Expression::new_identifier(SPAN, "k", builder),
@@ -106,16 +54,6 @@ pub(super) fn filter<'a>(
             )
         },
     );
-    let body = match &omitted.forward {
-        Some(code) => Expression::new_logical_expression(
-            SPAN,
-            body,
-            LogicalOperator::And,
-            parsed(builder, code),
-            builder,
-        ),
-        None => body,
-    };
     let pattern = BindingPattern::new_array_pattern(
         SPAN,
         Vec::from_array_in(

@@ -152,24 +152,6 @@ impl<'a> Visit<'a> for PropsUse<'_> {
     }
 }
 
-/// The `@emotion/is-prop-valid` a compiled `shouldForwardProp` calls, which
-/// the module imports under this name wherever the component renders
-pub const IS_PROP_VALID: &str = "__devupIsPropValid";
-
-/// Whether the compiled module calls [`IS_PROP_VALID`], so must import it
-#[must_use]
-pub fn calls_is_prop_valid(program: &oxc_ast::ast::Program<'_>) -> bool {
-    struct Calls(bool);
-    impl<'a> Visit<'a> for Calls {
-        fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
-            self.0 |= it.name == IS_PROP_VALID;
-        }
-    }
-    let mut calls = Calls(false);
-    calls.visit_program(program);
-    calls.0
-}
-
 /// What `shouldForwardProp` decides for a prop name, as the build evaluates it
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Forward {
@@ -177,13 +159,12 @@ pub enum Forward {
     Is(String),
     In(Vec<String>),
     StartsWith(String),
-    /// A prop React passes to an element, as `isPropValid` tells: `true` when
-    /// the predicate calls `isPropValid`, which the runtime imports from
-    /// `@emotion/is-prop-valid`, `false` for the validator Devup UI's own
-    /// `styled` passes, which the runtime lacks
-    Valid(bool),
+    /// A prop React passes to an element, as `isPropValid` or the validator
+    /// Devup UI's own `styled` passes tells
+    Valid,
     /// Whether the element styled-components v6 renders, the second argument
-    /// of its `shouldForwardProp`, is a tag (`typeof element === 'string'`)
+    /// of its `shouldForwardProp`, is a tag (`typeof element === 'string'`),
+    /// as the build knows it: the target the component is declared with
     Tag,
     Not(Box<Forward>),
     And(Box<Forward>, Box<Forward>),
@@ -210,7 +191,7 @@ impl Forward {
                 left.names(names);
                 right.names(names);
             }
-            Forward::Always(_) | Forward::StartsWith(_) | Forward::Valid(_) | Forward::Tag => {}
+            Forward::Always(_) | Forward::StartsWith(_) | Forward::Valid | Forward::Tag => {}
         }
     }
 
@@ -237,23 +218,6 @@ impl Forward {
             .unwrap_or(Forward::Always(true))
     }
 
-    /// Whether the rule reads the element it renders, which `as` can change
-    #[must_use]
-    pub fn reads_element(&self) -> bool {
-        match self {
-            Forward::Tag => true,
-            Forward::Not(rule) => rule.reads_element(),
-            Forward::And(left, right) | Forward::Or(left, right) => {
-                left.reads_element() || right.reads_element()
-            }
-            Forward::Always(_)
-            | Forward::Is(_)
-            | Forward::In(_)
-            | Forward::StartsWith(_)
-            | Forward::Valid(_) => false,
-        }
-    }
-
     /// Whether the rule passes the prop `name` on to an element that is a tag
     /// when `tag`
     #[must_use]
@@ -263,50 +227,12 @@ impl Forward {
             Forward::Is(prop) => prop == name,
             Forward::In(props) => props.iter().any(|prop| prop == name),
             Forward::StartsWith(prefix) => name.starts_with(prefix.as_str()),
-            Forward::Valid(_) => crate::prop_valid::is_prop_valid(name),
+            Forward::Valid => crate::prop_valid::is_prop_valid(name),
             Forward::Tag => tag,
             Forward::Not(rule) => !rule.forwards(name, tag),
             Forward::And(left, right) => left.forwards(name, tag) && right.forwards(name, tag),
             Forward::Or(left, right) => left.forwards(name, tag) || right.forwards(name, tag),
         }
-    }
-
-    /// The rule as code testing the prop name `key` and the element
-    /// `element` at runtime, where every prop a spread brings meets it, or
-    /// `None` when it calls a validator only the build has
-    #[must_use]
-    pub fn code(&self, key: &str, element: &str) -> Option<String> {
-        let text = |value: &str| serde_json::Value::from(value).to_string();
-        Some(match self {
-            Forward::Always(value) => value.to_string(),
-            Forward::Is(prop) => format!("{key} === {}", text(prop)),
-            Forward::In(props) => format!(
-                "[{}].includes({key})",
-                props
-                    .iter()
-                    .map(|prop| text(prop))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            Forward::StartsWith(prefix) => format!("{key}.startsWith({})", text(prefix)),
-            Forward::Valid(true) => format!("{IS_PROP_VALID}({key})"),
-            Forward::Valid(false) => return None,
-            Forward::Tag => format!("typeof {element} === \"string\""),
-            Forward::Not(rule) => match rule.as_ref() {
-                Forward::Is(prop) => format!("{key} !== {}", text(prop)),
-                rule => format!("!({})", rule.code(key, element)?),
-            },
-            Forward::And(left, right) => format!(
-                "({}) && ({})",
-                left.code(key, element)?,
-                right.code(key, element)?
-            ),
-            Forward::Or(left, right) => format!(
-                "({}) || ({})",
-                left.code(key, element)?,
-                right.code(key, element)?
-            ),
-        })
     }
 
     /// `shouldForwardProp` as the build evaluates it: a function of the prop
@@ -464,16 +390,12 @@ fn rule(expression: &Expression<'_>, prop: &str, second: Second<'_>) -> Option<F
             let argument = argument.as_expression()?;
             match unwrap_syntax_only(&call.callee) {
                 Expression::Identifier(callee)
-                    if is_prop(argument) && Some(callee.name.as_str()) == validator =>
-                {
-                    Forward::Valid(false)
-                }
-                Expression::Identifier(callee)
                     if is_prop(argument)
-                        && callee.name == "isPropValid"
-                        && Some(callee.name.as_str()) != element =>
+                        && (Some(callee.name.as_str()) == validator
+                            || callee.name == "isPropValid"
+                                && Some(callee.name.as_str()) != element) =>
                 {
-                    Forward::Valid(true)
+                    Forward::Valid
                 }
                 Expression::StaticMemberExpression(member)
                     if member.property.name == "startsWith" && is_prop(&member.object) =>
@@ -525,8 +447,7 @@ pub fn passes(name: &str, renders_tag: bool, forward: Option<&Forward>) -> bool 
         return false;
     }
     match forward {
-        // What the element decides is left to the runtime, which knows it
-        Some(forward) => forward.forwards(name, renders_tag) || forward.reads_element(),
+        Some(forward) => forward.forwards(name, renders_tag),
         None if renders_tag => name != "theme" && crate::prop_valid::is_prop_valid(name),
         None => true,
     }

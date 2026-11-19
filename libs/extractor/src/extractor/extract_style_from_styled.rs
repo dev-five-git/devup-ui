@@ -1116,7 +1116,6 @@ pub fn extract_style_from_styled<'a>(
                     style_vars: &gen_styles(ast_builder, &props_styles, None),
                     bindings,
                     withheld: &withheld,
-                    forward: definition.forward.as_ref(),
                     capability: definition.capability.as_ref(),
                     execution: &definition.execution,
                     markers: definition.render_markers(ast_builder),
@@ -1268,7 +1267,6 @@ pub fn extract_style_from_styled<'a>(
                     style_vars: &gen_styles(ast_builder, &styles, None),
                     bindings,
                     withheld: &withheld,
-                    forward: definition.forward.as_ref(),
                     capability: definition.capability.as_ref(),
                     execution: &definition.execution,
                     markers: definition.render_markers(ast_builder),
@@ -1492,7 +1490,7 @@ fn option_properties<'b, 'a>(
         })
 }
 
-const ELEMENT_ARGUMENT: &str = "styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so calling it fails at runtime. Fix: import `isPropValid` from `@emotion/is-prop-valid` and call `isPropValid(prop)`, or test the element with `typeof element === 'string'`";
+const ELEMENT_ARGUMENT: &str = "styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so calling it fails at runtime. Fix: call `isPropValid(prop)` from `@emotion/is-prop-valid`, or compare the prop with strings";
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";
 
@@ -1923,8 +1921,6 @@ struct StyledRender<'b, 'a> {
     style_vars: &'b Option<Expression<'a>>,
     bindings: Vec<(String, Expression<'a>)>,
     withheld: &'b [String],
-    /// Its `shouldForwardProp`, which every prop it renders meets
-    forward: Option<&'b Forward>,
     capability: Option<&'b StyledCapability>,
     execution: &'b Execution<'a>,
     markers: Option<Expression<'a>>,
@@ -1941,7 +1937,6 @@ fn create_styled_component<'a>(
         style_vars,
         bindings,
         withheld,
-        forward,
         capability,
         execution,
         markers,
@@ -2083,18 +2078,14 @@ fn create_styled_component<'a>(
             merge_object_expressions(ast_builder, &parts).unwrap_or(style_vars)
         },
     );
-    let omitted = super::styled_transient::Omitted::of(withheld, forward, RENDERED);
     let omissions = capability.map(|slot| {
-        let mut omissions = omitted.withheld.to_vec();
+        let mut omissions = withheld.to_vec();
         slot.omit(&mut omissions);
         omissions
     });
-    let omitted = super::styled_transient::Omitted {
-        withheld: omissions.as_deref().unwrap_or(omitted.withheld),
-        forward: omitted.forward,
-    };
+    let withheld = omissions.as_deref().unwrap_or(withheld);
     let ordinary =
-        super::styled_transient::filter(ast_builder, identifier(ast_builder, "rest"), &omitted);
+        super::styled_transient::filter(ast_builder, identifier(ast_builder, "rest"), withheld);
     let forwarded = capability.map_or_else(
         || ordinary.clone_in(ast_builder.allocator()),
         |slot| slot.forwarded(ast_builder, &ordinary),

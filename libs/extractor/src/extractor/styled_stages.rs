@@ -151,17 +151,10 @@ pub(super) fn create<'a>(
         definition.native(),
         definition.forward.as_ref(),
     );
-    // The element it renders is what the record holds at [3].
-    let element = format!("{result}[3]");
-    let omitted = super::super::styled_transient::Omitted::of(
-        &withheld,
-        definition.forward.as_ref(),
-        &element,
-    );
     let forwarded = super::super::styled_transient::filter(
         ast,
         Expression::new_identifier(SPAN, "rest", ast),
-        &omitted,
+        &withheld,
     );
     // What the build wrote into the record tells which way its checks go.
     let (markers_known, variables_known) = match &definition.execution {

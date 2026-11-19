@@ -114,7 +114,6 @@ pub fn with_component<'a>(
                     .map(|(name, value)| (name.clone(), value.clone_in(allocator)))
                     .collect(),
                 withheld: &withheld,
-                forward: new_definition.forward.as_ref(),
                 capability: new_definition.capability.as_ref(),
                 execution: &new_definition.execution,
                 markers: new_definition.render_markers(ast_builder),

@@ -3763,30 +3763,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 it.body.insert(0, statement);
             }
         }
-        if crate::styled_reads::calls_is_prop_valid(it) {
-            let source = self
-                .ast
-                .allocator()
-                .alloc_str(&if it.source_type.is_commonjs() {
-                    format!(
-                        "const {} = require('@emotion/is-prop-valid').default;",
-                        crate::styled_reads::IS_PROP_VALID
-                    )
-                } else {
-                    format!(
-                        "import {} from '@emotion/is-prop-valid';",
-                        crate::styled_reads::IS_PROP_VALID
-                    )
-                });
-            let mut program =
-                oxc_parser::Parser::new(self.ast.allocator(), source, oxc_span::SourceType::mjs())
-                    .parse()
-                    .program;
-            crate::utils::clear_generated_program_spans(&mut program);
-            for statement in program.body.into_iter().rev() {
-                it.body.insert(0, statement);
-            }
-        }
         if let Some(helper) = &self.styled_jsx
             && let Some(binding) = helper.binding(&self.ast, it.source_type.is_commonjs())
         {
