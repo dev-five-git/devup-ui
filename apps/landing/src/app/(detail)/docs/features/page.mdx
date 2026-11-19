@@ -66,11 +66,11 @@ A number known only at runtime takes the unit the same number written as a liter
 
 ```tsx
 // You write:
-const example = <Box p={m} opacity={o} />
+const example = <Box opacity={o} p={m} />
 
 // Devup UI generates:
 const generated = (
-  <div className="a b" style={{ '--a': __devupScale(m), '--b': o }} />
+  <div className="a b" style={{ '--a': o, '--b': __devupScale(m) }} />
 )
 function __devupScale(v, s = 4, u = 'px') {
   return typeof v === 'number' ||
