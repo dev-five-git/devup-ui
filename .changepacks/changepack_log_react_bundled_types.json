@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Publish `@devup-ui/react`'s type declarations bundled: one file per entry (`@devup-ui/react`, `/compat`, `/stylex`) plus one shared file, instead of one declaration file per source module. The exported names and types are unchanged and theme augmentation works as before; a project type-checks 4 declaration files of the package instead of about 50. The bundles import each other with file extensions, so under `moduleResolution: node16`/`nodenext` the package's types now resolve instead of being untyped.",
+  "date": "2026-11-19T00:00:00.000Z"
+}
