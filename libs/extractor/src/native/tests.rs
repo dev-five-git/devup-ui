@@ -76,9 +76,9 @@ fn compile(code: &str) -> String {
 )]
 #[case::dynamic_groups(
     "dynamic_groups",
-    r#"<Box w={w} h={h} maxW={mw} gap={g} rowGap={rg} borderRadius={r} borderWidth={bw}
+    r"<Box w={w} h={h} maxW={mw} gap={g} rowGap={rg} borderRadius={r} borderWidth={bw}
   fontSize={fs} letterSpacing={ls} top={t} inset={i} flex={f} flexGrow={fg} zIndex={z}
-  aspectRatio={ar} lineHeight={lh} fontWeight={fw} color={c} display={d} boxShadow={bs} />"#
+  aspectRatio={ar} lineHeight={lh} fontWeight={fw} color={c} display={d} boxShadow={bs} />"
 )]
 #[case::dynamic_in_conditions(
     "dynamic_in_conditions",
