@@ -75,7 +75,7 @@ export {
   type ReservationInput,
   type ReservationInventory,
 } from './reservation-discovery'
-export { reservationGraph } from './reservation-graph'
+export { reservationGraph, reservationRoutes } from './reservation-graph'
 export { isRuntimePackage, RUNTIME_PACKAGE } from './runtime-package'
 export {
   createNodeModulesExcludeRegex,

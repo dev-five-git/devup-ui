@@ -1190,6 +1190,18 @@ const App = () => <Box></Box>`,
       setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
       getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('CSS')
     }
+    /** Set the plugin up and start the build, which installs the graph */
+    async function setupAndBuild(
+      options: Parameters<typeof DevupUI>[0],
+      overrides: Partial<RsbuildSetupContext> = {},
+    ) {
+      const onBeforeBuild = mock()
+      await DevupUI(options).setup(
+        createSetupContext({ ...overrides, onBeforeBuild }),
+      )
+      onBeforeBuild.mock.calls[0][0]({ environments: {} })
+    }
+
     afterEach(() => {
       buildCanonicalMapSpy?.mockRestore()
       computeFileReachSpy?.mockRestore()
@@ -1224,14 +1236,14 @@ const App = () => <Box></Box>`,
             '/p/src/b.tsx': [1],
           }
           computeFileReachSpy.mockReturnValue(reach)
-          await DevupUI({ atomHoist: 2 }).setup(createSetupContext())
+          await setupAndBuild({ atomHoist: 2 })
           const explicitReach = [...importFileRoutesSpy.mock.calls]
           expect(explicitReach).toEqual([[reach]])
           expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
           importFileRoutesSpy.mockClear()
           setAtomHoistSpy.mockClear()
           // When: the option is defaulted.
-          await DevupUI(options).setup(createSetupContext())
+          await setupAndBuild(options)
           // Then: the same plan is installed at threshold 2.
           expect(importFileRoutesSpy.mock.calls).toEqual(explicitReach)
           expect(setAtomHoistSpy.mock.calls).toEqual([[2]])
@@ -1248,7 +1260,7 @@ const App = () => <Box></Box>`,
             '/p/b.tsx': [1],
           })
           // When: the caller explicitly disables atom mode.
-          await DevupUI({ atomHoist }).setup(createSetupContext())
+          await setupAndBuild({ atomHoist })
           // Then: the atom-only pre-pass has no side effects.
           expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
           expect(computeFileReachSpy).not.toHaveBeenCalled()
@@ -1265,7 +1277,7 @@ const App = () => <Box></Box>`,
           '/p/b.tsx': [1],
         })
         // When: setup requests threshold 3.
-        await DevupUI({ atomHoist: 3 }).setup(createSetupContext())
+        await setupAndBuild({ atomHoist: 3 })
         // Then: the threshold is not replaced by the default.
         expect(setAtomHoistSpy.mock.calls).toEqual([[3]])
       })
@@ -1337,32 +1349,87 @@ const App = () => <Box></Box>`,
       )
     })
 
-    it('plans hoisting over one graph of the src and app roots of the Rsbuild root', async () => {
+    it('plans hoisting once over one graph of the entries, the src and app roots and the included packages', async () => {
       spies()
       const project = fs.mkdtempSync(join(tmpdir(), 'devup-ui-rsbuild-roots-'))
+      existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
+      using _reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
+        undefined,
+      )
       try {
-        // The cwd's own `app` is not the project's: only the root's roots count
-        for (const path of ['app/page.tsx', 'web/app/b.tsx', 'web/src/a.tsx'])
-          await Bun.write(join(project, path), 'export {}')
-        existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
-        const cwd = spyOn(process, 'cwd').mockReturnValue(project)
-        try {
-          await DevupUI({ atomHoist: 2 }).setup(
-            createSetupContext({ context: { rootPath: join(project, 'web') } }),
-          )
-        } finally {
-          cwd.mockRestore()
-        }
+        for (const [path, code] of [
+          [
+            'index.tsx',
+            "import './lib/view'\nimport '@slot/ui'\nimport './node_modules/other/index.js'",
+          ],
+          ['node_modules/other/index.js', 'export {}'],
+          ['node_modules/runtime/index.js', 'export {}'],
+          ['lib/view.tsx', 'export const view = 1'],
+          ['app/a.tsx', 'export {}'],
+          ['src/b.tsx', 'export {}'],
+          [
+            'node_modules/@slot/ui/package.json',
+            JSON.stringify({ name: '@slot/ui', main: 'index.js' }),
+          ],
+          ['node_modules/@slot/ui/index.js', 'export const ui = 1'],
+        ])
+          await Bun.write(join(project, path), code)
+        const onBeforeBuild = mock()
+        const modifyRspackConfig = mock()
+        await DevupUI({ atomHoist: 2, include: ['@slot/ui'] }).setup(
+          createSetupContext({
+            onBeforeBuild,
+            modifyRspackConfig,
+            context: { rootPath: project },
+          }),
+        )
+        // The environment's compiler, with the entry Rsbuild resolved
+        const config: { plugins?: { apply(compiler: unknown): void }[] } = {}
+        modifyRspackConfig.mock.calls[1][0](config, {
+          environment: { name: 'web' },
+        })
+        config.plugins![0]!.apply({
+          // A bundler runtime entry adds no route
+          options: {
+            entry: { main: ['./index.tsx', './node_modules/runtime/index.js'] },
+            context: project,
+          },
+          hooks: {
+            run: { tap: mock() },
+            watchRun: { tap: mock() },
+            invalid: { tap: mock() },
+            thisCompilation: { tap: mock() },
+          },
+        })
+        onBeforeBuild.mock.calls[0][0]({ environments: {} })
         const [{ graph }] = buildCanonicalMapSpy.mock.calls.at(-1) as [
           { graph: { files: string[] } },
         ]
-        expect(graph.files).toEqual(
-          ['web/app/b.tsx', 'web/src/a.tsx'].map((path) => join(project, path)),
+        // An entry outside `src` and `app` and its imports count too
+        expect(new Set(graph.files)).toEqual(
+          new Set(
+            [
+              'app/a.tsx',
+              'index.tsx',
+              'lib/view.tsx',
+              'node_modules/@slot/ui/index.js',
+              'src/b.tsx',
+            ].map((path) => join(project, path)),
+          ),
         )
+        // The routes are the entries
         expect(computeFileReachSpy).toHaveBeenCalledWith(
-          expect.objectContaining({ graph, srcDir: join(project, 'web') }),
+          expect.objectContaining({
+            graph,
+            srcDir: project,
+            entries: [join(project, 'index.tsx')],
+          }),
         )
+        // Another discovery never plans again
+        onBeforeBuild.mock.calls[0][0]({ environments: {} })
+        expect(buildCanonicalMapSpy).toHaveBeenCalledTimes(1)
       } finally {
+        existsSyncSpy.mockReturnValue(false)
         fs.rmSync(project, { recursive: true, force: true })
       }
     })
@@ -1379,9 +1446,7 @@ const App = () => <Box></Box>`,
         '/p/src/glob.tsx': [0, 1],
         '/p/src/r1.tsx': [1],
       })
-      await DevupUI({ atomHoist: 2 }).setup(
-        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
-      )
+      await setupAndBuild({ atomHoist: 2 })
       // rsbuild passes absolute resourcePath -> keyBy absolute
       expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
         expect.objectContaining({ keyBy: 'absolute' }),
@@ -1400,18 +1465,14 @@ const App = () => <Box></Box>`,
         '/p/src/a.tsx': [0],
         '/p/src/b.tsx': [1],
       })
-      await DevupUI({ atomHoist: 1 }).setup(
-        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
-      )
+      await setupAndBuild({ atomHoist: 1 })
       expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
     })
 
     it('stays off when fewer than two routes are reachable', async () => {
       spies()
       computeFileReachSpy.mockReturnValue({ '/p/src/a.tsx': [0] })
-      await DevupUI({ atomHoist: 2 }).setup(
-        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
-      )
+      await setupAndBuild({ atomHoist: 2 })
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
     })
 
@@ -1420,10 +1481,12 @@ const App = () => <Box></Box>`,
       buildCanonicalMapSpy.mockImplementation(() => {
         throw new Error('boom')
       })
-      await DevupUI({ atomHoist: 2 }).setup(
-        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
-      )
+      using warn = spyOn(console, 'warn').mockReturnValue(undefined)
+      await setupAndBuild({ atomHoist: 2 })
       expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        '[devup-ui] Rsbuild import graph failed: boom. Atom hoisting is off, so atoms several routes share are not moved into the shared stylesheet.',
+      )
     })
 
     it('serves per-route getCss(fileNum) for css imports in atom mode', async () => {
@@ -1680,6 +1743,8 @@ const App = () => <Box></Box>`,
           },
         },
       })
+      // The configured entries of each environment, with the ones the
+      // reservation resolved (none here)
       expect(computeReachableFilesSpy).toHaveBeenCalledWith({
         srcDir: process.cwd(),
         entries: ['a', 'b', 'c', 'd'].map((name) =>
@@ -1687,24 +1752,30 @@ const App = () => <Box></Box>`,
         ),
         graph: expect.objectContaining({ files: expect.any(Array) }),
       })
-      expect(codeExtractSpy).toHaveBeenCalledWith(
-        resolve('src', 'App.tsx'),
-        'source',
-        '@devup-ui/react',
-        expect.stringMatching(/^\.\//),
-        false,
-        false,
-        true,
-        expect.anything(),
-      )
+      expect(codeExtractSpy.mock.calls).toEqual([
+        [
+          resolve('src', 'App.tsx'),
+          'source',
+          '@devup-ui/react',
+          expect.stringMatching(/^\.\//),
+          false,
+          false,
+          true,
+          expect.anything(),
+        ],
+      ])
 
-      // an extraction error is reported by the transform of that file
+      // A failure is reported, and the transform reports it again
       codeExtractSpy.mockImplementation(() => {
         throw new Error('boom')
       })
+      using warn = spyOn(console, 'warn').mockReturnValue(undefined)
       expect(() =>
         onBeforeBuild.mock.calls[0][0]({ environments: {} }),
       ).not.toThrow()
+      expect(warn).toHaveBeenCalledWith(
+        '[devup-ui] Rsbuild stylesheet warm-up failed: boom. A stylesheet Rsbuild builds before every file it holds is extracted can miss their styles until another pass rebuilds it.',
+      )
     })
 
     it('extracts under posix names in atom mode', async () => {
