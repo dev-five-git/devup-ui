@@ -9,7 +9,7 @@ import {
   computeReachableFiles,
 } from '../import-graph'
 import { collectReservationInputs } from '../reservation-discovery'
-import { reservationGraph } from '../reservation-graph'
+import { reservationGraph, reservationRoutes } from '../reservation-graph'
 import { fixture, STYLE } from './reservation-fixture'
 
 it('projects the closed real inventory including ordinary importers, include, cycles and typed edges without I/O', () => {
@@ -125,5 +125,81 @@ it('keeps literal escaped CRLF require edges while excluding dotted and quoted c
   )
   expect(graph.staticImports.get(resolve(project.root, 'entry.js'))).toEqual(
     new Set([resolve(project.root, 'supplier.js')]),
+  )
+})
+
+it("routes the bundler's entries and the files they lazy-load", () => {
+  using project = fixture()
+  project.write('entry.js', "import './view.js'; import('./lazy.js')")
+  project.write('view.js', STYLE)
+  project.write('lazy.js', STYLE)
+  project.write('src/orphan.js', "import('../unreached.js')")
+  project.write('unreached.js', STYLE)
+  const inventory = collectReservationInputs({
+    roots: ['src'],
+    cwd: project.root,
+    entries: [{ request: './entry.js', context: project.root }],
+    package: '@devup-ui/react',
+    importAliases: {},
+  })
+  const native = (path: string) => resolve(project.root, path)
+  // A file only an unreached file lazy-loads is no route
+  expect(reservationRoutes(reservationGraph(inventory), inventory)).toEqual([
+    native('entry.js'),
+    native('lazy.js'),
+  ])
+})
+
+it('routes the project files nothing imports, not included packages, without entries', () => {
+  using project = fixture()
+  project.write('src/a.js', "import 'accepted'; import './shared.js'")
+  project.write('src/b.js', "import('./lazy.js')")
+  project.write('src/shared.js', STYLE)
+  project.write('src/lazy.js', STYLE)
+  project.write(
+    'node_modules/accepted/package.json',
+    '{"name":"accepted","main":"index.js"}',
+  )
+  project.write('node_modules/accepted/index.js', STYLE)
+  const inventory = collectReservationInputs({
+    roots: ['src'],
+    cwd: project.root,
+    include: ['accepted'],
+    package: '@devup-ui/react',
+    importAliases: {},
+  })
+  const graph = reservationGraph(inventory)
+  const native = (path: string) => resolve(project.root, path)
+  // The included package is listed as a root, so nothing imports it there
+  expect(graph.files).toContain(native('node_modules/accepted/index.js'))
+  expect(reservationRoutes(graph, inventory)).toEqual(
+    ['src/a.js', 'src/b.js', 'src/lazy.js'].map(native),
+  )
+})
+
+it('keeps the files it is asked to, and routes no entry outside them', () => {
+  using project = fixture()
+  project.write('src/a.js', "import './b.js'")
+  project.write('src/b.js', STYLE)
+  project.write('src/c.js', STYLE)
+  project.write('node_modules/runtime/index.js', "import '../../src/a.js'")
+  const inventory = collectReservationInputs({
+    roots: ['src'],
+    cwd: project.root,
+    entries: [
+      { request: './node_modules/runtime/index.js', context: project.root },
+    ],
+    package: '@devup-ui/react',
+    importAliases: {},
+  })
+  const native = (path: string) => resolve(project.root, path)
+  const graph = reservationGraph(
+    inventory,
+    (path) => !path.includes('node_modules'),
+  )
+  expect(graph.files).toEqual(['src/a.js', 'src/b.js', 'src/c.js'].map(native))
+  // The only entry is outside the graph: the files nothing imports route
+  expect(reservationRoutes(graph, inventory)).toEqual(
+    ['src/a.js', 'src/c.js'].map(native),
   )
 })

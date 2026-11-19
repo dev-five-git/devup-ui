@@ -118,6 +118,9 @@ for (const mode of ['debug', 'atom', 'noop']) {
 it('retains persisted watch file ordinals when a new compiler restores its maps', () => {
   const fixture = mkdtempSync(join(tmpdir(), 'devup-webpack-restored-'))
   try {
+    // A session writes physical/*.js while it watches; the compared sessions
+    // both start from the project it leaves
+    run(fixture, 'AB', 'watch', 'per-file')
     const first = run(fixture, 'AB', 'watch', 'per-file')
     const restored = run(fixture, 'BA', 'watch', 'per-file')
     for (const [id, slot] of Object.entries(first.final.files))

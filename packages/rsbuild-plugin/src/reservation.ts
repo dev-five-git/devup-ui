@@ -3,6 +3,7 @@ import { dirname, relative, resolve } from 'node:path'
 import {
   createSharedSlotReservation,
   type DevupCompiler,
+  type ReservationInventory,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import type { Rspack } from '@rsbuild/core'
@@ -36,6 +37,8 @@ export function createReservation(
     readonly root: string
     readonly atomMode: boolean
     readonly importAliases: WasmImportAliases
+    /** Handed the inventory of each reservation whose files changed, first */
+    readonly beforeReserve?: (inventory: ReservationInventory) => void
   },
   compiler: Pick<DevupCompiler, 'reserveClassSlots'>,
 ) {
@@ -70,6 +73,7 @@ export function createReservation(
             options.atomMode ? path.replaceAll('\\', '/') : path,
         },
         {
+          beforeReserve: options.beforeReserve,
           singleCss: options.singleCss,
           importMainCssInCode: options.atomMode,
           importMainCssInCss: !options.atomMode,

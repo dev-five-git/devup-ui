@@ -6,12 +6,10 @@ import { dirname, join, relative, resolve } from 'node:path'
 import {
   beginBuild,
   buildCanonicalMap,
-  buildStaticImportGraph,
   collectNumberedFiles,
   ComponentMarkerLedger,
   computeFileReach,
   computeReachableFiles,
-  conventionalSourceRoots,
   createCompatTypes,
   createModuleResolver,
   createNodeModulesExcludeRegex,
@@ -23,7 +21,6 @@ import {
   extractedNeedles,
   getFileNumByFilename,
   type ImportAliases,
-  isMissingDirectory,
   loadCompiler,
   loadDevupConfigSync,
   mergeImportAliases,
@@ -33,12 +30,16 @@ import {
   readJsxImportSource,
   readSource,
   registerMarkerLedger,
+  reservationGraph,
+  type ReservationInventory,
+  reservationRoutes,
   resolveDevupFile,
   resolveProjectPath,
   seedFileNumbers,
   setupWarning,
   SOURCE_FILE_REGEX,
   type SourceCache,
+  type StaticImportGraph,
   type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
@@ -51,6 +52,15 @@ import { stripComponentMarkers } from './component-markers'
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
 import { reconcileWatchCss } from './watch-css'
+
+/** The graph of the files a reservation discovered */
+interface DiscoveredGraph {
+  readonly graph: StaticImportGraph
+  /** The modules webpack's entries resolve to */
+  readonly entries: string[]
+  /** The routes atom hoisting counts, `computeFileReach` entries */
+  readonly routes: string[]
+}
 
 export interface DevupUIWebpackPluginOptions extends Pick<
   DevupUIBasePluginOptions,
@@ -269,19 +279,71 @@ export class DevupUIWebpackPlugin {
   }
 
   /**
-   * The import graph of the `src` and `app` directories of the project root
-   * (webpack's `context`)
+   * Merge the files only one module imports into its stylesheet (single-importer
+   * collapse, always) and, with `atomHoist`, plan the atoms the routes share,
+   * from the graph of the files `discover` finds, which it returns. The
+   * webpack loader passes the id relative to the project root as the
+   * extraction filename, so the graph maps use root-relative keys (keyBy:
+   * 'cwd-relative', with the root as `cwd`). Mirrors next-plugin's pre-pass.
    */
-  private sourceGraph() {
-    return buildStaticImportGraph(
-      this.root,
-      resolve(this.root, 'tsconfig.json'),
-      conventionalSourceRoots(this.root),
-    )
+  private installGraph(
+    discover: () => DiscoveredGraph,
+    atomHoist: number | undefined,
+  ): DiscoveredGraph | undefined {
+    try {
+      const discovered = discover()
+      const { graph, routes } = discovered
+      const cwd = this.root
+      const canonicalMap = buildCanonicalMap({
+        srcDir: cwd,
+        cwd,
+        keyBy: 'cwd-relative',
+        graph,
+      })
+      this.compiler.importCanonicalMap(canonicalMap)
+      if (atomHoist === undefined) return discovered
+      const plan = planAtomHoist(
+        canonicalMap,
+        computeFileReach({
+          srcDir: cwd,
+          cwd,
+          keyBy: 'cwd-relative',
+          graph,
+          entries: routes,
+        }),
+        atomHoist,
+      )
+      if (plan) {
+        this.compiler.importFileRoutes(plan.reachByBucket)
+        this.compiler.setAtomHoist(plan.threshold)
+      } else {
+        console.info(
+          '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+        )
+      }
+      return discovered
+    } catch (error) {
+      if (
+        !this.options.watch &&
+        this.options.productionPrewarmFiles !== undefined
+      )
+        throw error
+      // Best-effort; on failure canonical() is the identity (no merge) and atom
+      // hoisting stays off.
+      console.warn(
+        setupWarning(
+          'webpack import graph',
+          error,
+          atomHoist === undefined
+            ? 'Classes are not merged across files only one module imports.'
+            : 'Classes are not merged across files only one module imports, and atom hoisting is off.',
+        ),
+      )
+    }
   }
 
   /**
-   * Extract the source files under `src` and `app` that `entries` reach into
+   * Extract the source files the entries reach into
    * the shared compiler sheet, in path order, so that a stylesheet built on
    * its first import holds the styles of every one (all collapsed members of a
    * bucket, and the shared base), not just those of the modules webpack
@@ -293,7 +355,7 @@ export class DevupUIWebpackPlugin {
    * loader reports the error if webpack compiles it.
    */
   private prewarmExtractor(
-    entries: string[],
+    discovered: DiscoveredGraph | undefined,
     { resolve: resolveOptions }: Compiler['options'],
   ) {
     try {
@@ -310,12 +372,7 @@ export class DevupUIWebpackPlugin {
       const files =
         this.options.productionPrewarmFiles?.map((file) =>
           resolve(cwd, file),
-        ) ??
-        computeReachableFiles({
-          srcDir: cwd,
-          entries,
-          graph: this.sourceGraph(),
-        })
+        ) ?? this.reachableFiles(discovered)
       if (this.options.productionPrewarmFiles !== undefined) {
         seedFileNumbers(this.compiler, [...this.options.productionPrewarmFiles])
       }
@@ -366,6 +423,16 @@ export class DevupUIWebpackPlugin {
         ),
       )
     }
+  }
+
+  /** The files of the discovered graph webpack's entries reach, in path order */
+  private reachableFiles(discovered: DiscoveredGraph | undefined): string[] {
+    if (!discovered) return []
+    return computeReachableFiles({
+      srcDir: this.root,
+      entries: discovered.entries,
+      graph: discovered.graph,
+    })
   }
 
   /**
@@ -444,72 +511,47 @@ export class DevupUIWebpackPlugin {
     this.writeDataFiles()
 
     // Per-file atom hoisting defaults to 2; 0 disables it, singleCss ignores it.
-    // Configured before loaders run codeExtract (apply() is synchronous), so
-    // eligible atoms receive global short counter names. The selected compiler
-    // instance is shared in-process with the loaders. Composes with
-    // single-importer collapse: both keyed by the canonical bucket. The webpack
-    // loader passes the id relative to the project root as the extraction
-    // filename, so the graph maps use root-relative keys (keyBy:
-    // 'cwd-relative', with the root as `cwd`).
+    // Configured before loaders run codeExtract, so eligible atoms receive
+    // global short counter names. The selected compiler instance is shared
+    // in-process with the loaders. Composes with single-importer collapse:
+    // both keyed by the canonical bucket.
     const atomHoist = this.options.atomHoist
     const atomMode =
       !this.options.singleCss &&
       atomHoist !== undefined &&
       Number.isFinite(atomHoist) &&
       atomHoist > 0
-    // Single-importer collapse ALWAYS runs: files used by exactly one importer
-    // merge into that importer's bucket, deduplicating their identical atoms.
-    // The canonical map is built + imported unconditionally; only atom HOISTING
-    // composes on top in effective atom mode. Mirrors next-plugin's pre-pass.
-    try {
-      const cwd = this.root
-      // One graph over every source root serves both the canonical map and
-      // the routes, so an `app` directory is hoisted like `src`
-      const graph = this.sourceGraph()
-      const canonicalMap = buildCanonicalMap({
-        srcDir: cwd,
-        cwd,
-        keyBy: 'cwd-relative',
-        graph,
-      })
-      this.compiler.importCanonicalMap(canonicalMap)
-
-      if (atomMode) {
-        const fileReach = computeFileReach({
-          srcDir: cwd,
-          cwd,
-          keyBy: 'cwd-relative',
-          graph,
+    // One discovery serves the canonical map, the routes and the warm-up, as
+    // in the Vite plugin: the reservation's, over the `src` and `app`
+    // directories, the closures of webpack's entries and the included
+    // packages. It runs here, with a reservation that reserves nothing:
+    // compilers that share the engine in one process (Next's server and
+    // client) must all install their plan before any of them extracts.
+    const discoverOnly = createWebpackReservation(
+      this.options,
+      this.importAliases,
+      { reserveClassSlots: () => [], setModuleResolver() {} },
+    )
+    const discovered = this.installGraph(
+      () => {
+        let found: ReservationInventory | undefined
+        discoverOnly(compiler.options, (inventory) => {
+          found = inventory
         })
-        const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
-        if (plan) {
-          this.compiler.importFileRoutes(plan.reachByBucket)
-          this.compiler.setAtomHoist(plan.threshold)
-        } else {
-          console.info(
-            '[devup-ui] fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
-          )
+        if (!found) throw new Error('no files were discovered')
+        // The files the loader transforms: an entry webpack resolves into a
+        // package (Next's client runtime) adds no route, so every compiler of
+        // a project plans the same
+        const excluded = createNodeModulesExcludeRegex(this.options.include)
+        const graph = reservationGraph(found, (path) => !excluded.test(path))
+        return {
+          graph,
+          entries: found.resolutions.entries.map((entry) => resolve(entry)),
+          routes: reservationRoutes(graph, found),
         }
-      }
-    } catch (error) {
-      if (
-        !this.options.watch &&
-        this.options.productionPrewarmFiles !== undefined
-      )
-        throw error
-      // Best-effort; on failure canonical() is the identity (no merge) and atom
-      // hoisting stays off.
-      if (!isMissingDirectory(error, resolve(this.root, 'src')))
-        console.warn(
-          setupWarning(
-            'webpack import graph',
-            error,
-            atomMode
-              ? 'Classes are not merged across files only one module imports, and atom hoisting is off.'
-              : 'Classes are not merged across files only one module imports.',
-          ),
-        )
-    }
+      },
+      atomMode ? atomHoist : undefined,
+    )
 
     // Number every file the build can extract in path order, so class
     // prefixes do not depend on which file a worker reaches first. Numbers
@@ -567,15 +609,7 @@ export class DevupUIWebpackPlugin {
         reserve.slots.reservedIds,
       )
       if (this.options.watch) return
-      const { entry, context = this.root } = compiler.options
-      this.prewarmExtractor(
-        typeof entry === 'function'
-          ? []
-          : Object.values(entry ?? {}).flatMap(({ import: requests = [] }) =>
-              requests.map((request) => resolve(context, request)),
-            ),
-        compiler.options,
-      )
+      this.prewarmExtractor(discovered, compiler.options)
     }
     const reserveBeforeCompile = () =>
       withSourceCache(prepare, this.sourceCache ?? new Map())
