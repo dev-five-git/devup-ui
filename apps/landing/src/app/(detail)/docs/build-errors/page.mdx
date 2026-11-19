@@ -1965,6 +1965,8 @@ E.__emotion_user(); const broken;
 
 **Fix:** Correct the syntax at the reported location, then fix any style diagnostic the build reports next.
 
+A production `next build` first extracts every source file of the project, including files no route imports. A file it cannot extract there does not fail the build: the plugin prints a warning naming the file and the error, `[devup-ui] Turbopack prewarm of <file> failed: <message>. ...` (or `[devup-ui] webpack stylesheet warm-up of <file> failed: <message>. ...` with webpack), and skips it. If Next.js compiles that file, the build still fails with the error above.
+
 {/* probe: parse-error after */}
 
 ```tsx
