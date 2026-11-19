@@ -108,6 +108,24 @@ const Badge = styled.span.withConfig({
 `
 ```
 
+The build evaluates the predicate and adds no code that runs it, so it decides only the props the build can name: those the component's styles and attrs read, those the predicate names (`prop === 'tone'`, `['a', 'b'].includes(prop)`), and the attributes written on an element using the component. styled-components and Emotion call it at runtime for every prop, so this is a known difference: a prop the build never sees by name, such as one a spread passes or a caller adds, reaches the element even when the predicate would reject it (`() => false` still passes a spread `id`). Keep such props off the element with `$` transient props or by not passing them. Under styled-components the second argument is the element the component renders, and the build reads `typeof element === 'string'` from the target the component is declared with, so `as` choosing another element does not change it. Calling the second argument as styled-components v5's validator (`(prop, valid) => valid(prop)`) fails in v6, so it is a build error: call `isPropValid` from `@emotion/is-prop-valid` instead. Emotion's `shouldForwardProp` takes the prop name alone.
+
+```tsx
+import isPropValid from '@emotion/is-prop-valid'
+import styled from 'styled-components'
+
+const Card = styled.div.withConfig({
+  shouldForwardProp: (prop, element) =>
+    typeof element !== 'string' || isPropValid(prop),
+})`
+  color: ${(p) => p.tone};
+`
+
+// Devup UI keeps `tone`, which the styles read, off the <div>, as styled-components
+// does. `customPayload` reaches it: only the runtime sees that name.
+const card = <Card customPayload="x" id="a" tone="teal" />
+```
+
 `StyleSheetManager` is accepted but inert, so a `shouldForwardProp` given to it is never applied. Since it would filter the props of every styled component below it, which the compiled components cannot see, it is a build error rather than being silently dropped. Code that restores styled-components v5 filtering with `<StyleSheetManager shouldForwardProp={isPropValid}>` must move that filter onto the components: rename the styling props to `$` props, or give each component `.withConfig({ shouldForwardProp })`.
 
 ## Transient props
@@ -193,6 +211,7 @@ A styled component compiles to a function component, whose `defaultProps` React 
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
 | Component selectors (`${Child}`)         | a marker class; Emotion extensions render without it, as Emotion's do            |
+| Markers no module selects                | dropped by one-shot Vite and webpack production builds                           |
 | `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`; `componentId` classes   |
 
 ## Limitations

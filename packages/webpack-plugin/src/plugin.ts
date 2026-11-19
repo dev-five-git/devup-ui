@@ -8,6 +8,7 @@ import {
   buildCanonicalMap,
   buildStaticImportGraph,
   collectNumberedFiles,
+  ComponentMarkerLedger,
   computeFileReach,
   computeReachableFiles,
   conventionalSourceRoots,
@@ -30,6 +31,7 @@ import {
   normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
+  registerMarkerLedger,
   resolveDevupFile,
   resolveProjectPath,
   seedFileNumbers,
@@ -42,6 +44,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import { type Compiler, type RuleSetRule } from 'webpack'
 
+import { stripComponentMarkers } from './component-markers'
 import { createWebpackReservation } from './reservation'
 import { servedCss } from './served-css'
 import { reconcileWatchCss } from './watch-css'
@@ -98,6 +101,8 @@ export class DevupUIWebpackPlugin {
   > & { readonly productionPrewarmFiles?: readonly string[] }
   /** Webpack's `context` once applied; the working directory before */
   private root = process.cwd()
+  /** What the scan and the loaders report of component-selector markers */
+  private readonly markers = new ComponentMarkerLedger()
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -271,8 +276,9 @@ export class DevupUIWebpackPlugin {
    * happened to build first. Mirrors the loader's `codeExtract` call (same
    * filename keying + options) so re-extraction during compilation is
    * idempotent. Generic entry discovery remains best-effort; an adapter's
-   * complete set is authoritative and its read/extraction failures must fail
-   * the build.
+   * complete set is authoritative and its read failures must fail the build.
+   * A file that fails to extract is skipped with a warning either way: its
+   * loader reports the error if webpack compiles it.
    */
   private prewarmExtractor(
     entries: string[],
@@ -307,17 +313,33 @@ export class DevupUIWebpackPlugin {
           '/',
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-        const output = this.compiler.codeExtract(
-          relativePath,
-          readFileSync(file, 'utf-8'),
-          this.options.package,
-          relCssDir,
-          this.options.singleCss,
-          false,
-          true,
-          this.importAliases,
-        )
-        output.free()
+        const source = readFileSync(file, 'utf-8')
+        try {
+          this.compiler
+            .codeExtract(
+              relativePath,
+              source,
+              this.options.package,
+              relCssDir,
+              this.options.singleCss,
+              false,
+              true,
+              this.importAliases,
+            )
+            .free()
+        } catch (error) {
+          // Next's set covers every source file, including ones no route
+          // imports, so a file the warm-up cannot extract must not fail the
+          // build. It stays out of the warm-up: when webpack compiles it, its
+          // loader extracts it again and fails the build with the same error.
+          console.warn(
+            setupWarning(
+              `webpack stylesheet warm-up of ${relativePath}`,
+              error,
+              'The file is skipped; if webpack compiles it, the build fails with this error.',
+            ),
+          )
+        }
       }
     } catch (error) {
       if (this.options.productionPrewarmFiles !== undefined) throw error
@@ -519,8 +541,14 @@ export class DevupUIWebpackPlugin {
       this.importAliases,
       this.compiler,
     )
+    registerMarkerLedger(compiler, this.markers)
     const reserveBeforeCompile = () => {
+      this.markers.clear()
       reserve(compiler.options)
+      this.markers.scanned(
+        reserve.slots.markerSelections,
+        reserve.slots.reservedIds,
+      )
       if (this.options.watch) return
       const { entry, context = this.root } = compiler.options
       this.prewarmExtractor(
@@ -611,6 +639,25 @@ export class DevupUIWebpackPlugin {
           // must hold every style extracted so far
           if (!existsSync(basePath) || readFileSync(basePath, 'utf-8') !== base)
             writeFileSync(basePath, base, 'utf-8')
+          // A one-shot production build drops the markers no module selects
+          if (compiler.options.mode === 'production')
+            compilation.hooks.processAssets.tap(
+              {
+                name: 'DevupUIWebpackPluginComponentMarkers',
+                stage:
+                  compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE,
+              },
+              () => {
+                if (compiler.watchMode) return
+                stripComponentMarkers(
+                  compiler,
+                  compilation,
+                  this.markers,
+                  this.root,
+                  relative,
+                )
+              },
+            )
           let stale: string[] = []
           compilation.hooks.finishModules.tap('DevupUIWebpackPlugin', () => {
             if (compiler.watchMode) return

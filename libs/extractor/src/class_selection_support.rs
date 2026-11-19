@@ -78,6 +78,7 @@ pub fn observe(outputs: &Modules, observer: &str, globals: &str) -> serde_json::
                 map: output.map.clone(),
                 css_file: output.css_file.clone(),
                 dependencies: output.dependencies.clone(),
+                component_markers: crate::ComponentMarkers::default(),
             },
         )
     }));

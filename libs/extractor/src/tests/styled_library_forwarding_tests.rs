@@ -9,7 +9,7 @@ use rstest::rstest;
 use serial_test::serial;
 
 use super::styled_transient_tests::executable_component;
-use crate::{ExtractOption, ImportAlias, extract};
+use crate::{ExtractOption, ImportAlias, extract, styled_reads::Forward};
 
 fn library_code(source: &str) -> String {
     let _state = super::test_state::TestStateGuard::new();
@@ -129,4 +129,255 @@ fn forwards_the_props_the_library_forwards(
         serde_json::json!([tone, payload, theme, false, "kept", true]),
         "{source}"
     );
+}
+
+/// The props the element renders with, sorted, leaving out what every
+/// component sets (`className`, `style`, `as`, `ref`)
+fn forwarded(source: &str, extra: &str) -> String {
+    let code =
+        library_code(source).replace("import isPropValid from \"@emotion/is-prop-valid\";\n", "");
+    let component = executable_component(code);
+    let script = format!(
+        r"
+        const Link = function Link() {{}};
+        {component}
+        const rendered = Subject.render({{
+            tone: 'navy', $tone: 'orchid', customPayload: '42', id: 'kept',
+            'data-x': '1'{extra}
+        }}, undefined);
+        Object.keys(rendered.props)
+            .filter((k) => !['className', 'style', 'as', 'ref'].includes(k))
+            .sort()
+            .join(',')
+        "
+    );
+    Context::default()
+        .eval(Source::from_bytes(&script))
+        .expect("generated component must execute")
+        .as_string()
+        .expect("text result")
+        .to_std_string_escaped()
+}
+
+/// Each case renders with `tone`, which the styles read, and `$tone`,
+/// `customPayload`, `id` and `data-x`. `upstream` is what styled-components
+/// 6.6.0 and @emotion/styled 11 render, with @emotion/is-prop-valid, under
+/// React 19's `renderToStaticMarkup`. The build adds no code that runs
+/// `shouldForwardProp`: it decides the props it can name (those the styles
+/// read and those the predicate names) as the libraries do, and passes on the
+/// others, which the libraries' runtime would filter too. `as` choosing
+/// another element is not seen either, as `named` leaves it out.
+#[rstest]
+#[case::styled_components_never(
+    "import styled from 'styled-components'\nconst Subject = styled.div.withConfig({ shouldForwardProp: () => false })`color: ${(p) => p.tone};`",
+    "",
+    &["tone"],
+    "",
+    "customPayload,data-x,id"
+)]
+#[case::styled_components_only_id(
+    "import styled from 'styled-components'\nconst Subject = styled.div.withConfig({ shouldForwardProp: (prop) => prop === 'id' })`color: ${(p) => p.tone};`",
+    "",
+    &["tone", "id"],
+    "id",
+    "customPayload,data-x,id"
+)]
+#[case::styled_components_valid(
+    "import styled from 'styled-components'\nimport isPropValid from '@emotion/is-prop-valid'\nconst Subject = styled.div.withConfig({ shouldForwardProp: (prop) => isPropValid(prop) })`color: ${(p) => p.tone};`",
+    "",
+    &["tone"],
+    "data-x,id",
+    "customPayload,data-x,id"
+)]
+#[case::styled_components_tag_element(
+    "import styled from 'styled-components'\nimport isPropValid from '@emotion/is-prop-valid'\nconst Subject = styled.div.withConfig({ shouldForwardProp: (prop, element) => typeof element !== 'string' || isPropValid(prop) })`color: ${(p) => p.tone};`",
+    "",
+    &["tone"],
+    "data-x,id",
+    "customPayload,data-x,id"
+)]
+#[case::styled_components_component_element(
+    "import styled from 'styled-components'\nimport isPropValid from '@emotion/is-prop-valid'\nconst Subject = styled(Link).withConfig({ shouldForwardProp: (prop, element) => 'string' != typeof element || isPropValid(prop) })`color: ${(p) => p.tone};`",
+    "",
+    &["tone"],
+    "customPayload,data-x,id,tone",
+    "customPayload,data-x,id,tone"
+)]
+#[case::styled_components_as_component(
+    "import styled from 'styled-components'\nimport isPropValid from '@emotion/is-prop-valid'\nconst Subject = styled.div.withConfig({ shouldForwardProp: (prop, element) => !(typeof element === 'string') || isPropValid(prop) })`color: ${(p) => p.tone};`",
+    ", as: Link",
+    &[],
+    "customPayload,data-x,id,tone",
+    "customPayload,data-x,id"
+)]
+#[case::styled_components_listed(
+    "import styled from 'styled-components'\nconst Subject = styled.div.withConfig({ shouldForwardProp: (prop) => ['id', 'tone'].includes(prop) })`color: ${(p) => p.tone};`",
+    "",
+    &["tone", "id"],
+    "id,tone",
+    "customPayload,data-x,id,tone"
+)]
+#[case::emotion_never(
+    "import styled from '@emotion/styled'\nconst Subject = styled('div', { shouldForwardProp: () => false })`color: ${(p) => p.tone};`",
+    "",
+    &["tone"],
+    "",
+    "customPayload,data-x,id"
+)]
+#[case::emotion_only_id(
+    "import styled from '@emotion/styled'\nconst Subject = styled('div', { shouldForwardProp: (prop) => prop === 'id' })`color: ${(p) => p.tone};`",
+    "",
+    &["tone", "id"],
+    "id",
+    "customPayload,data-x,id"
+)]
+#[case::emotion_valid_component(
+    "import styled from '@emotion/styled'\nimport isPropValid from '@emotion/is-prop-valid'\nconst Subject = styled(Link, { shouldForwardProp: (prop) => isPropValid(prop) })`color: ${(p) => p.tone};`",
+    "",
+    &["tone"],
+    "data-x,id",
+    "customPayload,data-x,id"
+)]
+#[serial]
+fn decides_the_props_the_build_can_name_as_the_libraries_do(
+    #[case] source: &str,
+    #[case] extra: &str,
+    #[case] named: &[&str],
+    #[case] upstream: &str,
+    #[case] expected: &str,
+) {
+    // Given: a predicate, props the styles read and props they do not
+
+    // When: the compiled component renders them
+    let props = forwarded(source, extra);
+
+    // Then: the props the build can name reach the element as upstream
+    // renders them, and the others pass on, with no runtime filter
+    assert_eq!(props, expected, "{source}");
+    let reaches = |props: &str, name: &str| props.split(',').any(|prop| prop == name);
+    for name in named {
+        assert_eq!(
+            reaches(&props, name),
+            reaches(upstream, name),
+            "{name}: {source}"
+        );
+    }
+    assert!(!props.contains('$'), "{source}");
+}
+
+#[rstest]
+#[case::calls_the_element(
+    "import styled from 'styled-components'\nconst A = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) })`color: red;`",
+    true
+)]
+#[case::other_code(
+    "import styled from 'styled-components'\nconst A = styled.div.withConfig({ shouldForwardProp: (prop, element) => element === 'a' })`color: red;`",
+    false
+)]
+#[case::not_a_function(
+    "import styled from 'styled-components'
+const A = styled.div.withConfig({ shouldForwardProp: check })`color: red;`",
+    false
+)]
+#[case::one_parameter(
+    "import styled from 'styled-components'
+const A = styled.div.withConfig({ shouldForwardProp: (prop) => check(prop) })`color: red;`",
+    false
+)]
+#[case::compares_the_type_otherwise(
+    "import styled from 'styled-components'
+const A = styled.div.withConfig({ shouldForwardProp: (prop, element) => typeof element > 'string' })`color: red;`",
+    false
+)]
+#[case::emotion_validator(
+    "import styled from '@emotion/styled'\nconst A = styled('div', { shouldForwardProp: (prop, valid) => valid(prop) })`color: red;`",
+    false
+)]
+#[serial]
+fn styled_components_v5_validators_are_build_errors(#[case] source: &str, #[case] v6: bool) {
+    // Given: a predicate reading its second argument
+
+    // When: the build compiles it
+    let _state = super::test_state::TestStateGuard::new();
+    super::reset_class_map();
+    super::reset_file_map();
+    let option = ExtractOption {
+        package: "@devup-ui/core".to_string(),
+        css_dir: "@devup-ui/core".to_string(),
+        single_css: true,
+        import_main_css: false,
+        import_aliases: HashMap::from([
+            (
+                "styled-components".to_string(),
+                ImportAlias::DefaultToNamed("styled".to_string()),
+            ),
+            (
+                "@emotion/styled".to_string(),
+                ImportAlias::DefaultToNamed("styled".to_string()),
+            ),
+        ]),
+    };
+    let result = extract("test.tsx", source, option);
+
+    // Then: styled-components v6 rejects calling the element it passes; a
+    // predicate the build cannot read is the usual error, and Devup UI's
+    // validator stays readable outside styled-components
+    match result {
+        Ok(_) => assert!(!v6 && source.contains("@emotion/styled"), "{source}"),
+        Err(error) => assert_eq!(
+            error.to_string().contains("styled-components v6 passes"),
+            v6,
+            "{error}"
+        ),
+    }
+}
+
+#[rstest]
+#[case::both_pass_every_prop(Forward::Always(true), Forward::Always(true), Forward::Always(true))]
+#[case::one_passes_every_prop(
+    Forward::Always(true),
+    Forward::Is("id".to_string()),
+    Forward::Is("id".to_string())
+)]
+#[case::held_already(
+    Forward::And(
+        Box::new(Forward::Is("id".to_string())),
+        Box::new(Forward::Tag)
+    ),
+    Forward::Tag,
+    Forward::And(
+        Box::new(Forward::Is("id".to_string())),
+        Box::new(Forward::Tag)
+    )
+)]
+fn composes_predicates_without_repeating_them(
+    #[case] left: Forward,
+    #[case] right: Forward,
+    #[case] expected: Forward,
+) {
+    // Given: two predicates a prop must both pass
+
+    // When: they are composed
+    let composed = Forward::and(left, right);
+
+    // Then: what one already holds, or what passes every prop, adds nothing
+    assert_eq!(composed, expected);
+}
+
+#[rstest]
+#[case::tag(Forward::Tag, true, true)]
+#[case::component(Forward::Tag, false, false)]
+#[case::not_a_tag(Forward::Not(Box::new(Forward::Tag)), true, false)]
+fn tests_whether_the_element_is_a_tag(
+    #[case] rule: Forward,
+    #[case] tag: bool,
+    #[case] expected: bool,
+) {
+    // Given: a predicate reading the element styled-components renders
+
+    // When: the build asks it about an element
+    let forwards = rule.forwards("tone", tag);
+
+    // Then: it reads whether the element is a tag, leaving the rest to the runtime
+    assert_eq!(forwards, expected);
 }

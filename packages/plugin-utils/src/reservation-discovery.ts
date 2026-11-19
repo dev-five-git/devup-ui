@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { contextImports } from './context-imports'
 import {
   createModuleResolver,
   importedSpecifiers,
@@ -12,6 +13,8 @@ import {
   isReservationReadFailure,
   reservationSource,
 } from './reservation-source'
+import { isRuntimePackage } from './runtime-package'
+import { createNodeModulesExcludeRegex } from './shared'
 import type { WasmImportAliases } from './types'
 
 export type ReservationInput = {
@@ -120,6 +123,8 @@ export function collectReservationInputs(
     allowPackage: (specifier) => allowedPackage(specifier, include),
   })
   const needles = extractedNeedles(options.package, options.importAliases)
+  // A dependency's files the loaders leave to the bundler, by the loaders' rule
+  const leftToBundler = createNodeModulesExcludeRegex(include)
   const records = new Map<string, ReservationInput>()
   const sources = new Map<string, string>()
   const entryTargets = new Set<string>()
@@ -161,6 +166,10 @@ export function collectReservationInputs(
       needles.some((needle) => code.includes(needle))
     )
       seeds.add(key)
+    // No loader extracts what such a file imports, so the crawl stops there:
+    // a bundler entry such as Next's client runtime would otherwise read
+    // hundreds of the framework's own files before every build
+    if (leftToBundler.test(physicalPath)) continue
     const targets = new Set<string>()
     const resolutions = new Map<string, string>()
     imports.set(key, resolutions)
@@ -169,6 +178,7 @@ export function collectReservationInputs(
       overlay?.filename ?? physicalPath,
       code,
     )) {
+      if (isRuntimePackage(specifier)) continue
       const allowed = allowedPackage(specifier, include)
       const module = reservationSource(
         () => resolver(specifier, physicalPath),
@@ -181,6 +191,12 @@ export function collectReservationInputs(
       if (allowed) seeds.add(target)
       if (!sources.has(target)) sources.set(target, module.code)
       pending.push(module.path)
+    }
+    // Directories `require.context` or `import.meta.glob` load, written out
+    for (const file of contextImports(physicalPath, code, cwd)) {
+      if (!isSourceFile(file)) continue
+      targets.add(physicalKey(file))
+      pending.push(file)
     }
   }
   const selected = new Set<string>()

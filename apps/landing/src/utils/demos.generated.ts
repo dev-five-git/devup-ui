@@ -19,25 +19,29 @@ import demo13 from '../app/(detail)/components/[component]/radio/demo/1_Default'
 import demo14 from '../app/(detail)/components/[component]/radio/demo/2_Variant'
 import demo15 from '../app/(detail)/components/[component]/radio/demo/3_Direction'
 import demo16 from '../app/(detail)/components/[component]/radio/demo/4_Disabled'
-import demo17 from '../app/(detail)/components/[component]/select/demo/1_Default'
-import demo18 from '../app/(detail)/components/[component]/select/demo/2_Radio'
-import demo19 from '../app/(detail)/components/[component]/select/demo/3_Checkbox'
-import demo20 from '../app/(detail)/components/[component]/select/demo/4_Options'
-import demo21 from '../app/(detail)/components/[component]/stepper/demo/1_Default'
-import demo22 from '../app/(detail)/components/[component]/stepper/demo/2_Type'
-import demo23 from '../app/(detail)/components/[component]/stepper/demo/3_MinMax'
-import demo24 from '../app/(detail)/components/[component]/textarea/demo/1_Default'
-import demo25 from '../app/(detail)/components/[component]/textarea/demo/2_Error'
-import demo26 from '../app/(detail)/components/[component]/textarea/demo/3_Disabled'
-import demo27 from '../app/(detail)/components/[component]/textarea/demo/4_Colors'
-import demo28 from '../app/(detail)/components/[component]/textbox/demo/1_Default'
-import demo29 from '../app/(detail)/components/[component]/textbox/demo/2_Error'
-import demo30 from '../app/(detail)/components/[component]/textbox/demo/3_Disabled'
-import demo31 from '../app/(detail)/components/[component]/textbox/demo/4_Icon'
-import demo32 from '../app/(detail)/components/[component]/toggle/demo/1_Default'
-import demo33 from '../app/(detail)/components/[component]/toggle/demo/2_Variant'
-import demo34 from '../app/(detail)/components/[component]/toggle/demo/3_Disabled'
-import demo35 from '../app/(detail)/components/[component]/toggle/demo/4_Colors'
+import demo17 from '../app/(detail)/components/[component]/search/demo/1_Default'
+import demo18 from '../app/(detail)/components/[component]/search/demo/2_Filter'
+import demo19 from '../app/(detail)/components/[component]/search/demo/3_OnSearch'
+import demo20 from '../app/(detail)/components/[component]/search/demo/4_Disabled'
+import demo21 from '../app/(detail)/components/[component]/select/demo/1_Default'
+import demo22 from '../app/(detail)/components/[component]/select/demo/2_Radio'
+import demo23 from '../app/(detail)/components/[component]/select/demo/3_Checkbox'
+import demo24 from '../app/(detail)/components/[component]/select/demo/4_Options'
+import demo25 from '../app/(detail)/components/[component]/stepper/demo/1_Default'
+import demo26 from '../app/(detail)/components/[component]/stepper/demo/2_Type'
+import demo27 from '../app/(detail)/components/[component]/stepper/demo/3_MinMax'
+import demo28 from '../app/(detail)/components/[component]/textarea/demo/1_Default'
+import demo29 from '../app/(detail)/components/[component]/textarea/demo/2_Error'
+import demo30 from '../app/(detail)/components/[component]/textarea/demo/3_Disabled'
+import demo31 from '../app/(detail)/components/[component]/textarea/demo/4_Colors'
+import demo32 from '../app/(detail)/components/[component]/textbox/demo/1_Default'
+import demo33 from '../app/(detail)/components/[component]/textbox/demo/2_Error'
+import demo34 from '../app/(detail)/components/[component]/textbox/demo/3_Disabled'
+import demo35 from '../app/(detail)/components/[component]/textbox/demo/4_Icon'
+import demo36 from '../app/(detail)/components/[component]/toggle/demo/1_Default'
+import demo37 from '../app/(detail)/components/[component]/toggle/demo/2_Variant'
+import demo38 from '../app/(detail)/components/[component]/toggle/demo/3_Disabled'
+import demo39 from '../app/(detail)/components/[component]/toggle/demo/4_Colors'
 
 export const DEMOS: readonly (readonly [string, ComponentType])[] = [
   ['button/demo/1_Variants.tsx', demo0],
@@ -57,23 +61,27 @@ export const DEMOS: readonly (readonly [string, ComponentType])[] = [
   ['radio/demo/2_Variant.tsx', demo14],
   ['radio/demo/3_Direction.tsx', demo15],
   ['radio/demo/4_Disabled.tsx', demo16],
-  ['select/demo/1_Default.tsx', demo17],
-  ['select/demo/2_Radio.tsx', demo18],
-  ['select/demo/3_Checkbox.tsx', demo19],
-  ['select/demo/4_Options.tsx', demo20],
-  ['stepper/demo/1_Default.tsx', demo21],
-  ['stepper/demo/2_Type.tsx', demo22],
-  ['stepper/demo/3_MinMax.tsx', demo23],
-  ['textarea/demo/1_Default.tsx', demo24],
-  ['textarea/demo/2_Error.tsx', demo25],
-  ['textarea/demo/3_Disabled.tsx', demo26],
-  ['textarea/demo/4_Colors.tsx', demo27],
-  ['textbox/demo/1_Default.tsx', demo28],
-  ['textbox/demo/2_Error.tsx', demo29],
-  ['textbox/demo/3_Disabled.tsx', demo30],
-  ['textbox/demo/4_Icon.tsx', demo31],
-  ['toggle/demo/1_Default.tsx', demo32],
-  ['toggle/demo/2_Variant.tsx', demo33],
-  ['toggle/demo/3_Disabled.tsx', demo34],
-  ['toggle/demo/4_Colors.tsx', demo35],
+  ['search/demo/1_Default.tsx', demo17],
+  ['search/demo/2_Filter.tsx', demo18],
+  ['search/demo/3_OnSearch.tsx', demo19],
+  ['search/demo/4_Disabled.tsx', demo20],
+  ['select/demo/1_Default.tsx', demo21],
+  ['select/demo/2_Radio.tsx', demo22],
+  ['select/demo/3_Checkbox.tsx', demo23],
+  ['select/demo/4_Options.tsx', demo24],
+  ['stepper/demo/1_Default.tsx', demo25],
+  ['stepper/demo/2_Type.tsx', demo26],
+  ['stepper/demo/3_MinMax.tsx', demo27],
+  ['textarea/demo/1_Default.tsx', demo28],
+  ['textarea/demo/2_Error.tsx', demo29],
+  ['textarea/demo/3_Disabled.tsx', demo30],
+  ['textarea/demo/4_Colors.tsx', demo31],
+  ['textbox/demo/1_Default.tsx', demo32],
+  ['textbox/demo/2_Error.tsx', demo33],
+  ['textbox/demo/3_Disabled.tsx', demo34],
+  ['textbox/demo/4_Icon.tsx', demo35],
+  ['toggle/demo/1_Default.tsx', demo36],
+  ['toggle/demo/2_Variant.tsx', demo37],
+  ['toggle/demo/3_Disabled.tsx', demo38],
+  ['toggle/demo/4_Colors.tsx', demo39],
 ]

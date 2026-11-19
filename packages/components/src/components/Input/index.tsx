@@ -10,7 +10,7 @@ import {
 } from '@devup-ui/react'
 import { ComponentProps, forwardRef, useId, useRef, useState } from 'react'
 
-import { joinIds, mergeRefs } from '../../utils/dom'
+import { clearInput, joinIds, mergeRefs } from '../../utils/dom'
 
 export interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   type?: Exclude<ComponentProps<'input'>['type'], 'file'>
@@ -79,12 +79,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const handleClear = () => {
     const input = inputRef.current
     if (input) {
-      // A real input event, so the change reaches React and the owner as it does when the user types
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )?.set?.call(input, '')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
+      clearInput(input)
       input.focus()
     }
     onClear?.()

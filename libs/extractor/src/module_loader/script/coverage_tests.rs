@@ -27,6 +27,7 @@ fn retained_code_rejects_malformed_source_map_instead_of_inventing_a_trace() -> 
         map: Some("{invalid".to_string()),
         css_file: None,
         dependencies: Vec::new(),
+        component_markers: crate::ComponentMarkers::default(),
     };
     // When
     let error = Unit::retained("retained.ts", &output, "const width: number = 4;")
@@ -48,6 +49,7 @@ fn retained_code_uses_written_trace_when_extraction_leaves_the_source_unchanged(
         map: None,
         css_file: None,
         dependencies: Vec::new(),
+        component_markers: crate::ComponentMarkers::default(),
     };
     // When
     let unit = Unit::retained("retained.ts", &output, code)?;
@@ -72,6 +74,7 @@ fn retained_code_rejects_missing_original_source_instead_of_inventing_a_trace(
         map: map.map(str::to_string),
         css_file: None,
         dependencies: Vec::new(),
+        component_markers: crate::ComponentMarkers::default(),
     };
     // When
     let error = Unit::retained("retained.ts", &output, "const width: number = 4;")

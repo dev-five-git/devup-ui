@@ -7,7 +7,9 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(test)]
 use crate::with_style_sheet_mut;
-pub use devup_ui_binding_core::{ReservationInput, reserve_class_slots_internal};
+pub use devup_ui_binding_core::{
+    ReservationInput, reserve_class_slots_internal, reserve_class_slots_selecting,
+};
 mod rows;
 #[cfg(not(tarpaulin_include))]
 use crate::{
@@ -17,7 +19,8 @@ use crate::{
 #[cfg(not(tarpaulin_include))]
 use std::{cell::RefCell, rc::Rc};
 
-/// Reserve `[filename, code, cssDir]` rows using the current resolver and configuration.
+/// Reserve `[filename, code, cssDir]` rows using the current resolver and
+/// configuration; the component-selector markers the rows' styles select.
 #[wasm_bindgen(js_name = "reserveClassSlots")]
 #[cfg(not(tarpaulin_include))]
 pub fn reserve_class_slots(
@@ -27,7 +30,7 @@ pub fn reserve_class_slots(
     import_main_css_in_code: bool,
     _import_main_css_in_css: bool,
     import_aliases: JsValue,
-) -> Result<(), JsValue> {
+) -> Result<Vec<String>, JsValue> {
     let rows: Vec<Vec<String>> = const { boundary::wasm() }.decode(rows, 0)?;
     let inputs = rows::parse_rows(rows).map_err(|_| boundary::fail(0))?;
     let option = ExtractOption {
@@ -49,14 +52,13 @@ pub fn reserve_class_slots(
                 call_module_resolver(&resolver, request, &state)
             }
         });
-    reserve_class_slots_internal(
+    Ok(reserve_class_slots_selecting(
         &inputs,
         option,
         resolver
             .as_ref()
             .map(|resolver| resolver as &ModuleResolver),
-    );
-    Ok(())
+    ))
 }
 
 /// New live class and file slots since this build's first reservation; repeats do not count.

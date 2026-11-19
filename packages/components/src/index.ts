@@ -4,6 +4,7 @@ export { Input } from './components/Input'
 export { ProgressBar } from './components/ProgressBar'
 export { Radio } from './components/Radio'
 export { RadioGroup } from './components/RadioGroup'
+export { Search } from './components/Search'
 export {
   Select,
   SelectContainer,

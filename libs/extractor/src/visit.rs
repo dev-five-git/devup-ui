@@ -328,6 +328,9 @@ pub struct DevupVisitor<'a> {
     /// The marker classes of the exported or selected styled component the
     /// declaration being visited defines, with where its definition starts
     pending_marker: Option<(u32, Vec<(String, usize)>)>,
+    /// The markers the file gives exported components and the ones its
+    /// selectors read
+    pub component_markers: std::cell::RefCell<crate::component_markers::ComponentMarkers>,
     /// Where the styled components start that no other module nor `css`
     /// reaches: the module exports none, and renders each only as a tag
     private_styled: FxHashSet<u32>,
@@ -1417,6 +1420,7 @@ impl<'a> DevupVisitor<'a> {
             devup_styled: FxHashSet::default(),
             selected_components: FxHashSet::default(),
             pending_marker: None,
+            component_markers: std::cell::RefCell::default(),
             private_styled: FxHashSet::default(),
             rendered: FxHashSet::default(),
             exports: Exports::default(),
@@ -1598,10 +1602,15 @@ impl<'a> DevupVisitor<'a> {
     /// The classes of markers a declaration is known to give, named only once
     /// it becomes a component so that an export that is not one numbers no file
     fn marker_classes(&self, markers: &[(String, usize)]) -> Vec<String> {
-        markers
+        let classes: Vec<String> = markers
             .iter()
             .map(|(name, index)| self.marker(name, *index))
-            .collect()
+            .collect();
+        let mut recorded = self.component_markers.borrow_mut();
+        for class in &classes {
+            recorded.give(class);
+        }
+        classes
     }
 
     /// The styled components the file exports, by the names it exports them
@@ -3703,6 +3712,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && self.style_values.import_name(symbol) == Some(namespace)
                     && let Some(marker) = component.markers.first()
                 {
+                    self.component_markers.borrow_mut().select(marker);
                     self.style_values
                         .insert_member(symbol, member, format!(".{marker}"));
                 }
@@ -3726,6 +3736,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 })
                 .collect();
             for (symbol, marker) in imported {
+                self.component_markers.borrow_mut().select(&marker);
                 self.style_values.insert(
                     symbol,
                     crate::style_values::StyleValue::Component(format!(".{marker}")),
@@ -3865,16 +3876,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             configs.insert(0, options.into_expression());
         }
         let options = configs.iter().collect::<Vec<_>>();
-        let (forward, forward_error) = read_forward(&options);
-        if let Some(error) = forward_error {
-            self.errors.push(error);
-        }
         let styled_components = match it {
             Expression::CallExpression(call) => Some(&call.callee),
             Expression::TaggedTemplateExpression(tag) => Some(&tag.tag),
             _ => None,
         }
         .is_some_and(|factory| self.library_factory(factory, &self.styled_components));
+        let (forward, forward_error) = read_forward(&options, styled_components);
+        if let Some(error) = forward_error {
+            self.errors.push(error);
+        }
         let forward = crate::styled_reads::library_forward(styled_components, forward);
         let (identity, identity_errors) = read_identity(&options, &|identifier| {
             self.bindings.symbol(identifier).is_none()
@@ -5513,6 +5524,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             .filter(|symbol| self.selected_components.contains(symbol))
             .zip(shared.iter().flatten().next())
         {
+            self.component_markers.borrow_mut().select(class);
             self.style_values.insert(
                 symbol,
                 crate::style_values::StyleValue::Component(format!(".{class}")),
@@ -5531,6 +5543,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some((symbol, start, markers, selected)) = &marked {
             if *selected {
                 let class = self.marker(&markers[0].0, markers[0].1);
+                self.component_markers.borrow_mut().select(&class);
                 self.style_values.insert(
                     *symbol,
                     crate::style_values::StyleValue::Component(format!(".{class}")),
