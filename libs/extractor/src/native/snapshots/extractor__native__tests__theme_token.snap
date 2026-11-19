@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `bg` on React Native: the theme token in `$primary` is not read on React Native yet. Fix: write the value itself

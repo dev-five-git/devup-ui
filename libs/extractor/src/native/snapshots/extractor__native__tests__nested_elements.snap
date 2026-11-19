@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { color: "red" },
+	b: { margin: 4 },
+	c: { padding: 4 }
+});
+<Box icon={<Text style={__s.a}>!</Text>} render={() => <Box style={__s.b} />} style={__s.c}>
+  {items.map((item) => <Text key={item}>{item}</Text>)}
+  {/* a comment */}
+</Box>;

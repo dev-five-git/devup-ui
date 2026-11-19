@@ -1,0 +1,11 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Android, true, code)"
+---
+"use client";
+import { View as Box } from "react-native";
+import { a } from "./a";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({ a: { padding: 4 } });
+const element = <Box style={__s.a} />;
+import { b } from "./b";

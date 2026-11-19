@@ -18,6 +18,7 @@ fn core_option() -> ExtractOption {
         single_css: true,
         import_main_css: false,
         import_aliases: std::collections::HashMap::new(),
+        ..Default::default()
     }
 }
 

@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `border` on React Native: the build cannot split a value of `border` it reads at runtime into React Native styles. Fix: write the value as a literal, or pass the React Native styles in `style`
+test.tsx:2:17: `<Box>` cannot use `positioning` on React Native: the build cannot split a value of `positioning` it reads at runtime into React Native styles. Fix: write the value as a literal, or pass the React Native styles in `style`
+test.tsx:2:33: `<Box>` cannot use `gridArea` on React Native: React Native has no `grid-area` style. Fix: remove it, or write a style React Native reads

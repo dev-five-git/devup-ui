@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:9: `<Button>` cannot use `_pressed` on React Native: a press style is chosen while the element is pressed, which needs the React Native runtime that this version does not include yet. Fix: pass a function to the `style` of a React Native `Pressable`, reading `pressed`
+test.tsx:2:34: `<Button>` cannot use `_active` on React Native: a press style is chosen while the element is pressed, which needs the React Native runtime that this version does not include yet. Fix: pass a function to the `style` of a React Native `Pressable`, reading `pressed`

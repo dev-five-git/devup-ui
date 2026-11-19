@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:8: `<Image>` cannot use `src` on React Native: the build turns only a literal, a name or a member `src` into a `source`. Fix: assign the value to a variable first, or pass React Native's `source`, such as `source={require('./image.png')}`

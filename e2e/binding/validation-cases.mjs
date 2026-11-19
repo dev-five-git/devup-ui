@@ -20,6 +20,11 @@ const extractSlots =
 export const positions = [
   ['codeExtract', extractSlots, extraction],
   ['codeExtractWithoutSourceMap', extractSlots, extraction],
+  [
+    'codeExtractNative',
+    'filename:s code:s _package:s platform:s runtime:b',
+    () => ['src/new.tsx', code, pkg, 'ios', true],
+  ],
   ['dropSession', 'id:session', () => [1]],
   ['getCss', 'file_num:n import_main_css:b', () => [null, false]],
   [
@@ -164,6 +169,6 @@ export const cases = positions.flatMap((position) =>
         .map((good, index) => (index === position.index ? value : good)),
   })),
 )
-assert.equal(positions.length, 50)
-assert.equal(new Set(positions.map((p) => p.fn)).size, 23)
+assert.equal(positions.length, 55)
+assert.equal(new Set(positions.map((p) => p.fn)).size, 24)
 assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)

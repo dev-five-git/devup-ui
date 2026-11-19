@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `flex` on React Native: a style prop takes a value. Fix: give the style a value, such as `p={2}`
+test.tsx:2:11: `<Box>` cannot use `bg` on React Native: a style prop takes one value, not an object. Fix: give one value, or use a platform block such as `_ios`
+test.tsx:2:25: `<Box>` cannot use `p` on React Native: a style prop takes a value. Fix: give the style a value, such as `p={2}`

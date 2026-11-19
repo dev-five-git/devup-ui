@@ -2269,6 +2269,7 @@ mod tests {
                 single_css: true,
                 import_main_css: false,
                 import_aliases: std::collections::HashMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -3466,7 +3467,7 @@ mod tests {
         let output = extract(
             "index.tsx",
             "import {Box,globalCss,keyframes,Flex} from '@devup-ui/core';<Flex/>;keyframes({from:{opacity:0},to:{opacity:1}});<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:'flex'},imports:['https://test.com/a.css'],fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})",
-            ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() },
+            ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new(), ..Default::default() },
         )
         .unwrap();
         sheet.update_styles(&output.styles, "index.tsx", true);
@@ -4116,6 +4117,7 @@ mod tests {
                 single_css,
                 import_main_css: false,
                 import_aliases: std::collections::HashMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -4743,7 +4745,7 @@ mod tests {
         let output = extract(
             "global.tsx",
             "import {globalCss} from '@devup-ui/core';globalCss({ body: { color: '$text', border: '1px solid $line.100' } })",
-            ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() },
+            ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new(), ..Default::default() },
         )
         .unwrap();
         sheet.update_styles(&output.styles, "global.tsx", true);
@@ -4786,6 +4788,7 @@ mod tests {
             single_css: true,
             import_main_css: false,
             import_aliases: std::collections::HashMap::new(),
+            ..Default::default()
         };
         let mut sheet = StyleSheet::default();
         let b = extract(
@@ -4822,7 +4825,7 @@ mod tests {
         let output = extract(
             "global.tsx",
             "import {globalCss} from '@devup-ui/core';globalCss({ body: { color: 'red', _motionReduce: { transition: 'none' } } })",
-            ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new() },
+            ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: std::collections::HashMap::new(), ..Default::default() },
         )
         .unwrap();
         sheet.update_styles(&output.styles, "global.tsx", true);
@@ -4859,6 +4862,7 @@ mod tests {
                     single_css: true,
                     import_main_css: false,
                     import_aliases: std::collections::HashMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -4905,6 +4909,7 @@ mod tests {
                 single_css: true,
                 import_main_css: false,
                 import_aliases: std::collections::HashMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -4943,6 +4948,7 @@ let color = "red";
                 single_css: true,
                 import_main_css: false,
                 import_aliases: std::collections::HashMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();

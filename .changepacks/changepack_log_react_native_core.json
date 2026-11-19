@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Add `codeExtractNative(filename, code, packageName, platform, runtime)` to both engines (part of #411). It compiles a file for React Native: Devup UI elements imported from `@devup-ui/react` become React Native components (`Box` → `View`, `Text` → `Text`, `Image` → `Image`, `Input` → `TextInput`, `Button` → `Pressable`, `Flex`/`VStack`/`Center` → `View` with their flex styles), and their style props become style objects hoisted into one `StyleSheet.create` per file and passed through `style`. `_ios`, `_android` and `_web` resolve at build time from `platform`. A style React Native cannot take is a build error naming the prop, as are responsive values, themes and `_pressed`, which need a runtime this release does not include. A value read at runtime converts as a literal does, through a function the file declares: numbers take the scale of the property (four pixels a unit for lengths), `px` strings become numbers and `rem`/`em` strings pixels. Web output is unchanged.",
+  "date": "2026-11-19T00:00:00.000Z"
+}

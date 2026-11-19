@@ -248,6 +248,7 @@ fn saved_eight_factory_calls_keep_spread_value_and_direct_identity() {
                         ImportAlias::DefaultToNamed("styled".into()),
                     ),
                 ]),
+                ..Default::default()
             },
         )
         .unwrap_or_else(|error| panic!("saved original context: {error}"));

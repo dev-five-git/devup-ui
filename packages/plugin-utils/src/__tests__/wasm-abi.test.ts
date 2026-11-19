@@ -45,6 +45,7 @@ describe('@devup-ui/wasm exports', () => {
     ).toEqual([
       'Output',
       'codeExtract',
+      'codeExtractNative',
       'codeExtractWithoutSourceMap',
       'createSession',
       'dropSession',

@@ -14,7 +14,7 @@ fn extract_stylesheet(code: &str) -> String {
             css_dir: "@devup-ui/react".to_string(),
             single_css: true,
             import_main_css: false,
-            import_aliases: HashMap::new(),
+            import_aliases: HashMap::new(), ..Default::default()
         },
     )
     .unwrap();
@@ -52,6 +52,7 @@ fn an_unreadable_var_declaration_is_reported() {
             single_css: true,
             import_main_css: false,
             import_aliases: HashMap::new(),
+            ..Default::default()
         },
     )
     .err()

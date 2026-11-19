@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Android, true, code)"
+---
+import { StyleSheet, View } from "react-native";
+import { View as Box, Text } from "react-native";
+import { StyleSheet as StyleSheet_ } from "react-native";
+const __s_ = StyleSheet_.create({ a: { padding: 4 } });
+const __s = StyleSheet.create({ a: { flex: 1 } });
+export const C = () => <View style={__s.a}><Box style={__s_.a} /><Text>t</Text></View>;

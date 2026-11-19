@@ -1,0 +1,25 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		marginVertical: 1,
+		marginHorizontal: 2,
+		paddingTop: 1,
+		paddingHorizontal: 2,
+		paddingBottom: 3,
+		marginLeft: 1,
+		marginRight: 1
+	},
+	b: {
+		marginTop: 1,
+		marginRight: 2,
+		marginBottom: 3,
+		marginLeft: 4
+	}
+});
+<Box style={__s.a} />;
+<Box style={__s.b} />;

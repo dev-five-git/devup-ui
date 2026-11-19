@@ -1,0 +1,27 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		padding: 4,
+		margin: 8
+	},
+	b: { backgroundColor: "red" },
+	c: { backgroundColor: "blue" },
+	d: { backgroundColor: "black" },
+	e: {
+		paddingLeft: 8,
+		paddingRight: 4
+	},
+	f: { flexDirection: "column" }
+});
+<Box style={[
+	__s.a,
+	on ? __s.b : __s.c,
+	__s.d
+]} />;
+<Box style={__s.e} />;
+<Flex style={__s.f} />;

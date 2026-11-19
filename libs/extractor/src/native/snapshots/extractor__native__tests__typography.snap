@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:7: `<Text>` cannot use `typography` on React Native: theme typography is not read on React Native yet. Fix: write `fontSize`, `fontWeight`, `lineHeight` and `letterSpacing` themselves

@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Android, true, code)"
+---
+import type { DevupProps } from '@devup-ui/react'
+export const value: DevupProps = {}
