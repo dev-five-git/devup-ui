@@ -17,8 +17,6 @@ import {
   createNodeModulesExcludeRegex,
   createSharedSlotReservation,
   createThemeInterfaceArgs,
-  type DevupCompiler,
-  type DevupUIBasePluginOptions,
   extractedNeedles,
   findTailwindCss,
   loadDevupConfigSync,
@@ -33,6 +31,12 @@ import {
   type WasmImportAliases,
   withSourceCache,
 } from '@devup-ui/plugin-utils'
+// The published declarations name only these: `next.config.ts` type-checks
+// against them, so they come from the entry that loads nothing else
+import type {
+  DevupCompiler,
+  DevupUIBasePluginOptions,
+} from '@devup-ui/plugin-utils/types'
 import { type NextConfig } from 'next'
 
 import {
@@ -535,7 +539,8 @@ export function DevupUI(
     // entries synchronously first. The wider set covers template imports, MDX
     // dependencies and package-level globalCss (notably reset-css) that the
     // route graph cannot represent. Loader-time extraction uses the same
-    // keys/options and is idempotent.
+    // keys/options and is idempotent. A file that fails to extract is skipped
+    // with a warning; the loader reports its error if Next.js compiles it.
     const prewarmedFiles: string[] = []
     const prewarmedOutputs = new Map<string, PrewarmedOutput>()
     if (!watch && staticGraph) {
@@ -577,19 +582,35 @@ export function DevupUI(
         }
         const extractStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const output = takeExtractOutput(
-          extract(
-            filename,
-            source,
-            libPackage,
-            relCssDir,
-            singleCss,
+        let output: ReturnType<typeof takeExtractOutput>
+        try {
+          output = takeExtractOutput(
+            extract(
+              filename,
+              source,
+              libPackage,
+              relCssDir,
+              singleCss,
+              false,
+              true,
+              importAliases as unknown as Record<string, string | null>,
+            ),
             false,
-            true,
-            importAliases as unknown as Record<string, string | null>,
-          ),
-          false,
-        )
+          )
+        } catch (error) {
+          // The prewarm covers every source file, including ones no route
+          // imports, so a file it cannot extract must not fail the build. It
+          // stays out of the prewarm: when Next.js compiles it, its loader
+          // extracts it again and fails the build with the same error.
+          console.warn(
+            setupWarning(
+              `prewarm of ${filename}`,
+              error,
+              'The file is skipped; if Next.js compiles it, the build fails with this error.',
+            ),
+          )
+          continue
+        }
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt
         }

@@ -138,6 +138,14 @@ afterEach(async () => {
 })
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
 
+/** The stylesheets written so far, once the scheduled write is done */
+async function sheetWrites() {
+  await Promise.resolve()
+  return writeSync.mock.calls.filter(([path]) =>
+    String(path).endsWith('devup-ui.css'),
+  )
+}
+
 async function load(path: string, namespace = 'file') {
   const hook = loads.find(
     ({ options }) =>
@@ -332,8 +340,9 @@ describe('registered Bun hooks', () => {
     const source = 'import {'
     await Bun.write(path, source)
     await register({ engine: 'wasm' })
+    const initial = (await sheetWrites()).length
     expect(await load(path)).toEqual({ contents: source, loader: 'ts' })
-    expect(writeSync).not.toHaveBeenCalled()
+    expect(await sheetWrites()).toHaveLength(initial)
   })
 
   it('awaits real build setup and deferred CSS through two native build lifecycles', async () => {
@@ -469,18 +478,37 @@ describe('registered Bun hooks', () => {
     }
   })
 
+  /** Captures the directory watchers the plugin starts */
+  function captureWatchers() {
+    const listeners = new Map<
+      string,
+      (event: string, filename: string | null) => void
+    >()
+    const watching = spyOn(fs, 'watch').mockImplementation(((
+      directory: string,
+      _options: object,
+      listener: (event: string, filename: string | null) => void,
+    ) => {
+      listeners.set(directory, listener)
+      return { on() {}, close() {} }
+    }) as unknown as typeof fs.watch)
+    /** Reports a change of `file` to the watcher of its directory */
+    function change(file: string) {
+      const listener = listeners.get(nodePath.dirname(file))
+      if (!listener) throw new Error(`${file} is not watched`)
+      listener('change', nodePath.basename(file))
+    }
+    return { listeners, watching, change }
+  }
+
+  async function until(check: () => boolean) {
+    for (let tick = 0; tick < 100 && !check(); tick++) await Bun.sleep(1)
+  }
+
   it('reports a failed reload of a changed Tailwind CSS and clears the theme', async () => {
     const tailwind = join(root, 'reload-tailwind.css')
     await Bun.write(tailwind, '@theme { --color-brand: #0af; }')
-    const listeners: (() => void)[] = []
-    const watching = spyOn(fs, 'watch').mockImplementation(((
-      _file: string,
-      _options: object,
-      listener: () => void,
-    ) => {
-      listeners.push(listener)
-      return { on() {}, close() {} }
-    }) as unknown as typeof fs.watch)
+    const { watching, change } = captureWatchers()
     exists.mockReturnValue(true)
     readConfig.mockResolvedValueOnce(
       JSON.stringify({
@@ -494,17 +522,70 @@ describe('registered Bun hooks', () => {
     try {
       await register({ engine: 'wasm' })
       expect(wasm.getDefaultTheme()).toBe('default')
-      expect(listeners).toHaveLength(1)
 
-      listeners[0]!()
-      for (let tick = 0; tick < 100 && logged.mock.calls.length === 0; tick++)
-        await Bun.sleep(1)
+      change(tailwind)
+      await until(() => logged.mock.calls.length > 0)
 
       expect(logged).toHaveBeenCalledWith(error)
       expect(wasm.getDefaultTheme()).toBeUndefined()
     } finally {
       watching.mockRestore()
       logged.mockRestore()
+    }
+  })
+
+  it('reloads the theme when devup.json or a theme it extends changes, and clears it when devup.json is removed', async () => {
+    const devupFile = nodePath.resolve('devup.json')
+    const baseFile = join(root, 'themes', 'base.json')
+    const { watching, change } = captureWatchers()
+    let configs: Record<string, string> = {
+      [devupFile]: JSON.stringify({ extends: [baseFile] }),
+      [baseFile]: JSON.stringify({
+        theme: { colors: { default: { primary: '#123456' } } },
+      }),
+    }
+    exists.mockImplementation(
+      (path) => nodePath.resolve(String(path)) in configs,
+    )
+    readConfig.mockImplementation((async (path: string) => {
+      const config = configs[nodePath.resolve(String(path))]
+      if (config === undefined) throw new Error(`no ${String(path)}`)
+      return config
+    }) as unknown as typeof readConfig)
+    const themes = () =>
+      write.mock.calls
+        .filter(([path]) => String(path).endsWith('theme.d.ts'))
+        .map(([, content]) => String(content))
+    try {
+      await register({ engine: 'wasm' })
+      expect(wasm.getCss(null, false)).toContain('#123456')
+      const written = themes().length
+
+      // The base theme is edited
+      configs = {
+        ...configs,
+        [baseFile]: JSON.stringify({
+          theme: { colors: { default: { primary: '#654321' } } },
+        }),
+      }
+      change(baseFile)
+      await until(() => themes().length > written)
+      expect(wasm.getCss(null, false)).toContain('#654321')
+      expect(await sheetWrites()).toContainEqual([
+        expect.stringContaining('devup-ui.css'),
+        expect.stringContaining('#654321'),
+        'utf-8',
+      ])
+
+      // devup.json is removed: the theme is empty, its types and sheet too
+      configs = { [baseFile]: configs[baseFile]! }
+      change(devupFile)
+      await until(() => themes().length > written + 1)
+      expect(wasm.getDefaultTheme()).toBeUndefined()
+      expect(themes().at(-1)).not.toContain('primary')
+      expect((await sheetWrites()).at(-1)?.[1]).not.toContain('#654321')
+    } finally {
+      watching.mockRestore()
     }
   })
 
@@ -557,11 +638,11 @@ describe('registered Bun hooks', () => {
       expect(result.contents).not.toContain(
         extension === 'tsx' || extension === 'jsx' ? '<Box' : 'css(',
       )
-      expect(writeSync).toHaveBeenCalledWith(
+      expect(await sheetWrites()).toContainEqual([
         expect.stringContaining('devup-ui.css'),
         expect.stringContaining('red'),
         'utf-8',
-      )
+      ])
     })
   }
 
@@ -584,11 +665,11 @@ describe('registered Bun hooks', () => {
         throw new Error('Expected transformed source contents')
       expect(result.loader).toBe('js')
       expect(result.contents).not.toContain('css(')
-      expect(writeSync).toHaveBeenCalledWith(
+      expect(await sheetWrites()).toContainEqual([
         expect.stringContaining('devup-ui.css'),
         expect.stringContaining('navy'),
         'utf-8',
-      )
+      ])
     })
 
     it.each([
@@ -659,11 +740,11 @@ describe('registered Bun hooks', () => {
       expect(require.cache[path]?.exports).toEqual({
         className: expect.any(String),
       })
-      expect(writeSync).toHaveBeenCalledWith(
+      expect(await sheetWrites()).toContainEqual([
         expect.stringContaining('devup-ui.css'),
         expect.stringContaining('maroon'),
         'utf-8',
-      )
+      ])
     })
   })
 
@@ -671,11 +752,12 @@ describe('registered Bun hooks', () => {
     const path = join(root, 'plain.ts')
     await Bun.write(path, 'export const value = 42')
     await register({ engine: 'wasm' })
+    const initial = (await sheetWrites()).length
     expect(await load(path)).toEqual({
       contents: 'export const value = 42',
       loader: 'ts',
     })
-    expect(writeSync).not.toHaveBeenCalled()
+    expect(await sheetWrites()).toHaveLength(initial)
   })
 
   it('writes the runtime sheet only when a module changes it', async () => {
@@ -687,18 +769,19 @@ describe('registered Bun hooks', () => {
     await Bun.write(same, style)
     await register({ engine: 'wasm' })
 
+    const initial = (await sheetWrites()).length
     await load(first)
-    expect(writeSync).toHaveBeenCalledTimes(1)
-    expect(writeSync).toHaveBeenCalledWith(
+    expect(await sheetWrites()).toHaveLength(initial + 1)
+    expect(await sheetWrites()).toContainEqual([
       expect.stringContaining('devup-ui.css'),
       wasm.getCss(null, false),
       'utf-8',
-    )
+    ])
 
     // The same file again, and another file with only styles the sheet holds
     await load(first)
     await load(same)
-    expect(writeSync).toHaveBeenCalledTimes(1)
+    expect(await sheetWrites()).toHaveLength(initial + 1)
   })
 
   it('propagates source read errors instead of returning partial output', async () => {
@@ -754,11 +837,11 @@ describe('CommonJS under the runtime', () => {
       cls: exported.cls,
       file: path,
     })
-    expect(writeSync).toHaveBeenCalledWith(
+    expect(await sheetWrites()).toContainEqual([
       expect.stringContaining('devup-ui.css'),
       expect.stringContaining('navy'),
       'utf-8',
-    )
+    ])
   })
 
   it('strips TypeScript from CommonJS without fixing its path', async () => {

@@ -108,6 +108,24 @@ const Badge = styled.span.withConfig({
 `
 ```
 
+빌드는 predicate를 평가하고 이를 실행하는 코드를 추가하지 않으므로, 빌드가 이름을 알 수 있는 props만 결정합니다. 컴포넌트의 스타일과 attrs가 읽는 props, predicate가 이름으로 언급하는 props(`prop === 'tone'`, `['a', 'b'].includes(prop)`), 그리고 컴포넌트를 사용하는 요소에 직접 쓴 속성이 여기에 해당합니다. styled-components와 Emotion은 런타임에 모든 prop에 대해 predicate를 호출하므로, 이는 알려진 차이입니다. spread로 전달되거나 호출하는 쪽이 추가하는 것처럼 빌드가 이름을 알 수 없는 prop은 predicate가 거부하더라도 요소에 전달됩니다(`() => false`여도 spread로 들어온 `id`는 전달됩니다). 이런 props는 `$` transient props로 만들거나 전달하지 않는 방식으로 요소에서 빼세요. styled-components에서 두 번째 인자는 컴포넌트가 렌더하는 요소이며, 빌드는 `typeof element === 'string'`을 컴포넌트가 선언된 대상 기준으로 읽으므로 `as`로 다른 요소를 고르더라도 결과가 바뀌지 않습니다. 두 번째 인자를 styled-components v5의 validator처럼 호출하면(`(prop, valid) => valid(prop)`) v6에서는 실패하므로 빌드 에러가 됩니다. 대신 `@emotion/is-prop-valid`의 `isPropValid`를 호출하세요. Emotion의 `shouldForwardProp`은 prop 이름 하나만 받습니다.
+
+```tsx
+import isPropValid from '@emotion/is-prop-valid'
+import styled from 'styled-components'
+
+const Card = styled.div.withConfig({
+  shouldForwardProp: (prop, element) =>
+    typeof element !== 'string' || isPropValid(prop),
+})`
+  color: ${(p) => p.tone};
+`
+
+// Devup UI keeps `tone`, which the styles read, off the <div>, as styled-components
+// does. `customPayload` reaches it: only the runtime sees that name.
+const card = <Card customPayload="x" id="a" tone="teal" />
+```
+
 `StyleSheetManager`는 허용되지만 아무 동작도 하지 않으므로, 여기에 전달한 `shouldForwardProp`은 적용되지 않습니다. 이는 그 아래의 모든 styled 컴포넌트의 props를 필터링하게 되는데 컴파일된 컴포넌트는 이를 볼 수 없으므로, 조용히 무시되는 대신 빌드 에러가 됩니다. `<StyleSheetManager shouldForwardProp={isPropValid}>`로 styled-components v5의 필터링을 되살리는 코드는 그 필터를 컴포넌트로 옮겨야 합니다. 스타일링 props의 이름을 `$` props로 바꾸거나, 각 컴포넌트에 `.withConfig({ shouldForwardProp })`를 지정하세요.
 
 ## Transient props

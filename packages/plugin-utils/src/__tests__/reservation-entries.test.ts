@@ -167,3 +167,35 @@ it("stops at a dependency the loaders leave to the bundler, but crawls Devup UI'
   ])
   expect(dependencies).toHaveLength(6)
 })
+
+it('never reads the runtime package, from the app or from another Devup UI package', () => {
+  // Given
+  using fs = fixture()
+  fs.write(
+    'src/A.tsx',
+    `${STYLE}\nimport '@devup-ui/components'; import '@devup-ui/react/stylex'`,
+  )
+  fs.write('node_modules/@devup-ui/react/package.json', '{"main":"index.js"}')
+  fs.write('node_modules/@devup-ui/react/index.js', STYLE)
+  fs.write('node_modules/@devup-ui/react/stylex.js', STYLE)
+  fs.write(
+    'node_modules/@devup-ui/components/package.json',
+    '{"main":"index.js"}',
+  )
+  fs.write('node_modules/@devup-ui/components/index.js', STYLE)
+  // When
+  const { inputs, dependencies, packageManifests } = collectReservationInputs({
+    roots: ['src'],
+    cwd: fs.root,
+    package: '@devup-ui/react',
+    importAliases: {},
+    toId: (path: string) => relative(fs.root, path),
+  })
+  // Then
+  expect(inputs.map(({ filename }) => filename.replaceAll('\\', '/'))).toEqual([
+    'node_modules/@devup-ui/components/index.js',
+    'src/A.tsx',
+  ])
+  expect(dependencies).toHaveLength(2)
+  expect(packageManifests).toHaveLength(1)
+})

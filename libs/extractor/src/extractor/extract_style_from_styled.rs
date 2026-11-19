@@ -193,7 +193,7 @@ fn withheld(reads: &Reads, renders_tag: bool, forward: Option<&Forward>) -> Vec<
 /// `own` applying after `inherited`: a prop passes only when both pass it
 fn combine_forward(inherited: Option<&Forward>, own: Option<Forward>) -> Option<Forward> {
     match (inherited.cloned(), own) {
-        (Some(inherited), Some(own)) => Some(Forward::And(Box::new(inherited), Box::new(own))),
+        (Some(inherited), Some(own)) => Some(Forward::and(inherited, own)),
         (inherited, own) => own.or(inherited),
     }
 }
@@ -1437,26 +1437,29 @@ pub fn take_styled_modifiers<'a>(
 
 /// The `shouldForwardProp` the options objects give, the last one replacing
 /// the earlier, as styled-components spreads each `.withConfig()` over the
-/// options before it, with the offset and code of one the build cannot evaluate
-pub fn read_forward(options: &[&Expression<'_>]) -> (Option<Forward>, Option<(u32, String)>) {
+/// options before it, with the offset and code of one the build cannot evaluate.
+/// Under styled-components its second argument is the element it renders.
+pub fn read_forward(
+    options: &[&Expression<'_>],
+    styled_components: bool,
+) -> (Option<Forward>, Option<(u32, String)>) {
     let mut forward = None;
     for property in option_properties(options, &["shouldForwardProp"]) {
-        match Forward::read(&property.value) {
-            Some(own) => forward = Some(own),
-            None => {
-                return (
-                    forward,
-                    Some((
-                        property.value.span().start,
-                        build_time_error(
-                            "styled",
-                            &readable_code(&property.value),
-                            SHOULD_FORWARD_PROP,
-                        ),
-                    )),
-                );
-            }
-        }
+        let Some(own) = Forward::read(&property.value, styled_components) else {
+            let requirement = if styled_components && Forward::calls_element(&property.value) {
+                ELEMENT_ARGUMENT
+            } else {
+                SHOULD_FORWARD_PROP
+            };
+            return (
+                forward,
+                Some((
+                    property.value.span().start,
+                    build_time_error("styled", &readable_code(&property.value), requirement),
+                )),
+            );
+        };
+        forward = Some(own);
     }
     (forward, None)
 }
@@ -1486,6 +1489,8 @@ fn option_properties<'b, 'a>(
             _ => None,
         })
 }
+
+const ELEMENT_ARGUMENT: &str = "styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so calling it fails at runtime. Fix: call `isPropValid(prop)` from `@emotion/is-prop-valid`, or compare the prop with strings";
 
 const SHOULD_FORWARD_PROP: &str = "`shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`";
 

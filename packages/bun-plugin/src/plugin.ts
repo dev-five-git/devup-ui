@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
@@ -33,8 +33,9 @@ import {
 import { type BunPlugin, plugin, type PluginBuilder } from 'bun'
 
 import { commonJsSource } from './commonjs'
+import { createConfigWatcher, type ThemeInputs } from './config-watch'
 import { cssDirName, cssNamespace, resolveCssId } from './css-id'
-import { createTailwindWatcher } from './tailwind-watch'
+import { createSheetWriter } from './sheet-writer'
 
 const libPackage = '@devup-ui/react'
 const distDirName = 'df'
@@ -171,23 +172,28 @@ function sourceLoader(filePath: string): SourceLoader {
 }
 
 /**
- * Load devup.json into the compiler. The first load fails on a theme that
- * cannot be loaded or registered: Bun runs once, and an empty theme would
- * leave every token unstyled. A reload for a changed Tailwind CSS runs in a
- * process that is already up, so it reports the error and clears the theme.
+ * Load devup.json into the compiler, and give the files it was loaded from:
+ * devup.json, the files of its `extends` chain and the Tailwind CSS. The first
+ * load fails on a theme that cannot be loaded or registered: Bun runs once,
+ * and an empty theme would leave every token unstyled. A reload, for a changed
+ * or removed devup.json, base theme or Tailwind CSS, runs in a process that is
+ * already up, so it reports the error and clears the theme. A removed
+ * devup.json is an empty config. A reload hands the stylesheet to
+ * `writeSheet`, which orders it with the sheets the loaded modules write.
  */
 async function writeDataFiles(
   compiler: DevupCompiler,
   { devupFile, distDir, cssDir }: BunProject,
-  reloading = false,
-): Promise<string[]> {
-  let tailwindFiles: string[] = []
+  writeSheet?: () => void,
+): Promise<ThemeInputs> {
+  const config = new Set<string>()
+  let tailwind: string[] = []
   try {
-    const config = await loadDevupConfig(devupFile)
-    tailwindFiles = tailwindCssFiles(config)
-    compiler.registerTheme(withTailwindCss(config.theme ?? {}, config))
+    const loaded = await loadDevupConfig(devupFile, config)
+    tailwind = tailwindCssFiles(loaded)
+    compiler.registerTheme(withTailwindCss(loaded.theme ?? {}, loaded))
   } catch (error) {
-    if (!reloading) throw error
+    if (!writeSheet) throw error
     console.error(error)
     compiler.registerTheme({})
   }
@@ -202,19 +208,21 @@ async function writeDataFiles(
   if (!existsSync(cssDir)) {
     await mkdir(cssDir, { recursive: true })
   }
-  await writeFile(
-    join(cssDir, 'devup-ui.css'),
-    compiler.getCss(null, false),
-    'utf-8',
-  )
-  return tailwindFiles
+  if (writeSheet) writeSheet()
+  else
+    await writeFile(
+      join(cssDir, 'devup-ui.css'),
+      compiler.getCss(null, false),
+      'utf-8',
+    )
+  return { config: [...config], tailwind }
 }
 
 async function initialize(
   compiler: DevupCompiler,
   shorthands: Record<string, readonly string[]>,
   styleResolution: StylexStyleResolution,
-  watchTailwindCss: ReturnType<typeof createTailwindWatcher>,
+  watchThemeInputs: ReturnType<typeof createConfigWatcher>,
   project: BunProject,
   conditions: readonly string[],
 ) {
@@ -230,7 +238,7 @@ async function initialize(
     createCompatTypes(project.importAliases),
     'utf-8',
   )
-  watchTailwindCss(await writeDataFiles(compiler, project))
+  watchThemeInputs(await writeDataFiles(compiler, project))
 }
 
 const scanners = new Map<SourceLoader, Bun.Transpiler>()
@@ -266,6 +274,7 @@ function loadSourceFile(
   filePath: string,
   bundling: boolean,
   { cssDir, importAliases, compiledPackages }: BunProject,
+  writeSheet: () => void,
 ) {
   const loader = sourceLoader(filePath)
   let contents = readFileSync(filePath, 'utf-8')
@@ -294,11 +303,9 @@ function loadSourceFile(
     // Under the runtime the stylesheet is read from disk. singleCss stores
     // every extracted style in the base sheet, which the output carries only
     // when this module changed it, so a module that adds no style writes
-    // nothing. Synchronous writes keep concurrent source loads from
-    // overwriting a newer sheet with an older one.
-    const sheet = code.css
-    if (!bundling && sheet !== undefined)
-      writeFileSync(join(cssDir, 'devup-ui.css'), sheet, 'utf-8')
+    // nothing. The writes of the modules loaded together are coalesced into
+    // one asynchronous write of the latest sheet (see ./sheet-writer).
+    if (!bundling && code.css !== undefined) writeSheet()
     contents = code.code
     stylesheet = `${cssImportDir}/devup-ui.css`
     dependencies = code.dependencies
@@ -328,8 +335,12 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
   const compiler = loadCompiler(options.engine)
   // Each setup locates the project again; the watcher reads it then
   const project = locateProject(process.cwd())
-  const watchTailwindCss = createTailwindWatcher(() =>
-    writeDataFiles(compiler, project, true),
+  const writeSheet = createSheetWriter(
+    () => join(project.cssDir, 'devup-ui.css'),
+    () => compiler.getCss(null, false),
+  )
+  const watchThemeInputs = createConfigWatcher(() =>
+    writeDataFiles(compiler, project, writeSheet),
   )
   return {
     name: 'devup-ui',
@@ -355,7 +366,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
         compiler,
         shorthands,
         styleResolution,
-        watchTailwindCss,
+        watchThemeInputs,
         project,
         bunConditions(build.config),
       )
@@ -450,7 +461,7 @@ function DevupUI(options: DevupUIBunPluginOptions = {}) {
             reserveFiles()
             reservationPending = false
           }
-          return loadSourceFile(compiler, path, bundling, project)
+          return loadSourceFile(compiler, path, bundling, project, writeSheet)
         },
       )
     },

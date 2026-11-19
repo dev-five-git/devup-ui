@@ -7,6 +7,9 @@ import dts from 'vite-plugin-dts'
 export default defineConfig({
   plugins: [
     react(),
+    // Library mode: publish the Devup UI components uncompiled. Every app that
+    // uses this package must list it in its plugin's `include` option, or the
+    // components stay uncompiled and throw "Cannot run on the runtime".
     DevupUI({
       extractCss: false,
     }),

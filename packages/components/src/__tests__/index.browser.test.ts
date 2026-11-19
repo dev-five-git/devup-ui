@@ -11,6 +11,7 @@ describe('export', () => {
       Select: expect.any(Object),
       Radio: expect.any(Object),
       RadioGroup: expect.any(Object),
+      Search: expect.any(Object),
       SelectContainer: expect.any(Object),
       SelectDivider: expect.any(Object),
       SelectOption: expect.any(Object),

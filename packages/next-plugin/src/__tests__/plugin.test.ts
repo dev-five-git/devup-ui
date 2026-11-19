@@ -1857,6 +1857,69 @@ export const box = style({ color: 'red' })`
       }
     })
 
+    it('skips an unreachable file it cannot extract with a warning, and goes on', () => {
+      process.env.TURBOPACK = '1'
+      // Given a dead file no route imports, which does not parse.
+      const [page, dead, late] = [
+        'src/app/page.tsx',
+        'src/dead.tsx',
+        'src/late.tsx',
+      ].map((file) => resolve(file))
+      const files = [page, dead, late]
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue({
+        files,
+        fileSet: new Set(files),
+        staticImports: new Map(files.map((file) => [file, new Set<string>()])),
+        staticImporters: new Map(
+          files.map((file) => [file, new Set<string>()]),
+        ),
+        dynamicTargets: new Set(),
+        dynamicImports: new Map(files.map((file) => [file, new Set<string>()])),
+        externalImports: new Map(
+          files.map((file) => [file, new Set<string>()]),
+        ),
+      })
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      codeExtractWithoutSourceMapSpy.mockImplementation(
+        (filename: string, contents: string) => {
+          if (filename === 'src/dead.tsx')
+            throw new Error('Cannot parse source: Unexpected token')
+          return createCodeExtractResult(contents)
+        },
+      )
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        // When the production prewarm runs, the build is not failed.
+        expect(() => DevupUI({})).not.toThrow()
+
+        // Then the dead file is named, left out, and the files after it prewarm.
+        expect(warn).toHaveBeenCalledWith(
+          '[devup-ui] Turbopack prewarm of src/dead.tsx failed: Cannot parse source: Unexpected token. The file is skipped; if Next.js compiles it, the build fails with this error.',
+        )
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(3)
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expectedBaseFiles: ['src/app/page.tsx'],
+            prewarmedFiles: ['src/app/page.tsx', 'src/late.tsx'],
+          }),
+        )
+        const coordinatorOptions = startCoordinatorSpy.mock.calls[0]?.[0]
+        expect([
+          ...(coordinatorOptions?.prewarmedOutputs?.keys() ?? []),
+        ]).toEqual(['src/app/page.tsx', 'src/late.tsx'])
+      } finally {
+        warn.mockRestore()
+        graphSpy.mockRestore()
+        compiledSpy.mockRestore()
+      }
+    })
+
     it('prewarms the same complete file set in singleCss mode', () => {
       process.env.TURBOPACK = '1'
       const compiledSpy = spyOn(

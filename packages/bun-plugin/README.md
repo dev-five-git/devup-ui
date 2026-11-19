@@ -192,6 +192,13 @@ Create a `devup.json` file in your project root:
 
 The plugin will generate `df/theme.d.ts` with TypeScript types for your theme.
 
+Under the Bun runtime the plugin watches `devup.json`, every file in its
+`extends` chain and the project's Tailwind CSS. Editing, creating or removing
+`devup.json` or a file it extends, or editing the Tailwind CSS, reloads the theme
+and rewrites `df/theme.d.ts` and `df/devup-ui/devup-ui.css`; a removed
+`devup.json` leaves an empty theme. The stylesheet is rewritten once for
+the modules loaded together, and is up to date by the time their import settles.
+
 The project root is the `root` of `Bun.build` when it sets one, and the working
 directory otherwise: `devup.json`, `df` and `tsconfig.json` are read and written
 there. When the root has no `devup.json` but the working directory does, that
