@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -773,47 +774,32 @@ export function DevupUI(
       stateSnapshotStartedAt === undefined ? undefined : performance.now()
     const defaultSheetJson = exportSheet()
     const sheetSerializeMs = elapsedMs(sheetSerializeStartedAt)
-    const sheetParseStartedAt =
-      stateSnapshotStartedAt === undefined ? undefined : performance.now()
-    const defaultSheet = JSON.parse(defaultSheetJson)
-    const sheetParseMs = elapsedMs(sheetParseStartedAt)
 
     const classMapSerializeStartedAt =
       stateSnapshotStartedAt === undefined ? undefined : performance.now()
     const defaultClassMapJson = exportClassMap()
     const classMapSerializeMs = elapsedMs(classMapSerializeStartedAt)
-    const classMapParseStartedAt =
-      stateSnapshotStartedAt === undefined ? undefined : performance.now()
-    const defaultClassMap = JSON.parse(defaultClassMapJson)
-    const classMapParseMs = elapsedMs(classMapParseStartedAt)
 
     const fileMapSerializeStartedAt =
       stateSnapshotStartedAt === undefined ? undefined : performance.now()
     const defaultFileMapJson = exportFileMap()
     const fileMapSerializeMs = elapsedMs(fileMapSerializeStartedAt)
-    const fileMapParseStartedAt =
-      stateSnapshotStartedAt === undefined ? undefined : performance.now()
-    const defaultFileMap = JSON.parse(defaultFileMapJson)
-    const fileMapParseMs = elapsedMs(fileMapParseStartedAt)
     reportProfile('next.stateSnapshot', {
       classMapBytes:
         stateSnapshotStartedAt === undefined
           ? undefined
           : Buffer.byteLength(defaultClassMapJson),
-      classMapParseMs,
       classMapSerializeMs,
       durationMs: elapsedMs(stateSnapshotStartedAt),
       fileMapBytes:
         stateSnapshotStartedAt === undefined
           ? undefined
           : Buffer.byteLength(defaultFileMapJson),
-      fileMapParseMs,
       fileMapSerializeMs,
       sheetBytes:
         stateSnapshotStartedAt === undefined
           ? undefined
           : Buffer.byteLength(defaultSheetJson),
-      sheetParseMs,
       sheetSerializeMs,
     })
     // for theme script
@@ -826,23 +812,46 @@ export function DevupUI(
       })
     }
 
+    // Every loader call runs in coordinator mode: it reads only the port file
+    // and depends on the theme files. Next serializes the resolved config into
+    // `.next/required-server-files.{js,json}`, which ships with the app, so the
+    // rules carry nothing else. The state the loaders used to receive still
+    // keys Turbopack's loader cache through `stateKey`: a change to it re-runs
+    // the loaders as before.
+    const stateKey = createHash('sha256')
+      .update(
+        JSON.stringify([
+          defaultSheetJson,
+          defaultClassMapJson,
+          defaultFileMapJson,
+          theme,
+          engine,
+          libPackage,
+          cssDir,
+          sheetFile,
+          classMapFile,
+          fileMapFile,
+          devupFile,
+          singleCss,
+          importAliases,
+          watch,
+        ]),
+      )
+      .digest('hex')
+      .slice(0, 16)
+    // Relative to the project root the loaders run in: no local path ships.
+    const loaderThemeFiles = themeFiles.map((file) =>
+      relative(process.cwd(), file).replaceAll('\\', '/'),
+    )
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
         {
           loader: '@devup-ui/next-plugin/css-loader',
           options: {
-            watch,
-            engine,
             coordinatorPortFile,
-            sheetFile,
-            classMapFile,
-            fileMapFile,
-            themeFile: devupFile,
-            themeFiles,
-            defaultSheet,
-            defaultClassMap,
-            defaultFileMap,
-            theme,
+            themeFiles: loaderThemeFiles,
+            watch,
+            stateKey,
           },
         },
       ],
@@ -860,23 +869,9 @@ export function DevupUI(
           {
             loader: '@devup-ui/next-plugin/loader',
             options: {
-              package: libPackage,
-              engine,
-              cssDir,
               coordinatorPortFile,
-              sheetFile,
-              classMapFile,
-              fileMapFile,
-              themeFile: devupFile,
-              themeFiles,
-              defaultSheet,
-              defaultClassMap,
-              defaultFileMap,
-              watch,
-              singleCss,
-              // for turbopack, load theme is required on loader
-              theme,
-              importAliases: importAliases as unknown as Record<string, string>,
+              themeFiles: loaderThemeFiles,
+              stateKey,
             },
           },
         ],

@@ -707,7 +707,8 @@ export const a = <div css={{ color: 'red' }} />`
             watch: true,
             singleCss: true,
             coordinatorPortFile: 'coordinator.port',
-            themeFiles: [resolve('devup.json'), resolve('base.json')],
+            // One relative to the project root, as the plugin passes it
+            themeFiles: ['devup.json', resolve('base.json')],
           }),
           async: mock().mockReturnValue(asyncCallback),
           resourcePath: join(process.cwd(), 'src', 'App.tsx'),
