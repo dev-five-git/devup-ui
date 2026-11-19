@@ -5,7 +5,91 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
 import { evaluate } from '../../../../benchmark-gate.js'
-import { measureOutput } from '../../../../benchmark-output.js'
+import {
+  BYTES_DEFINITION,
+  isDeployed,
+  measureOutput,
+} from '../../../../benchmark-output.js'
+
+describe('deployable build output', () => {
+  it('names the definition runs, baselines and history record', () => {
+    expect(BYTES_DEFINITION).toBe('deployable')
+  })
+
+  it.each([
+    'BUILD_ID',
+    'package.json',
+    'required-server-files.json',
+    'routes-manifest.json',
+    'prerender-manifest.json',
+    'server/app/page.js',
+    'server/app/index.html',
+    'server/app/index.rsc',
+    'server/chunks/ssr/[turbopack]_runtime.js',
+    'server/pages-manifest.json',
+    'static/chunks/app.js',
+    'static/css/page.css',
+    'static/media/favicon.ico',
+    'static/BUILD/_buildManifest.js',
+    // Only the top-level directories are build-only
+    'server/app/cache/page.js',
+    'server/app/types/page.js',
+    'static/chunks/build/app.js',
+    'server/app/trace/page.js',
+    'tracer.json',
+  ])('deploys Next %s', (path) => {
+    expect(isDeployed('next', path)).toBe(true)
+  })
+
+  it.each([
+    'cache/.tsbuildinfo',
+    'cache/webpack/client-production/0.pack',
+    'cache/swc/plugins/v7/x.wasm',
+    'cache/images/a/b.webp',
+    'cache/devup-ui_build/page.css',
+    'build/chunks/[turbopack]_runtime.js',
+    'types/routes.d.ts',
+    'types/validator.ts',
+    'diagnostics/build-diagnostics.json',
+    'trace',
+    'trace-build',
+    'trace-turbopack',
+    'next-server.js.nft.json',
+    'next-minimal-server.js.nft.json',
+    'server/app/page.js.nft.json',
+    'server/app/page.js.map',
+    'server/chunks/ssr/[root-of-the-server]__0e._.js.map',
+    'static/chunks/app.js.map',
+    'tsconfig.tsbuildinfo',
+  ])('leaves Next %s out', (path) => {
+    expect(isDeployed('next', path)).toBe(false)
+  })
+
+  it.each([
+    'client/_next/static/chunks/app.js',
+    'client/_next/static/css/page.css',
+    'client/.vite/manifest.json',
+    'client/vinext-client-entry-manifest.json',
+    'server/index.js',
+    'server/ssr/index.js',
+    'server/BUILD_ID',
+    // Next's top-level build directories mean nothing in dist
+    'cache/page.js',
+    'types/page.js',
+    'build/page.js',
+    'trace',
+  ])('deploys vinext dist/%s', (path) => {
+    expect(isDeployed('vinext', path)).toBe(true)
+  })
+
+  it.each([
+    'client/_next/static/chunks/app.js.map',
+    'server/index.js.map',
+    'tsconfig.tsbuildinfo',
+  ])('leaves vinext dist/%s out', (path) => {
+    expect(isDeployed('vinext', path)).toBe(false)
+  })
+})
 
 describe('benchmark output measurement', () => {
   let directory: string
@@ -35,15 +119,43 @@ describe('benchmark output measurement', () => {
 
       const result = measureOutput(directory)
 
-      expect(result).toEqual({ bytes: 1196, cssBytes: 494, clientBytes: 595 })
+      expect(result).toEqual({ bytes: 678, cssBytes: 494, clientBytes: 595 })
     },
   )
 
+  it('counts only the deployable Next output in bytes', () => {
+    // Deployed: what `next start` serves
+    file('.next/BUILD_ID', 1)
+    file('.next/routes-manifest.json', 2)
+    file('.next/server/app/page.js', 4)
+    file('.next/server/app/index.html', 8)
+    file('.next/static/chunks/app.js', 16)
+    file('.next/static/css/page.css', 32)
+    // Build-only: caches, type check, traces, source maps
+    file('.next/cache/.tsbuildinfo', 1000)
+    file('.next/cache/webpack/client-production/0.pack', 1000)
+    file('.next/build/chunks/postcss.js', 1000)
+    file('.next/types/routes.d.ts', 1000)
+    file('.next/diagnostics/framework.json', 1000)
+    file('.next/trace', 1000)
+    file('.next/trace-build', 1000)
+    file('.next/next-server.js.nft.json', 1000)
+    file('.next/server/app/page.js.nft.json', 1000)
+    file('.next/server/chunks/ssr/page.js.map', 1000)
+    file('.next/static/chunks/app.js.map', 1000)
+
+    const result = measureOutput(directory)
+
+    expect(result).toEqual({ bytes: 63, cssBytes: 32, clientBytes: 48 })
+  })
+
   it('prefers dist and counts client CSS when vinext also emits a Next stub', () => {
     file('.next/static/css/stub.css', 999)
+    file('.next/cache/.tsbuildinfo', 999)
     file('dist/client/assets/page.css', 31)
     file('dist/client/assets/nested/shared.css', 17)
     file('dist/client/assets/app.js', 101)
+    file('dist/client/assets/app.js.map', 999)
     file('dist/server/assets/page.css', 67)
     file('dist/server/app.js', 83)
 
@@ -91,7 +203,8 @@ describe('benchmark output measurement', () => {
 
       const result = measureOutput(directory)
 
-      expect(result).toEqual({ bytes: 64, cssBytes: 0, clientBytes: 41 })
+      // The source map is not deployed
+      expect(result).toEqual({ bytes: 41, cssBytes: 0, clientBytes: 41 })
     },
   )
 

@@ -123,6 +123,7 @@ describe('benchmark results', () => {
         runner: 'ubuntu-26.04',
         next: '16.4.6',
         devupUi: '1.0.45',
+        bytesDefinition: 'deployable',
       },
       samples: 3,
       rows: {
@@ -145,6 +146,7 @@ describe('benchmark results', () => {
         runner: 'ubuntu-26.04',
         next: '16.4.6',
         devupUi: '1.0.45',
+        bytesDefinition: 'deployable',
       },
       samples: 3,
       rows: [
@@ -175,7 +177,8 @@ describe('benchmark results', () => {
 
     const next = applyRun(results, run)
 
-    expect(next.run).toEqual(results.run)
+    // Its bytes were counted before the definition was recorded
+    expect(next.run).toEqual({ ...results.run, bytesDefinition: 'output-dir' })
     expect(next.rows[0]).toMatchObject({
       version: '4.0.0',
       clientBytes: null,
@@ -227,6 +230,7 @@ describe('benchmark history', () => {
       measuredAt: '2026-11-15T00:00:00.000Z',
       devupUi: null,
       samples: 3,
+      bytesDefinition: 'output-dir',
       gate: 'pass',
       regressions: [],
       rows: {
@@ -234,6 +238,27 @@ describe('benchmark history', () => {
         'devup-ui': [9.123, 9.023, 9.323, 1000, 100, null],
       },
     })
+  })
+
+  it('records which bytes a run counted', () => {
+    const run = {
+      ...makeRun(SHA_A, {
+        tailwind: measured(10),
+        'devup-ui': measured(9),
+      }),
+      run: { id: '7', commit: SHA_A, bytesDefinition: 'deployable' },
+    }
+
+    expect(
+      historyEntry(run, baseline, '2026-11-14T00:00:00.000Z'),
+    ).toMatchObject({ bytesDefinition: 'deployable', gate: 'fail' })
+    expect(
+      historyEntry(
+        run,
+        { ...baseline, bytesDefinition: 'deployable' },
+        '2026-11-14T00:00:00.000Z',
+      ),
+    ).toMatchObject({ bytesDefinition: 'deployable', gate: 'pass' })
   })
 
   it('names the rows the gate failed', () => {
@@ -312,7 +337,8 @@ describe('benchmark history', () => {
           sha: SHA_B,
           committedAt: '2026-11-02',
           gate: 'fail',
-          rows: { 'devup-ui': [12, 11, 13, 900, 50, null] },
+          bytesDefinition: 'deployable',
+          rows: { 'devup-ui': [12, 11, 13, 90, 50, null] },
         },
         { sha: 'c'.repeat(40), committedAt: '2026-11-03', rows: {} },
       ],
@@ -320,8 +346,8 @@ describe('benchmark history', () => {
 
     expect(trend(history, 'devup-ui', 'tailwind')).toBe(
       [
-        'aaaaaaaa 2026-11-01 pass 9.00s 0.900x tailwind, 900 bytes, css 50, client 400',
-        'bbbbbbbb 2026-11-02 fail 12.00s, 900 bytes, css 50',
+        'aaaaaaaa 2026-11-01 pass 9.00s 0.900x tailwind, 900 output-dir bytes, css 50, client 400',
+        'bbbbbbbb 2026-11-02 fail 12.00s, 90 deployable bytes, css 50',
       ].join('\n'),
     )
   })

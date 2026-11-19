@@ -12,14 +12,15 @@
 // refreshes from this file after every merge to main (benchmark-refresh.js).
 //
 // Every size is measured on every sample; a row reports the median and keeps
-// the samples with their range (`sizes`).
+// the samples with their range (`sizes`). `bytes` counts only the deployable
+// build output (benchmark-output.js), never caches or type-check artifacts.
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { execSync } from 'child_process'
 
 import { roundOrder } from './benchmark-gate.js'
-import { measureOutput } from './benchmark-output.js'
+import { BYTES_DEFINITION, measureOutput } from './benchmark-output.js'
 import { summarizeRow } from './benchmark-record.js'
 
 const manifest = JSON.parse(readFileSync('benchmark-manifest.json', 'utf8'))
@@ -140,6 +141,7 @@ writeFileSync(
         next: installedVersion(fixtureDir('tailwind'), 'next'),
         devupUi: JSON.parse(readFileSync('packages/react/package.json', 'utf8'))
           .version,
+        bytesDefinition: BYTES_DEFINITION,
       },
       samples: manifest.samples,
       rows,
