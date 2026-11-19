@@ -193,8 +193,29 @@ try {
     'bad.tsx',
     'import { Box } from "@devup-ui/react"; export const c = <Box color={}/>',
   )
-  compiler = apply({ productionPrewarmFiles: ['bad.tsx'] })
-  await assert.rejects(prepare(compiler))
+  write(
+    'z-valid.tsx',
+    'import { Box } from "@devup-ui/react"; export const c = <Box color="orchid"/>',
+  )
+  // A file the complete set holds but cannot extract (dead source) is skipped
+  // with a warning naming it, and the files after it are still extracted.
+  const warnings = []
+  const warn = console.warn
+  console.warn = (message) => warnings.push(message)
+  try {
+    compiler = apply({ productionPrewarmFiles: ['bad.tsx', 'z-valid.tsx'] })
+    await prepare(compiler)
+  } finally {
+    console.warn = warn
+  }
+  assert.equal(warnings.length, 1)
+  assert.match(
+    warnings[0],
+    /^\[devup-ui\] webpack stylesheet warm-up of bad\.tsx failed: .*Cannot parse source.*The file is skipped; if webpack compiles it, the build fails with this error\.$/,
+  )
+  assert.match(sheet(), /color:orchid/)
+  // The loader's extraction of the same file still fails with the real error.
+  assert.throws(() => extract('bad.tsx', false), /Cannot parse source/)
   await close(compiler)
   for (const invalid of ['missing.tsx', 'bad.tsx']) {
     // Given a valid file sorted before the failing file, initialization partially extracts.
@@ -202,14 +223,23 @@ try {
       'a-valid.tsx',
       'import { Box } from "@devup-ui/react"; export const c = <Box color="chartreuse" insetX="19px"/>',
     )
-    // When run preparation rejects, the returned compiler still needs awaited shutdown.
+    // When run preparation rejects (a file it cannot read) or warns (one it
+    // cannot extract), the returned compiler still needs awaited shutdown.
     compiler = apply({
       prefix: 'failed',
       shorthands: { insetX: ['left', 'right'] },
       atomHoist: 2,
       productionPrewarmFiles: ['a-valid.tsx', invalid],
     })
-    await assert.rejects(prepare(compiler))
+    if (invalid === 'missing.tsx') await assert.rejects(prepare(compiler))
+    else {
+      console.warn = () => {}
+      try {
+        await prepare(compiler)
+      } finally {
+        console.warn = warn
+      }
+    }
     assert.match(sheet(), /chartreuse/)
     assert.match(sheet(), /left:19px/)
     await close(compiler)
