@@ -28,6 +28,7 @@ import {
   normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
+  readSource,
   registerMarkerLedger,
   reservationGraph,
   type ReservationInventory,
@@ -37,10 +38,12 @@ import {
   seedFileNumbers,
   setupWarning,
   SOURCE_FILE_REGEX,
+  type SourceCache,
   type StaticImportGraph,
   type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
+  withSourceCache,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type Compiler, type RuleSetRule } from 'webpack'
@@ -93,6 +96,12 @@ export interface DevupUIWebpackPluginOptions extends Pick<
   importAliases?: ImportAliases
   /** Adapter-owned complete extraction set; undefined keeps generic entry reachability. */
   readonly productionPrewarmFiles?: readonly string[]
+  /**
+   * Adapter-owned: the sources a one-shot build read, shared by the plugins of
+   * its compilers so each file is read once. Undefined reads them again for
+   * every compiler and compilation.
+   */
+  readonly sourceCache?: SourceCache
 }
 
 export class DevupUIWebpackPlugin {
@@ -113,6 +122,7 @@ export class DevupUIWebpackPlugin {
   private root = process.cwd()
   /** What the scan and the loaders report of component-selector markers */
   private readonly markers = new ComponentMarkerLedger()
+  private readonly sourceCache: SourceCache | undefined
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -130,8 +140,10 @@ export class DevupUIWebpackPlugin {
     stylex,
     atomHoist = 2,
     productionPrewarmFiles,
+    sourceCache,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
+    this.sourceCache = sourceCache
     this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
     this.styleResolution = normalizeStylexOptions(stylex)
     this.compiler = loadCompiler(engine)
@@ -371,7 +383,7 @@ export class DevupUIWebpackPlugin {
           '/',
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-        const source = readFileSync(file, 'utf-8')
+        const source = readSource(file)
         try {
           this.compiler
             .codeExtract(
@@ -447,7 +459,10 @@ export class DevupUIWebpackPlugin {
     const endBuild = beginBuild(this.compiler)
     try {
       compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
-      this.initialize(compiler)
+      withSourceCache(
+        () => this.initialize(compiler),
+        this.sourceCache ?? new Map(),
+      )
     } catch (error) {
       // Webpack cannot return the compiler when apply throws, so no caller can close it.
       endBuild()
@@ -585,7 +600,8 @@ export class DevupUIWebpackPlugin {
       this.compiler,
     )
     registerMarkerLedger(compiler, this.markers)
-    const reserveBeforeCompile = () => {
+    // The reservation and the prewarm read the same sources
+    const prepare = () => {
       this.markers.clear()
       reserve(compiler.options)
       this.markers.scanned(
@@ -595,6 +611,8 @@ export class DevupUIWebpackPlugin {
       if (this.options.watch) return
       this.prewarmExtractor(discovered, compiler.options)
     }
+    const reserveBeforeCompile = () =>
+      withSourceCache(prepare, this.sourceCache ?? new Map())
     compiler.hooks.run.tap(
       'DevupUIWebpackPluginReservation',
       reserveBeforeCompile,

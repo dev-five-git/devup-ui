@@ -470,10 +470,30 @@ describe('DevupUINextPlugin', () => {
           singleCss: true,
           cssDir: resolve('.next/cache', 'devup-ui'),
           productionPrewarmFiles: [],
+          sourceCache: expect.any(Map),
         })
       },
     )
 
+    it('shares one source cache between the compilers of a production build, none in dev', () => {
+      // Given
+      delete process.env.TURBOPACK
+      const ret = DevupUI({})
+      // When: Next configures its server and client compilers, then a dev one
+      ret.webpack!(createWebpackConfig(), createWebpackContext())
+      ret.webpack!(createWebpackConfig(), createWebpackContext())
+      ret.webpack!(createWebpackConfig(), {
+        ...createWebpackContext(),
+        dev: true,
+      })
+      // Then
+      const [server, client, dev] = devupUIWebpackPluginSpy.mock.calls.map(
+        ([options]) => (options as { sourceCache?: unknown }).sourceCache,
+      )
+      expect(server).toBeInstanceOf(Map)
+      expect(client).toBe(server)
+      expect(dev).toBeUndefined()
+    })
     it.each([
       ['a one-route production build', {}, {}, { singleCss: true }],
       [
@@ -517,6 +537,7 @@ describe('DevupUINextPlugin', () => {
         cssDir: resolve('.next/cache', 'devup-ui'),
         engine: 'native',
         productionPrewarmFiles: [],
+        sourceCache: expect.any(Map),
       })
     })
 
@@ -620,6 +641,7 @@ describe('DevupUINextPlugin', () => {
         engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
+        sourceCache: expect.any(Map),
       })
     })
 
@@ -641,6 +663,7 @@ describe('DevupUINextPlugin', () => {
         engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
+        sourceCache: expect.any(Map),
       })
       expect(webpack).toHaveBeenCalled()
     })
@@ -672,19 +695,11 @@ describe('DevupUINextPlugin', () => {
         ).mockReturnValue(true)
         try {
           // When
-          const config = DevupUI({}, options) as {
-            turbopack: {
-              rules: Record<
-                string,
-                { loaders: { options: { singleCss: boolean } }[] }
-              >
-            }
-          }
-          // Then the loaders extract into the layout chosen
-          expect(
-            config.turbopack.rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}']
-              .loaders[0].options.singleCss,
-          ).toBe(expected)
+          DevupUI({}, options)
+          // Then the coordinator extracts into the layout chosen
+          expect(startCoordinatorSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ singleCss: expected }),
+          )
         } finally {
           singleRoute.mockRestore()
           graphSpy.mockRestore()

@@ -18,6 +18,7 @@ import {
 } from 'node:path'
 
 import { PackageManifestShapeError } from './package-manifest'
+import { fileStamp, readSource } from './source-cache'
 import {
   SOURCE_EXTENSIONS,
   SOURCE_FILE_REGEX,
@@ -175,7 +176,7 @@ export function buildStaticImportGraph(
   }
 
   for (const file of files) {
-    const imports = parseImports(file, readFileSync(file, 'utf-8'))
+    const imports = parseImports(file, readSource(file))
     for (const importRef of imports) {
       const target = resolveImport(importRef.specifier, file, context)
       if (!target) {
@@ -1239,11 +1240,11 @@ export function createModuleResolver({
     return path
   }
   /** The file's code, read again only once its stamp changes. */
-  const readSource = (path: string) => {
+  const readCode = (path: string) => {
     const stamp = fileStamp(path)
     const cached = sources.get(path)
     if (cached && cached.stamp === stamp) return cached.code
-    const code = readFileSync(path, 'utf-8')
+    const code = readSource(path)
     sources.set(path, { stamp, code })
     return code
   }
@@ -1262,14 +1263,8 @@ export function createModuleResolver({
           ((allowPackage?.(specifier) ?? true)
             ? resolveCachedPackage(specifier, from)
             : undefined))
-    return path ? { path: toId(path), code: readSource(path) } : undefined
+    return path ? { path: toId(path), code: readCode(path) } : undefined
   }
-}
-
-interface CachedPackage {
-  manifest: string
-  stamp: string | undefined
-  path: string
 }
 
 interface CachedSource {
@@ -1277,14 +1272,10 @@ interface CachedSource {
   code: string
 }
 
-/** Changes whenever the file is written; `undefined` once it is gone. */
-function fileStamp(path: string): string | undefined {
-  try {
-    const { mtimeNs, ctimeNs, size } = statSync(path, { bigint: true })
-    return `${mtimeNs}:${ctimeNs}:${size}`
-  } catch {
-    return undefined
-  }
+interface CachedPackage {
+  manifest: string
+  stamp: string | undefined
+  path: string
 }
 
 /** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */

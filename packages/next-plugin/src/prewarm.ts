@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { extname, isAbsolute, relative, resolve } from 'node:path'
 
 import {
   createModuleResolver,
   isRuntimePackage,
   parseImports,
+  readSource,
   SOURCE_FILE_REGEX,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
@@ -102,8 +103,7 @@ export function collectProductionPrewarmFiles({
     if (!SOURCE_FILE_REGEX.test(filename) || visited.has(filename)) continue
     visited.add(filename)
     files.add(toKey(resolvedCwd, filename))
-    const source =
-      filename === module.path ? module.code : readFileSync(filename, 'utf-8')
+    const source = filename === module.path ? module.code : readSource(filename)
     for (const imported of parseImports(filename, source)) {
       queue.push({ importer: filename, specifier: imported.specifier })
     }
