@@ -46,7 +46,7 @@ import {
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import { type DevupWasm, loadWasm, loadWebpackPlugin } from './wasm'
+import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
@@ -157,7 +157,7 @@ function setupWarning(step: string, error: unknown, impact: string): string {
  */
 export function restoreSessionState(
   wasm: Pick<
-    DevupWasm,
+    DevupCompiler,
     'importSheet' | 'importClassMap' | 'importFileMap' | 'resetBuildState'
   >,
   [sheetFile, classMapFile, fileMapFile]: readonly [string, string, string],

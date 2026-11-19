@@ -7,6 +7,10 @@ export class Output {
   readonly css: string | undefined
   /** Each access returns an independent array; mutating it does not change native state. */
   readonly dependencies: string[]
+  /** Marker classes the source's components render with, for component selectors. */
+  readonly givenMarkers: string[]
+  /** Marker classes the source's styles select components by. */
+  readonly selectedMarkers: string[]
   readonly map: string | undefined
   readonly updatedBaseStyle: boolean
 }
@@ -80,7 +84,7 @@ export function reserveClassSlots(
   importMainCssInCode: boolean,
   importMainCssInCss: boolean,
   importAliases: unknown,
-): void
+): string[]
 export function resetBuildState(): void
 export function resetStateForTesting(): void
 export function seedFileMap(files: string[]): void

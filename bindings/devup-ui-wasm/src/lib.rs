@@ -58,6 +58,7 @@ pub struct Output {
     updated_base_style: bool,
     css: Option<binding_core::LazyCss>,
     dependencies: Vec<String>,
+    component_markers: extractor::ComponentMarkers,
 }
 
 impl From<binding_core::Output> for Output {
@@ -69,6 +70,7 @@ impl From<binding_core::Output> for Output {
             updated_base_style: output.updated_base_style,
             css: output.css,
             dependencies: output.dependencies,
+            component_markers: output.component_markers,
         }
     }
 }
@@ -94,6 +96,7 @@ impl Output {
                 map,
                 css_file,
                 dependencies,
+                component_markers: extractor::ComponentMarkers::default(),
             },
             filename,
             binding_core::CssOptions {
@@ -142,6 +145,20 @@ impl Output {
     #[must_use]
     pub fn dependencies(&self) -> Vec<String> {
         self.dependencies.clone()
+    }
+
+    /// Marker classes the source's components render with, for selectors
+    #[wasm_bindgen(getter, js_name = "givenMarkers")]
+    #[must_use]
+    pub fn given_markers(&self) -> Vec<String> {
+        self.component_markers.given.clone()
+    }
+
+    /// Marker classes the source's styles select components by
+    #[wasm_bindgen(getter, js_name = "selectedMarkers")]
+    #[must_use]
+    pub fn selected_markers(&self) -> Vec<String> {
+        self.component_markers.selected.clone()
     }
 }
 

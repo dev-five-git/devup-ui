@@ -28,7 +28,7 @@
     "react-markdown": "^10.1.0",
     "react-server-dom-webpack": "^19.3.1",
     "react-syntax-highlighter": "^16.1.2",
-    "vinext": "^1.4.5"
+    "vinext": "^1.4.6"
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:^",

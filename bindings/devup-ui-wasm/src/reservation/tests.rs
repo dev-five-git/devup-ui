@@ -452,3 +452,46 @@ fn supplied_physical_order_is_not_resorted_by_engine_id() -> TestResult {
     assert_eq!(get_unreserved_class_slot_count(), 0);
     Ok(())
 }
+
+const CHILD: &str = "import {styled} from '@devup-ui/react'; export const Child = styled.div`color: red;`; export const Other = styled.span`color: blue;`;";
+const PARENT: &str = "import {styled} from '@devup-ui/react'; import {Child} from './child'; export const Parent = styled.div`${Child} { color: green; }`;";
+
+fn child_module(specifier: &str, _: &str) -> Option<extractor::ResolvedModule> {
+    (specifier == "./child").then(|| extractor::ResolvedModule {
+        path: "child.tsx".into(),
+        code: CHILD.into(),
+    })
+}
+
+#[test]
+#[serial]
+fn reservation_returns_the_markers_the_inputs_select() -> TestResult {
+    // Given
+    let (_reset, option) = setup(true);
+    let inputs = [input("child.tsx", CHILD), input("parent.tsx", PARENT)];
+    // When
+    let selected = reserve_class_slots_selecting(&inputs, option.clone(), Some(&child_module));
+    // Then
+    let child = transform(&inputs[0], &option)?;
+    let parent = code_extract_with_modules_internal(
+        "parent.tsx",
+        PARENT,
+        &option.package,
+        "./css".into(),
+        option.single_css,
+        option.import_main_css,
+        true,
+        option.import_aliases.clone(),
+        &child_module,
+    )?;
+    assert_eq!(selected, parent.selected_markers());
+    assert_eq!(child.given_markers().len(), 2);
+    assert!(child.given_markers().contains(&selected[0]));
+    assert!(
+        parent
+            .given_markers()
+            .iter()
+            .all(|marker| !selected.contains(marker))
+    );
+    Ok(())
+}

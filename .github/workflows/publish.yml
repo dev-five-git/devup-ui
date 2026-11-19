@@ -20,9 +20,11 @@ permissions:
 # wasm-pack, cargo-binstall, cargo-tarpaulin and changepacks. The one
 # exception is the Rust release coverage is measured with, below.
 
+# A new push to a pull request cancels the run it supersedes. Pushes to main
+# are never cancelled: they release, deploy the site and record the benchmark.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Independent read-only lane; no existing validation job waits on it.
@@ -288,9 +290,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  benchmark:
+  # Builds every package once, exactly as `bun run build` does, and hands the
+  # outputs (the WASM package, the host native addon and every dist directory)
+  # to the jobs below as the `package-build` artifact, so they test this build
+  # instead of compiling the same Rust and TypeScript again. Only the jobs that
+  # check a build of their own (native-build, release-compat, release) build.
+  #
+  # Caches are restored on every run but saved only by pushes to main: pull
+  # request caches can only be read by the same pull request, and saving them
+  # evicted main's, so every pull request started cold.
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -301,32 +312,14 @@ jobs:
         # which changes when `ubuntu-latest` moves to a new Ubuntu release.
         run: echo "RUNNER_IMAGE=${ImageOS:?ImageOS is not set}" >> "$GITHUB_ENV"
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
+      - &setup-rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         id: rust
         with:
           toolchain: stable
           components: clippy, rustfmt
+          cache-save-if: ${{ github.event_name == 'push' }}
 
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-benchmark-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-        name: Install bun
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-benchmark-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
       - &install-wasm-pack
         name: Install and verify latest stable wasm-pack
         shell: bash
@@ -353,416 +346,81 @@ jobs:
           installed="$(wasm-pack --version)"
           echo "Installed $installed; crates.io latest stable: $latest"
           test "$installed" = "wasm-pack $latest"
-      - name: Install Node.js
+
+      - &setup-bun
+        uses: oven-sh/setup-bun@v2
+        id: bun
+        with:
+          bun-version: latest
+        name: Install bun
+      # One bun cache for every job: they all install the same lockfile.
+      - &restore-bun-cache
+        name: Restore bun dependencies
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-
+
+      - &setup-node
+        name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          registry-url: "https://registry.npmjs.org"
           # `latest` can select alphas from https://nodejs.org/dist/index.json;
           # see https://github.com/actions/setup-node/issues/1657.
           # The stable manifest can briefly trail nodejs.org after a stable release.
           node-version: '*'
           check-latest: true
-      - run: bun install
-      - run: bun run build
-      # Every row is the median of the same number of cold samples taken in
-      # rotating order (benchmark-manifest.json). The run goes to an artifact and
-      # the Devup UI rows are compared with the checked baseline at the end of the
-      # job, so the profile and the Rust measurement still run when it fails.
-      - name: Benchmark
-        run: bun run benchmark
-      - name: Profile Devup UI Turbopack
-        env:
-          DEVUP_UI_PROFILE: "1"
-        run: |
-          rm -rf benchmark/next-devup-ui-single-turbo/.next \
-            benchmark/next-devup-ui-single-turbo/df \
-            benchmark/next-devup-ui-single-turbo/tsconfig.tsbuildinfo
-          bun run --filter next-devup-ui-single-turbo-benchmark build
-      - name: Upload the measured run
-        uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
-        with:
-          name: benchmark-run
-          path: benchmark-run.json
-          if-no-files-found: ignore
-          retention-days: 30
-      - name: Measure the SemanticBuilder passes of the extractor
-        run: cargo bench -p extractor --bench semantic_pass_benchmark -- --quick
-      - name: Compare the Devup UI rows with the baseline
-        run: bun benchmark-check.js
-
-  # The landing app is the only real-scale acceptance target in this repo, and
-  # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
-  # This job runs the SAME 128 assertions and the SAME screenshot baselines
-  # against a Next 16 + Turbopack build, so @devup-ui/next-plugin's production
-  # CSS path stays gated at 64 routes - the scale where extraction-wave races
-  # actually reproduce. It runs in parallel so it stays off the publish critical
-  # path, and its artifact is never deployed.
-  landing-next-e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      # Render the frozen e2e/fixtures/benchmark-results.json, so a benchmark
-      # refresh on main never changes a screenshot. This build is never deployed.
-      LANDING_BENCHMARK_DATA: fixture
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - *record-runner-image
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        id: rust
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-landing-next-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-        name: Install bun
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-landing-next-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - *install-wasm-pack
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '*'
-          check-latest: true
-      - run: bun install
-      - run: bun run build
-      - name: Build Landing (Next)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          bun run --filter @devup-ui/components build-storybook
-          mv ./packages/components/storybook-static ./apps/landing/public/storybook
-          bun run --filter landing build:next
-      - &record-playwright-revisions
-        name: Record the Playwright browser revisions for cache keys
+      - run: bun install --frozen-lockfile
+      - name: Run bun run build
         shell: bash
-        # The browser builds the installed Playwright downloads, such as
-        # chromium-1243_firefox-1543_..., read from its install locations.
-        run: |
-          revisions="$(bunx playwright install --dry-run | sed -n 's|.*Install location: *.*/||p' | sort | paste -sd_ -)"
-          test -n "$revisions"
-          echo "PLAYWRIGHT_REVISIONS=$revisions" >> "$GITHUB_ENV"
-      - name: Cache Playwright Browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-landing-next-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
-      - name: Install Playwright Browsers
-        run: bunx playwright install chromium --with-deps
-      - name: Run E2E Tests (Next)
-        run: bun run test:e2e:next
-      - name: Run Landing dev navigation tests (Next)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LANDING_BUILD_MODE: next
-        run: bunx playwright test -c playwright.landing-dev.config.ts
-      - name: Build Landing (Next, singleCss)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          rm -rf apps/landing/out apps/landing/.next apps/landing/df
-          DEVUP_SINGLE_CSS=1 bun run --filter landing build:next
-      - name: Run E2E Tests (Next, singleCss)
-        run: bun run test:e2e:next
-      - name: Upload Next Playwright Report
-        uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
-        with:
-          name: playwright-report-next
-          path: playwright-report/
-          retention-days: 1
-
-  # The packages take React ^18 || ^19 as a peer. This builds a React 18.3 app
-  # with the Vite plugin and the UI kit, then checks refs, context and events
-  # in Chromium, so React-19-only APIs cannot slip back in.
-  react-18:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - *record-runner-image
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        id: rust
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-react-18-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-        name: Install bun
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-react-18-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - *install-wasm-pack
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '*'
-          check-latest: true
-      - run: bun install
-      - run: bun run build
-      - name: Type-check and build the React 18 app
-        working-directory: apps/react-18
-        run: |
-          bun ../../node_modules/@typescript/native/bin/tsc
-          bun run build
-      - *record-playwright-revisions
-      - name: Cache Playwright Browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-react-18-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
-      - name: Install Playwright Browsers
-        run: bunx playwright install chromium --with-deps
-      - name: Run React 18 E2E Tests
-        working-directory: apps/react-18
-        run: bun run test:e2e
-
-  # @devup-ui/vite-plugin must keep the CSS every server page needs when the
-  # build is vinext/RSC. The fixture shares one Devup UI header between server
-  # list pages and a client page, and the tests read the styles the browser
-  # actually applies when each route is entered directly, so a dropped
-  # stylesheet dependency fails here whatever the CSS files are called.
-  vinext-rsc-css-e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - *record-runner-image
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        id: rust
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-vinext-rsc-css-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-        name: Install bun
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-vinext-rsc-css-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - *install-wasm-pack
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '*'
-          check-latest: true
-      - run: bun install
-      - run: bun run build
-      - *record-playwright-revisions
-      - name: Cache Playwright Browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-vinext-rsc-css-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
-      - name: Install Playwright Browsers
-        run: bunx playwright install chromium --with-deps
-      - name: Build fixture (per-file CSS)
-        run: bun run --filter vinext-rsc-css-repro build
-      - name: Run E2E Tests (per-file CSS)
-        run: bun run test:e2e:rsc-css
-      - name: Build fixture (singleCss)
-        run: |
-          rm -rf apps/vinext-rsc-css-repro/dist apps/vinext-rsc-css-repro/.vinext apps/vinext-rsc-css-repro/df
-          DEVUP_SINGLE_CSS=1 bun run --filter vinext-rsc-css-repro build
-      - name: Run E2E Tests (singleCss)
-        run: bun run test:e2e:rsc-css
-
-  release-compat:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CARGO_BUILD_JOBS: "2"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - *record-runner-image
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        id: rust
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-release-compat-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-release-compat-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - *install-wasm-pack
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '*'
-          check-latest: true
-      - run: bun install
-      - name: Test exited-process memory sampling
-        run: node --test e2e/release/process-memory.test.mjs
-      - name: Build packages under the memory watchdog
-        run: node e2e/release/build-packages.mjs
-      - *record-playwright-revisions
-      - name: Cache Playwright browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-release-compat-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
-      - name: Install Playwright browsers
-        run: bunx playwright install chromium firefox webkit --with-deps
-      - name: Build packed consumers and check production computed styles
-        run: bun run test:release
-      - name: Upload release compatibility evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-compat-results
-          path: |
-            release-package-build.json
-            release-results.json
-          if-no-files-found: error
-          retention-days: 30
-
-  webpack-extends-theme:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    env:
-      CARGO_BUILD_JOBS: "2"
-    steps:
-      - name: Configure isolated paths
-        run: |
-          printf 'DEVUP_PLAYWRIGHT_ROOT=%s/webpack-extends-playwright\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'PLAYWRIGHT_BROWSERS_PATH=%s/webpack-extends-browsers\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf 'DEVUP_EXTENDS_RESULTS=%s/webpack-extends-results\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - name: Checkout
-        uses: actions/checkout@v7
-      - *record-runner-image
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        id: rust
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-webpack-extends-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-webpack-extends-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - *install-wasm-pack
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '*'
-          check-latest: true
-      - run: bun install
-      - name: Build fresh WASM
-        working-directory: bindings/devup-ui-wasm
-        run: bun run build
-      - run: bun run build
-      - name: Install latest private Playwright and Chromium
-        run: |
-          mkdir -p "$DEVUP_PLAYWRIGHT_ROOT" "$DEVUP_EXTENDS_RESULTS"
-          printf '{"private":true,"type":"module"}\n' > "$DEVUP_PLAYWRIGHT_ROOT/package.json"
-          bun add --cwd "$DEVUP_PLAYWRIGHT_ROOT" @playwright/test@latest
-          node "$DEVUP_PLAYWRIGHT_ROOT/node_modules/@playwright/test/cli.js" install chromium --with-deps
-      - name: Installed formats and production theme delivery regressions
         run: |
           set -euo pipefail
-          env -u CI node --test packages/webpack-plugin/src/__tests__/extends-theme/extends-theme-regression.mjs 2>&1 | tee "$DEVUP_EXTENDS_RESULTS/matrix.log"
-      - name: Upload packed-consumer matrix evidence
-        if: always()
-        uses: actions/upload-artifact@v7
+          # The commands of `bun run build`, read from package.json, except
+          # that its first command (the host native addon, built with two
+          # Cargo jobs) runs while the rest compiles the WASM package in a
+          # separate target directory, so the two Rust builds overlap.
+          script="$(node -p "require('./package.json').scripts.build")"
+          native="${script%% && *}"
+          rest="${script#* && }"
+          test "$native" = "node e2e/binding/package/build-host.mjs"
+          (node e2e/binding/package/build-host.mjs 2>&1 | sed -u 's/^/[native] /') &
+          native_pid=$!
+          CARGO_TARGET_DIR="$PWD/target/wasm" bash -euo pipefail -c "$rest"
+          wait "$native_pid"
+      - name: Pack the build outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every file the build created: untracked, outside node_modules and
+          # the Cargo target directory.
+          git ls-files -z --others -- ':(exclude,glob)**/node_modules/**' ':(exclude,glob)target/**' > "$RUNNER_TEMP/build-files"
+          tr '\0' '\n' < "$RUNNER_TEMP/build-files"
+          tar --null -T "$RUNNER_TEMP/build-files" -czf "$RUNNER_TEMP/package-build.tgz"
+          du -h "$RUNNER_TEMP/package-build.tgz"
+          test -s bindings/devup-ui-wasm/pkg/index_bg.wasm
+          test -s bindings/devup-ui-binding/pkg/index.cjs
+          test -s bindings/devup-ui-binding-linux-x64-gnu/binding.linux-x64-gnu.node
+      - uses: actions/upload-artifact@v7
         with:
-          name: webpack-extends-theme-evidence
-          path: |
-            ${{ runner.temp }}/webpack-extends-results/matrix.log
-            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*.json
-            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/identity-*.json
-            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/bun.lock
-            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/packs/*/*.tgz
+          name: package-build
+          path: ${{ runner.temp }}/package-build.tgz
           if-no-files-found: error
-          retention-days: 7
+          overwrite: true
+          retention-days: 1
+      - name: Save bun dependencies
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
 
-  # Validation: runs on pull requests and on pushes to main, read-only. The job
-  # id stays `publish` because it is the status check the repository requires;
-  # the privileged release steps live in `release` and `deploy-pages` below.
-  publish:
+  # Formatting, Clippy and ESLint, the checks of the built packages, and the
+  # changepacks of a pull request.
+  lint:
+    needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -773,49 +431,20 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
       - *record-runner-image
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        id: rust
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - *install-wasm-pack
-      - name: Install cargo-tarpaulin
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: cargo binstall cargo-tarpaulin --no-confirm --force
-
-      - name: Cache cargo registry + target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-publish-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-rustc-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: latest
-        name: Install bun
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-publish-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          registry-url: "https://registry.npmjs.org"
-          node-version: '*'
-          check-latest: true
+      - *setup-rust
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
       - run: bun install --frozen-lockfile
-      - run: bun run build
+      - &download-build
+        name: Download the build
+        uses: actions/download-artifact@v8
+        with:
+          name: package-build
+          path: ${{ runner.temp }}/package-build
+      - &unpack-build
+        name: Unpack the build
+        run: tar -xzf "$RUNNER_TEMP/package-build/package-build.tgz"
       - name: Verify built package entry points
         run: bun run verify:dist
       - name: Verify the README benchmark tables
@@ -845,8 +474,35 @@ jobs:
               exit 1
             fi
           done
-      - run: |
-          bun run lint
+      - run: bun run lint
+      - name: Check the changepacks of this change
+        if: github.event_name == 'pull_request'
+        run: |
+          # changepacks compares the change against a local main, which a pull request checkout does not have
+          git fetch --no-tags origin main:refs/heads/main
+          bunx @changepacks/cli@latest check --format json
+
+  # The first half of `bun run test`: Rust coverage with cargo-tarpaulin,
+  # including the native addon, held at 100%. It needs no package build.
+  rust-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-rust
+      - *install-wasm-pack
+      - name: Install cargo-tarpaulin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo binstall cargo-tarpaulin --no-confirm --force
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install --frozen-lockfile
+      - name: Format the Rust sources for coverage
+        run: |
           # rust coverage issue
           echo 'max_width = 100000' > .rustfmt.toml
           echo 'tab_spaces = 4' >> .rustfmt.toml
@@ -863,17 +519,12 @@ jobs:
       # new release; every other job builds, lints and tests on latest stable.
       - name: Install the Rust release coverage is measured with
         run: rustup toolchain install 1.99.1 --profile minimal
-      - run: bun run test
+      # `bun run test` is this command followed by `bun run test:bun`, which
+      # the bun-tests job runs.
+      - name: Rust coverage
+        run: node e2e/binding/native-coverage/run.mjs
         env:
           RUSTUP_TOOLCHAIN: 1.99.1
-      - name: Regression test (bun-plugin preload race)
-        run: bun run --filter @devup-ui/bun-plugin test:regression
-      # Rust coverage excludes every wasm-bindgen wrapper, so the WASM ABI is
-      # checked here instead: the public corpus must match the native addon
-      # byte for byte, every invalid argument shape must be rejected, and the
-      # step summary reports which exports and positions were reached.
-      - name: WASM ABI coverage
-        run: bun run test:wasm-abi
       - name: Format Rollback
         run: |
           rm -rf .rustfmt.toml
@@ -883,36 +534,119 @@ jobs:
           git restore --source=HEAD --staged --worktree -- .
           cargo fmt --all -- --check
           git diff --exit-code
-      - name: Check the changepacks of this change
-        if: github.event_name == 'pull_request'
+      - name: Upload the Rust coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-rust
+          path: |
+            cobertura.xml
+            target/tarpaulin/coverage.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  # The second half of `bun run test`: every Bun suite with its 100% coverage
+  # thresholds, then the bun-plugin preload race regression.
+  bun-tests:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install --frozen-lockfile
+      - *download-build
+      - *unpack-build
+      - run: bun run test:bun
+      - name: Regression test (bun-plugin preload race)
+        run: bun run --filter @devup-ui/bun-plugin test:regression
+      - name: Upload the Bun coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-bun
+          path: |
+            coverage/root/lcov.info
+            coverage/vite/lcov.info
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  # Rust coverage excludes every wasm-bindgen wrapper, so the WASM ABI is
+  # checked here instead: the public corpus must match the native addon
+  # byte for byte, every invalid argument shape must be rejected, and the
+  # step summary reports which exports and positions were reached.
+  wasm-abi:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install --frozen-lockfile
+      - *download-build
+      - *unpack-build
+      - name: WASM ABI coverage
+        run: bun run test:wasm-abi
+
+  # The landing app against the deployed vinext/@devup-ui/vite-plugin build.
+  # The e2e builds render the frozen e2e/fixtures/benchmark-results.json, so
+  # a benchmark refresh on main never changes a screenshot.
+  e2e:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install --frozen-lockfile
+      - *download-build
+      - *unpack-build
+      - &build-storybook
+        name: Build Storybook
         run: |
-          # changepacks compares the change against a local main, which a pull request checkout does not have
-          git fetch --no-tags origin main:refs/heads/main
-          bunx @changepacks/cli@latest check --format json
-      # The e2e builds render the frozen e2e/fixtures/benchmark-results.json, so
-      # a benchmark refresh on main never changes a screenshot. The site is
-      # deployed from a separate build of the live benchmark-results.json below.
+          bun run --filter @devup-ui/components build-storybook
+          mv ./packages/components/storybook-static ./apps/landing/public/storybook
       - name: Build Landing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LANDING_BENCHMARK_DATA: fixture
+        run: bun run --filter landing build
+      - &record-playwright-revisions
+        name: Record the Playwright browser revisions for cache keys
+        shell: bash
+        # The browser builds the installed Playwright downloads, such as
+        # chromium-1243_firefox-1543_..., read from its install locations.
         run: |
-          bun run --filter @devup-ui/components build-storybook
-          mv ./packages/components/storybook-static ./apps/landing/public/storybook
-          bun run --filter landing build
-      - *record-playwright-revisions
-      - name: Cache Playwright Browsers
-        id: playwright-cache
-        uses: actions/cache@v6
+          revisions="$(bunx playwright install --dry-run | sed -n 's|.*Install location: *.*/||p' | sort | paste -sd_ -)"
+          test -n "$revisions"
+          echo "PLAYWRIGHT_REVISIONS=$revisions" >> "$GITHUB_ENV"
+      # One Chromium cache for every job that installs only Chromium.
+      - &restore-playwright-cache
+        name: Restore Playwright Browsers
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-publish-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
-      - name: Install Playwright Browsers
+          key: playwright-chromium-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
+      - &install-chromium
+        name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
       # A run only compares against the screenshots checked into the repository:
       # it never creates or commits them. A new visual test needs its baselines
       # generated by a maintainer (`bun run test:e2e:update`) and committed.
-      - name: Require the E2E baselines
+      - &require-e2e-baselines
+        name: Require the E2E baselines
         run: |
           SNAPSHOT_COUNT=$(find e2e -name '*-linux.png' -path '*-snapshots/*' 2>/dev/null | wc -l)
           echo "Found $SNAPSHOT_COUNT linux baseline snapshot(s)"
@@ -926,13 +660,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bunx playwright test -c playwright.landing-dev.config.ts
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 1
+      - name: Save Playwright Browsers
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
+
+  # The same suite against the singleCss build. On a push to main this job
+  # also builds the site with the live benchmark numbers and uploads it for
+  # `deploy-pages`, which runs only after `publish` passed.
+  e2e-single-css:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install --frozen-lockfile
+      - *download-build
+      - *unpack-build
+      - *build-storybook
       - name: Build Landing (singleCss)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LANDING_BENCHMARK_DATA: fixture
-        run: |
-          rm -rf apps/landing/dist apps/landing/.next apps/landing/.vinext apps/landing/df
-          DEVUP_SINGLE_CSS=1 bun run --filter landing build
+        run: DEVUP_SINGLE_CSS=1 bun run --filter landing build
+      - *record-playwright-revisions
+      - *restore-playwright-cache
+      - *install-chromium
+      - *require-e2e-baselines
       - name: Run E2E Tests (singleCss)
         run: bun run test:e2e
       - name: Upload singleCss Playwright Report
@@ -957,6 +725,332 @@ jobs:
           path: ./apps/landing/dist/client
           retention-days: 1
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+  benchmark:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install
+      - *download-build
+      - *unpack-build
+      # Every row is the median of the same number of cold samples taken in
+      # rotating order (benchmark-manifest.json). The run goes to an artifact and
+      # the Devup UI rows are compared with the checked baseline at the end of the
+      # job, so the profile still runs when it fails.
+      - name: Benchmark
+        run: bun run benchmark
+      - name: Profile Devup UI Turbopack
+        env:
+          DEVUP_UI_PROFILE: "1"
+        run: |
+          rm -rf benchmark/next-devup-ui-single-turbo/.next \
+            benchmark/next-devup-ui-single-turbo/df \
+            benchmark/next-devup-ui-single-turbo/tsconfig.tsbuildinfo
+          bun run --filter next-devup-ui-single-turbo-benchmark build
+      - name: Upload the measured run
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: benchmark-run
+          path: benchmark-run.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Compare the Devup UI rows with the baseline
+        run: bun benchmark-check.js
+
+  # The Rust half of the benchmark, on its own runner so it neither waits for
+  # the package build nor shares a machine with the measured builds.
+  benchmark-semantic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-rust
+      - name: Measure the SemanticBuilder passes of the extractor
+        run: cargo bench -p extractor --bench semantic_pass_benchmark -- --quick
+
+  # The landing app is the only real-scale acceptance target in this repo, and
+  # `e2e` runs it against the deployed vinext/@devup-ui/vite-plugin build.
+  # This job runs the SAME 128 assertions and the SAME screenshot baselines
+  # against a Next 16 + Turbopack build, so @devup-ui/next-plugin's production
+  # CSS path stays gated at 64 routes - the scale where extraction-wave races
+  # actually reproduce. `landing-next-e2e-single-css` runs the singleCss build.
+  # Neither artifact is ever deployed.
+  landing-next-e2e:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Render the frozen e2e/fixtures/benchmark-results.json, so a benchmark
+      # refresh on main never changes a screenshot. This build is never deployed.
+      LANDING_BENCHMARK_DATA: fixture
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install
+      - *download-build
+      - *unpack-build
+      - *build-storybook
+      - name: Build Landing (Next)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun run --filter landing build:next
+      - *record-playwright-revisions
+      - *restore-playwright-cache
+      - *install-chromium
+      - name: Run E2E Tests (Next)
+        run: bun run test:e2e:next
+      - name: Run Landing dev navigation tests (Next)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANDING_BUILD_MODE: next
+        run: bunx playwright test -c playwright.landing-dev.config.ts
+      - name: Upload Next Playwright Report
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-next-per-file
+          path: playwright-report/
+          retention-days: 1
+
+  landing-next-e2e-single-css:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      LANDING_BENCHMARK_DATA: fixture
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install
+      - *download-build
+      - *unpack-build
+      - *build-storybook
+      - name: Build Landing (Next, singleCss)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: DEVUP_SINGLE_CSS=1 bun run --filter landing build:next
+      - *record-playwright-revisions
+      - *restore-playwright-cache
+      - *install-chromium
+      - name: Run E2E Tests (Next, singleCss)
+        run: bun run test:e2e:next
+      - name: Upload Next Playwright Report
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-next
+          path: playwright-report/
+          retention-days: 1
+
+  # The packages take React ^18 || ^19 as a peer. This builds a React 18.3 app
+  # with the Vite plugin and the UI kit, then checks refs, context and events
+  # in Chromium, so React-19-only APIs cannot slip back in.
+  react-18:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install
+      - *download-build
+      - *unpack-build
+      - name: Type-check and build the React 18 app
+        working-directory: apps/react-18
+        run: |
+          bun ../../node_modules/@typescript/native/bin/tsc
+          bun run build
+      - *record-playwright-revisions
+      - *restore-playwright-cache
+      - *install-chromium
+      - name: Run React 18 E2E Tests
+        working-directory: apps/react-18
+        run: bun run test:e2e
+
+  # @devup-ui/vite-plugin must keep the CSS every server page needs when the
+  # build is vinext/RSC. The fixture shares one Devup UI header between server
+  # list pages and a client page, and the tests read the styles the browser
+  # actually applies when each route is entered directly, so a dropped
+  # stylesheet dependency fails here whatever the CSS files are called.
+  vinext-rsc-css-e2e:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install
+      - *download-build
+      - *unpack-build
+      - *record-playwright-revisions
+      - *restore-playwright-cache
+      - *install-chromium
+      - name: Build fixture (per-file CSS)
+        run: bun run --filter vinext-rsc-css-repro build
+      - name: Run E2E Tests (per-file CSS)
+        run: bun run test:e2e:rsc-css
+      - name: Build fixture (singleCss)
+        run: |
+          rm -rf apps/vinext-rsc-css-repro/dist apps/vinext-rsc-css-repro/.vinext apps/vinext-rsc-css-repro/df
+          DEVUP_SINGLE_CSS=1 bun run --filter vinext-rsc-css-repro build
+      - name: Run E2E Tests (singleCss)
+        run: bun run test:e2e:rsc-css
+
+  # Builds the packages itself: the build under the memory watchdog is the
+  # check, so it cannot reuse the `build` job's outputs.
+  release-compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-rust
+      - *setup-bun
+      - *restore-bun-cache
+      - *install-wasm-pack
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '*'
+          check-latest: true
+      - run: bun install
+      - name: Test exited-process memory sampling
+        run: node --test e2e/release/process-memory.test.mjs
+      - name: Build packages under the memory watchdog
+        run: node e2e/release/build-packages.mjs
+      - *record-playwright-revisions
+      - name: Restore Playwright browsers
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-release-compat-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
+      - name: Install Playwright browsers
+        run: bunx playwright install chromium firefox webkit --with-deps
+      - name: Build packed consumers and check production computed styles
+        run: bun run test:release
+      - name: Upload release compatibility evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-compat-results
+          path: |
+            release-package-build.json
+            release-results.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Save Playwright browsers
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-release-compat-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ env.PLAYWRIGHT_REVISIONS }}
+
+  webpack-extends-theme:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Configure isolated paths
+        run: |
+          printf 'DEVUP_PLAYWRIGHT_ROOT=%s/webpack-extends-playwright\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s/webpack-extends-browsers\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'DEVUP_EXTENDS_RESULTS=%s/webpack-extends-results\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install
+      # The `build` job's fresh WASM and packages of this commit.
+      - *download-build
+      - *unpack-build
+      - name: Install latest private Playwright and Chromium
+        run: |
+          mkdir -p "$DEVUP_PLAYWRIGHT_ROOT" "$DEVUP_EXTENDS_RESULTS"
+          printf '{"private":true,"type":"module"}\n' > "$DEVUP_PLAYWRIGHT_ROOT/package.json"
+          bun add --cwd "$DEVUP_PLAYWRIGHT_ROOT" @playwright/test@latest
+          node "$DEVUP_PLAYWRIGHT_ROOT/node_modules/@playwright/test/cli.js" install chromium --with-deps
+      - name: Installed formats and production theme delivery regressions
+        run: |
+          set -euo pipefail
+          env -u CI node --test packages/webpack-plugin/src/__tests__/extends-theme/extends-theme-regression.mjs 2>&1 | tee "$DEVUP_EXTENDS_RESULTS/matrix.log"
+      - name: Upload packed-consumer matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: webpack-extends-theme-evidence
+          path: |
+            ${{ runner.temp }}/webpack-extends-results/matrix.log
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*.json
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/identity-*.json
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/*/bun.lock
+            ${{ runner.temp }}/webpack-extends-results/extends-theme-*/packs/*/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  # Validation summary: runs on pull requests and on pushes to main, read-only.
+  # The job id stays `publish` because it is the status check the repository
+  # requires, and it passes only when every validation job above passed (a
+  # skipped job would otherwise count as passing). It uploads the Rust and Bun
+  # coverage together. The privileged release steps live in `release` and
+  # `deploy-pages` below.
+  publish:
+    needs: [build, lint, rust-coverage, bun-tests, wasm-abi, e2e, e2e-single-css]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require every validation job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download the Rust coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-rust
+          path: .
+      - name: Download the Bun coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-bun
+          path: coverage
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v7
         with:
@@ -996,7 +1090,7 @@ jobs:
   # passed, and is the only job that can write contents, open pull requests or
   # mint an OIDC token for npm.
   release:
-    needs: [publish, landing-next-e2e, react-18, release-compat, native-consumer]
+    needs: [publish, landing-next-e2e, landing-next-e2e-single-css, react-18, release-compat, native-consumer]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45

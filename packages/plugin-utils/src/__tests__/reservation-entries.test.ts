@@ -134,6 +134,40 @@ it('retains prepared compiled overlays for an exact physical entry and never fee
   expect(result.dependencies).toHaveLength(2)
 })
 
+it("stops at a dependency the loaders leave to the bundler, but crawls Devup UI's and included packages", () => {
+  // Given
+  using fs = fixture()
+  fs.write('src/A.tsx', STYLE)
+  for (const name of ['framework', 'kit', '@devup-ui/extra'])
+    fs.write(`node_modules/${name}/client.js`, `${STYLE}\nimport './runtime'`)
+  for (const name of ['framework', 'kit', '@devup-ui/extra'])
+    fs.write(`node_modules/${name}/runtime.js`, STYLE)
+  const entries = ['framework', 'kit', '@devup-ui/extra'].map((name) => ({
+    request: `./node_modules/${name}/client.js`,
+    context: fs.root,
+  }))
+  // When
+  const { inputs, dependencies } = collectReservationInputs({
+    roots: ['src'],
+    cwd: fs.root,
+    package: '@devup-ui/react',
+    importAliases: {},
+    include: ['kit'],
+    toId: (path: string) => relative(fs.root, path).replaceAll('\\', '/'),
+    entries,
+  })
+  // Then
+  expect(inputs.map(({ filename }) => filename)).toEqual([
+    'node_modules/@devup-ui/extra/client.js',
+    'node_modules/@devup-ui/extra/runtime.js',
+    'node_modules/framework/client.js',
+    'node_modules/kit/client.js',
+    'node_modules/kit/runtime.js',
+    'src/A.tsx',
+  ])
+  expect(dependencies).toHaveLength(6)
+})
+
 it('never reads the runtime package, from the app or from another Devup UI package', () => {
   // Given
   using fs = fixture()

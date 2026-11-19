@@ -183,7 +183,10 @@ interface MockCompiler {
   webpack: {
     DefinePlugin: ReturnType<typeof mock>
     WebpackError: typeof Error
-    Compilation: { PROCESS_ASSETS_STAGE_REPORT: number }
+    Compilation: {
+      PROCESS_ASSETS_STAGE_REPORT: number
+      PROCESS_ASSETS_STAGE_OPTIMIZE?: number
+    }
   }
   hooks: {
     watchRun: { tapPromise: ReturnType<typeof mock> }
@@ -1801,6 +1804,52 @@ describe('devupUIWebpackPlugin', () => {
       await finish([module])
       expect(getCssSpy).toHaveBeenCalledWith(1, true)
       expect(rebuild).toHaveBeenCalledWith(module, expect.any(Function))
+    })
+
+    it('drops unselected component markers only in a one-shot production build', () => {
+      const { compiler } = compile()
+      compiler.options.mode = 'production'
+      const run = compiler.hooks.run.tap.mock.calls.find(
+        ([name]) => name === 'DevupUIWebpackPluginReservation',
+      )![1] as () => void
+      compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE = 700
+      const ledger = pluginUtils.markerLedgerOf(compiler)
+      assert(ledger)
+      const scanned = spyOn(ledger, 'scanned')
+      run()
+      expect(scanned).toHaveBeenCalledTimes(1)
+      const plan = spyOn(ledger, 'plan')
+      const stages: Record<string, [number, () => void]> = {}
+      const compilation = {
+        modules: [],
+        warnings: [],
+        getAssets: () => [],
+        hooks: {
+          finishModules: { tap: mock() },
+          needAdditionalPass: { tap: mock() },
+          processAssets: {
+            tap: (
+              { name, stage }: { name: string; stage: number },
+              fn: () => void,
+            ) => {
+              stages[name] = [stage, fn]
+            },
+          },
+        },
+      }
+      ;(
+        compiler.hooks.thisCompilation.tap.mock.calls[0]![1] as (
+          compilation: object,
+        ) => void
+      )(compilation)
+      const [stage, strip] = stages['DevupUIWebpackPluginComponentMarkers']!
+      expect(stage).toBe(700)
+      compiler.watchMode = true
+      strip()
+      expect(plan).not.toHaveBeenCalled()
+      compiler.watchMode = false
+      strip()
+      expect(plan).toHaveBeenCalledTimes(1)
     })
 
     it('writes the shared base to disk when it does not hold it yet', () => {

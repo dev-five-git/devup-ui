@@ -36,6 +36,7 @@ pub(crate) fn execute(
         map: None,
         css_file: output.css_file.clone(),
         dependencies: output.dependencies.clone(),
+        component_markers: crate::ComponentMarkers::default(),
     };
     super::css_prop_execution::execute_extracted(location, &executable, "")
 }
