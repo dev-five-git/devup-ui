@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/plugin-utils/package.json": "Patch"
-  },
-  "note": "Resolve every working-directory-relative path in the project-root helpers through process.cwd() read at call time. Behavior is unchanged; tests now stub the working directory instead of changing the shared test process's directory.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

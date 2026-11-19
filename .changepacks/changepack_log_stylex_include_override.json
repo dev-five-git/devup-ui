@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "A key written after `...stylex.include(base.root)` in `stylex.create()` now overrides the included one, as StyleX merges them: `{ ...stylex.include(s0.a), color: 'blue' }` kept both the included red and the blue class, and red could win by stylesheet order. The included namespace's keys are merged where the spread is written, so a later key or a later `include()` replaces what came before, and `stylex.props()` resolves such a namespace per key like any other. A dynamic (arrow function) namespace has no keys and is still only prepended. No new build errors",
-  "date": "2026-11-15T00:00:00.000Z"
-}

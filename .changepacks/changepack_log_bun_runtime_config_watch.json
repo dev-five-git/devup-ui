@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/bun-plugin/package.json": "Patch"
-  },
-  "note": "Under the Bun runtime, watch devup.json and every file of its `extends` chain as well as the Tailwind CSS, through their directories: editing, creating or removing one reloads the theme and rewrites theme.d.ts and the stylesheet, and a removed devup.json leaves an empty theme. Reloads never overlap. Coalesce the runtime stylesheet writes of the modules loaded together into one write of the latest sheet, made in the microtask after them, so N modules no longer rewrite the growing sheet N times while the sheet is still up to date once their import settles.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

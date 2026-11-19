@@ -1,1 +1,0 @@
-{"changes":{"bindings/devup-ui-wasm/package.json":"Patch"},"note":"A Rust panic inside the WASM compiler now fails the call with a JavaScript Error that names it an internal Devup UI bug, gives the panic message and its Rust location, and says to report it and restart the build, instead of an opaque `RuntimeError: unreachable`.","date":"2026-11-15T00:00:00.000Z"}

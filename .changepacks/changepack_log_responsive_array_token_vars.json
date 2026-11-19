@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "A responsive length or shadow `$token` inside a responsive array now reads `var(--token)` instead of the token's first raw value: `px={['8px', null, '$containerX']}` showed the mobile `16px` at index 2 where the theme sets `--containerX` to `32px`, and `w={['$containerX']}` ignored theme variants such as `compact`. The slot still emits one class at its own breakpoint",
-  "date": "2026-11-15T00:00:00.000Z"
-}

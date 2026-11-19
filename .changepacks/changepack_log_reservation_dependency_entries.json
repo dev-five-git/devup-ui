@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/plugin-utils/package.json": "Patch"
-  },
-  "note": "Stop the shared class-slot reservation at a dependency's files that the loaders leave to the bundler, instead of reading everything they import. Next's webpack client entries no longer make every production build read and scan about 300 of Next's own runtime files before compiling; the reserved classes and the emitted CSS and JavaScript are unchanged.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

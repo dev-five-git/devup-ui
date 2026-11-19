@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/vite-plugin/package.json": "Patch"
-  },
-  "note": "Hash devup-ui CSS asset names from the finished sheet instead of Vite's load-time snapshot, so identical sources give identical CSS and JS chunk names regardless of module order, and any style change gives the sheet and its importing chunks new names.",
-  "date": "2026-11-15T00:00:00.000Z"
-}

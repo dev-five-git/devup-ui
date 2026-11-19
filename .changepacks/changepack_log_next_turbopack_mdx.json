@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Extract Devup UI used directly in .mdx documents under Next.js with Turbopack and @next/mdx, in either wrapping order. The source rule no longer skips the renamed .mdx.tsx module @next/mdx produces; the loader extracts it under the document's own path so its styles stay in the sheet. Production builds number MDX documents with the sources and make the stylesheet wait for MDX route files and the documents compiled sources import by a relative path.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

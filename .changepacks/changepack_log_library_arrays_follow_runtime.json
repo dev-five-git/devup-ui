@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Render a property's literal array in Emotion, styled-components and vanilla-extract rules as each library's runtime does instead of as breakpoints: Emotion declares string-first arrays as ordered fallbacks, skipping null, undefined and booleans, and declares nothing for arrays starting with another value; styled-components joins the values with commas into one declaration; vanilla-extract declares every value verbatim as a fallback, also in .css.ts stylesheets that import @vanilla-extract/css. Devup UI shorthands and Devup UI's own APIs keep responsive arrays.",
-  "date": "2026-11-18T00:00:00.000Z"
-}

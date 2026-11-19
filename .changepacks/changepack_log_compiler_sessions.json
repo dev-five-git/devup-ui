@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/plugin-utils/package.json": "Patch"
-  },
-  "note": "New `openCompilerSession(compiler)`: it opens an engine session of its own on a shared compiler and returns `{ id, compiler, close }`. Every function of the scoped `compiler` selects the session before it runs, so two apps in one process keep their numbering, sheet, theme and settings apart; `close()` drops the session",
-  "date": "2026-11-15T00:00:00.000Z"
-}

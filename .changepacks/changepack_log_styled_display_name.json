@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "A styled component now takes the displayName its library gives it: a string displayName in styled-components' .withConfig(), or the label option of Emotion's styled(tag, { label }), becomes the compiled component's displayName, as React DevTools shows it. The classes it renders are unchanged. No new build errors.",
-  "date": "2026-11-18T00:00:00.000Z"
-}
