@@ -184,6 +184,38 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
+## Library mode
+
+A UI library written with Devup UI is published uncompiled: its output keeps
+the Devup UI components, and the application that uses it compiles them. Build
+the library with `extractCss: false`, so no class names or stylesheet
+are generated for it:
+
+```ts
+// rsbuild.config.ts of the library
+export default defineConfig({
+  plugins: [DevupUI({ extractCss: false })],
+})
+```
+
+Every application that uses the library must list the package in `include`.
+The plugin skips packages in `node_modules` otherwise, so the library's
+components stay uncompiled and throw `Cannot run on the runtime` when they
+render. Each name matches that whole package (`pkg` is not `pkg-extra` or
+`@scope/pkg`).
+
+```ts
+// rsbuild.config.ts of the application
+export default defineConfig({
+  plugins: [DevupUI({ include: ['your-ui-library'] })],
+})
+```
+
+See [`apps/vite-lib`](https://github.com/dev-five-git/devup-ui/tree/main/apps/vite-lib)
+for a library built this way, and the
+[installation guide](https://devup-ui.com/docs/installation) for the setup of
+each bundler.
+
 ## Compiler engine
 
 Rsbuild uses the native compiler by default. Explicit selections are supported:
