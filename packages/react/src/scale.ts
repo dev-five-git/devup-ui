@@ -28,7 +28,6 @@ export function __devupScale(v: unknown, s = 4, u = 'px'): unknown {
 export function __devupNativeScale(v: unknown, s: number): unknown {
   if (typeof v === 'number') return v * s
   const m =
-    typeof v === 'string' &&
-    /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v)
+    typeof v === 'string' && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v)
   return m ? Number(m[1]) * (m[2] ? (m[2] === 'px' ? 1 : 16) : s) : v
 }
