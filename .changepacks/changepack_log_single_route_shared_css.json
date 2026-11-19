@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "A Next production build (webpack or Turbopack) of an app that serves exactly one route now writes its styles into the shared `devup-ui.css`, the same layout `singleCss: true` gives, unless `singleCss` is set explicitly. Every stylesheet of such an app loads on its one page, so a stylesheet per file only added modules. The app counts as one route only when the import graph is sure: one page or route handler (`page.mdx` and other route files count too), no `import()` that splits off a chunk, and no source file outside that route. `next dev` and multi-route apps keep the per-file layout and their output.",
+  "date": "2026-11-19T00:00:00.000Z"
+}
