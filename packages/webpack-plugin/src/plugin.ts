@@ -28,7 +28,6 @@ import {
   normalizeStylexOptions,
   planAtomHoist,
   readJsxImportSource,
-  readSource,
   registerMarkerLedger,
   reservationGraph,
   type ReservationInventory,
@@ -38,12 +37,11 @@ import {
   seedFileNumbers,
   setupWarning,
   SOURCE_FILE_REGEX,
-  type SourceCache,
   type StaticImportGraph,
   type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
-  withSourceCache,
+  withRouteShells,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type Compiler, type RuleSetRule } from 'webpack'
@@ -97,11 +95,12 @@ export interface DevupUIWebpackPluginOptions extends Pick<
   /** Adapter-owned complete extraction set; undefined keeps generic entry reachability. */
   readonly productionPrewarmFiles?: readonly string[]
   /**
-   * Adapter-owned: the sources a one-shot build read, shared by the plugins of
-   * its compilers so each file is read once. Undefined reads them again for
-   * every compiler and compilation.
+   * Count a Next.js route shell that wraps every route (the root `layout` or
+   * `template`, `pages/_app`) as part of those routes rather than as a route
+   * of its own when hoisting atoms. Set by the Next.js plugin for production
+   * builds.
    */
-  readonly sourceCache?: SourceCache
+  readonly routeShells?: boolean
 }
 
 export class DevupUIWebpackPlugin {
@@ -122,7 +121,6 @@ export class DevupUIWebpackPlugin {
   private root = process.cwd()
   /** What the scan and the loaders report of component-selector markers */
   private readonly markers = new ComponentMarkerLedger()
-  private readonly sourceCache: SourceCache | undefined
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -140,10 +138,9 @@ export class DevupUIWebpackPlugin {
     stylex,
     atomHoist = 2,
     productionPrewarmFiles,
-    sourceCache,
+    routeShells = false,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
-    this.sourceCache = sourceCache
     this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
     this.styleResolution = normalizeStylexOptions(stylex)
     this.compiler = loadCompiler(engine)
@@ -172,6 +169,7 @@ export class DevupUIWebpackPlugin {
       shorthands,
       atomHoist,
       productionPrewarmFiles: undefined,
+      routeShells,
     }
     this.sheetFile = ''
     this.classMapFile = ''
@@ -302,14 +300,17 @@ export class DevupUIWebpackPlugin {
       })
       this.compiler.importCanonicalMap(canonicalMap)
       if (atomHoist === undefined) return discovered
+      const reach = this.options.routeShells
+        ? withRouteShells(graph, routes, cwd)
+        : { graph, routes }
       const plan = planAtomHoist(
         canonicalMap,
         computeFileReach({
           srcDir: cwd,
           cwd,
           keyBy: 'cwd-relative',
-          graph,
-          entries: routes,
+          graph: reach.graph,
+          entries: reach.routes,
         }),
         atomHoist,
       )
@@ -383,7 +384,7 @@ export class DevupUIWebpackPlugin {
           '/',
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-        const source = readSource(file)
+        const source = readFileSync(file, 'utf-8')
         try {
           this.compiler
             .codeExtract(
@@ -459,10 +460,7 @@ export class DevupUIWebpackPlugin {
     const endBuild = beginBuild(this.compiler)
     try {
       compiler.hooks.shutdown?.tap('DevupUIWebpackPlugin', endBuild)
-      withSourceCache(
-        () => this.initialize(compiler),
-        this.sourceCache ?? new Map(),
-      )
+      this.initialize(compiler)
     } catch (error) {
       // Webpack cannot return the compiler when apply throws, so no caller can close it.
       endBuild()
@@ -600,8 +598,7 @@ export class DevupUIWebpackPlugin {
       this.compiler,
     )
     registerMarkerLedger(compiler, this.markers)
-    // The reservation and the prewarm read the same sources
-    const prepare = () => {
+    const reserveBeforeCompile = () => {
       this.markers.clear()
       reserve(compiler.options)
       this.markers.scanned(
@@ -611,8 +608,6 @@ export class DevupUIWebpackPlugin {
       if (this.options.watch) return
       this.prewarmExtractor(discovered, compiler.options)
     }
-    const reserveBeforeCompile = () =>
-      withSourceCache(prepare, this.sourceCache ?? new Map())
     compiler.hooks.run.tap(
       'DevupUIWebpackPluginReservation',
       reserveBeforeCompile,
