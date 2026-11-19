@@ -1,0 +1,20 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 8 },
+	b: { backgroundColor: "red" }
+});
+const __u = (v, s) => {
+	if (typeof v === "number") return v * s;
+	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
+	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
+};
+<Box style={[
+	on ? __s.a : { padding: __u(pad, 4) },
+	big && { margin: __u(space, 4) },
+	on ? __s.b : { backgroundColor: color }
+]} />;

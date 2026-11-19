@@ -1,6 +1,7 @@
 use insta::assert_snapshot;
 use rstest::rstest;
 
+use super::element::units_declaration;
 use super::errors::{Problem, RuntimeFeature};
 use super::props::Declaration;
 use super::sheet::{Sheet, key_name};
@@ -72,6 +73,21 @@ fn compile(code: &str) -> String {
 #[case::dynamic_values(
     "dynamic_values",
     "<Box bg={color} px={space} m={(a, b)} opacity={props.opacity} p={pad} top={-y} />"
+)]
+#[case::dynamic_groups(
+    "dynamic_groups",
+    r#"<Box w={w} h={h} maxW={mw} gap={g} rowGap={rg} borderRadius={r} borderWidth={bw}
+  fontSize={fs} letterSpacing={ls} top={t} inset={i} flex={f} flexGrow={fg} zIndex={z}
+  aspectRatio={ar} lineHeight={lh} fontWeight={fw} color={c} display={d} boxShadow={bs} />"#
+)]
+#[case::dynamic_in_conditions(
+    "dynamic_in_conditions",
+    "<Box p={on ? 2 : pad} m={big && space} bg={on ? 'red' : color} />"
+)]
+#[case::dynamic_with_sheet_name_taken(
+    "dynamic_with_sheet_name_taken",
+    "const __u = 1;
+<Box p={pad} m={1} />"
 )]
 #[case::conditional_values(
     "conditional_values",
@@ -443,4 +459,33 @@ fn problems_format_for_props_and_imports() {
             .fix
             .contains("Pressable")
     );
+}
+
+#[rstest]
+#[case("2, 4", "8")]
+#[case("-1.5, 4", "-6")]
+#[case("0.5, 1", "0.5")]
+#[case("\"2\", 4", "8")]
+#[case("\" .5 \", 1", "0.5")]
+#[case("\"3px\", 4", "3")]
+#[case("\"-3px\", 1", "-3")]
+#[case("\"1rem\", 4", "16")]
+#[case("\"0.5em\", 1", "8")]
+#[case("\"50%\", 4", "50%")]
+#[case("\"auto\", 4", "auto")]
+#[case("\"1vw\", 4", "1vw")]
+#[case("\"16 / 9\", 1", "16 / 9")]
+#[case("null, 4", "null")]
+#[case("undefined, 4", "undefined")]
+fn runtime_values_convert_as_literals_do(#[case] arguments: &str, #[case] expected: &str) {
+    // Given: the function the build declares for values read at runtime
+    let code = format!("{}String(u({arguments}))", units_declaration("u"));
+    // When
+    let mut context = boa_engine::Context::default();
+    let value = context
+        .eval(boa_engine::Source::from_bytes(&code))
+        .and_then(|value| value.to_string(&mut context))
+        .map(|text| text.to_std_string_escaped());
+    // Then
+    assert_eq!(value.ok().as_deref(), Some(expected), "{code}");
 }

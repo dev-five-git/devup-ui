@@ -7,6 +7,8 @@ use oxc_ast::ast::{
     JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression, LogicalOperator,
     ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
 };
+use std::cell::Cell;
+
 use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::Scoping;
 use oxc_span::{GetSpan, Span};
@@ -18,7 +20,7 @@ use super::imports::{self, native_component};
 use super::props::{declarations, dynamic_keys};
 use super::sheet::Sheet;
 use super::style::{Choice, style_code};
-use super::values::{Literal, NativeValue};
+use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
 use super::{NativePlatform, NativeTarget, REACT_NATIVE, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
@@ -44,6 +46,8 @@ pub(super) fn compile(
         scoping,
         components: &imports.components,
         sheet: Sheet::new(fresh_name("__s", code)),
+        units: fresh_name("__u", code),
+        units_used: Cell::new(false),
         replacements: imports.replacements,
         errors: imports.errors,
     };
@@ -52,27 +56,23 @@ pub(super) fn compile(
     }
     let Elements {
         sheet,
+        units,
+        units_used,
         mut replacements,
         errors,
         ..
     } = visitor;
-    if !sheet.is_empty()
+    let mut prelude = String::new();
+    if !sheet.is_empty() {
+        prelude.push_str(&sheet_prelude(&sheet, code));
+    }
+    if units_used.get() {
+        prelude.push_str(&units_declaration(&units));
+    }
+    if !prelude.is_empty()
         && let Some(at) = imports.sheet_at
     {
-        let style_sheet = fresh_name("StyleSheet", code);
-        let import = if style_sheet == "StyleSheet" {
-            style_sheet.clone()
-        } else {
-            format!("StyleSheet as {style_sheet}")
-        };
-        replacements.push((
-            at,
-            at,
-            format!(
-                "import {{ {import} }} from \"{REACT_NATIVE}\";\n{}\n",
-                sheet.declaration(&style_sheet)
-            ),
-        ));
+        replacements.push((at, at, prelude));
     }
     Compiled {
         replacements,
@@ -162,6 +162,10 @@ struct Elements<'s> {
     scoping: &'s Scoping,
     components: &'s FxHashMap<SymbolId, (ExportVariableKind, String)>,
     sheet: Sheet,
+    /// The name of the function converting values read at runtime
+    units: String,
+    /// Whether a value read at runtime is converted
+    units_used: Cell<bool>,
     replacements: Vec<Replacement>,
     errors: Vec<(u32, String)>,
 }
@@ -495,7 +499,7 @@ impl<'a> Elements<'_> {
     ) -> Result<Choice, Problem> {
         match value {
             Some(JSXAttributeValue::StringLiteral(literal)) => literal.value.as_str().map_or_else(
-                || dynamic_choice(name, literal.span.source_text(self.code)),
+                || self.dynamic_choice(name, literal.span.source_text(self.code)),
                 |text| static_choice(name, &Literal::Text(text.to_string())),
             ),
             Some(JSXAttributeValue::ExpressionContainer(container)) => container
@@ -542,8 +546,31 @@ impl<'a> Elements<'_> {
                 "a style prop takes one value, not an object",
                 "give one value, or use a platform block such as `_ios`",
             )),
-            expression => dynamic_choice(name, &self.source(expression)),
+            expression => self.dynamic_choice(name, &self.source(expression)),
         }
+    }
+
+    /// The styles a style prop declares with the value `code` the element
+    /// reads at runtime
+    fn dynamic_choice(&self, name: &str, code: &str) -> Result<Choice, Problem> {
+        dynamic_keys(name).map(|keys| {
+            Choice::Dynamic(
+                keys.into_iter()
+                    .map(|(key, scale)| (key.to_string(), self.converted(code, scale)))
+                    .collect(),
+            )
+        })
+    }
+
+    /// `code`, converted at runtime when its numbers take `scale`
+    fn converted(&self, code: &str, scale: Option<u32>) -> String {
+        scale.map_or_else(
+            || code.to_string(),
+            |scale| {
+                self.units_used.set(true);
+                format!("{}({code}, {scale})", self.units)
+            },
+        )
     }
 
     /// The code of `expression`
@@ -732,14 +759,30 @@ fn static_choice(name: &str, literal: &Literal) -> Result<Choice, Problem> {
 }
 
 /// The styles a style prop declares with a value read at runtime
-fn dynamic_choice(name: &str, code: &str) -> Result<Choice, Problem> {
-    dynamic_keys(name).map(|keys| {
-        Choice::Dynamic(
-            keys.into_iter()
-                .map(|key| (key.to_string(), code.to_string()))
-                .collect(),
-        )
-    })
+/// The import of `StyleSheet` and the declaration of `sheet`
+fn sheet_prelude(sheet: &Sheet, code: &str) -> String {
+    let style_sheet = fresh_name("StyleSheet", code);
+    let import = if style_sheet == "StyleSheet" {
+        style_sheet.clone()
+    } else {
+        format!("StyleSheet as {style_sheet}")
+    };
+    format!(
+        "import {{ {import} }} from \"{REACT_NATIVE}\";
+{}
+",
+        sheet.declaration(&style_sheet)
+    )
+}
+
+/// The declaration of the function converting a value read at runtime as the
+/// build converts a literal: a number or a number in a string is multiplied by
+/// the scale `s`, a pixel length is its number, a `rem` or `em` length is
+/// in pixels, and any other value stays as it is
+pub(super) fn units_declaration(name: &str) -> String {
+    format!(
+        r#"const {name} = (v, s) => {{ if (typeof v === "number") return v * s; const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v); return m ? Number(m[1]) * (m[2] ? (m[2] === "px" ? 1 : {ROOT_FONT_SIZE}) : s) : v; }};"#
+    ) + "\n"
 }
 
 /// The span of a child writing text, if it writes any

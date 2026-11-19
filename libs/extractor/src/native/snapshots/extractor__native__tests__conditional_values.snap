@@ -12,11 +12,16 @@ const __s = StyleSheet.create({
 	e: { color: "red" },
 	f: { height: 8 }
 });
+const __u = (v, s) => {
+	if (typeof v === "number") return v * s;
+	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
+	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
+};
 <Box style={[
 	on ? __s.a : __s.b,
 	big && __s.c,
 	a > 1 && __s.d,
 	a ? __s.e : b && { color: c },
-	{ width: x ?? 1 },
+	{ width: __u(x ?? 1, 4) },
 	off ? null : __s.f
 ]} />;

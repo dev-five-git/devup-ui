@@ -9,6 +9,8 @@ use std::borrow::Cow;
 
 use phf::phf_map;
 
+use crate::extract_style::constant::is_maintain_value_property;
+
 use super::errors::Problem;
 use super::values::{
     Literal, NativeValue, css_text, font_weight, keyword, length, line_height, number_code,
@@ -362,20 +364,35 @@ fn border(text: &str) -> Vec<Declaration> {
 }
 
 /// The React Native keys a style prop declares with a value the element
-/// reads at runtime, which React Native receives as it is
-pub(super) fn dynamic_keys(prop: &str) -> Result<Vec<&'static str>, Problem> {
+/// reads at runtime, each with the scale a number of it is multiplied by
+/// when the value is converted as the build converts a literal, or `None`
+/// when React Native receives it as it is
+pub(super) fn dynamic_keys(prop: &str) -> Result<Vec<(&'static str, Option<u32>)>, Problem> {
     if css::is_enum_property(prop) {
         return Err(runtime_value_problem(prop));
     }
     css::disassemble_property(prop)
         .map(|property| match property.as_ref() {
-            "background" => Ok("backgroundColor"),
-            "margin" => Ok("margin"),
-            "padding" => Ok("padding"),
+            "background" => Ok(("backgroundColor", None)),
+            "margin" => Ok(("margin", runtime_scale("margin", Kind::Length))),
+            "padding" => Ok(("padding", runtime_scale("padding", Kind::Length))),
             "border" => Err(runtime_value_problem(prop)),
-            property => native_property(property).map(|(key, _)| key),
+            property => {
+                native_property(property).map(|(key, kind)| (key, runtime_scale(property, kind)))
+            }
         })
         .collect()
+}
+
+/// The scale a number read at runtime for the CSS `property` of `kind` is
+/// multiplied by, as the web build scales a literal: four pixels a unit for a
+/// length, but for the properties taking a plain number
+fn runtime_scale(property: &str, kind: Kind) -> Option<u32> {
+    match kind {
+        Kind::Length if !is_maintain_value_property(property) => Some(4),
+        Kind::Length | Kind::Number | Kind::Ratio | Kind::LineHeight => Some(1),
+        Kind::FontWeight | Kind::Text | Kind::Keyword(_) => None,
+    }
 }
 
 fn runtime_value_problem(prop: &str) -> Problem {
