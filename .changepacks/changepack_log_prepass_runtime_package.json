@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Skip `@devup-ui/react` in the passes that run before the bundler: the shared class-slot reservation and the Next production prewarm no longer read, resolve or extract the runtime package's own modules, which hold no styles. Next's Turbopack setup drops from about 40 ms to 15 ms on the benchmark app and each webpack compiler does less work. Webpack per-file builds now number a project's files without the runtime package's modules in front of them, so per-file class prefixes and stylesheet names can be shorter (`devup-ui-0.css` and `a-` instead of `devup-ui-23.css` and `x-`); the styles are unchanged.",
+  "date": "2026-11-19T00:00:00.000Z"
+}

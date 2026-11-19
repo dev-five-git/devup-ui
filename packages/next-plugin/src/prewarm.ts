@@ -3,6 +3,7 @@ import { extname, isAbsolute, relative, resolve } from 'node:path'
 
 import {
   createModuleResolver,
+  isRuntimePackage,
   parseImports,
   SOURCE_FILE_REGEX,
   type StaticImportGraph,
@@ -88,6 +89,7 @@ export function collectProductionPrewarmFiles({
       [...specifiers].sort().map((specifier) => ({ importer, specifier })),
   )
   for (const { importer, specifier } of queue) {
+    if (isRuntimePackage(specifier)) continue
     const local = specifier.startsWith('.') || isAbsolute(specifier)
     if (!local) {
       const packageName = packageNameFromSpecifier(specifier)

@@ -13,6 +13,7 @@ import {
   isReservationReadFailure,
   reservationSource,
 } from './reservation-source'
+import { isRuntimePackage } from './runtime-package'
 import { createNodeModulesExcludeRegex } from './shared'
 import type { WasmImportAliases } from './types'
 
@@ -177,6 +178,7 @@ export function collectReservationInputs(
       overlay?.filename ?? physicalPath,
       code,
     )) {
+      if (isRuntimePackage(specifier)) continue
       const allowed = allowedPackage(specifier, include)
       const module = reservationSource(
         () => resolver(specifier, physicalPath),
