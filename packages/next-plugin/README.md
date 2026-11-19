@@ -234,8 +234,17 @@ custom `distDir`) to `include`.
 The build-time compiler defaults to `native` for Webpack and Turbopack. Select
 WASM explicitly with `DevupUI(nextConfig, { engine: 'wasm' })`. The chosen engine
 is retained by configuration, prewarm, extraction, CSS and delayed callbacks.
-Turbopack loader options carry only the engine string; the coordinator retains
-the selected physical compiler. Turbopack apps in one process keep one
+Every Turbopack loader asks the coordinator, which retains the selected physical
+compiler, so the loader options carry only the coordinator port file, the theme
+files (relative to the project root) and a short key of the setup state.
+
+Next.js copies its resolved config, these two loader rules included, into
+`.next/required-server-files.{js,json}` and the standalone `server.js`. The
+rules add about 500 bytes there, the same for any app size, with no local path.
+They cannot be removed safely today: Next.js copies the config before any hook
+the plugin can register runs, and its only option that leaves bundler settings
+out of that copy also changes how the server reads its deployment id
+([vercel/next.js#102045](https://github.com/vercel/next.js/discussions/102045)). Turbopack apps in one process keep one
 coordinator and one engine session per resolved `distDir`, so their numbering,
 sheet, theme and settings stay apart; give each app its own `distDir`. A config
 re-evaluation of the same app replaces only that app's coordinator. Independent
