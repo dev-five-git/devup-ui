@@ -25,9 +25,12 @@ import {
   normalizeShorthands,
   normalizeStylexOptions,
   readJsxImportSource,
+  readSource,
   seedFileNumbers,
+  type SourceCache,
   type StaticImportGraph,
   type WasmImportAliases,
+  withSourceCache,
 } from '@devup-ui/plugin-utils'
 // The published declarations name only these: `next.config.ts` type-checks
 // against them, so they come from the entry that loads nothing else
@@ -486,6 +489,8 @@ export function DevupUI(
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
     let staticGraph: StaticImportGraph | undefined
+    // The graph and the prewarm read the same sources
+    const sourceCache: SourceCache = new Map()
     // A one-route production build gets one stylesheet, unless asked otherwise
     let singleRoute = false
     const graphStartedAt = profileStart()
@@ -494,7 +499,10 @@ export function DevupUI(
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
-      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      const graph = withSourceCache(
+        () => buildStaticImportGraph(srcDir, tsconfigPath),
+        sourceCache,
+      )
       staticGraph = graph
       singleRoute =
         !watch &&
@@ -635,13 +643,18 @@ export function DevupUI(
       const cwd = process.cwd()
       const collectStartedAt =
         prewarmStartedAt === undefined ? undefined : performance.now()
-      const prewarmFiles = collectProductionPrewarmFiles({
-        cwd,
-        graph: staticGraph,
-        expectedBaseFiles,
-        libPackage,
-        include,
-      })
+      const graph = staticGraph
+      const prewarmFiles = withSourceCache(
+        () =>
+          collectProductionPrewarmFiles({
+            cwd,
+            graph,
+            expectedBaseFiles,
+            libPackage,
+            include,
+          }),
+        sourceCache,
+      )
       const collectDurationMs = elapsedMs(collectStartedAt)
       for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
@@ -651,7 +664,10 @@ export function DevupUI(
         ).replaceAll('\\', '/')}`
         const readStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const source = readFileSync(resourcePath, 'utf-8')
+        const source = withSourceCache(
+          () => readSource(resourcePath),
+          sourceCache,
+        )
         if (readStartedAt !== undefined) {
           prewarmReadMs += performance.now() - readStartedAt
           prewarmSourceBytes += Buffer.byteLength(source)
@@ -905,6 +921,9 @@ export function DevupUI(
 
   const { webpack } = config
   let productionPrewarmFiles: readonly string[] | undefined
+  // A production build runs its compilers in turn: their plugins read each
+  // source once
+  const sourceCache: SourceCache = new Map()
   // A one-route production build gets one stylesheet, unless asked otherwise
   let singleRoute = false
   config.webpack = (config, _options) => {
@@ -921,21 +940,23 @@ export function DevupUI(
       const cwd = root
       const srcDir = sourceDir(cwd)
       const tsconfigPath = resolve(cwd, 'tsconfig.json')
-      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
-      singleRoute =
-        options.singleCss === undefined && isSingleRouteApp(srcDir, graph)
-      productionPrewarmFiles = collectProductionPrewarmFiles({
-        cwd,
-        graph,
-        expectedBaseFiles: computeCompiledFiles({
+      productionPrewarmFiles = withSourceCache(() => {
+        const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+        singleRoute =
+          options.singleCss === undefined && isSingleRouteApp(srcDir, graph)
+        return collectProductionPrewarmFiles({
           cwd,
-          srcDir,
-          tsconfigPath,
           graph,
-        }),
-        libPackage: options.package ?? '@devup-ui/react',
-        include: options.include ?? [],
-      })
+          expectedBaseFiles: computeCompiledFiles({
+            cwd,
+            srcDir,
+            tsconfigPath,
+            graph,
+          }),
+          libPackage: options.package ?? '@devup-ui/react',
+          include: options.include ?? [],
+        })
+      }, sourceCache)
     }
     config.plugins.push(
       new DevupUIWebpackPlugin({
@@ -945,6 +966,7 @@ export function DevupUI(
         productionPrewarmFiles: _options.dev
           ? undefined
           : productionPrewarmFiles,
+        sourceCache: _options.dev ? undefined : sourceCache,
         ...(!_options.dev && singleRoute ? { singleCss: true } : {}),
       }),
     )
