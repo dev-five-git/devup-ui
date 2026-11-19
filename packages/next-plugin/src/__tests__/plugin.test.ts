@@ -810,7 +810,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   coordinatorPortFile: join('df', 'coordinator.port'),
-                  themeFiles: [resolve('devup.json')],
+                  themeFiles: ['devup.json'],
                   watch: false,
                   stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                 },
@@ -822,7 +822,7 @@ describe('DevupUINextPlugin', () => {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
                     coordinatorPortFile: join('df', 'coordinator.port'),
-                    themeFiles: [resolve('devup.json')],
+                    themeFiles: ['devup.json'],
                     stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                   },
                 },
@@ -854,7 +854,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   coordinatorPortFile: join('df', 'coordinator.port'),
-                  themeFiles: [resolve('devup.json')],
+                  themeFiles: ['devup.json'],
                   watch: false,
                   stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                 },
@@ -873,7 +873,7 @@ describe('DevupUINextPlugin', () => {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
                     coordinatorPortFile: join('df', 'coordinator.port'),
-                    themeFiles: [resolve('devup.json')],
+                    themeFiles: ['devup.json'],
                     stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                   },
                 },
@@ -906,7 +906,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   coordinatorPortFile: join('df', 'coordinator.port'),
-                  themeFiles: [resolve('devup.json')],
+                  themeFiles: ['devup.json'],
                   watch: false,
                   stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                 },
@@ -925,7 +925,7 @@ describe('DevupUINextPlugin', () => {
                   loader: '@devup-ui/next-plugin/loader',
                   options: {
                     coordinatorPortFile: join('df', 'coordinator.port'),
-                    themeFiles: [resolve('devup.json')],
+                    themeFiles: ['devup.json'],
                     stateKey: expect.stringMatching(/^[0-9a-f]{16}$/),
                   },
                 },
@@ -1664,9 +1664,9 @@ export const box = style({ color: 'red' })`
           loaders: { options: { themeFiles: string[] } }[]
         }
         expect(rule.loaders[0].options.themeFiles).toEqual([
-          resolve('devup.json'),
-          resolve('app.css'),
-          resolve('tokens.css'),
+          'devup.json',
+          'app.css',
+          'tokens.css',
         ])
       } finally {
         tailwindSpy.mockRestore()

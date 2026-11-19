@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import {
   type DevupCompiler,
@@ -13,7 +14,7 @@ import { loadWasm } from './wasm'
 /** Options of a loader that fetches the CSS from the coordinator (Turbopack). */
 export interface DevupUICoordinatorCssLoaderOptions {
   coordinatorPortFile: string
-  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  /** Every file the theme is read from, relative to the project root or absolute */
   themeFiles?: string[]
   watch: boolean
   /** Changes with the setup state, so Turbopack re-runs the loader then */
@@ -90,7 +91,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
     if (isCoordinatorOptions(options)) {
       const { coordinatorPortFile, themeFiles = [], watch } = options
       // The sheet holds the theme's variables: re-run when the theme changes.
-      for (const file of themeFiles) this.addDependency(file)
+      for (const file of themeFiles) this.addDependency(resolve(file))
       const callback = this.async()
       // Check both resourcePath and resourceQuery for ?fileNum=N
       // Turbopack may embed query in resourcePath or provide it via resourceQuery

@@ -830,11 +830,20 @@ export function DevupUI(
       )
       .digest('hex')
       .slice(0, 16)
+    // Relative to the project root the loaders run in: no local path ships.
+    const loaderThemeFiles = themeFiles.map((file) =>
+      relative(process.cwd(), file).replaceAll('\\', '/'),
+    )
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
         {
           loader: '@devup-ui/next-plugin/css-loader',
-          options: { coordinatorPortFile, themeFiles, watch, stateKey },
+          options: {
+            coordinatorPortFile,
+            themeFiles: loaderThemeFiles,
+            watch,
+            stateKey,
+          },
         },
       ],
       // Must cover every extension the import-graph pre-pass lists AND the
@@ -850,7 +859,11 @@ export function DevupUI(
         loaders: [
           {
             loader: '@devup-ui/next-plugin/loader',
-            options: { coordinatorPortFile, themeFiles, stateKey },
+            options: {
+              coordinatorPortFile,
+              themeFiles: loaderThemeFiles,
+              stateKey,
+            },
           },
         ],
         condition: {

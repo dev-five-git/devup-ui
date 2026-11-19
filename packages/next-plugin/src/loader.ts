@@ -22,7 +22,7 @@ const stateWriter = createStateWriter((path, content, encoding) =>
 /** Options of a loader that sends every file to the coordinator (Turbopack). */
 export interface DevupUICoordinatorLoaderOptions {
   coordinatorPortFile: string
-  /** Every file the theme is read from (devup.json, its extends, Tailwind CSS) */
+  /** Every file the theme is read from, relative to the project root or absolute */
   themeFiles?: string[]
   /** Changes with the setup state, so Turbopack re-runs the loader then */
   stateKey?: string
@@ -161,7 +161,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       this.addDependency(coordinatorPortFile)
       // Extraction reads theme tokens: re-run when the theme changes (the
       // coordinator registers the new theme before it answers).
-      for (const file of themeFiles) this.addDependency(file)
+      for (const file of themeFiles) this.addDependency(resolve(file))
       const callback = this.async()
       // POSIX-normalize so the engine's bucket key matches the canonical map
       // and FILE_ROUTES keys (both built with forward slashes). Without this,
