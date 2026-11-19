@@ -15,14 +15,28 @@ if [ "${1:-}" = install ]; then
 
   fetch() {
     local url="${1//\'/}" file="$2" hash="$3"
-    local algo="${hash%%:*}" sum="${hash#*:}" path tmp candidate
+    local algo="${hash%%:*}" sum="${hash#*:}" path tmp candidate rest list
+    local -a bases
     [ -s "$archives/$file" ] && return 0
-    path="${url#*/ubuntu/}"
+    case "$url" in
+      # The hosted images point apt at a mirror list:
+      # mirror+file:/etc/apt/apt-mirrors.txt/pool/main/...
+      mirror+file:*)
+        rest="${url#mirror+file:}"
+        list="${rest%%.txt/*}.txt"
+        path="${rest#*.txt/}"
+        mapfile -t bases < <(awk '/^[a-z]+:\/\//{sub(/\/$/, "", $1); print $1}' "$list")
+        ;;
+      *)
+        path="${url#*/ubuntu/}"
+        bases=("${url%%/ubuntu/*}/ubuntu")
+        ;;
+    esac
     tmp="$(mktemp -p "$archives/partial")"
-    for candidate in "$url" "${mirrors[@]/%//$path}"; do
+    for candidate in "${bases[@]/%//$path}" "${mirrors[@]/%//$path}"; do
       # Give up on a connection slower than 50 kB/s for 15 s and move on to
       # the next mirror.
-      if curl -fsSL --connect-timeout 10 --speed-limit 51200 --speed-time 15 \
+      if curl -fsL --connect-timeout 10 --speed-limit 51200 --speed-time 15 \
         --max-time 300 -o "$tmp" "$candidate" &&
         echo "$sum  $tmp" | "$(echo "$algo" | tr '[:upper:]' '[:lower:]')sum" --status -c; then
         mv "$tmp" "$archives/$file"
@@ -43,7 +57,8 @@ if [ "${1:-}" = install ]; then
     echo "prefetch: downloading $count package(s), 8 at a time"
     printf '%s\n' "$uris" |
       xargs -P 8 -L 1 bash -c 'mirrors=($PREFETCH_MIRROR_LIST); fetch "$0" "$1" "$3"'
-    echo "prefetch: done in $((SECONDS - started))s"
+    missing="$("$real" "$@" --print-uris -qq 2> /dev/null | grep -c "^'" || true)"
+    echo "prefetch: $((count - missing)) of $count package(s) downloaded in $((SECONDS - started))s"
   fi
 fi
 
