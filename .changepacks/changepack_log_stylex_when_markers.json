@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch",
-    "packages/react/package.json": "Patch"
-  },
-  "note": "Compile StyleX `when.ancestor()`, `when.descendant()`, `when.anySibling()`, `when.siblingBefore()`, `when.siblingAfter()`, `defineMarker()` and `defaultMarker()` at build time, as `@stylexjs/babel-plugin` does, instead of reporting them as unsupported: a `when.*()` call becomes the `:where(...)` condition key StyleX writes, its rule writes the class twice to keep a pseudo-class's specificity and sorts before the pseudo-classes in StyleX's order, `defaultMarker()` is the class `x-default-marker`, and `defineMarker()` names a class after its file and export that importing modules read too. `@devup-ui/react` types `when`, `defineMarker`, `defaultMarker` and markers in `props()`. Pseudo-classes nested in each other are now written in the order StyleX sorts them, so `:hover` inside `:focus` reads `:focus:hover`. New build errors: a `when.*()` call whose pseudo-class is not a string literal starting with `:` or `[` (or is a pseudo-element, or an unclosed attribute selector), whose marker is not a marker or a class name, or that names another relation; a `defineMarker()` call with arguments or not bound to a named export of the module's top level; a `defaultMarker()` call with arguments",
-  "date": "2026-11-18T00:00:00.000Z"
-}

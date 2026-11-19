@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/eslint-plugin/package.json": "Patch"
-  },
-  "note": "`@devup-ui/no-runtime-read` accepts `styled['div']` and `` styled[`div`] `` where they build a component, as the build now compiles them; a computed tag it cannot read (`styled[tag]`) is still reported",
-  "date": "2026-11-15T00:00:00.000Z"
-}

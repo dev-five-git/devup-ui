@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/webpack-plugin/package.json": "Patch"
-  },
-  "note": "Keep packed CommonJS Webpack plugins relocatable so initialization and both loaders use the installed package and the same WASM instance. Inherited theme declarations now survive in shipped production CSS in per-file and single-CSS modes. No new build errors.",
-  "date": "2026-10-19T00:00:00.000Z"
-}

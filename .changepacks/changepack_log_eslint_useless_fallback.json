@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/eslint-plugin/package.json": "Patch"
-  },
-  "note": "Add no-useless-fallback, a warning in the recommended config for a property's array in Emotion and vanilla-extract rules whose values are all strings every browser supports, so only the last fallback applies; it points to Devup UI's responsive arrays when breakpoints were meant. Arrays using var(), env(), vendor prefixes, newer viewport, container or line height units, newer color functions or clamp()/min()/max() are left alone, as are non-literal values, Devup UI shorthands and styled-components rules, which join the values with commas. No autofix.",
-  "date": "2026-11-18T00:00:00.000Z"
-}

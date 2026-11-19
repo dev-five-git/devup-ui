@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "The engine keeps its state per engine session: class and file numbering, routes, prefix, debug, atom hoisting, slot reservation, shorthands, theme tokens, Tailwind definitions, the stylesheet, the stylesheet caches and the module resolver move together when a session is switched. Session 0 is the only one until a host creates another, so a single app sees no change",
-  "date": "2026-11-15T00:00:00.000Z"
-}

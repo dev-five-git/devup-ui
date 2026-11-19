@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/react/package.json": "Patch"
-  },
-  "note": "The compat `ThemeProvider` renders no wrapper element without a `theme`, and with one declares only the CSS variables its theme changes from the outer provider's. `withTheme` hoists the component's non-React statics, and `ServerStyleSheet` has an empty `instance` (with `clearTag()`) for SSR setups that pass it to `StyleSheetManager`. New runtime errors thrown by `ThemeProvider`: a theme key that cannot be part of a CSS variable name (such as `'brand color'`), two theme paths giving the same variable (`{ a: { b } }` and `'a-b'`), and a theme that contains itself, each naming the theme path, instead of silently dropping values or recursing forever",
-  "date": "2026-11-15T00:00:00.000Z"
-}

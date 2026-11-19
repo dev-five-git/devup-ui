@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/components/package.json": "Patch"
-  },
-  "note": "Select, SelectContainer, SelectOption, SelectDivider, Toggle, RadioGroup and the Stepper parts (StepperContainer, StepperDecreaseButton, StepperIncreaseButton, StepperInput) forward their ref, so a ref reaches the element on React 18 too, where a function component never receives `ref` as a prop. A ref given to Select or SelectContainer no longer replaces the internal one, which outside-click closing and popup positioning rely on. Toggle hands the `role=\"switch\"` element; StepperInput hands the `<input>`, or the `<output>` of a `type=\"text\"` stepper",
-  "date": "2026-11-15T00:00:00.000Z"
-}

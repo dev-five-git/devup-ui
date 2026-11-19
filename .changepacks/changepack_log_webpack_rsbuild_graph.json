@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "packages/plugin-utils/package.json": "Patch",
-    "packages/rsbuild-plugin/package.json": "Patch",
-    "packages/webpack-plugin/package.json": "Patch"
-  },
-  "note": "Plan single-importer collapse and atom hoisting in webpack and Rsbuild, as in Vite, over the graph of the files the shared-slot reservation discovers: the src and app directories, the closures of the bundler's real entries and the included packages, with the entries as routes. The graph is built once per build and reused by the stylesheet warm-up instead of scanning the source tree two more times; the warm-up skips the package files the transform skips. Report a failed Rsbuild warm-up with a warning instead of ignoring it. Add reservationRoutes to plugin-utils.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

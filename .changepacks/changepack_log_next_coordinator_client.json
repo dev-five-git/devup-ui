@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Turbopack loaders talk to the coordinator more robustly: the CSS loader keeps a port per port file, so two apps in one process no longer read each other's CSS; a loader whose coordinator restarted reads the new port and sends the request there instead of failing; a port file that is still being written is waited for instead of read as a bad port. New errors: `Coordinator port file <file> names no valid port` and `Coordinator at 127.0.0.1:<port> (port file <file>) sent no response for 300s` (a coordinator that accepts a request and never answers used to hang the build forever)",
-  "date": "2026-11-15T00:00:00.000Z"
-}

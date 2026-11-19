@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "Emotion's `css` prop now compiles a `const` that chooses among style objects, as in `const rules = on ? { color: 'red' } : { color: 'blue' }; <div css={rules} />`. Before, it became `className={rules}` with no CSS. When only `css` props read the binding, each object (or array, or CSS text) compiles in the declaration to the classes Emotion would give it, with numbers read as `px` as Emotion reads them. The choice with `? :`, `&&`, `||` or `??` still runs at runtime. `&&` gives an empty class when its test is falsy. The prop reports a build error instead of passing on a class in two cases: when other code also reads such a binding, and when it reads what a call to a function of the module returning a style object gives. A parameter, or a call the build cannot see into, is still passed on as a class.",
-  "date": "2026-11-18T00:00:00.000Z"
-}

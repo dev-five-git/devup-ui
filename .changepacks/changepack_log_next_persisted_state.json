@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Turbopack: forget the styles of source files deleted or renamed while no dev server ran, when the persisted state is restored, and write the pruned state at once. Write the persisted sheet, class map and file map atomically (temporary file renamed over the target, retrying Windows sharing errors), followed by a manifest of their hashes; a restore that finds files from different writes starts fresh instead of mixing them. State written by earlier releases, without a manifest, still restores.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

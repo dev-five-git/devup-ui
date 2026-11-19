@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch",
-    "packages/plugin-utils/package.json": "Patch",
-    "packages/webpack-plugin/package.json": "Patch"
-  },
-  "note": "A Next production webpack build of an app with several routes now counts the root `layout` or `template` (or `pages/_app`), which Next renders with every route, as part of those routes when it hoists atoms, instead of as a route of its own. What it imports (a header, a footer) then reaches every route and joins the shared `devup-ui.css` with short class names, instead of a stylesheet of its own that every page loaded anyway. A nested layout that wraps only some routes stays a route of its own, so its styles never load outside it; lazily loaded files and other entries keep their own routes. `next dev`, Turbopack and apps without a layout keep their output; plain webpack and Rsbuild builds are unchanged unless they set the new `routeShells` option.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "packages/react/package.json": "Patch"
-  },
-  "note": "Recognize Emotion jsxImportSource eligibility with the same exact header rules used for rewriting, preserve authored first-use cascade-layer order while composing css props, retain exact computed theme keys, and keep Emotion numeric-length pixel semantics when constant rule arrays are inlined. Unitless values and zero retain their existing behavior. Every valid css-prop form remains supported; invalid empty JSX css expressions retain main's located syntax error. No new build-error category is introduced.",
-  "date": "2026-10-18T00:00:00.000Z"
-}

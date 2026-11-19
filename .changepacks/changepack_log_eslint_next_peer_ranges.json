@@ -1,1 +1,0 @@
-{"changes":{"packages/eslint-plugin/package.json":"Patch","packages/next-plugin/package.json":"Patch"},"note":"Declare the ESLint versions the ESLint plugin runs on (the range typescript-eslint 8 supports) and require a compatible @devup-ui/webpack-plugin from the Next.js plugin instead of any version.","date":"2026-11-17T00:00:00.000Z"}

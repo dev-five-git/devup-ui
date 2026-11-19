@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Compose constant object rules in css tags without runtime styling, preserve lexical tag bindings and numeric-unit marks, and report authored build errors for mutated, escaped or unresolved object mixins and dynamic object leaves.",
-  "date": "2026-10-20T19:08:10.516Z"
-}

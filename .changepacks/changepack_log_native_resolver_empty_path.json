@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-binding/package.json": "Patch",
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "The native binding now rejects a module resolver result with an empty `path` in the engine itself, as WASM does, instead of relying on the JavaScript adapter alone: both report `malformed module resolver result: `path` must be a non-empty string` at the import that requested it",
-  "date": "2026-11-15T00:00:00.000Z"
-}

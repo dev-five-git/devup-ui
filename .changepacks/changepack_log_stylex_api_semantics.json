@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch",
-    "packages/react/package.json": "Patch"
-  },
-  "note": "StyleX APIs compile as StyleX defines them: a dynamic style may set its parameters under conditions (`(size) => ({ width: { default: 100, ':hover': size } })`), each condition taking its own variable; a computed condition key may read a `defineConsts()` constant (`[constants.wide]`); a `types.*()` variable in `defineVars()` registers `@property` with its `default` as the initial value; a `'--global'` key keeps its name and `colors['--global']` reads it; `positionTry()` and `viewTransitionClass()` bindings read as their names in `create()`, two of them in one file no longer share a name, and a dashed ident on an anchor, timeline or position-try property stays a name instead of becoming `var(--name)`; `viewTransitionClass()` takes the `group`, `imagePair`, `old` and `new` groups and styles their pseudo-elements. New build errors: a `types.*()` variable without a `default`, `types.integer()` given a fraction, an unknown `types.*` helper, and a `viewTransitionClass()` key other than `group`, `imagePair`, `old` and `new` or a group that is not an object of declarations",
-  "date": "2026-11-15T00:00:00.000Z"
-}
