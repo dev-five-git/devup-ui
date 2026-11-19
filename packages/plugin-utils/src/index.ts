@@ -17,6 +17,24 @@ export type {
   DevupEngine,
 } from './compiler-types'
 export {
+  applyMarkerEdits,
+  ComponentMarkerLedger,
+  type MarkerEdit,
+  markerEditMap,
+  markerEdits,
+  type MarkerKeepReason,
+  markerLedgerOf,
+  markerLikeTokens,
+  type MarkerPlan,
+  type MarkerTransform,
+  markerWarning,
+  registerMarkerLedger,
+  resetMarkerProcessState,
+  type UnscannedCause,
+  unscannedCause,
+  type UnscannedModule,
+} from './component-markers'
+export {
   type AtomHoistPlan,
   buildCanonicalMap,
   type BuildCanonicalMapOptions,

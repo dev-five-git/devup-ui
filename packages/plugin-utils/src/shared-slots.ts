@@ -21,7 +21,7 @@ export interface ReservationEngine {
     importMainCssInCode: boolean,
     importMainCssInCss: boolean,
     importAliases: Readonly<WasmImportAliases>,
-  ): void
+  ): readonly string[] | void
 }
 
 export type ReservationBatchOptions = {
@@ -36,6 +36,13 @@ export type ReservationBatchOptions = {
 export interface SharedSlotReservation {
   readonly dependencies: readonly string[]
   readonly packageManifests: readonly string[]
+  /**
+   * The component-selector markers the last reservation's styles select, or
+   * `undefined` until an engine reports them
+   */
+  readonly markerSelections: readonly string[] | undefined
+  /** The ids the last reservation extracted */
+  readonly reservedIds: readonly string[]
   invalidate(): void
   reserve(
     discovery: ReservationDiscoveryOptions,
@@ -46,6 +53,7 @@ export interface SharedSlotReservation {
 type Committed = {
   readonly inventory: ReservationInventory
   readonly rows: readonly ReservationRow[]
+  readonly selections: readonly string[] | undefined
   readonly packageName: string
   readonly aliases: Readonly<WasmImportAliases>
   readonly singleCss: boolean
@@ -116,6 +124,12 @@ export function createSharedSlotReservation(
     get packageManifests() {
       return committed?.inventory.packageManifests ?? []
     },
+    get markerSelections() {
+      return committed?.selections
+    },
+    get reservedIds() {
+      return committed?.rows.map(([filename]) => filename) ?? []
+    },
     invalidate() {
       dirty = true
     },
@@ -146,7 +160,7 @@ export function createSharedSlotReservation(
       )
         return false
       options.beforeReserve?.(inventory)
-      engine.reserveClassSlots(
+      const selections = engine.reserveClassSlots(
         rows,
         discovery.package,
         options.singleCss,
@@ -157,6 +171,7 @@ export function createSharedSlotReservation(
       committed = {
         inventory,
         rows,
+        selections: selections ?? undefined,
         packageName: discovery.package,
         aliases: { ...discovery.importAliases },
         singleCss: options.singleCss,

@@ -112,6 +112,7 @@ fn render_observation(output: &ExtractOutput, invocation: &str, filename: Option
         map: None,
         css_file: output.css_file.clone(),
         dependencies: output.dependencies.clone(),
+        component_markers: crate::ComponentMarkers::default(),
     };
     super::render_observation(&javascript, invocation, filename)
 }

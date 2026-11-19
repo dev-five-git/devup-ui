@@ -46,12 +46,8 @@ import {
 } from './coordinator-port'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import {
-  readSessionState,
-  type SessionStateFiles,
-  writeSessionStateSync,
-} from './session-state'
-import { type DevupWasm, loadWasm, loadWebpackPlugin } from './wasm'
+import { readSessionState, writeSessionStateSync } from './session-state'
+import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
 export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
@@ -167,14 +163,16 @@ function setupWarning(step: string, error: unknown, impact: string): string {
  */
 export function restoreSessionState(
   wasm: Pick<
-    DevupWasm,
+    DevupCompiler,
     | 'importSheet'
     | 'importClassMap'
     | 'importFileMap'
     | 'removeFile'
     | 'resetBuildState'
   >,
-  files: SessionStateFiles,
+  // `SessionStateFiles`, spelled out so the published declarations do not
+  // load `./session-state`
+  files: readonly [string, string, string],
   cwd: string = process.cwd(),
 ): string[] {
   const state = readSessionState(files)

@@ -16,7 +16,9 @@ pub use css_cache::{SheetCell, SheetGuard};
 pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use lazy_css::LazyCss;
 pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};
-pub use reservation::{ReservationInput, reserve_class_slots_internal};
+pub use reservation::{
+    ReservationInput, reserve_class_slots_internal, reserve_class_slots_selecting,
+};
 pub use resolver_state::{ResolverRequest, ResolverState, check_resolved_path, resolved_module};
 pub use session::{
     PerSession, create_session, drop_session, live_session, select_session, with_session,

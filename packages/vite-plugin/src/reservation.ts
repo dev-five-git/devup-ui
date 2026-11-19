@@ -234,6 +234,14 @@ export function createViteReservation(
     get dependencies() {
       return dependencies
     },
+    /** The markers the last scan's styles select; `undefined` before one ran */
+    get markerSelections() {
+      return slots.markerSelections
+    },
+    /** The ids the last scan extracted */
+    get reservedIds() {
+      return slots.reservedIds
+    },
     reserve(): Promise<void> {
       if (!environments.size || prepared === revision) return Promise.resolve()
       if (!pending)

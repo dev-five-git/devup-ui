@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
@@ -9,8 +10,15 @@ import {
   type DevupEngine,
   esmImportConditions,
   loadCompiler,
+  markerLedgerOf,
+  markerLikeTokens,
+  type MarkerTransform,
+  type UnscannedCause,
+  unscannedCause,
 } from '@devup-ui/plugin-utils'
 import type { LoaderContext, RawLoaderDefinitionFunction } from 'webpack'
+
+import { MARKER_BUILD_INFO } from './component-markers'
 
 export interface DevupUILoaderOptions {
   readonly engine?: DevupEngine
@@ -70,6 +78,60 @@ function setRootModuleResolver(
   compiler.setModuleResolver(moduleResolver)
 }
 
+/**
+ * Tell the build's marker ledger which component-selector markers the module
+ * gives and selects, and, for one that selects any, why the start-of-build
+ * scan may have missed it
+ */
+function reportMarkers(
+  context: LoaderContext<DevupUILoaderOptions>,
+  id: string,
+  input: string,
+  output: Pick<DevupCompilerOutput, 'givenMarkers' | 'selectedMarkers'>,
+): void {
+  const owner = context._compiler
+  const ledger = markerLedgerOf(owner?.root ?? owner)
+  if (!ledger) return
+  const selectedMarkers = output.selectedMarkers
+  const transform: MarkerTransform = {
+    id,
+    // Of the code, the ledger reads only the tokens written like a marker
+    input: [...markerLikeTokens(input)].join(' '),
+    givenMarkers: [...output.givenMarkers],
+    selectedMarkers: [...selectedMarkers],
+    cause: selectedMarkers.length ? markerCause(context, id, input) : undefined,
+  }
+  ledger.record(transform)
+  // A build that restores the module from webpack's cache runs no loader for
+  // it; the plugin reads the report from the module instead
+  const buildInfo = context._module?.buildInfo
+  if (buildInfo) buildInfo[MARKER_BUILD_INFO] = transform
+}
+
+function markerCause(
+  context: LoaderContext<DevupUILoaderOptions>,
+  id: string,
+  input: string,
+): UnscannedCause {
+  const graph = context._compilation?.moduleGraph
+  const module = context._module
+  if (
+    graph &&
+    module &&
+    [...graph.getIncomingConnections(module)].some((connection) =>
+      connection.dependency?.type.includes('context'),
+    )
+  )
+    return 'context-module'
+  let onDisk: string | undefined
+  try {
+    onDisk = readFileSync(context.resourcePath, 'utf-8')
+  } catch {
+    onDisk = undefined
+  }
+  return unscannedCause(id, input, onDisk)
+}
+
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
     const {
@@ -124,6 +186,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         'code' | 'css' | 'map' | 'cssFile' | 'updatedBaseStyle' | 'dependencies'
       >
       try {
+        reportMarkers(this, relativePath, source.toString(), output)
         const cssFile = output.cssFile
         snapshot = {
           code: output.code,

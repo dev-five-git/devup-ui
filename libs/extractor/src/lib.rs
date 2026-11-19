@@ -21,6 +21,7 @@ mod class_selection_support;
 #[cfg(test)]
 mod class_selection_tests;
 mod component;
+mod component_markers;
 mod composition;
 #[cfg(test)]
 mod composition_shorthand_tests;
@@ -39,6 +40,7 @@ mod emotion_namespace;
 mod emotion_retargets;
 mod evaluation_sandbox;
 pub mod extract_style;
+pub use component_markers::ComponentMarkers;
 mod extractor;
 mod fresh_name;
 mod gen_class_name;
@@ -399,6 +401,9 @@ pub struct ExtractOutput {
 
     /// Files read through the module resolver, for the bundler to watch
     pub dependencies: Vec<String>,
+
+    /// The component-selector markers the file gives and selects by
+    pub component_markers: ComponentMarkers,
 }
 
 /// A module the bundler resolved an import to
@@ -602,6 +607,7 @@ fn extract_source(
         map: None,
         css_file: None,
         dependencies: Vec::new(),
+        component_markers: crate::ComponentMarkers::default(),
     };
 
     let pragma_rewritten = alias_edits
@@ -620,6 +626,7 @@ fn extract_source(
                 map: None,
                 css_file: None,
                 dependencies: Vec::new(),
+                component_markers: crate::ComponentMarkers::default(),
             });
         }
         let (source, earlier_edits) = evaluated.unwrap_or((code, &[]));
@@ -809,6 +816,7 @@ fn extract_source(
             map: None,
             css_file: None,
             dependencies: dependencies.into_iter().collect(),
+            component_markers: crate::ComponentMarkers::default(),
         });
     }
 
@@ -1053,6 +1061,7 @@ fn extract_source(
         map,
         css_file: Some(css_file),
         dependencies: dependencies.into_iter().collect(),
+        component_markers: visitor.component_markers.into_inner(),
     })
 }
 

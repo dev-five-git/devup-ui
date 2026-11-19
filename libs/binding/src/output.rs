@@ -52,6 +52,8 @@ pub struct Output {
     pub css: Option<LazyCss>,
     /// Files read through the module resolver.
     pub dependencies: Vec<String>,
+    /// The component-selector markers the source gives and selects by.
+    pub component_markers: extractor::ComponentMarkers,
 }
 
 impl Output {
@@ -88,6 +90,7 @@ impl Output {
                 map: output.map,
                 css_file: output.css_file,
                 dependencies: output.dependencies,
+                component_markers: output.component_markers,
                 updated_base_style: updated_base_style || default_collected,
                 css: {
                     if !collected && !default_collected {
