@@ -500,6 +500,7 @@ describe('devupUIWebpackPlugin', () => {
         engine: 'native',
         licenseBanner: true,
         atomHoist: 2,
+        routeShells: false,
       })
     },
   )
@@ -732,6 +733,7 @@ describe('devupUIWebpackPlugin', () => {
         engine: 'wasm',
         licenseBanner: true,
         atomHoist: 2,
+        routeShells: false,
       })
     })
 
@@ -1355,6 +1357,66 @@ describe('devupUIWebpackPlugin', () => {
         fs.rmSync(project, { recursive: true, force: true })
       }
     })
+
+    it.each([true, false])(
+      'counts a layout with the routes it wraps when routeShells is %s',
+      async (routeShells) => {
+        const project = fs.mkdtempSync(
+          join(tmpdir(), 'devup-ui-webpack-shells-'),
+        )
+        reservationSpy.mockRestore()
+        readFileSyncSpy.mockRestore()
+        existsSyncSpy.mockImplementation((path) => realExistsSync(String(path)))
+        using _reserve = spyOn(wasm, 'reserveClassSlots').mockReturnValue(
+          undefined,
+        )
+        try {
+          for (const [path, code] of [
+            ['app/layout.tsx', "import '../lib/header'"],
+            ['app/page.tsx', 'export {}'],
+            ['app/a/page.tsx', 'export {}'],
+            ['lib/header.tsx', 'export {}'],
+          ])
+            await Bun.write(join(project, path), code)
+          const compiler = createCompiler()
+          compiler.options.context = project
+          compiler.options.entry = {
+            layout: { import: ['./app/layout.tsx'] },
+            home: { import: ['./app/page.tsx'] },
+            a: { import: ['./app/a/page.tsx'] },
+          }
+          applyAndRun(
+            new DevupUIWebpackPlugin({ engine: 'wasm', routeShells }),
+            compiler,
+          )
+          const [{ graph, entries }] = computeFileReachSpy.mock.calls.at(
+            -1,
+          ) as [
+            {
+              graph: { staticImports: Map<string, Set<string>> }
+              entries: string[]
+            },
+          ]
+          const layout = join(project, 'app/layout.tsx')
+          // A shell is no route; each page reaches it instead
+          expect(entries.includes(layout)).toBe(!routeShells)
+          expect(
+            graph.staticImports
+              .get(join(project, 'app/a/page.tsx'))
+              ?.has(layout),
+          ).toBe(routeShells)
+          // Collapse still plans over the graph as discovered
+          const [{ graph: planned }] = buildCanonicalMapSpy.mock.calls.at(
+            -1,
+          ) as [{ graph: { staticImports: Map<string, Set<string>> } }]
+          expect(
+            planned.staticImports.get(join(project, 'app/a/page.tsx'))?.size,
+          ).toBe(0)
+        } finally {
+          fs.rmSync(project, { recursive: true, force: true })
+        }
+      },
+    )
 
     it('runs single-importer collapse when atomHoist is explicitly zero, without hoisting', () => {
       // Constraint: single-importer collapse must ALWAYS be on. The canonical

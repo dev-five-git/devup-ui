@@ -41,6 +41,7 @@ import {
   type StylexStyleResolution,
   tailwindCssFiles,
   type WasmImportAliases,
+  withRouteShells,
   withTailwindCss,
 } from '@devup-ui/plugin-utils'
 import { type Compiler, type RuleSetRule } from 'webpack'
@@ -93,6 +94,13 @@ export interface DevupUIWebpackPluginOptions extends Pick<
   importAliases?: ImportAliases
   /** Adapter-owned complete extraction set; undefined keeps generic entry reachability. */
   readonly productionPrewarmFiles?: readonly string[]
+  /**
+   * Count a Next.js route shell that wraps every route (the root `layout` or
+   * `template`, `pages/_app`) as part of those routes rather than as a route
+   * of its own when hoisting atoms. Set by the Next.js plugin for production
+   * builds.
+   */
+  readonly routeShells?: boolean
 }
 
 export class DevupUIWebpackPlugin {
@@ -130,6 +138,7 @@ export class DevupUIWebpackPlugin {
     stylex,
     atomHoist = 2,
     productionPrewarmFiles,
+    routeShells = false,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.normalizedShorthands = normalizeShorthands(shorthands ?? {})
@@ -160,6 +169,7 @@ export class DevupUIWebpackPlugin {
       shorthands,
       atomHoist,
       productionPrewarmFiles: undefined,
+      routeShells,
     }
     this.sheetFile = ''
     this.classMapFile = ''
@@ -290,14 +300,17 @@ export class DevupUIWebpackPlugin {
       })
       this.compiler.importCanonicalMap(canonicalMap)
       if (atomHoist === undefined) return discovered
+      const reach = this.options.routeShells
+        ? withRouteShells(graph, routes, cwd)
+        : { graph, routes }
       const plan = planAtomHoist(
         canonicalMap,
         computeFileReach({
           srcDir: cwd,
           cwd,
           keyBy: 'cwd-relative',
-          graph,
-          entries: routes,
+          graph: reach.graph,
+          entries: reach.routes,
         }),
         atomHoist,
       )

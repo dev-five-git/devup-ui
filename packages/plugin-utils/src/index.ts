@@ -76,6 +76,7 @@ export {
   type ReservationInventory,
 } from './reservation-discovery'
 export { reservationGraph, reservationRoutes } from './reservation-graph'
+export { withRouteShells } from './route-shells'
 export { isRuntimePackage, RUNTIME_PACKAGE } from './runtime-package'
 export {
   createNodeModulesExcludeRegex,

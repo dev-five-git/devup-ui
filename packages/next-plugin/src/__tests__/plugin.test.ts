@@ -470,6 +470,7 @@ describe('DevupUINextPlugin', () => {
           singleCss: true,
           cssDir: resolve('.next/cache', 'devup-ui'),
           productionPrewarmFiles: [],
+          routeShells: true,
         })
       },
     )
@@ -517,6 +518,7 @@ describe('DevupUINextPlugin', () => {
         cssDir: resolve('.next/cache', 'devup-ui'),
         engine: 'native',
         productionPrewarmFiles: [],
+        routeShells: true,
       })
     })
 
@@ -620,6 +622,7 @@ describe('DevupUINextPlugin', () => {
         engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
+        routeShells: true,
       })
     })
 
@@ -641,6 +644,7 @@ describe('DevupUINextPlugin', () => {
         engine: 'native',
         cssDir: resolve('.next/cache', 'devup-ui'),
         productionPrewarmFiles: [],
+        routeShells: true,
       })
       expect(webpack).toHaveBeenCalled()
     })
@@ -672,19 +676,11 @@ describe('DevupUINextPlugin', () => {
         ).mockReturnValue(true)
         try {
           // When
-          const config = DevupUI({}, options) as {
-            turbopack: {
-              rules: Record<
-                string,
-                { loaders: { options: { singleCss: boolean } }[] }
-              >
-            }
-          }
-          // Then the loaders extract into the layout chosen
-          expect(
-            config.turbopack.rules['*.{tsx,ts,mts,cts,jsx,js,mjs,cjs}']
-              .loaders[0].options.singleCss,
-          ).toBe(expected)
+          DevupUI({}, options)
+          // Then the coordinator extracts into the layout chosen
+          expect(startCoordinatorSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ singleCss: expected }),
+          )
         } finally {
           singleRoute.mockRestore()
           graphSpy.mockRestore()

@@ -62,6 +62,11 @@ export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
    * Atom-level route-aware hoisting threshold for webpack (default 2; 0 disables).
    * Turbopack keeps per-file names until shared class-slot reservation lands in
    * #752; explicit finite positive requests warn once. Ignored in singleCss mode.
+   *
+   * A production webpack build counts the root `layout` (or `pages/_app`),
+   * which wraps every route, with those routes rather than as a route of its
+   * own, so what it imports joins the shared `devup-ui.css`. A nested layout
+   * stays a route of its own.
    */
   atomHoist?: number
 }
@@ -946,6 +951,8 @@ export function DevupUI(
           ? undefined
           : productionPrewarmFiles,
         ...(!_options.dev && singleRoute ? { singleCss: true } : {}),
+        // A layout counts with the routes it wraps (production only)
+        ...(_options.dev ? {} : { routeShells: true }),
       }),
     )
     if (typeof webpack === 'function') return webpack(config, _options)
