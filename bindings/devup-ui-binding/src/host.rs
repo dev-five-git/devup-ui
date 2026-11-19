@@ -238,7 +238,7 @@ pub fn reserve<'env>(
     callback: AccessCallback<'env>,
     schema_token: Unknown<'env>,
     access_token: Unknown<'env>,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let access = Access {
         env,
         callback,
@@ -272,7 +272,8 @@ pub fn reserve<'env>(
         diagnostics.add_source(&input.filename, &input.code);
     }
     with_resolver(env, diagnostics, |resolver, _check| {
-        core::reserve_class_slots_internal(&inputs, option, resolver);
-        Ok(())
+        Ok(core::reserve_class_slots_selecting(
+            &inputs, option, resolver,
+        ))
     })
 }

@@ -60,4 +60,14 @@ impl NativeOutput {
     pub fn dependencies(&self, env: Env) -> Result<Vec<String>> {
         Ok(self.live(env)?.dependencies.clone())
     }
+    /// Copy the marker classes the source's components render with.
+    #[napi(getter, js_name = "givenMarkers")]
+    pub fn given_markers(&self, env: Env) -> Result<Vec<String>> {
+        Ok(self.live(env)?.component_markers.given.clone())
+    }
+    /// Copy the marker classes the source's styles select components by.
+    #[napi(getter, js_name = "selectedMarkers")]
+    pub fn selected_markers(&self, env: Env) -> Result<Vec<String>> {
+        Ok(self.live(env)?.component_markers.selected.clone())
+    }
 }

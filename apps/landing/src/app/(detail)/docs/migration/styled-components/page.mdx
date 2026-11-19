@@ -193,6 +193,7 @@ A styled component compiles to a function component, whose `defaultProps` React 
 | `css` prop, `jsx`, JSX runtime pragmas   | compiled to `className` and `style`                                              |
 | `ClassNames`                             | replaced by what its child renders, each `css` / `cx` call compiled to classes   |
 | Component selectors (`${Child}`)         | a marker class; Emotion extensions render without it, as Emotion's do            |
+| Markers no module selects                | dropped by one-shot Vite and webpack production builds                           |
 | `.attrs()`, `.withConfig()`              | attrs merged over props; build-time `shouldForwardProp`; `componentId` classes   |
 
 ## Limitations

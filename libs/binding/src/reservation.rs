@@ -51,6 +51,19 @@ pub fn reserve_class_slots_internal(
     option: ExtractOption,
     resolver: Option<&ModuleResolver>,
 ) {
+    let _ = reserve_class_slots_selecting(inputs, option, resolver);
+}
+
+/// [`reserve_class_slots_internal`], returning the component-selector
+/// markers the inputs' styles select, sorted, once each: those a build may
+/// keep when it drops the markers no module reads.
+#[must_use]
+pub fn reserve_class_slots_selecting(
+    inputs: &[ReservationInput],
+    option: ExtractOption,
+    resolver: Option<&ModuleResolver>,
+) -> Vec<String> {
+    let mut selected = std::collections::BTreeSet::new();
     let _atom_mode = css::atom_hoist::AtomModeGuard::new(option.single_css);
     let slots = ScratchSlots::default();
     let files: Vec<String> = inputs.iter().map(|input| input.filename.clone()).collect();
@@ -72,6 +85,7 @@ pub fn reserve_class_slots_internal(
             None => extract_without_source_map(&input.filename, &input.code, file_option),
         };
         if let Ok(output) = extracted {
+            selected.extend(output.component_markers.selected);
             let bucket = file_map::canonical(&input.filename);
             let global = option.single_css || file_map::is_global(&input.filename);
             with_style_sheet_mut(|sheet| {
@@ -81,4 +95,5 @@ pub fn reserve_class_slots_internal(
         }
     }
     slots.commit();
+    selected.into_iter().collect()
 }

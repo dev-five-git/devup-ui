@@ -1,0 +1,10 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`markerWarning lists each unscanned module with its cause and markers 1`] = `
+"[devup-ui] Kept every component-selector marker in this build: the start-of-build scan did not see these modules select components from other modules.
+  - virtual:x [virtual-module]: a virtual module no file backs; selects a--a
+  - /a.mdx [compiled-source]: compiled by another tool before Devup UI read it; selects a--b, a--c
+  - /ctx.tsx [context-module]: loaded through require.context, import.meta.glob or a computed import(); selects a--d
+  - /out.tsx [outside-scan]: not reachable from the scanned roots and entries; selects a--e
+  - /fail.tsx [scan-failed]: the start-of-build scan could not extract it; selects a--f"
+`;

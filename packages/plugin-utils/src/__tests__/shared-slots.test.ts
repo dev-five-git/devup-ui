@@ -282,3 +282,28 @@ it('isolates a broken allowed package and reserves the valid suffix before retry
     ['src/A.tsx', STYLE, '../df/devup-ui'],
   ])
 })
+
+it('keeps the marker selections and ids of the last reservation', () => {
+  // Given
+  using fs = fixture()
+  fs.write('src/A.tsx', STYLE)
+  const recorded = recorder()
+  let selections: readonly string[] | undefined = ['a--a']
+  const manager = createSharedSlotReservation({
+    reserveClassSlots(...args) {
+      recorded.engine.reserveClassSlots(...args)
+      return selections
+    },
+  })
+  // When
+  const before = [manager.markerSelections, manager.reservedIds]
+  manager.reserve(discovery(fs.root), flags)
+  const reported = [manager.markerSelections, manager.reservedIds]
+  selections = undefined
+  manager.invalidate()
+  manager.reserve(discovery(fs.root), flags)
+  // Then
+  expect(before).toEqual([undefined, []])
+  expect(reported).toEqual([['a--a'], ['src/A.tsx']])
+  expect(manager.markerSelections).toBeUndefined()
+})
