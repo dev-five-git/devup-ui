@@ -28,8 +28,8 @@ workspace = true
 devup-ui-binding-core = { path = "../../libs/binding" }
 extractor = { path = "../../libs/extractor" }
 sheet = { path = "../../libs/sheet" }
-napi = { version = "3.15.0", features = ["napi6"] }
-napi-derive = "3.6.13"
+napi = { version = "3.16.2", features = ["napi6"] }
+napi-derive = "3.7.1"
 serde = { version = "1.0.229", features = ["derive"] }
 bimap = { version = "0.6.3", features = ["serde"] }
 
