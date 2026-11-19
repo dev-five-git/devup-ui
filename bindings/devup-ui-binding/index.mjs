@@ -4,6 +4,7 @@ export const {
   Output,
   codeExtract,
   codeExtractWithoutSourceMap,
+  codeExtractNative,
   createSession,
   dropSession,
   exportCanonicalMap,

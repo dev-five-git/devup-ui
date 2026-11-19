@@ -1,7 +1,7 @@
 use css::file_map::{canonical, is_global};
 use extractor::{
-    ExtractOption, ExtractOutput, ModuleResolver, extract, extract_with_modules,
-    extract_without_source_map,
+    ExtractOption, ExtractOutput, ExtractTarget, ModuleResolver, NativePlatform, NativeTarget,
+    extract, extract_with_modules, extract_without_source_map,
 };
 
 use crate::css_cache::invalidate_css;
@@ -140,4 +140,33 @@ pub fn code_extract(
         Ok(output) => Ok(Output::new(output, filename.to_string(), css)),
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// Compile a `(filename, code)` source for React Native on `platform`
+/// (`ios`, `android` or `web`): its code and source map, with no CSS
+pub fn code_extract_native(
+    source: (&str, &str),
+    package: &str,
+    platform: &str,
+    runtime: bool,
+) -> Result<Output, String> {
+    let (filename, code) = source;
+    let platform = platform.parse::<NativePlatform>().map_err(|_| {
+        format!("unknown React Native platform `{platform}`: use `ios`, `android` or `web`")
+    })?;
+    let option = ExtractOption {
+        package: package.to_string(),
+        target: ExtractTarget::Native(NativeTarget { platform, runtime }),
+        ..ExtractOption::default()
+    };
+    let output = extract(filename, code, option).map_err(|error| error.to_string())?;
+    Ok(Output {
+        code: output.code,
+        map: output.map,
+        css_file: None,
+        updated_base_style: false,
+        css: None,
+        dependencies: output.dependencies,
+        component_markers: output.component_markers,
+    })
 }

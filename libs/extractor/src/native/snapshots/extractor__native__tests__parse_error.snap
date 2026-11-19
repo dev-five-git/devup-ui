@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Ios, false, code)"
+---
+error: test.tsx:2:12: Cannot parse source: Unexpected token. Fix: correct the syntax at this location

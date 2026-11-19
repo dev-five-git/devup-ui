@@ -36,6 +36,19 @@ export function codeExtractWithoutSourceMap(
   importMainCssInCss: boolean,
   importAliases: unknown,
 ): Output
+/**
+ * Compile a source for React Native on `platform`: Devup UI elements become
+ * React Native components whose styles are hoisted into one
+ * `StyleSheet.create`. No CSS is emitted (`css` and `cssFile` are undefined);
+ * `runtime: false` makes what needs the React Native runtime a build error.
+ */
+export function codeExtractNative(
+  filename: string,
+  code: string,
+  packageName: string,
+  platform: 'ios' | 'android' | 'web',
+  runtime: boolean,
+): Output
 /** Create an engine session with a clean state; select it before each call. */
 export function createSession(): number
 /** Drop a session and its state; dropping the live one makes session 0 live. */

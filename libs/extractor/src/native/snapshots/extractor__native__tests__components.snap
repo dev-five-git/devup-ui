@@ -1,0 +1,29 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { gap: 8 },
+	b: { width: 40 },
+	c: { flexDirection: "row" },
+	d: {
+		flexDirection: "row",
+		justifyContent: "center",
+		alignItems: "center"
+	},
+	e: { color: "red" }
+});
+export const App = () => <VStack style={__s.a}>
+    <Box style={__s.b} />
+    <Flex style={__s.c} />
+    <Center style={__s.d} />
+    <Text style={__s.e}>Hi</Text>
+    <Image source={{ uri: "https://example.com/a.png" }} alt="a" />
+    <Image source={{ uri: `https://example.com/b.png` }} />
+    <Image source={typeof logo === "number" ? logo : { uri: logo }} />
+    <Image source={typeof images.logo === "number" ? images.logo : { uri: images.logo }} />
+    <Input placeholder="name" />
+    <Button onPress={go}><Text>Go</Text></Button>
+  </VStack>;

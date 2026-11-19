@@ -204,6 +204,7 @@ pub fn extract<'env>(
         single_css: arg(&request, 4)?,
         import_main_css: arg(&request, 5)?,
         import_aliases: aliases(decode(arg(&request, 7)?, &access, 7)?),
+        ..Default::default()
     };
     let import_main_css_in_css = arg(&request, 6)?;
     let source_map = if arg(&request, 8)? {
@@ -276,4 +277,18 @@ pub fn reserve<'env>(
             &inputs, option, resolver,
         ))
     })
+}
+/// Compile a source for React Native on a platform: its code and source map, no CSS.
+#[napi]
+pub fn extract_native(
+    env: Env,
+    filename: String,
+    code: String,
+    package: String,
+    platform: String,
+    runtime: bool,
+) -> Result<NativeOutput> {
+    core::code_extract_native((&filename, &code), &package, &platform, runtime)
+        .map(|output| NativeOutput(Some(output)))
+        .map_err(|error| binding_error(env, error))
 }

@@ -15,7 +15,9 @@ pub use css::{get_prefix, set_custom_shorthands as register_shorthands_internal,
 pub use css_cache::{SheetCell, SheetGuard};
 pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use lazy_css::LazyCss;
-pub use output::{CssOptions, ExtractionMode, Output, SourceMapMode, code_extract};
+pub use output::{
+    CssOptions, ExtractionMode, Output, SourceMapMode, code_extract, code_extract_native,
+};
 pub use reservation::{
     ReservationInput, reserve_class_slots_internal, reserve_class_slots_selecting,
 };

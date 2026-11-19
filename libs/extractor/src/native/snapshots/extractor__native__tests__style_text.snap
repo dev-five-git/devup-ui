@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `style` on React Native: React Native takes a style object, not CSS text. Fix: pass an object, such as `style={{ opacity: 0.5 }}`

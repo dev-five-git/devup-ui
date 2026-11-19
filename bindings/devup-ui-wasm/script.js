@@ -50,9 +50,9 @@ types = types.replace(hookType, '')
 assert.equal(types.includes('install_panic_hook'), false)
 writeFileSync('pkg/index.d.ts', types, 'utf8')
 const names = [...source.matchAll(/^exports\.(\w+) = \1;/gm)]
-assert.equal(names.length, 36)
-assert.equal(new Set(names.map((match) => match[1])).size, 36)
-assert.equal([...source.matchAll(/^exports\./gm)].length, 36)
+assert.equal(names.length, 37)
+assert.equal(new Set(names.map((match) => match[1])).size, 37)
+assert.equal([...source.matchAll(/^exports\./gm)].length, 37)
 assert.equal(source.includes('module.exports'), false)
 for (const name of ['codeExtract', 'codeExtractWithoutSourceMap']) {
   const signatures = [

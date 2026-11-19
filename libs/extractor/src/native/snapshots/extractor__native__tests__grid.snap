@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Ios, false, code)"
+---
+error: test.tsx:1:10: `Grid` from `@devup-ui/react` cannot be used on React Native: React Native has no grid layout. Fix: lay the items out with `Flex` and `flexWrap`

@@ -140,6 +140,7 @@ fn make_update_option() -> ExtractOption {
         single_css: true,
         import_main_css: false,
         import_aliases: HashMap::new(),
+        ..Default::default()
     }
 }
 

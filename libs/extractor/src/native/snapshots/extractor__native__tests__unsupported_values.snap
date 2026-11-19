@@ -1,0 +1,16 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `display` on React Native: React Native does not read `grid` here. Fix: use one of `none`, `flex` or `contents`
+test.tsx:2:21: `<Box>` cannot use `position` on React Native: React Native does not read `fixed` here. Fix: use one of `absolute`, `relative` or `static`
+test.tsx:2:38: `<Box>` cannot use `w` on React Native: `10vw` needs the window size, which React Native knows only at runtime. Fix: use a number of pixels or a percentage
+test.tsx:2:47: `<Box>` cannot use `h` on React Native: React Native cannot compute `calc(100% - 4px)`. Fix: write the value itself
+test.tsx:2:68: `<Box>` cannot use `maxW` on React Native: React Native cannot compute `var(--w)`. Fix: write the value itself
+test.tsx:3:3: `<Box>` cannot use `minW` on React Native: React Native styles have no `!important`. Fix: remove `!important`; a later style already wins
+test.tsx:3:25: `<Box>` cannot use `lineHeight` on React Native: `1.5` is relative to the font size on the web, but React Native reads a line height in pixels. Fix: write the line height in pixels, such as `24px`
+test.tsx:3:42: `<Box>` cannot use `opacity` on React Native: `half` is not a number. Fix: use a number
+test.tsx:3:57: `<Box>` cannot use `m` on React Native: `1px 2px 3px 4px 5px` is not one to four lengths. Fix: give one to four lengths
+test.tsx:4:3: `<Box>` cannot use `bg` on React Native: React Native draws no image in a background. Fix: render an `Image` instead
+test.tsx:4:19: `<Box>` cannot use `positioning` on React Native: `positioning` has no `1`. Fix: use one of the values the prop takes
+test.tsx:4:49: `<Box>` cannot use `maxH` on React Native: `1ch` is not one length React Native reads. Fix: use one number of pixels, a `rem` or `em` length, a percentage or `auto`

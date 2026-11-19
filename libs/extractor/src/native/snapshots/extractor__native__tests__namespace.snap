@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Ios, false, code)"
+---
+error: test.tsx:1:8: `* as D` from `@devup-ui/react` cannot be used on React Native: the build reads only components imported by name. Fix: import each component by name, such as `import { Box } from '@devup-ui/react'`

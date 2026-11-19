@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:11: `Box` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<Box />`, or use a React Native component here
+test.tsx:3:10: `Text` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<Text />`, or use a React Native component here
+test.tsx:4:8: `Flex` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<Flex />`, or use a React Native component here
+test.tsx:5:2: `Box` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<Box />`, or use a React Native component here

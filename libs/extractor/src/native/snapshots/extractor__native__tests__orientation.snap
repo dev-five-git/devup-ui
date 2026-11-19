@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `_portrait` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give one value
+test.tsx:2:27: `<Box>` cannot use `_landscape` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give one value

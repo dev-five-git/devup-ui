@@ -30,6 +30,7 @@ fn library_code(source: &str) -> String {
                 ImportAlias::DefaultToNamed("styled".to_string()),
             ),
         ]),
+        ..Default::default()
     };
     extract("test.tsx", source, option).unwrap().code
 }
@@ -316,6 +317,7 @@ fn styled_components_v5_validators_are_build_errors(#[case] source: &str, #[case
                 ImportAlias::DefaultToNamed("styled".to_string()),
             ),
         ]),
+        ..Default::default()
     };
     let result = extract("test.tsx", source, option);
 

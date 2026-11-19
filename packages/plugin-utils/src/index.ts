@@ -76,6 +76,7 @@ export {
   type ReservationInventory,
 } from './reservation-discovery'
 export { reservationGraph, reservationRoutes } from './reservation-graph'
+export { withRouteShells } from './route-shells'
 export { isRuntimePackage, RUNTIME_PACKAGE } from './runtime-package'
 export {
   createNodeModulesExcludeRegex,
@@ -101,7 +102,6 @@ export {
   ShorthandConfigError,
   type ShorthandErrorLocation,
 } from './shorthands'
-export { readSource, type SourceCache, withSourceCache } from './source-cache'
 export { SOURCE_EXTENSIONS, SOURCE_FILE_REGEX } from './source-extensions'
 export {
   createStateWriter,

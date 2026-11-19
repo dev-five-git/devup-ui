@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_for(NativePlatform::Android, true, code)"
+---
+import { View as Box } from "react-native";
+type P = React.ComponentProps<typeof Box>;
+export const C = (props: P) => <Box {...props} />;

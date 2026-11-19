@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: compile(code)
+---
+error: test.tsx:2:6: `<Box>` cannot use `p` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give one value
