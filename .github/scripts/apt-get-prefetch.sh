@@ -15,7 +15,7 @@ if [ "${1:-}" = install ]; then
 
   fetch() {
     local url="${1//\'/}" file="$2" hash="$3"
-    local algo="${hash%%:*}" sum="${hash#*:}" path tmp candidate rest list
+    local algo="${hash%%:*}" sum="${hash#*:}" path tmp candidate rest list checker
     local -a bases
     [ -s "$archives/$file" ] && return 0
     case "$url" in
@@ -32,13 +32,20 @@ if [ "${1:-}" = install ]; then
         bases=("${url%%/ubuntu/*}/ubuntu")
         ;;
     esac
+    # apt prints MD5Sum:, SHA1:, SHA256: or SHA512: before the hash.
+    case "$algo" in
+      MD5Sum) checker=md5sum ;;
+      SHA1) checker=sha1sum ;;
+      SHA256) checker=sha256sum ;;
+      *) checker=sha512sum ;;
+    esac
     tmp="$(mktemp -p "$archives/partial")"
     for candidate in "${bases[@]/%//$path}" "${mirrors[@]/%//$path}"; do
       # Give up on a connection slower than 50 kB/s for 15 s and move on to
       # the next mirror.
       if curl -fsL --connect-timeout 10 --speed-limit 51200 --speed-time 15 \
         --max-time 300 -o "$tmp" "$candidate" &&
-        echo "$sum  $tmp" | "$(echo "$algo" | tr '[:upper:]' '[:lower:]')sum" --status -c; then
+        echo "$sum  $tmp" | "$checker" --status -c; then
         mv "$tmp" "$archives/$file"
         return 0
       fi

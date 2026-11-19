@@ -29,13 +29,6 @@ fi
 
 read -r -a cli <<< "${PLAYWRIGHT_CLI:-bunx playwright}"
 
-# One attempt, run by the retry loop below under `timeout`.
-if [ "$1" = --attempt ]; then
-  shift
-  sudo env "PATH=$APT_GET_SHIM:$PATH" "${cli[@]}" install-deps "$@"
-  exec "${cli[@]}" install "$@"
-fi
-
 attempt_timeout="${ATTEMPT_TIMEOUT:-4m}"
 attempts="${ATTEMPTS:-3}"
 apt_cache="${PLAYWRIGHT_APT_CACHE:-}"
@@ -63,12 +56,20 @@ fi
 # would reset PATH; the apt-get on PATH is then apt-get-prefetch.sh, which
 # downloads the packages in parallel (with fallback mirrors) before handing
 # over to the real apt-get. The browsers install as the runner user.
-APT_GET_SHIM="$(mktemp -d)"
-export APT_GET_SHIM
-ln -s "$(cd "$(dirname "$0")" && pwd)/apt-get-prefetch.sh" "$APT_GET_SHIM/apt-get"
+shim="$(mktemp -d)"
+ln -s "$(cd "$(dirname "$0")" && pwd)/apt-get-prefetch.sh" "$shim/apt-get"
+
+# One attempt. `timeout` runs inside sudo: sudo starts the command in a
+# session of its own, so a `timeout` outside it would not reach apt-get and
+# a timed-out attempt would keep holding the dpkg lock.
+install_once() {
+  sudo timeout --kill-after=20s "$attempt_timeout" \
+    env "PATH=$shim:$PATH" "${cli[@]}" install-deps "$@" &&
+    timeout --kill-after=20s "$attempt_timeout" "${cli[@]}" install "$@"
+}
 
 attempt=1
-until timeout --kill-after=20s "$attempt_timeout" bash "$0" --attempt "$@"; do
+until install_once "$@"; do
   status=$?
   if [ "$attempt" -ge "$attempts" ]; then
     echo "::error::Playwright install failed after $attempt attempt(s) (last exit status $status)"

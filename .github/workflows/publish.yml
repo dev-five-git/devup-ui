@@ -643,7 +643,7 @@ jobs:
       # browser download costs minutes instead of the whole job.
       - &install-chromium
         name: Install Playwright Browsers
-        timeout-minutes: 11
+        timeout-minutes: 14
         env:
           ATTEMPT_TIMEOUT: 3m
         run: bash .github/scripts/install-playwright.sh chromium
