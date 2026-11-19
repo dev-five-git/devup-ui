@@ -17,8 +17,6 @@ import {
   createNodeModulesExcludeRegex,
   createSharedSlotReservation,
   createThemeInterfaceArgs,
-  type DevupCompiler,
-  type DevupUIBasePluginOptions,
   extractedNeedles,
   findTailwindCss,
   loadDevupConfigSync,
@@ -30,6 +28,12 @@ import {
   type StaticImportGraph,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
+// The published declarations name only these: `next.config.ts` type-checks
+// against them, so they come from the entry that loads nothing else
+import type {
+  DevupCompiler,
+  DevupUIBasePluginOptions,
+} from '@devup-ui/plugin-utils/types'
 import { type NextConfig } from 'next'
 
 import {
