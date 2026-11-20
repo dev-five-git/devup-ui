@@ -11,10 +11,12 @@ use phf::phf_map;
 
 use crate::extract_style::constant::is_maintain_value_property;
 
+use super::NativeTarget;
 use super::errors::Problem;
+use super::theme::NativeTheme;
 use super::values::{
-    Literal, NativeValue, css_text, font_weight, keyword, length, line_height, number_code,
-    number_or_text, plain_number,
+    Literal, NativeValue, css_text, font_weight, keyword, length, line_height, number, number_code,
+    number_or_text, plain_number, scaled_length,
 };
 
 /// How React Native reads the value of a style
@@ -217,9 +219,6 @@ fn native_value(kind: Kind, text: &str) -> Result<NativeValue, Problem> {
 
 /// What the web cannot pass on to React Native in any value
 fn check_text(text: &str) -> Result<(), Problem> {
-    if text.contains('$') {
-        return Err(super::errors::theme_token(text));
-    }
     if text.contains("!important") {
         return Err(Problem::new(
             "React Native styles have no `!important`",
@@ -235,26 +234,124 @@ fn check_text(text: &str) -> Result<(), Problem> {
     Ok(())
 }
 
-/// The styles the style prop `prop`, with the value `literal`, declares
-pub(super) fn declarations(prop: &str, literal: &Literal) -> Result<Vec<Declaration>, Problem> {
+/// Where the `$token`s of a value resolve: one theme of the theme a file is
+/// compiled with
+pub(super) struct Tokens<'t> {
+    pub theme: &'t NativeTheme,
+    pub index: usize,
+    pub target: &'t NativeTarget,
+}
+
+impl Tokens<'_> {
+    /// `text` with its tokens resolved, or `None` when the theme lacks one
+    fn resolve<'v>(&self, text: &'v str) -> Result<Option<Cow<'v, str>>, Problem> {
+        self.theme.resolve(text, self.index, self.target)
+    }
+}
+
+/// The styles the style prop `prop`, with the value `literal`, declares in
+/// the theme of `tokens`, or `None` when that theme lacks a token it names
+pub(super) fn declarations(
+    prop: &str,
+    literal: &Literal,
+    tokens: &Tokens<'_>,
+) -> Result<Option<Vec<Declaration>>, Problem> {
+    if prop == "typography" {
+        return typography(&literal_text(literal), tokens);
+    }
     if css::is_enum_property(prop) {
-        return enum_declarations(prop, literal);
+        return enum_declarations(prop, literal).map(Some);
     }
     let mut declarations = Vec::new();
     for property in css::disassemble_property(prop) {
         let text = css_text(&property, literal);
+        let Some(text) = tokens.resolve(&text)? else {
+            return Ok(None);
+        };
         check_text(&text)?;
         declarations.extend(property_declarations(&property, &text)?);
     }
-    Ok(declarations)
+    Ok(Some(declarations))
+}
+
+/// `literal` as text
+fn literal_text(literal: &Literal) -> Cow<'_, str> {
+    match literal {
+        Literal::Text(text) => Cow::Borrowed(text.as_str()),
+        Literal::Number(number) => Cow::Owned(number_code(*number)),
+    }
+}
+
+/// The styles of the typography `name` of the theme: its font size in
+/// pixels, and a line height or letter spacing relative to the font size
+/// multiplied by it, as React Native reads both in pixels
+fn typography(name: &str, tokens: &Tokens<'_>) -> Result<Option<Vec<Declaration>>, Problem> {
+    let mut properties = Vec::new();
+    for (property, value) in tokens.theme.typography(name, tokens.target)? {
+        let Some(value) = tokens.resolve(value)? else {
+            return Ok(None);
+        };
+        check_text(&value)?;
+        properties.push((property.as_str(), value.into_owned()));
+    }
+    let font_size = properties
+        .iter()
+        .find(|(property, _)| *property == "font-size")
+        .and_then(|(_, value)| scaled_length(value.trim()).or_else(|| number(value)));
+    let mut declarations = Vec::new();
+    for (property, value) in &properties {
+        match *property {
+            "line-height" | "letter-spacing" => {
+                declarations.extend(relative_to_font(property, value, font_size)?);
+            }
+            property => declarations.extend(property_declarations(property, value)?),
+        }
+    }
+    Ok(Some(declarations))
+}
+
+/// A typography's line height or letter spacing in pixels: a number, a
+/// percentage or an `em` length is relative to the font size, and `normal`
+/// leaves React Native's default
+fn relative_to_font(
+    property: &str,
+    text: &str,
+    font_size: Option<f64>,
+) -> Result<Option<Declaration>, Problem> {
+    let text = text.trim();
+    let key = if property == "line-height" {
+        "lineHeight"
+    } else {
+        "letterSpacing"
+    };
+    if text == "normal" {
+        return Ok(None);
+    }
+    let relative = text
+        .strip_suffix('%')
+        .and_then(number)
+        .map(|percent| percent / 100.0)
+        .or_else(|| text.strip_suffix("em").and_then(number))
+        .or_else(|| (property == "line-height").then(|| number(text)).flatten());
+    let pixels = match (relative, font_size) {
+        // Rounded to a thousandth of a pixel, so `1.3` of `24px` is `31.2`
+        (Some(relative), Some(font_size)) => (relative * font_size * 1000.0).round() / 1000.0,
+        (Some(_), None) => {
+            return Err(Problem::new(
+                format!(
+                    "`{text}` is relative to the font size, and the typography has no font size in pixels"
+                ),
+                "give the typography a `fontSize` in pixels, or the value in pixels",
+            ));
+        }
+        (None, _) => return length(text).map(|value| Some((key.to_string(), value))),
+    };
+    Ok(Some((key.to_string(), NativeValue::Number(pixels))))
 }
 
 /// The styles of a Devup UI enum prop, such as `positioning="top-left"`
 fn enum_declarations(prop: &str, literal: &Literal) -> Result<Vec<Declaration>, Problem> {
-    let value = match literal {
-        Literal::Text(text) => Cow::Borrowed(text.as_str()),
-        Literal::Number(number) => Cow::Owned(number_code(*number)),
-    };
+    let value = literal_text(literal);
     let map = css::get_enum_property_value(prop, &value).ok_or_else(|| {
         Problem::new(
             format!("`{prop}` has no `{value}`"),
@@ -368,6 +465,12 @@ fn border(text: &str) -> Vec<Declaration> {
 /// when the value is converted as the build converts a literal, or `None`
 /// when React Native receives it as it is
 pub(super) fn dynamic_keys(prop: &str) -> Result<Vec<(&'static str, Option<u32>)>, Problem> {
+    if prop == "typography" {
+        return Err(Problem::new(
+            "the build reads the styles of a typography by its name, which a value read at runtime does not give",
+            "write the name, or a condition between names such as `typography={big ? 'h1' : 'body'}`",
+        ));
+    }
     if css::is_enum_property(prop) {
         return Err(runtime_value_problem(prop));
     }

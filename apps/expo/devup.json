@@ -1,0 +1,39 @@
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "background": "#f6f7fb",
+        "card": "#fff",
+        "text": "#1a1a2e",
+        "muted": "#555",
+        "border": "#ccc",
+        "placeholder": "#999"
+      },
+      "dark": {
+        "background": "#12121c",
+        "card": "#1f1f2e",
+        "text": "#f2f2f7",
+        "muted": "#a0a0b8",
+        "border": "#3a3a4e",
+        "placeholder": "#6a6a80"
+      }
+    },
+    "length": {
+      "default": {
+        "radius": ["12px"]
+      }
+    },
+    "shadow": {
+      "default": {
+        "raised": ["0 2px 8px #0002"]
+      }
+    },
+    "typography": {
+      "title": {
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
+      }
+    }
+  }
+}

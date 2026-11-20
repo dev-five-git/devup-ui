@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:28: `<Text>` cannot use `lineHeight` on React Native: `#5a44ff` is relative to the font size on the web, but React Native reads a line height in pixels. Fix: write the line height in pixels, such as `24px`
+test.tsx:2:50: `<Text>` cannot use `fontSize` on React Native: `red` is not one length React Native reads. Fix: use one number of pixels, a `rem` or `em` length, a percentage or `auto`

@@ -1,0 +1,92 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(theme, true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		padding: 16,
+		borderRadius: 8,
+		width: 16
+	},
+	b: {
+		backgroundColor: "#fff",
+		boxShadow: "0 1px 2px #0003"
+	},
+	c: {
+		backgroundColor: "#1a1a2e",
+		boxShadow: "0 1px 2px #0009"
+	},
+	d: {
+		fontFamily: "Inter",
+		fontSize: 16,
+		fontWeight: "500",
+		lineHeight: 24,
+		letterSpacing: -.32
+	},
+	e: { color: "#5a44ff" },
+	f: { color: "#8c7bff" },
+	g: { color: "#111" },
+	h: { color: "#eee" },
+	i: { color: "red" },
+	j: {
+		fontSize: 12,
+		lineHeight: 18,
+		letterSpacing: 1,
+		textTransform: "uppercase"
+	},
+	k: {
+		fontSize: 14,
+		lineHeight: 21,
+		letterSpacing: 1,
+		textTransform: "uppercase"
+	},
+	l: { borderColor: "#eef" },
+	m: { borderColor: "#223" },
+	n: {
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: "#5a44ff"
+	},
+	o: {
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: "#8c7bff"
+	},
+	p: { margin: 8 },
+	q: { opacity: .5 },
+	r: { padding: 4 },
+	s: { padding: 8 },
+	t: {
+		backgroundColor: "#5a44ff",
+		margin: 4
+	},
+	u: { color: "#000" },
+	v: { fontFamily: "#000" },
+	w: { margin: 4 }
+});
+export function Card({ on, color }) {
+	const __t = __useThemeIndex();
+	return <Box style={[__s.a, [__s.b, __s.c][__t]]}>
+      <Text style={[__s.d, on ? [__s.e, __s.f][__t] : [__s.g, __s.h][__t]]}>Hi</Text>
+      <Text style={[
+		__s.i,
+		on ? [__s.j, __s.k][__t] : __s.d,
+		[__s.l, __s.m][__t]
+	]} />
+      <Box style={[
+		{ backgroundColor: color },
+		[__s.n, __s.o][__t],
+		on && __s.p,
+		[null, __s.q][__t],
+		__t === 1 && (on ? __s.r : __s.s)
+	]} />
+      <Box style={[__s.t, __s.u][__t]} />
+      <Text style={[null, __s.v][__t]} />
+      <Box style={__s.p} />
+      <Box style={[__s.w, __t === 1 && (on ? __s.r : __s.s)]} />
+    </Box>;
+}

@@ -79,6 +79,18 @@ async function verifyPackage(pkgDir: string): Promise<string[]> {
   return failures
 }
 
+// `@devup-ui/react/native` runs only under React Native, whose package is Flow
+// source no JavaScript runtime here loads; a stand-in lets that entry load
+Bun.plugin({
+  name: 'react-native-stand-in',
+  setup(build) {
+    build.module('react-native', () => ({
+      exports: { Appearance: {} },
+      loader: 'object',
+    }))
+  },
+})
+
 // Subpaths of a removed export (the `lite` engine) that a stale generated build can leave behind
 const REMOVED_SUBPATHS = ['bindings/devup-ui-wasm/pkg/lite']
 

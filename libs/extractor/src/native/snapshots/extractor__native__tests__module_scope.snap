@@ -1,0 +1,20 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { Themed as __Themed, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 4 },
+	b: { backgroundColor: "#5a44ff" },
+	c: { backgroundColor: "#8c7bff" },
+	d: { flexDirection: "row" },
+	e: { backgroundColor: "#111" },
+	f: { backgroundColor: "#eee" }
+});
+const element = <__Themed $c={Box} $s={(__t) => [__s.a, [__s.b, __s.c][__t]]} />;
+export const icon = <__Themed key="k" $c={Animated.View} $s={(__t) => [__s.d, [__s.e, __s.f][__t]]}>
+  <Text>t</Text>
+</__Themed>;

@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+error: test.tsx:1:21: `useTheme` from `@devup-ui/react` cannot be used on React Native: `useTheme` reads or changes the theme the app shows, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:1:31: `setTheme` from `@devup-ui/react` cannot be used on React Native: `setTheme` reads or changes the theme the app shows, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:1:48: `getTheme` from `@devup-ui/react` cannot be used on React Native: `getTheme` reads or changes the theme the app shows, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on

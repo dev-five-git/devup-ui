@@ -8,7 +8,8 @@ Compiles Devup UI for React Native in [Metro](https://metrobundler.dev/), the
 bundler of React Native and Expo. You keep importing `Box`, `Text`, ... from
 `@devup-ui/react`; at build time each element becomes a React Native component
 and its style props become style objects hoisted into one `StyleSheet.create`
-per file. Nothing runs at runtime.
+per file. With one theme nothing runs at runtime; with more, a tiny runtime
+(`@devup-ui/react/native`) only tells which theme shows.
 
 ## Setup
 
@@ -79,20 +80,60 @@ withDevupUI(config, {
 })
 ```
 
+## Themes
+
+`$` tokens of devup.json (colors, `length` and `shadow`) and `typography`
+resolve at build time to the values React Native takes. With one theme each
+becomes its literal value, and no file imports a runtime:
+
+```tsx
+<Box bg="$surface" p={4} />
+// const __s = StyleSheet.create({ a: { backgroundColor: "#fff", padding: 16 } })
+// <View style={__s.a} />
+```
+
+With more themes, the styles of every theme are precomputed, and the element
+picks one by the index of the theme that shows; what does not differ by theme
+stays shared:
+
+```tsx
+// <View style={[__s.a, [__s.b, __s.c][__t]]} />
+```
+
+The themes are the color variants of devup.json, the default first. The app
+starts on the theme that follows the system appearance (React Native's
+`Appearance`): while it is dark, `dark`, or else the first theme `colorScheme`
+makes dark; otherwise the default theme. `_themeDark`, `_themeSepia`, ...
+apply their styles in that theme only.
+
+```tsx
+import { getTheme, setTheme, useTheme } from '@devup-ui/react'
+
+const theme = useTheme() // renders again when the theme changes
+setTheme('sepia') // wins over the system appearance
+```
+
+The build imports these from `@devup-ui/react/native`, a store read with
+`useSyncExternalStore` that computes no style; web builds never import it.
+`setTheme` does not save the choice across launches.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at
-runtime, conditions between them and the platform blocks. These are build
-errors, reported by Metro at the file, line and column:
+runtime, theme tokens, conditions between them and the platform and theme
+blocks. These are build errors, reported by Metro at the file, line and
+column:
 
-- responsive arrays (`p={[1, 2]}`), theme tokens (`color="$primary"`),
-  typography and `_dark`/`_light`/`_theme*`
+- responsive arrays (`p={[1, 2]}`), and tokens or typography with a value at
+  each breakpoint
 - interaction states (`_hover`, `_active`, `_pressed`, `_focus`, ...)
 - `css()`, `styled()`, `globalCss()`, `keyframes()` and `Grid`
 - any prop React Native has no style for
+- with `runtime: false`, a value that differs by theme, `_theme*` with more
+  than one theme, and `useTheme`, `getTheme` and `setTheme`
 
-The runtime that brings responsive values, themes and `_pressed` comes in a
-later version.
+The runtime that brings responsive values and `_pressed` comes in a later
+version.
 
 Metro reads devup.json when it starts, so restart Metro after changing it
 (`--reset-cache` is not needed).

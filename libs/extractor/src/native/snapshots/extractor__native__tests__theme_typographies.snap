@@ -1,0 +1,9 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:7: `<Text>` cannot use `typography` on React Native: devup.json defines no `missing` typography. Fix: add the typography to the theme in devup.json
+test.tsx:3:7: `<Text>` cannot use `typography` on React Native: `heading` has a value at each breakpoint: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give it one value in devup.json, or write the value itself
+test.tsx:4:7: `<Text>` cannot use `typography` on React Native: the build reads the styles of a typography by its name, which a value read at runtime does not give. Fix: write the name, or a condition between names such as `typography={big ? 'h1' : 'body'}`
+test.tsx:5:7: `<Text>` cannot use `typography` on React Native: `2em` is relative to the font size, and the typography has no font size in pixels. Fix: give the typography a `fontSize` in pixels, or the value in pixels
+test.tsx:6:7: `<Text>` cannot use `typography` on React Native: devup.json defines no `1` typography. Fix: add the typography to the theme in devup.json

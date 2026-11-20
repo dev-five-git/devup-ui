@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `p` on React Native: `gutter` has a value at each breakpoint: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give it one value in devup.json, or write the value itself

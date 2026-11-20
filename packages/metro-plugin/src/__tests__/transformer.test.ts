@@ -28,6 +28,14 @@ describe('the module Metro loads', () => {
       upstream,
       "exports.transform = (args) => ({ code: args.src })\nexports.getCacheKey = () => 'upstream'",
     )
+    writeFileSync(
+      join(root, 'devup.json'),
+      JSON.stringify({
+        theme: {
+          colors: { light: { surface: '#fff' }, dark: { surface: '#000' } },
+        },
+      }),
+    )
     writeSettings({
       upstreamTransformer: upstream,
       package: '@devup-ui/react',
@@ -50,6 +58,18 @@ describe('the module Metro loads', () => {
         code: expect.stringContaining('from "react-native"'),
       })
       expect(selection.mock.calls).toEqual([['wasm']])
+      // devup.json's theme reaches the engine: two themes pick a style object
+      // by the theme the runtime reports
+      const themed = transform({
+        filename: 'Themed.tsx',
+        src: 'import { Box } from \'@devup-ui/react\'\nexport function A() { return <Box bg="$surface" /> }',
+        options: { platform: 'ios', projectRoot: root },
+      })
+      expect(themed).toEqual({
+        code: expect.stringContaining('from "@devup-ui/react/native"'),
+      })
+      expect(themed).toEqual({ code: expect.stringContaining('"#000"') })
+      expect(themed).toEqual({ code: expect.stringContaining('"#fff"') })
     } finally {
       selection.mockRestore()
     }

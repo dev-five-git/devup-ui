@@ -4,9 +4,12 @@
 //! `StyleSheet.create` per file, passed to the React Native element through
 //! `style`, with no CSS and no class names.
 //!
-//! Only what the build can decide is supported: static values, values the
-//! element reads at runtime as they are, conditions between them, and the
-//! platform blocks `_ios`, `_android` and `_web`. Responsive arrays, themes and
+//! What the build can decide compiles statically: literal values, values the
+//! element reads at runtime as they are, conditions between them, the
+//! platform blocks `_ios`, `_android` and `_web`, and theme tokens when the
+//! theme has one value for them. A value that differs by theme compiles to
+//! one style object a theme, and the element picks one by the index the
+//! runtime of `@devup-ui/react/native` gives. Responsive arrays and
 //! `_pressed` need a runtime that this version does not include, and a prop
 //! React Native has no style for is a build error naming the prop.
 
@@ -16,12 +19,14 @@ mod imports;
 mod props;
 mod sheet;
 mod style;
+mod theme;
 mod values;
 
 #[cfg(test)]
 mod tests;
 
 use std::error::Error;
+use std::sync::Arc;
 
 use oxc_allocator::Allocator;
 use oxc_semantic::SemanticBuilder;
@@ -30,8 +35,10 @@ use strum_macros::{Display, EnumString};
 
 use crate::ExtractOutput;
 
+pub use theme::{NativeTheme, TokenLevels, TypographyProperties};
+
 /// What extraction compiles for
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ExtractTarget {
     /// Class names and CSS
     #[default]
@@ -41,13 +48,15 @@ pub enum ExtractTarget {
 }
 
 /// The React Native build a file is compiled for
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeTarget {
     /// The platform Metro builds the bundle for
     pub platform: NativePlatform,
     /// Whether the React Native runtime may be imported for what needs it;
     /// with `false`, such styles are build errors
     pub runtime: bool,
+    /// The theme tokens resolve in
+    pub theme: Arc<NativeTheme>,
 }
 
 /// The platform Metro builds a bundle for
@@ -61,6 +70,10 @@ pub enum NativePlatform {
 
 /// The package React Native components are imported from
 pub(crate) const REACT_NATIVE: &str = "react-native";
+
+/// The module of the React Native runtime: the theme store and the hook and
+/// component that pick a style object by theme
+pub(crate) const RUNTIME: &str = "@devup-ui/react/native";
 
 /// Compile `code` for React Native, or tell every place it cannot be, each
 /// led by `filename:line:column`
@@ -82,7 +95,7 @@ pub(crate) fn extract(
         .build(&program)
         .semantic
         .into_scoping();
-    let compiled = element::compile(&program, code, package, target, &scoping);
+    let compiled = element::compile(&program, code, package, &target, &scoping);
     if !compiled.errors.is_empty() {
         return Err(crate::located_errors(filename, code, &[], compiled.errors).into());
     }
