@@ -64,7 +64,9 @@ const __s = StyleSheet.create({
 		backgroundColor: "#5a44ff",
 		margin: 4
 	},
-	u: { color: "#000" }
+	u: { color: "#000" },
+	v: { fontFamily: "#000" },
+	w: { margin: 4 }
 });
 export function Card({ on, color }) {
 	const __t = __useThemeIndex();
@@ -83,5 +85,8 @@ export function Card({ on, color }) {
 		__t === 1 && (on ? __s.r : __s.s)
 	]} />
       <Box style={[__s.t, __s.u][__t]} />
+      <Text style={[null, __s.v][__t]} />
+      <Box style={__s.p} />
+      <Box style={[__s.w, __t === 1 && (on ? __s.r : __s.s)]} />
     </Box>;
 }

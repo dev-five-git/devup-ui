@@ -243,7 +243,13 @@ fn ordered(choices: Vec<Choice>) -> Vec<Choice> {
     if !first.is_empty() {
         rest.insert(0, Choice::Static(first));
     }
-    rest
+    // A later style can make every theme declare the same
+    rest.into_iter()
+        .map(|choice| match choice {
+            Choice::Themed(variants) => themed(variants),
+            choice => choice,
+        })
+        .collect()
 }
 
 /// The `style` an element takes, and whether it reads the theme the app shows

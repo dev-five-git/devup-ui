@@ -584,6 +584,10 @@ fn theme(names: &[&str], dark: Option<usize>, tokens: &[(&str, &[Option<&str>])]
                 vec![Some(typography_entry(&[("line-height", "2em")]))],
             ),
             (
+                "darkFont",
+                vec![Some(typography_entry(&[("font-family", "$onlyDark")]))],
+            ),
+            (
                 "rounded",
                 vec![Some(typography_entry(&[
                     ("font-size", "24px"),
@@ -681,6 +685,9 @@ const TWO_THEME_ELEMENTS: &str = r#"export function Card({ on, color }) {
       <Text typography={on ? 'caption' : 'body'} color="$same" borderColor="$primary.100" />
       <Box bg={color} border="1px solid $primary" m={on && 2} _themeDark={{ opacity: 0.5, p: on ? 1 : 2 }} />
       <Box _themeLight={{ bg: '$primary', _themeLight: { m: 1 }, _themeDark: { m: 2 } }} color="$onlyDark" />
+      <Text typography="darkFont" />
+      <Box _themeDark={{ m: 1 }} m={2} />
+      <Box _themeDark={{ p: on ? 1 : 2 }} m={1} />
     </Box>
   )
 }"#;
