@@ -4,7 +4,6 @@
 // installed where any of them resolves it, as an app has it installed beside
 // Devup UI. It is removed after the tests: a `node_modules` there would turn off Bun's
 // auto-install for the fixtures run without this preload.
-import { afterAll } from 'bun:test'
 import {
   existsSync,
   mkdirSync,
@@ -14,6 +13,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+import { afterAll } from 'bun:test'
 
 const modules = join(tmpdir(), 'node_modules')
 const owned = existsSync(modules)
