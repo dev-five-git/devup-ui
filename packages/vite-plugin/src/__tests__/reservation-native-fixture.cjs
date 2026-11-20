@@ -28,6 +28,16 @@ function fixture(root, scenario, mode) {
     'package.json',
     JSON.stringify({ name: 'native-fixture', type: 'module' }),
   )
+  // A runtime value imports its unit conversion from `@devup-ui/react/scale`,
+  // installed beside Devup UI as in an app
+  if (!existsSync(join(root, 'node_modules/@devup-ui/react'))) {
+    mkdirSync(join(root, 'node_modules/@devup-ui'), { recursive: true })
+    symlinkSync(
+      join(__dirname, '../../../react'),
+      join(root, 'node_modules/@devup-ui/react'),
+      'junction',
+    )
+  }
   write('physical/A.tsx', style('A', 'red'))
   write('physical/B.tsx', style('B', 'blue'))
   write(

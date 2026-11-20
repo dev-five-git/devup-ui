@@ -1,5 +1,3 @@
-import './bun.scale'
-
 export {}
 
 function cartesianProduct<T extends any[][]>(arrays: T) {
