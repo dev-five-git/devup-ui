@@ -200,7 +200,9 @@ mod dead_properties_tests;
 #[cfg(test)]
 mod dead_properties_text_tests;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
-pub use crate::native::{ExtractTarget, NativePlatform, NativeTarget};
+pub use crate::native::{
+    ExtractTarget, NativePlatform, NativeTarget, NativeTheme, TokenLevels, TypographyProperties,
+};
 use crate::visit::DevupVisitor;
 use css::file_map::{canonical, get_file_num_by_filename, is_global};
 use oxc_allocator::{Allocator, CloneIn};

@@ -20,6 +20,55 @@ pub(super) enum Choice {
         consequent: Box<Self>,
         alternate: Box<Self>,
     },
+    /// Styles the build knows for each theme, in the order of the theme
+    /// names; the element picks one by the theme the app shows
+    Themed(Vec<Vec<Declaration>>),
+    /// A choice that applies only while the theme at `index` shows
+    InTheme { index: usize, choice: Box<Self> },
+}
+
+/// The choice of `variants`, one a theme: static when every theme declares
+/// the same styles
+pub(super) fn themed(mut variants: Vec<Vec<Declaration>>) -> Choice {
+    if variants.windows(2).all(|pair| pair[0] == pair[1]) {
+        variants
+            .pop()
+            .filter(|declarations| !declarations.is_empty())
+            .map_or(Choice::Empty, Choice::Static)
+    } else {
+        Choice::Themed(variants)
+    }
+}
+
+/// `choice` applied only while the theme at `index` of `count` shows
+pub(super) fn in_theme(index: usize, count: usize, choice: Choice) -> Choice {
+    match choice {
+        Choice::Empty => Choice::Empty,
+        choice if count <= 1 => choice,
+        Choice::Static(declarations) => Choice::Themed(
+            (0..count)
+                .map(|at| {
+                    if at == index {
+                        declarations.clone()
+                    } else {
+                        Vec::new()
+                    }
+                })
+                .collect(),
+        ),
+        Choice::Themed(mut variants) => {
+            for (at, variant) in variants.iter_mut().enumerate() {
+                if at != index {
+                    variant.clear();
+                }
+            }
+            Choice::Themed(variants)
+        }
+        choice => Choice::InTheme {
+            index,
+            choice: Box::new(choice),
+        },
+    }
 }
 
 impl Choice {
@@ -27,18 +76,36 @@ impl Choice {
     fn declares(&self, key: &str) -> bool {
         match self {
             Self::Empty => false,
-            Self::Static(declarations) => declarations.iter().any(|(name, _)| name == key),
+            Self::Static(declarations) => declares(declarations, key),
             Self::Dynamic(values) => values.iter().any(|(name, _)| name == key),
             Self::Condition {
                 consequent,
                 alternate,
                 ..
             } => consequent.declares(key) || alternate.declares(key),
+            Self::Themed(variants) => variants
+                .iter()
+                .any(|declarations| declares(declarations, key)),
+            Self::InTheme { choice, .. } => choice.declares(key),
         }
     }
 
-    /// The code of the choice, its static styles named in `sheet`
-    fn code(&self, sheet: &mut Sheet) -> String {
+    /// Whether the choice reads the theme the app shows
+    pub(super) fn reads_theme(&self) -> bool {
+        match self {
+            Self::Empty | Self::Static(_) | Self::Dynamic(_) => false,
+            Self::Condition {
+                consequent,
+                alternate,
+                ..
+            } => consequent.reads_theme() || alternate.reads_theme(),
+            Self::Themed(_) | Self::InTheme { .. } => true,
+        }
+    }
+
+    /// The code of the choice, its static styles named in `sheet` and the
+    /// index of the theme read from `theme`
+    fn code(&self, sheet: &mut Sheet, theme: &str) -> String {
         match self {
             Self::Empty => "null".to_string(),
             Self::Static(declarations) => sheet.reference(declarations),
@@ -50,26 +117,51 @@ impl Choice {
             } => {
                 let test = operand(test);
                 match alternate.as_ref() {
-                    Self::Empty => format!("{test} && {}", consequent.operand_code(sheet)),
+                    Self::Empty => {
+                        format!("{test} && {}", consequent.operand_code(sheet, theme))
+                    }
                     alternate => format!(
                         "{test} ? {} : {}",
-                        consequent.operand_code(sheet),
-                        alternate.operand_code(sheet)
+                        consequent.operand_code(sheet, theme),
+                        alternate.operand_code(sheet, theme)
                     ),
                 }
+            }
+            Self::Themed(variants) => {
+                let references: Vec<String> = variants
+                    .iter()
+                    .map(|declarations| {
+                        if declarations.is_empty() {
+                            "null".to_string()
+                        } else {
+                            sheet.reference(declarations)
+                        }
+                    })
+                    .collect();
+                format!("[{}][{theme}]", references.join(", "))
+            }
+            Self::InTheme { index, choice } => {
+                format!(
+                    "{theme} === {index} && {}",
+                    choice.operand_code(sheet, theme)
+                )
             }
         }
     }
 
     /// The code of the choice as an operand of a condition
-    fn operand_code(&self, sheet: &mut Sheet) -> String {
-        let code = self.code(sheet);
-        if matches!(self, Self::Condition { .. }) {
+    fn operand_code(&self, sheet: &mut Sheet, theme: &str) -> String {
+        let code = self.code(sheet, theme);
+        if matches!(self, Self::Condition { .. } | Self::InTheme { .. }) {
             format!("({code})")
         } else {
             code
         }
     }
+}
+
+fn declares(declarations: &[Declaration], key: &str) -> bool {
+    declarations.iter().any(|(name, _)| name == key)
 }
 
 /// `code` as an operand: a name or a member read as it is, else parenthesized
@@ -103,6 +195,30 @@ fn merge(declarations: &mut Vec<Declaration>, later: Vec<Declaration>) {
     }
 }
 
+/// `later` merged into the last of `rest` when both are static or both
+/// differ by theme, else `later` itself to apply after it
+fn merge_last(rest: &mut [Choice], later: Choice) -> Option<Choice> {
+    match (rest.last_mut(), later) {
+        (Some(Choice::Static(last)), Choice::Static(declarations)) => {
+            merge(last, declarations);
+            None
+        }
+        (Some(Choice::Themed(last)), Choice::Static(declarations)) => {
+            for variant in last {
+                merge(variant, declarations.clone());
+            }
+            None
+        }
+        (Some(Choice::Themed(last)), Choice::Themed(variants)) => {
+            for (variant, later) in last.iter_mut().zip(variants) {
+                merge(variant, later);
+            }
+            None
+        }
+        (_, later) => Some(later),
+    }
+}
+
 /// The choices of an element in the order they apply, with as many static
 /// styles as can be moved first merged into one
 fn ordered(choices: Vec<Choice>) -> Vec<Choice> {
@@ -111,19 +227,17 @@ fn ordered(choices: Vec<Choice>) -> Vec<Choice> {
     for choice in choices {
         match choice {
             Choice::Empty => {}
-            Choice::Static(declarations) => {
+            Choice::Static(declarations)
                 if declarations
                     .iter()
-                    .all(|(key, _)| rest.iter().all(|choice| !choice.declares(key)))
-                {
-                    merge(&mut first, declarations);
-                } else if let Some(Choice::Static(last)) = rest.last_mut() {
-                    merge(last, declarations);
-                } else {
-                    rest.push(Choice::Static(declarations));
-                }
+                    .all(|(key, _)| rest.iter().all(|choice| !choice.declares(key))) =>
+            {
+                merge(&mut first, declarations);
             }
-            choice => rest.push(choice),
+            choice => {
+                let unmerged = merge_last(&mut rest, choice);
+                rest.extend(unmerged);
+            }
         }
     }
     if !first.is_empty() {
@@ -132,25 +246,36 @@ fn ordered(choices: Vec<Choice>) -> Vec<Choice> {
     rest
 }
 
+/// The `style` an element takes, and whether it reads the theme the app shows
+pub(super) struct StyleCode {
+    pub code: String,
+    pub reads_theme: bool,
+}
+
 /// The code of the `style` an element takes: its choices, then the code of
 /// the styles it is given whole (a spread's `style`, its own `style` prop);
-/// `None` when its props declare no style, and it keeps what it is given
+/// `None` when its props declare no style, and it keeps what it is given.
+/// The index of the theme the app shows is read from `theme`
 pub(super) fn style_code(
     choices: Vec<Choice>,
     given: Vec<String>,
     sheet: &mut Sheet,
-) -> Option<String> {
-    let mut entries: Vec<String> = ordered(choices)
+    theme: &str,
+) -> Option<StyleCode> {
+    let choices = ordered(choices);
+    let reads_theme = choices.iter().any(Choice::reads_theme);
+    let mut entries: Vec<String> = choices
         .iter()
-        .map(|choice| choice.code(sheet))
+        .map(|choice| choice.code(sheet, theme))
         .collect();
     if entries.is_empty() {
         return None;
     }
     entries.extend(given);
-    Some(if entries.len() == 1 {
+    let code = if entries.len() == 1 {
         entries.concat()
     } else {
         format!("[{}]", entries.join(", "))
-    })
+    };
+    Some(StyleCode { code, reads_theme })
 }

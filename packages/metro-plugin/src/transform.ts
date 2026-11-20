@@ -34,6 +34,7 @@ export interface BabelTransformer {
 
 /** The part of the engine the transformer calls */
 export interface NativeCompiler {
+  registerTheme(theme: unknown): void
   codeExtractNative(
     filename: string,
     code: string,
@@ -156,7 +157,13 @@ export function createTransformer(host: TransformerHost = defaultHost) {
     ) {
       return undefined
     }
-    compiler ??= host.loadCompiler(settings.engine)
+    if (!compiler) {
+      compiler = host.loadCompiler(settings.engine)
+      // The theme of devup.json, which resolves `$` tokens and the themes
+      compiler.registerTheme(
+        loadDevupConfigSync(settings.devupFile).theme ?? {},
+      )
+    }
     let output: ReturnType<NativeCompiler['codeExtractNative']>
     try {
       output = compiler.codeExtractNative(

@@ -3,25 +3,28 @@
 //! component its import is now bound to.
 
 use oxc_ast::ast::{
-    Expression, IdentifierReference, JSXAttribute, JSXAttributeItem, JSXAttributeName,
-    JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression, LogicalOperator,
-    ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
+    ArrowFunctionExpression, ExportDefaultDeclaration, Expression, Function, FunctionBody,
+    IdentifierReference, JSXAttribute, JSXAttributeItem, JSXAttributeName, JSXAttributeValue,
+    JSXChild, JSXElement, JSXElementName, JSXExpression, LogicalOperator, ObjectExpression,
+    ObjectPropertyKind, Program, TSType, UnaryOperator, VariableDeclarator,
 };
 use std::cell::Cell;
 
 use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::Scoping;
 use oxc_span::{GetSpan, Span};
+use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::errors::{Problem, RuntimeFeature};
 use super::imports::{self, native_component};
-use super::props::{declarations, dynamic_keys};
+use super::props::{Tokens, declarations, dynamic_keys};
 use super::sheet::Sheet;
-use super::style::{Choice, style_code};
+use super::style::{Choice, in_theme, style_code, themed};
+use super::theme::selector_theme;
 use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
-use super::{NativePlatform, NativeTarget, REACT_NATIVE, Replacement};
+use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
 
@@ -31,12 +34,87 @@ pub(super) struct Compiled {
     pub errors: Vec<(u32, String)>,
 }
 
+/// The names the file gives what it imports from the runtime, and whether
+/// it uses each
+struct Runtime {
+    /// The variable holding the index of the theme the app shows
+    index: String,
+    /// The hook reading that index
+    hook: String,
+    hook_used: bool,
+    /// The component that reads the index itself, for an element outside a
+    /// function component
+    wrapper: String,
+    wrapper_used: bool,
+    /// The function telling the runtime the theme names
+    define: String,
+}
+
+impl Runtime {
+    fn new(code: &str) -> Self {
+        Self {
+            index: fresh_name("__t", code),
+            hook: fresh_name("__useThemeIndex", code),
+            hook_used: false,
+            wrapper: fresh_name("__Themed", code),
+            wrapper_used: false,
+            define: fresh_name("__defineThemes", code),
+        }
+    }
+
+    /// The import of the runtime and the call telling it the theme names,
+    /// when the file uses it
+    fn prelude(&self, target: &NativeTarget, theme_api: bool) -> Option<String> {
+        if !(self.hook_used || self.wrapper_used || theme_api) {
+            return None;
+        }
+        let mut specifiers = Vec::new();
+        if self.hook_used {
+            specifiers.push(format!("useThemeIndex as {}", self.hook));
+        }
+        if self.wrapper_used {
+            specifiers.push(format!("Themed as {}", self.wrapper));
+        }
+        specifiers.push(format!("defineThemes as {}", self.define));
+        let theme = &target.theme;
+        let names = serde_json::Value::from(theme.names.clone()).to_string();
+        let dark = theme
+            .dark
+            .map_or_else(String::new, |dark| format!(", {dark}"));
+        Some(format!(
+            "import {{ {} }} from \"{RUNTIME}\";\n{}({names}{dark});\n",
+            specifiers.join(", "),
+            self.define
+        ))
+    }
+}
+
+/// A function the elements are in
+struct Frame {
+    /// Whether it is a function component or a hook, where the hook reading
+    /// the theme can be called first
+    component: bool,
+    /// Whether an element in it reads the theme
+    used: bool,
+    /// Where the hook is called
+    hook_at: HookAt,
+}
+
+/// Where the hook reading the theme is called in a function
+#[derive(Clone, Copy)]
+enum HookAt {
+    /// First in a body of statements, at this offset
+    Body(usize),
+    /// Before the expression an arrow function returns, between these offsets
+    Expression(usize, usize),
+}
+
 /// Compile the Devup UI elements of `program`
 pub(super) fn compile(
     program: &Program<'_>,
     code: &str,
     package: &str,
-    target: NativeTarget,
+    target: &NativeTarget,
     scoping: &Scoping,
 ) -> Compiled {
     let imports = imports::read(program, code, package, target);
@@ -48,6 +126,10 @@ pub(super) fn compile(
         sheet: Sheet::new(fresh_name("__s", code)),
         units: fresh_name("__u", code),
         units_used: Cell::new(false),
+        runtime: Runtime::new(code),
+        theme_scope: None,
+        frames: Vec::new(),
+        component_functions: FxHashSet::default(),
         replacements: imports.replacements,
         errors: imports.errors,
     };
@@ -58,20 +140,22 @@ pub(super) fn compile(
         sheet,
         units,
         units_used,
+        runtime,
         mut replacements,
         errors,
         ..
     } = visitor;
-    let mut prelude = String::new();
+    let mut prelude = runtime
+        .prelude(target, imports.theme_api)
+        .unwrap_or_default();
     if !sheet.is_empty() {
         prelude.push_str(&sheet_prelude(&sheet, code));
     }
     if units_used.get() {
         prelude.push_str(&units_declaration(&units));
     }
-    if !prelude.is_empty()
-        && let Some(at) = imports.sheet_at
-    {
+    if !prelude.is_empty() {
+        let at = imports.sheet_at.unwrap_or(code.len());
         replacements.push((at, at, prelude));
     }
     Compiled {
@@ -91,6 +175,8 @@ enum Prop {
     Declares,
     /// `_ios`, `_android` or `_web`: styles for one platform
     Platform(NativePlatform),
+    /// `_themeDark` and the like: styles for the theme named
+    Theme(String),
     /// What needs the React Native runtime
     Runtime(RuntimeFeature),
     /// What React Native has no equivalent of
@@ -113,15 +199,14 @@ fn classify(name: &str) -> Prop {
             "React Native has no class names",
             "write the styles as props, or pass them in `style`",
         )),
-        "typography" => Prop::Unsupported(Problem::new(
-            "theme typography is not read on React Native yet",
-            "write `fontSize`, `fontWeight`, `lineHeight` and `letterSpacing` themselves",
-        )),
+        "typography" => Prop::Declares,
         "styleOrder" | "styleVars" => Prop::Unsupported(Problem::new(
             "React Native has no stylesheet order and no CSS variables",
             "remove it; on React Native the later style in `style` wins",
         )),
-        name if name.starts_with("_theme") => Prop::Runtime(RuntimeFeature::Theme),
+        name if name.starts_with("_theme") && name.len() > "_theme".len() => {
+            Prop::Theme(selector_theme(name))
+        }
         name if name.starts_with('_') || name == "selectors" => Prop::Unsupported(Problem::new(
             "React Native has no selectors, pseudo-elements or media queries",
             "remove it, or write the style the element takes in every state",
@@ -158,7 +243,7 @@ fn holds_no_text(native: &str) -> bool {
 
 struct Elements<'s> {
     code: &'s str,
-    target: NativeTarget,
+    target: &'s NativeTarget,
     scoping: &'s Scoping,
     components: &'s FxHashMap<SymbolId, (ExportVariableKind, String)>,
     sheet: Sheet,
@@ -166,6 +251,14 @@ struct Elements<'s> {
     units: String,
     /// Whether a value read at runtime is converted
     units_used: Cell<bool>,
+    runtime: Runtime,
+    /// The theme of the `_theme*` block being read, whose tokens resolve in
+    /// that theme alone
+    theme_scope: Option<usize>,
+    /// The functions the visited code is in, innermost last
+    frames: Vec<Frame>,
+    /// Where each function a component or a hook is bound to starts
+    component_functions: FxHashSet<u32>,
     replacements: Vec<Replacement>,
     errors: Vec<(u32, String)>,
 }
@@ -204,6 +297,98 @@ impl<'a> Visit<'a> for Elements<'_> {
     }
 
     fn visit_ts_type(&mut self, _: &TSType<'a>) {}
+
+    fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
+        if let (Some(name), Some(init)) = (declarator.id.get_identifier_name(), &declarator.init)
+            && is_component_name(&name)
+        {
+            self.component_functions.extend(function_start(init));
+        }
+        walk::walk_variable_declarator(self, declarator);
+    }
+
+    fn visit_export_default_declaration(&mut self, declaration: &ExportDefaultDeclaration<'a>) {
+        let start = declaration.declaration.as_expression().map_or_else(
+            || Some(declaration.declaration.span().start),
+            function_start,
+        );
+        self.component_functions.extend(start);
+        walk::walk_export_default_declaration(self, declaration);
+    }
+
+    fn visit_function(&mut self, function: &Function<'a>, flags: ScopeFlags) {
+        let component = function
+            .id
+            .as_ref()
+            .is_some_and(|id| is_component_name(&id.name))
+            || self.component_functions.contains(&function.span.start);
+        let body = function.body.as_deref().map(body_start);
+        self.in_frame(component, body, |visitor| {
+            walk::walk_function(visitor, function, flags);
+        });
+    }
+
+    fn visit_arrow_function_expression(&mut self, arrow: &ArrowFunctionExpression<'a>) {
+        let component = self.component_functions.contains(&arrow.span.start);
+        let hook_at = arrow.get_expression().map_or_else(
+            || arrow.get_function_body().map(body_start),
+            |expression| {
+                let span = expression.span();
+                Some(HookAt::Expression(span.start as usize, span.end as usize))
+            },
+        );
+        self.in_frame(component, hook_at, |visitor| {
+            walk::walk_arrow_function_expression(visitor, arrow);
+        });
+    }
+}
+
+/// Where the hook is called first in `body`: after its directives
+fn body_start(body: &FunctionBody<'_>) -> HookAt {
+    HookAt::Body(
+        body.directives
+            .last()
+            .map_or(body.span.start + 1, |directive| directive.span.end) as usize,
+    )
+}
+
+/// Whether a function bound to `name` is a function component or a hook,
+/// which may call a hook first: a capitalized name, or `use` and a capital
+fn is_component_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_uppercase() => true,
+        Some('u') => name
+            .strip_prefix("use")
+            .is_some_and(|rest| rest.chars().next().is_none_or(|c| c.is_ascii_uppercase())),
+        _ => false,
+    }
+}
+
+/// Where the function `expression` gives starts, through `memo()` and
+/// `forwardRef()`, if it gives one
+fn function_start(expression: &Expression<'_>) -> Option<u32> {
+    match expression.get_inner_expression() {
+        Expression::ArrowFunctionExpression(arrow) => Some(arrow.span.start),
+        Expression::FunctionExpression(function) => Some(function.span.start),
+        Expression::CallExpression(call) if is_component_wrapper(&call.callee) => call
+            .arguments
+            .first()
+            .and_then(|argument| argument.as_expression())
+            .and_then(function_start),
+        _ => None,
+    }
+}
+
+/// Whether `callee` wraps a component in a component: `memo` or `forwardRef`,
+/// imported or read from `React`
+fn is_component_wrapper(callee: &Expression<'_>) -> bool {
+    let name = match callee.get_inner_expression() {
+        Expression::Identifier(identifier) => identifier.name.as_str(),
+        Expression::StaticMemberExpression(member) => member.property.name.as_str(),
+        _ => return false,
+    };
+    matches!(name, "memo" | "forwardRef")
 }
 
 impl<'a> Elements<'_> {
@@ -227,6 +412,83 @@ impl<'a> Elements<'_> {
 
     fn error(&mut self, offset: u32, message: String) {
         self.errors.push((offset, message));
+    }
+
+    /// Visit a function, through `visit`, as the innermost frame when it has
+    /// a body, then call the hook reading the theme first in it when an
+    /// element in it reads the theme
+    fn in_frame(
+        &mut self,
+        component: bool,
+        hook_at: Option<HookAt>,
+        visit: impl FnOnce(&mut Self),
+    ) {
+        let Some(hook_at) = hook_at else {
+            visit(self);
+            return;
+        };
+        self.frames.push(Frame {
+            component,
+            used: false,
+            hook_at,
+        });
+        visit(self);
+        if let Some(frame) = self.frames.pop()
+            && frame.used
+        {
+            self.call_hook(frame.hook_at);
+        }
+    }
+
+    /// Call the hook reading the theme at `at`
+    fn call_hook(&mut self, at: HookAt) {
+        self.runtime.hook_used = true;
+        let call = format!("const {} = {}();", self.runtime.index, self.runtime.hook);
+        match at {
+            HookAt::Body(at) => self.replacements.push((at, at, format!("\n{call}"))),
+            HookAt::Expression(start, end) => {
+                self.replacements
+                    .push((start, start, format!("{{ {call} return ")));
+                self.replacements.push((end, end, "; }".to_string()));
+            }
+        }
+    }
+
+    /// Whether the element being compiled is in a function component or a
+    /// hook, which then reads the theme first
+    fn reads_theme_in_component(&mut self) -> bool {
+        match self.frames.iter_mut().rev().find(|frame| frame.component) {
+            Some(frame) => {
+                frame.used = true;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The styles a style prop declares with a literal: one style object, or
+    /// one a theme when its tokens differ by theme
+    fn static_choice(&self, name: &str, literal: &Literal) -> Result<Choice, Problem> {
+        let theme = &self.target.theme;
+        let indexes = match self.theme_scope {
+            Some(index) => index..index + 1,
+            None if names_tokens(name, literal) => 0..theme.count(),
+            None => 0..1,
+        };
+        let mut variants = Vec::new();
+        for index in indexes {
+            let tokens = Tokens {
+                theme,
+                index,
+                target: self.target,
+            };
+            variants.push(declarations(name, literal, &tokens)?.unwrap_or_default());
+        }
+        let choice = themed(variants);
+        if choice.reads_theme() && !self.target.runtime {
+            return Err(RuntimeFeature::Theme.problem(self.target));
+        }
+        Ok(choice)
     }
 
     /// Compile one Devup UI element
@@ -260,7 +522,7 @@ impl<'a> Elements<'_> {
             }
         }
         let retagged = tag.is_some();
-        self.finish(element, styles, tag, previous_end);
+        self.finish(element, styles, (tag, local), previous_end);
         self.children(element, kind, local, retagged);
     }
 
@@ -298,7 +560,7 @@ impl<'a> Elements<'_> {
             }
             Prop::Platform(platform) => {
                 styles.removed.push(span);
-                let choices = self.platform(
+                let choices = self.block(
                     attribute_expression(attribute),
                     name,
                     attribute.span.start,
@@ -307,6 +569,16 @@ impl<'a> Elements<'_> {
                 if platform == self.target.platform {
                     styles.choices.extend(choices);
                 }
+            }
+            Prop::Theme(theme) => {
+                styles.removed.push(span);
+                let choices = self.theme_block(
+                    attribute_expression(attribute),
+                    (name, &theme),
+                    attribute.span.start,
+                    local,
+                );
+                styles.choices.extend(choices);
             }
             Prop::Runtime(feature) => self.error(
                 attribute.span.start,
@@ -395,8 +667,9 @@ impl<'a> Elements<'_> {
         }
     }
 
-    /// The styles of a platform block, such as `_ios={{ boxShadow: '...' }}`
-    fn platform(
+    /// The styles of a block, such as `_ios={{ boxShadow: '...' }}` or
+    /// `_themeDark={{ bg: 'black' }}`
+    fn block(
         &mut self,
         value: Option<&Expression<'a>>,
         name: &str,
@@ -411,12 +684,53 @@ impl<'a> Elements<'_> {
         self.error(
             offset,
             Problem::new(
-                "a platform block takes an object of styles",
+                format!("`{name}` takes an object of styles"),
                 format!("write the styles in an object, such as `{name}={{{{ p: 2 }}}}`"),
             )
             .on(local, name),
         );
         Vec::new()
+    }
+
+    /// The styles of a theme block, such as `_themeDark={{ bg: 'black' }}`,
+    /// `name` being the prop and `theme` the theme it names: they apply only
+    /// while that theme shows
+    fn theme_block(
+        &mut self,
+        value: Option<&Expression<'a>>,
+        (name, theme): (&str, &str),
+        offset: u32,
+        local: &str,
+    ) -> Vec<Choice> {
+        let Some(index) = self.target.theme.index_of(theme) else {
+            self.error(
+                offset,
+                Problem::new(
+                    format!("devup.json defines no `{theme}` theme"),
+                    "add the theme to devup.json, or remove the block",
+                )
+                .on(local, name),
+            );
+            return Vec::new();
+        };
+        let count = self.target.theme.count();
+        if count > 1 && !self.target.runtime {
+            self.error(
+                offset,
+                RuntimeFeature::Theme.problem(self.target).on(local, name),
+            );
+            return Vec::new();
+        }
+        if self.theme_scope.is_some_and(|scope| scope != index) {
+            return Vec::new();
+        }
+        let outer = self.theme_scope.replace(index);
+        let choices = self.block(value, name, offset, local);
+        self.theme_scope = outer;
+        choices
+            .into_iter()
+            .map(|choice| in_theme(index, count, choice))
+            .collect()
     }
 
     /// The styles of an object of style props
@@ -427,7 +741,7 @@ impl<'a> Elements<'_> {
                 self.error(
                     property.span().start,
                     Problem::new(
-                        "the build reads only the styles written in a platform block",
+                        "the build reads only the styles written in a block",
                         "write each style in the block",
                     )
                     .on(local, "..."),
@@ -444,7 +758,7 @@ impl<'a> Elements<'_> {
                 self.error(
                     property.span.start,
                     Problem::new(
-                        "the build reads only keys written in a platform block",
+                        "the build reads only keys written in a block",
                         "write the key itself",
                     )
                     .on(local, &format!("[{key}]")),
@@ -456,7 +770,7 @@ impl<'a> Elements<'_> {
         choices
     }
 
-    /// The styles one key of a platform block declares
+    /// The styles one key of a block declares
     fn object_property(
         &mut self,
         key: &str,
@@ -470,10 +784,13 @@ impl<'a> Elements<'_> {
                 Err(problem) => self.error(offset, problem.on(local, key)),
             },
             Prop::Platform(platform) => {
-                let choices = self.platform(Some(value), key, offset, local);
+                let choices = self.block(Some(value), key, offset, local);
                 if platform == self.target.platform {
                     return choices;
                 }
+            }
+            Prop::Theme(theme) => {
+                return self.theme_block(Some(value), (key, &theme), offset, local);
             }
             Prop::Runtime(feature) => {
                 self.error(offset, feature.problem(self.target).on(local, key));
@@ -482,7 +799,7 @@ impl<'a> Elements<'_> {
             Prop::As | Prop::Style | Prop::Pass => self.error(
                 offset,
                 Problem::new(
-                    "a platform block holds only style props",
+                    "a block holds only style props",
                     "pass it to the element itself",
                 )
                 .on(local, key),
@@ -500,7 +817,7 @@ impl<'a> Elements<'_> {
         match value {
             Some(JSXAttributeValue::StringLiteral(literal)) => literal.value.as_str().map_or_else(
                 || self.dynamic_choice(name, literal.span.source_text(self.code)),
-                |text| static_choice(name, &Literal::Text(text.to_string())),
+                |text| self.static_choice(name, &Literal::Text(text.to_string())),
             ),
             Some(JSXAttributeValue::ExpressionContainer(container)) => container
                 .expression
@@ -522,7 +839,7 @@ impl<'a> Elements<'_> {
         expression: &Expression<'a>,
     ) -> Result<Choice, Problem> {
         if let Some(literal) = literal(expression) {
-            return static_choice(name, &literal);
+            return self.static_choice(name, &literal);
         }
         match expression.without_parentheses() {
             Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Ok(Choice::Empty),
@@ -615,12 +932,9 @@ impl<'a> Elements<'_> {
         &mut self,
         element: &JSXElement<'a>,
         styles: Styles,
-        tag: Option<String>,
+        (tag, local): (Option<String>, &str),
         attributes_end: u32,
     ) {
-        if let Some(tag) = &tag {
-            self.rename(element, tag);
-        }
         let Styles {
             choices,
             given,
@@ -628,9 +942,30 @@ impl<'a> Elements<'_> {
             style,
             opaque_spread,
         } = styles;
-        let Some(code) = style_code(choices, given, &mut self.sheet) else {
+        let style_code = style_code(choices, given, &mut self.sheet, &self.runtime.index);
+        let wrapped = style_code
+            .as_ref()
+            .is_some_and(|style| style.reads_theme && !self.reads_theme_in_component());
+        if wrapped {
+            self.runtime.wrapper_used = true;
+            let wrapper = self.runtime.wrapper.clone();
+            self.rename(element, &wrapper);
+        } else if let Some(tag) = &tag {
+            self.rename(element, tag);
+        }
+        let Some(style_code) = style_code else {
             self.remove(&removed);
             return;
+        };
+        let code = if wrapped {
+            format!(
+                " $c={{{}}} $s={{({}) => ({})}}",
+                tag.as_deref().unwrap_or(local),
+                self.runtime.index,
+                style_code.code
+            )
+        } else {
+            format!(" style={{{}}}", style_code.code)
         };
         if let Some(spread) = opaque_spread {
             self.error(
@@ -640,11 +975,8 @@ impl<'a> Elements<'_> {
         }
         removed.extend(style);
         self.remove(&removed);
-        self.replacements.push((
-            attributes_end as usize,
-            attributes_end as usize,
-            format!(" style={{{code}}}"),
-        ));
+        self.replacements
+            .push((attributes_end as usize, attributes_end as usize, code));
     }
 
     /// Render the component `as` gives
@@ -753,12 +1085,12 @@ fn literal(expression: &Expression<'_>) -> Option<Literal> {
     }
 }
 
-/// The styles a style prop declares with a literal
-fn static_choice(name: &str, literal: &Literal) -> Result<Choice, Problem> {
-    declarations(name, literal).map(Choice::Static)
+/// Whether the styles of `literal` for the style prop `name` may differ by
+/// theme: a typography, or a value naming a `$token`
+fn names_tokens(name: &str, literal: &Literal) -> bool {
+    name == "typography" || matches!(literal, Literal::Text(text) if text.contains('$'))
 }
 
-/// The styles a style prop declares with a value read at runtime
 /// The import of `StyleSheet` and the declaration of `sheet`
 fn sheet_prelude(sheet: &Sheet, code: &str) -> String {
     let style_sheet = fresh_name("StyleSheet", code);

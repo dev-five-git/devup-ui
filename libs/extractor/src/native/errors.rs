@@ -55,7 +55,7 @@ impl RuntimeFeature {
     const fn fix(self) -> &'static str {
         match self {
             Self::Responsive => "give one value",
-            Self::Theme => "give the value for one theme",
+            Self::Theme => "give the value for one theme, or turn the runtime on",
             Self::Pressed => {
                 "pass a function to the `style` of a React Native `Pressable`, reading `pressed`"
             }
@@ -63,7 +63,7 @@ impl RuntimeFeature {
     }
 
     /// Why the feature cannot compile for `target`
-    pub(super) fn problem(self, target: NativeTarget) -> Problem {
+    pub(super) fn problem(self, target: &NativeTarget) -> Problem {
         let runtime = if target.runtime {
             "which needs the React Native runtime that this version does not include yet"
         } else {
@@ -73,10 +73,12 @@ impl RuntimeFeature {
     }
 }
 
-/// A theme token, read from the theme in a later version
-pub(super) fn theme_token(value: &str) -> Problem {
+/// Why the theme API `name` cannot be imported with `runtime: false`
+pub(super) fn theme_api(name: &str) -> Problem {
     Problem::new(
-        format!("the theme token in `{value}` is not read on React Native yet"),
-        "write the value itself",
+        format!(
+            "`{name}` reads or changes the theme the app shows, which needs the React Native runtime that `runtime: false` turns off"
+        ),
+        "remove it, or turn the runtime on",
     )
 }

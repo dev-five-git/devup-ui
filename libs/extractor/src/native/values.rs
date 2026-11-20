@@ -77,7 +77,7 @@ pub(super) fn length(text: &str) -> Result<NativeValue, Problem> {
 }
 
 /// `text` in pixels, from pixels or a `rem`/`em` length
-fn scaled_length(text: &str) -> Option<f64> {
+pub(super) fn scaled_length(text: &str) -> Option<f64> {
     [("px", 1.0), ("rem", ROOT_FONT_SIZE), ("em", ROOT_FONT_SIZE)]
         .into_iter()
         .find_map(|(unit, scale)| {
