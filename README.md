@@ -146,7 +146,7 @@ You write:
 ```tsx
 import { Box } from '@devup-ui/react'
 
-const example = <Box bg={colorVariable} />
+const example = <Box color={colorVariable} />
 ```
 
 Devup UI generates:
@@ -159,7 +159,7 @@ const example = <div className="a" style={{ "--b": colorVariable }} />;
 With CSS:
 
 ```css
-/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:var(--b)}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{color:var(--b)}
 ```
 
 **Complex expressions and responsive arrays:**
@@ -169,7 +169,7 @@ You write:
 ```tsx
 import { Box } from '@devup-ui/react'
 
-const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+const example = <Box color={['red', 'blue', isActive ? 'green' : dynamicColor]} />
 ```
 
 Devup UI generates:
@@ -182,7 +182,7 @@ const example = <div className={`a b ${isActive ? "c" : "d"}`} style={{ "--e": d
 With responsive CSS for each breakpoint:
 
 ```css
-/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:red}@media(min-width:480px){.b{background:blue}}@media(min-width:768px){.c{background:green}.d{background:var(--e)}}
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{color:red}@media(min-width:480px){.b{color:blue}}@media(min-width:768px){.c{color:green}.d{color:var(--e)}}
 ```
 
 **Type-safe theming:**

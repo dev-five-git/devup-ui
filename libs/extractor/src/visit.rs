@@ -6339,6 +6339,7 @@ mod tests {
             class_name: "dynamic".to_string(),
             variable_name: "--color".to_string(),
             identifier: "color".to_string(),
+            unit: None,
         });
 
         assert_eq!(value, "var(--color)");

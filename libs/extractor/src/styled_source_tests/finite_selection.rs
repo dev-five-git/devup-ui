@@ -130,7 +130,7 @@ fn selection_when_key_coercion_precedes_later_read(
     program
         .body
         .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
+    let code = crate::runtime_units::linked(&output.code) + &Codegen::new().build(&program).code;
     // When: render changing and missing keys through the actual emitted callback.
     let script = format!(
         "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const results={keys}.map(next=>{{selectedKey=next;trace.length=0;const rendered=Card.render({{}},null);const names=rendered.props.className.split(' ');const selected={declarations}.filter(([name])=>names.includes(name)).map(([,value])=>value).sort();const inline=Object.values(rendered.props.style||{{}}).filter(value=>value!=null).sort();return [selected,inline,trace.slice()];}});JSON.stringify([before,results]);"

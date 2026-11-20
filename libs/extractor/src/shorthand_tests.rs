@@ -156,8 +156,17 @@ fn shorthand_dynamic_values_stay_on_the_element() -> Result<(), Box<dyn std::err
         "{}",
         output.code
     );
-    assert!(output.code.contains(&format!("\"{right}\": {alias}")));
-    assert!(output.code.contains(&format!("\"{left}\": {alias}")));
+    // A number the value holds is converted where the element sets it
+    assert!(
+        output
+            .code
+            .contains(&format!("\"{right}\": __devupScale({alias})"))
+    );
+    assert!(
+        output
+            .code
+            .contains(&format!("\"{left}\": __devupScale({alias})"))
+    );
     assert_eq!(
         crate::style_slot_test_support::identifier_reads(&output.code, "position"),
         1

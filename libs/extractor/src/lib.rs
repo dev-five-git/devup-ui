@@ -94,6 +94,7 @@ mod retained_render_assertions;
 #[cfg(test)]
 mod retained_render_support;
 mod runtime_options;
+mod runtime_units;
 mod scope;
 #[cfg(test)]
 mod selector_array_units_tests;
@@ -908,6 +909,14 @@ fn extract_source(
     if !namespace_edits.is_empty() {
         emotion_namespace::units::pixelify(&allocator, &mut program, &namespace_code);
     }
+    let units_helper = runtime_units::applies(
+        evaluated.map_or(code, |(source, _)| source),
+        filename,
+        &option.import_aliases,
+        css_prop != css_prop::CssProp::Off || has_imported_retarget,
+    )
+    .then(|| fresh_name::fresh_name(runtime_units::HELPER_BASE, code_to_parse));
+    let _units = runtime_units::Guard::new(units_helper.clone());
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -1049,6 +1058,9 @@ fn extract_source(
     };
     unwrap_iife::unwrap(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
     peephole::simplify(&oxc_ast::builder::AstBuilder::new(&allocator), &mut program);
+    if let Some(helper) = &units_helper {
+        runtime_units::import(&allocator, &mut program, &option.package, helper);
+    }
     header_pragmas.reanchor(&mut program);
     let mut result = Codegen::new().with_options(codegen_options).build(&program);
     if visitor.jsx.sequences {
@@ -1432,7 +1444,8 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(",");
             let script = format!(
-                "{factories}{}\nconst trace=[]; const props=({invocation}).props;\nconst active=new Set((props.className || '').split(/\\s+/));\nJSON.stringify([trace,[{declarations}].filter(([name])=>active.has(name)).map(([,value])=>value())]);",
+                "{}{factories}{}\nconst trace=[]; const props=({invocation}).props;\nconst active=new Set((props.className || '').split(/\\s+/));\nJSON.stringify([trace,[{declarations}].filter(([name])=>active.has(name)).map(([,value])=>value())]);",
+                runtime_units::linked(&output.code),
                 Codegen::new().build(&program).code
             );
             Context::default()
@@ -16728,10 +16741,18 @@ export const a = {element}"
     #[case(
         "const on = true",
         "margin={on ? `${m}` : `${m}`}",
-        "\"--margin-0-\": `${m}`"
+        "\"--margin-0-\": __devupScale(`${m}`)"
     )]
-    #[case("", "margin={on ? `${m}` : `${m}`}", "\"--margin-0-\": (on, `${m}`)")]
-    #[case("", "margin={1 > 2 ? `${m}` : `${m}`}", "\"--margin-0-\": `${m}`")]
+    #[case(
+        "",
+        "margin={on ? `${m}` : `${m}`}",
+        "\"--margin-0-\": __devupScale((on, `${m}`))"
+    )]
+    #[case(
+        "",
+        "margin={1 > 2 ? `${m}` : `${m}`}",
+        "\"--margin-0-\": __devupScale(`${m}`)"
+    )]
     #[serial]
     fn test_same_branches_read_as_one_value(
         #[case] declaration: &str,
