@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "`@devup-ui/react/native` also tells which breakpoint of devup.json the window is at (`useBreakpoint`, `getBreakpoint`) and whether it is in landscape, for responsive values on React Native (part of #411). One `Dimensions` listener is shared by every component, and a component renders again only when the window crosses into another breakpoint or turns, not on every pixel. The runtime is about 630 bytes minified and gzipped.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

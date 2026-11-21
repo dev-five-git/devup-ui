@@ -39,6 +39,7 @@ impl Problem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RuntimeFeature {
     Responsive,
+    Orientation,
     Theme,
     Pressed,
 }
@@ -47,6 +48,7 @@ impl RuntimeFeature {
     const fn what(self) -> &'static str {
         match self {
             Self::Responsive => "a responsive value is chosen by the window width",
+            Self::Orientation => "an orientation style is chosen by the orientation of the window",
             Self::Theme => "a theme variant is chosen by the theme the app shows",
             Self::Pressed => "a press style is chosen while the element is pressed",
         }
@@ -54,7 +56,8 @@ impl RuntimeFeature {
 
     const fn fix(self) -> &'static str {
         match self {
-            Self::Responsive => "give one value",
+            Self::Responsive => "give one value, or turn the runtime on",
+            Self::Orientation => "remove it, or turn the runtime on",
             Self::Theme => "give the value for one theme, or turn the runtime on",
             Self::Pressed => {
                 "pass a function to the `style` of a React Native `Pressable`, reading `pressed`"

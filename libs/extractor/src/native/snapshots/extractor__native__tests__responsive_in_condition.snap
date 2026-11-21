@@ -2,4 +2,12 @@
 source: libs/extractor/src/native/tests.rs
 expression: compile(code)
 ---
-error: test.tsx:2:6: `<Box>` cannot use `p` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that this version does not include yet. Fix: give one value
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { Themed as __Themed } from "@devup-ui/react/native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 4 },
+	b: { padding: 8 },
+	c: { padding: 12 }
+});
+<__Themed $c={Box} $s={(__t, __b) => on ? __b < 1 ? __s.a : __s.b : __s.c} />;

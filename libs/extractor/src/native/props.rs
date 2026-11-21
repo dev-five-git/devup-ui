@@ -11,7 +11,6 @@ use phf::phf_map;
 
 use crate::extract_style::constant::is_maintain_value_property;
 
-use super::NativeTarget;
 use super::errors::Problem;
 use super::theme::NativeTheme;
 use super::values::{
@@ -238,14 +237,16 @@ fn check_text(text: &str) -> Result<(), Problem> {
 /// compiled with
 pub(super) struct Tokens<'t> {
     pub theme: &'t NativeTheme,
+    /// The index of the theme
     pub index: usize,
-    pub target: &'t NativeTarget,
+    /// The breakpoint
+    pub level: usize,
 }
 
 impl Tokens<'_> {
     /// `text` with its tokens resolved, or `None` when the theme lacks one
     fn resolve<'v>(&self, text: &'v str) -> Result<Option<Cow<'v, str>>, Problem> {
-        self.theme.resolve(text, self.index, self.target)
+        self.theme.resolve(text, (self.index, self.level))
     }
 }
 
@@ -274,6 +275,16 @@ pub(super) fn declarations(
     Ok(Some(declarations))
 }
 
+/// How many breakpoints the styles of the style prop `prop` with the value
+/// `literal` tell apart through the responsive tokens or typography it names
+pub(super) fn literal_levels(prop: &str, literal: &Literal, theme: &NativeTheme) -> usize {
+    match literal {
+        Literal::Text(text) if prop == "typography" => theme.typography_levels(text),
+        Literal::Text(text) => theme.token_levels(text),
+        Literal::Number(_) => 1,
+    }
+}
+
 /// `literal` as text
 fn literal_text(literal: &Literal) -> Cow<'_, str> {
     match literal {
@@ -287,20 +298,20 @@ fn literal_text(literal: &Literal) -> Cow<'_, str> {
 /// multiplied by it, as React Native reads both in pixels
 fn typography(name: &str, tokens: &Tokens<'_>) -> Result<Option<Vec<Declaration>>, Problem> {
     let mut properties = Vec::new();
-    for (property, value) in tokens.theme.typography(name, tokens.target)? {
-        let Some(value) = tokens.resolve(value)? else {
+    for (property, value) in tokens.theme.typography(name, tokens.level)? {
+        let Some(value) = tokens.resolve(&value)?.map(Cow::into_owned) else {
             return Ok(None);
         };
         check_text(&value)?;
-        properties.push((property.as_str(), value.into_owned()));
+        properties.push((property, value));
     }
     let font_size = properties
         .iter()
-        .find(|(property, _)| *property == "font-size")
+        .find(|(property, _)| property == "font-size")
         .and_then(|(_, value)| scaled_length(value.trim()).or_else(|| number(value)));
     let mut declarations = Vec::new();
     for (property, value) in &properties {
-        match *property {
+        match property.as_str() {
             "line-height" | "letter-spacing" => {
                 declarations.extend(relative_to_font(property, value, font_size)?);
             }

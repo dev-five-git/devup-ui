@@ -85,7 +85,7 @@ Bun.plugin({
   name: 'react-native-stand-in',
   setup(build) {
     build.module('react-native', () => ({
-      exports: { Appearance: {} },
+      exports: { Appearance: {}, Dimensions: {} },
       loader: 'object',
     }))
   },

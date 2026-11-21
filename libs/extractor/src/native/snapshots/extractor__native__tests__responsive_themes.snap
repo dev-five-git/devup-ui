@@ -1,0 +1,99 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(theme, true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, useBreakpoint as __useBreakpoint, useLandscape as __useLandscape, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { borderColor: "#5a44ff" },
+	b: { borderColor: "#8c7bff" },
+	c: { margin: 4 },
+	d: { margin: 8 },
+	e: {
+		backgroundColor: "#5a44ff",
+		padding: 4
+	},
+	f: {
+		backgroundColor: "#8c7bff",
+		padding: 6
+	},
+	g: {
+		backgroundColor: "#111",
+		padding: 4
+	},
+	h: {
+		backgroundColor: "#eee",
+		padding: 6
+	},
+	i: {
+		backgroundColor: "#111",
+		padding: 8
+	},
+	j: {
+		backgroundColor: "#eee",
+		padding: 12
+	},
+	k: { color: "#111" },
+	l: { color: "#eee" },
+	m: { fontSize: 24 },
+	n: { fontSize: 32 },
+	o: { fontFamily: "Inter" },
+	p: {
+		fontSize: 12,
+		lineHeight: 18
+	},
+	q: {
+		fontSize: 14,
+		lineHeight: 21
+	},
+	r: {
+		fontSize: 40,
+		lineHeight: 60
+	},
+	s: {
+		fontFamily: "Inter",
+		fontWeight: "500",
+		lineHeight: 24,
+		letterSpacing: -.32
+	},
+	t: { fontSize: 16 },
+	u: { backgroundColor: "#8c7bff" },
+	v: { padding: 4 },
+	w: { padding: 8 },
+	x: { margin: 2 },
+	y: { padding: 6 },
+	z: { backgroundColor: "#5a44ff" },
+	aa: { backgroundColor: "red" },
+	ab: { backgroundColor: "#111" },
+	ac: { backgroundColor: "#eee" },
+	ad: { borderStyle: "solid" },
+	ae: { borderWidth: 1 },
+	af: { borderWidth: 2 },
+	ag: { padding: 12 }
+});
+export function Card({ on }) {
+	const __t = __useThemeIndex();
+	const __b = __useBreakpoint();
+	const __l = __useLandscape();
+	return <Box style={[
+		[__s.a, __s.b][__t],
+		__b < 2 ? __s.c : __s.d,
+		__b < 1 ? [__s.e, __s.f][__t] : __b < 2 ? [__s.g, __s.h][__t] : [__s.i, __s.j][__t]
+	]}>
+      <Text style={[[__s.k, __s.l][__t], __b < 2 ? __s.m : __s.n]} />
+      <Text style={[__s.o, __b < 2 ? [__s.p, __s.q][__t] : __s.r]} />
+      <Text style={[__s.s, __b < 2 ? __s.t : __s.n]} />
+      <Box style={[[null, __s.u][__t], __b < 1 ? [null, __s.v][__t] : [null, __s.w][__t]]} />
+      <Box style={[__b >= 1 && __s.x, __b < 2 ? [__s.v, __s.y][__t] : __s.v]} />
+      <Box style={on ? __b < 2 ? [__s.z, __s.u][__t] : __s.aa : [__s.ab, __s.ac][__t]} />
+      <Box style={[
+		__s.ad,
+		[__s.a, __s.b][__t],
+		__b < 1 ? __s.ae : __s.af
+	]} />
+      <Box style={[__l && [__s.z, __s.u][__t], __l && (__b < 2 ? [__s.v, __s.y][__t] : [__s.w, __s.ag][__t])]} />
+      <Box style={__b < 1 ? [__s.z, __s.u][__t] : [__s.ab, __s.ac][__t]} />
+    </Box>;
+}

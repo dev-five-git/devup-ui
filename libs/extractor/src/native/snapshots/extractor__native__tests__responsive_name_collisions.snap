@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useBreakpoint as __useBreakpoint_, useLandscape as __useLandscape_ } from "@devup-ui/react/native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 4 },
+	b: { padding: 8 },
+	c: { margin: 4 }
+});
+const __b = 1, __l = 2, __useBreakpoint = 3, __useLandscape = 4;
+export const A = () => {
+	const __b_ = __useBreakpoint_();
+	const __l_ = __useLandscape_();
+	return <Box style={[__b_ < 1 ? __s.a : __s.b, __l_ && __s.c]} />;
+};

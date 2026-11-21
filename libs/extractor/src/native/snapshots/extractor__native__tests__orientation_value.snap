@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `_landscape` on React Native: `_landscape` takes an object of styles. Fix: write the styles in an object, such as `_landscape={{ p: 2 }}`
+test.tsx:2:34: `<Box>` cannot use `p` on React Native: a style prop takes one value, not an object. Fix: give one value, or use a platform block such as `_ios`

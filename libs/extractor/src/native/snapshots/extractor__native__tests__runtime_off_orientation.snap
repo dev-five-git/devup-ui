@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(one_theme(), false, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `_landscape` on React Native: an orientation style is chosen by the orientation of the window, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:2:28: `<Box>` cannot use `_portrait` on React Native: an orientation style is chosen by the orientation of the window, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on

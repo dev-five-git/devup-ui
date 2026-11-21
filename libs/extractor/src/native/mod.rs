@@ -9,8 +9,10 @@
 //! platform blocks `_ios`, `_android` and `_web`, and theme tokens when the
 //! theme has one value for them. A value that differs by theme compiles to
 //! one style object a theme, and the element picks one by the index the
-//! runtime of `@devup-ui/react/native` gives. Responsive arrays and
-//! `_pressed` need a runtime that this version does not include, and a prop
+//! runtime of `@devup-ui/react/native` gives; a responsive value compiles to
+//! one style object a run of breakpoints, picked by the breakpoint the
+//! runtime gives, and `_portrait`/`_landscape` apply by its orientation.
+//! `_pressed` needs a runtime that this version does not include, and a prop
 //! React Native has no style for is a build error naming the prop.
 
 mod element;

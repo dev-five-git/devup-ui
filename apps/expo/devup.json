@@ -20,7 +20,8 @@
     },
     "length": {
       "default": {
-        "radius": ["12px"]
+        "radius": ["12px"],
+        "gutter": ["16px", null, "32px"]
       }
     },
     "shadow": {
@@ -29,11 +30,15 @@
       }
     },
     "typography": {
-      "title": {
-        "fontSize": "24px",
-        "fontWeight": 700,
-        "lineHeight": 1.3
-      }
+      "title": [
+        {
+          "fontSize": "24px",
+          "fontWeight": 700,
+          "lineHeight": 1.3
+        },
+        null,
+        { "fontSize": "32px" }
+      ]
     }
   }
 }

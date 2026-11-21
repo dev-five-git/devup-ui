@@ -33,40 +33,36 @@ const __s = StyleSheet.create({
 	h: { color: "#eee" },
 	i: { color: "red" },
 	j: {
-		fontSize: 12,
-		lineHeight: 18,
 		letterSpacing: 1,
 		textTransform: "uppercase"
 	},
 	k: {
+		fontSize: 12,
+		lineHeight: 18
+	},
+	l: {
 		fontSize: 14,
-		lineHeight: 21,
-		letterSpacing: 1,
-		textTransform: "uppercase"
+		lineHeight: 21
 	},
-	l: { borderColor: "#eef" },
-	m: { borderColor: "#223" },
-	n: {
-		borderWidth: 1,
-		borderStyle: "solid",
-		borderColor: "#5a44ff"
-	},
+	m: { borderColor: "#eef" },
+	n: { borderColor: "#223" },
 	o: {
 		borderWidth: 1,
-		borderStyle: "solid",
-		borderColor: "#8c7bff"
+		borderStyle: "solid"
 	},
-	p: { margin: 8 },
-	q: { opacity: .5 },
-	r: { padding: 4 },
-	s: { padding: 8 },
-	t: {
+	p: { borderColor: "#5a44ff" },
+	q: { borderColor: "#8c7bff" },
+	r: { margin: 8 },
+	s: { opacity: .5 },
+	t: { padding: 4 },
+	u: { padding: 8 },
+	v: {
 		backgroundColor: "#5a44ff",
 		margin: 4
 	},
-	u: { color: "#000" },
-	v: { fontFamily: "#000" },
-	w: { margin: 4 }
+	w: { color: "#000" },
+	x: { fontFamily: "#000" },
+	y: { margin: 4 }
 });
 export function Card({ on, color }) {
 	const __t = __useThemeIndex();
@@ -74,19 +70,20 @@ export function Card({ on, color }) {
       <Text style={[__s.d, on ? [__s.e, __s.f][__t] : [__s.g, __s.h][__t]]}>Hi</Text>
       <Text style={[
 		__s.i,
-		on ? [__s.j, __s.k][__t] : __s.d,
-		[__s.l, __s.m][__t]
+		on ? [__s.j, [__s.k, __s.l][__t]] : __s.d,
+		[__s.m, __s.n][__t]
 	]} />
       <Box style={[
 		{ backgroundColor: color },
-		[__s.n, __s.o][__t],
-		on && __s.p,
-		[null, __s.q][__t],
-		__t === 1 && (on ? __s.r : __s.s)
+		__s.o,
+		[__s.p, __s.q][__t],
+		on && __s.r,
+		[null, __s.s][__t],
+		__t === 1 && (on ? __s.t : __s.u)
 	]} />
-      <Box style={[__s.t, __s.u][__t]} />
-      <Text style={[null, __s.v][__t]} />
-      <Box style={__s.p} />
-      <Box style={[__s.w, __t === 1 && (on ? __s.r : __s.s)]} />
+      <Box style={[__s.v, __s.w][__t]} />
+      <Text style={[null, __s.x][__t]} />
+      <Box style={__s.r} />
+      <Box style={[__s.y, __t === 1 && (on ? __s.t : __s.u)]} />
     </Box>;
 }

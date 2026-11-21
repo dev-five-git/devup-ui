@@ -44,6 +44,7 @@ pub fn native_theme(theme: &Theme) -> NativeTheme {
             .iter()
             .map(|(name, typography)| (name.clone(), typography_levels(typography)))
             .collect(),
+        breakpoints: theme.breakpoints.clone(),
     }
 }
 
