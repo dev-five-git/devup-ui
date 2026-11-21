@@ -1,0 +1,47 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { type DevupProps } from "@devup-ui/react";
+import { useThemeIndex as __useThemeIndex, useBreakpoint as __useBreakpoint, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		padding: 16,
+		borderRadius: 8
+	},
+	b: { color: "#111" },
+	c: { color: "#eee" },
+	d: { fontSize: 56 },
+	e: { fontSize: 72 },
+	f: { padding: 8 },
+	g: { fontWeight: "700" },
+	h: { color: "red" },
+	i: { backgroundColor: "#1a1a2e" },
+	j: { margin: 4 },
+	k: { padding: 4 }
+});
+const card = __s.a;
+export function Card({ on, extra, children }) {
+	const __t = __useThemeIndex();
+	const __b = __useBreakpoint();
+	const title = [[__s.b, __s.c][__t], __b < 2 ? __s.d : __s.e];
+	return <Box style={[
+		card,
+		__s.f,
+		extra
+	]}>
+      <Text style={[
+		title,
+		on && __s.g,
+		on && __s.h
+	]}>{children}</Text>
+      <Box style={[[null, __s.i][__t], [card]]} />
+      <Box style={on ? card : undefined} />
+      <View style={[__s.j, extra]} />
+      <Box style={[(0, card), __s.k]} />
+      <Box style={[null, (on, extra)]} />
+    </Box>;
+}

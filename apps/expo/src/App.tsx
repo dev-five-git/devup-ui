@@ -1,6 +1,7 @@
 import {
   Box,
   Button,
+  css,
   Flex,
   Image,
   Input,
@@ -11,6 +12,9 @@ import {
 import { useState } from 'react'
 
 import { Badge } from './Badge'
+
+/** The shape both buttons share */
+const button = css({ borderRadius: '8px', px: 5, py: 3 })
 
 export function App() {
   const [name, setName] = useState('')
@@ -69,10 +73,8 @@ export function App() {
         <Button
           _active={{ bg: '#4330d9' }}
           bg="#5a44ff"
-          borderRadius="8px"
+          className={button}
           onPress={() => setCount(count + 1)}
-          px={5}
-          py={3}
         >
           <Text color="#fff" fontWeight="600">
             Pressed {count} times
@@ -81,10 +83,8 @@ export function App() {
         <Button
           _active={{ opacity: 0.6 }}
           border="1px solid $border"
-          borderRadius="8px"
+          className={button}
           onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          px={5}
-          py={3}
         >
           <Text color="$text">
             Switch to {theme === 'dark' ? 'light' : 'dark'}
