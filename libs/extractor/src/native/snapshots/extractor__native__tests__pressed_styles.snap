@@ -14,8 +14,8 @@ const __s = StyleSheet.create({
 	d: { backgroundColor: "#111" },
 	e: { backgroundColor: "#eee" },
 	f: { opacity: .8 },
-	g: { opacity: .5 },
-	h: { padding: 4 },
+	g: { padding: 4 },
+	h: { opacity: .5 },
 	i: { flexDirection: "row" },
 	j: { backgroundColor: "red" }
 });
@@ -31,10 +31,10 @@ export function Buttons({ on, go, extra }) {
 	]}>
         <Text>Go</Text>
       </Button>
-      <__Pressable onPress={go} style={({ pressed: __p }) => [__p && __s.g, __b < 1 ? __s.h : __s.a]} />
+      <__Pressable onPress={go} style={({ pressed: __p }) => [__b < 1 ? __s.g : __s.a, __p && __s.h]} />
       <__Pressable onPress={go} style={({ pressed: __p }) => [
 		__s.i,
-		__p && (on ? __s.h : __s.a),
+		__p && (on ? __s.g : __s.a),
 		extra
 	]}>
         <Box />

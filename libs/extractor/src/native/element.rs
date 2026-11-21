@@ -337,6 +337,10 @@ struct Elements<'s> {
 #[derive(Default)]
 struct Styles {
     choices: Vec<Choice>,
+    /// The styles of the theme, orientation and press blocks, which apply
+    /// after the other styles whatever the order of the props, as their
+    /// selectors and media queries do on the web
+    blocks: Vec<Choice>,
     /// The code of each style given whole, in prop order
     given: Vec<String>,
     /// The span of each prop leaving the element once it takes `style`
@@ -626,7 +630,7 @@ impl<'a> Elements<'_> {
         }
         let retagged = tag.is_some();
         let press = self.press.take();
-        if let Some(press) = press.filter(|_| styles.choices.iter().any(Choice::pressed)) {
+        if let Some(press) = press.filter(|_| styles.blocks.iter().any(Choice::pressed)) {
             tag = self.pressable(press, kind, local, tag);
         }
         self.finish(element, styles, (tag, local), previous_end);
@@ -685,7 +689,7 @@ impl<'a> Elements<'_> {
                     attribute.span.start,
                     local,
                 );
-                styles.choices.extend(choices);
+                styles.blocks.extend(choices);
             }
             Prop::When(state) => {
                 styles.removed.push(span);
@@ -695,7 +699,7 @@ impl<'a> Elements<'_> {
                     attribute.span.start,
                     local,
                 );
-                styles.choices.extend(choices);
+                styles.blocks.extend(choices);
             }
             Prop::Unsupported(problem) => self.error(attribute.span.start, problem.on(local, name)),
             Prop::Pass => self.pass(attribute),
@@ -872,6 +876,7 @@ impl<'a> Elements<'_> {
     /// The styles of an object of style props
     fn object_choices(&mut self, object: &ObjectExpression<'a>, local: &str) -> Vec<Choice> {
         let mut choices = Vec::new();
+        let mut blocks = Vec::new();
         for property in &object.properties {
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 self.error(
@@ -901,8 +906,12 @@ impl<'a> Elements<'_> {
                 );
                 continue;
             };
-            choices.extend(self.object_property(&key, &property.value, property.span.start, local));
+            let block = matches!(classify(&key), Prop::Theme(_) | Prop::When(_));
+            let property_choices =
+                self.object_property(&key, &property.value, property.span.start, local);
+            if block { &mut blocks } else { &mut choices }.extend(property_choices);
         }
+        choices.extend(blocks);
         choices
     }
 
@@ -1128,12 +1137,14 @@ impl<'a> Elements<'_> {
         attributes_end: u32,
     ) {
         let Styles {
-            choices,
+            mut choices,
+            blocks,
             given,
             mut removed,
             style,
             opaque_spread,
         } = styles;
+        choices.extend(blocks);
         let pressed = choices.iter().any(Choice::pressed);
         let mut style_code = style_code(choices, given, &mut self.sheet, &self.runtime.vars());
         let reads = style_code
