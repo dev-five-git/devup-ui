@@ -1270,7 +1270,7 @@ fn a_static_style_after_one_kept_in_order_checks_it() {
             Choice::Dynamic(vec![("width".to_string(), "w".to_string())]),
             Choice::Static(declarations(&[("padding", 1.0)])),
         ],
-        vec![],
+        (vec![], vec![]),
         &mut sheet,
         &VARS,
     )
