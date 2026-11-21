@@ -145,12 +145,16 @@ pub fn code_extract(
 
 /// Compile a `(filename, code)` source for React Native on `platform`
 /// (`ios`, `android` or `web`): its code and source map, with no CSS. Theme
-/// tokens resolve in the registered theme
+/// tokens resolve in the registered theme.
+///
+/// `runtime` lets styles import the
+/// React Native runtime, and `reanimated` tells that the app has
+/// react-native-reanimated, which animations and transitions run on
 pub fn code_extract_native(
     source: (&str, &str),
     package: &str,
     platform: &str,
-    runtime: bool,
+    (runtime, reanimated): (bool, bool),
 ) -> Result<Output, String> {
     let (filename, code) = source;
     let platform = platform.parse::<NativePlatform>().map_err(|_| {
@@ -161,6 +165,7 @@ pub fn code_extract_native(
         target: ExtractTarget::Native(NativeTarget {
             platform,
             runtime,
+            reanimated,
             theme: std::sync::Arc::new(with_style_sheet(|sheet| native_theme(&sheet.theme))),
         }),
         ..ExtractOption::default()

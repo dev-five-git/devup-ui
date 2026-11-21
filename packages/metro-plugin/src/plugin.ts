@@ -55,6 +55,12 @@ export interface MetroConfigLike {
   }
 }
 
+/**
+ * The package animations and transitions run on: `keyframes()` and the
+ * `animation*` and `transition*` props are build errors in a project without it
+ */
+export const REANIMATED_PACKAGE = 'react-native-reanimated'
+
 /** The transformers tried, in order, when neither the config nor the options name one */
 export const DEFAULT_UPSTREAM_TRANSFORMERS = [
   '@expo/metro-config/babel-transformer',
@@ -145,6 +151,7 @@ export function withDevupUI<T extends MetroConfigLike>(
     package: options.package ?? RUNTIME_PACKAGE,
     include: options.include ?? [],
     runtime: options.runtime ?? true,
+    reanimated: findFrom(projectRoot, REANIMATED_PACKAGE) !== undefined,
     devupFile: resolve(
       projectRoot,
       resolveDevupFile(projectRoot, options.devupFile),

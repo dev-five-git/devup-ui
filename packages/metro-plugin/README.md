@@ -176,6 +176,37 @@ a `styled()` component it reads the component's `disabled` prop. In `css()`,
 `_hover`, `_focus`, `_active` and `_disabled` are build errors: give them to
 the element.
 
+## Animations and transitions
+
+[react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/)
+4 or later runs `keyframes()` and the `animation*` and `transition*` props,
+as its CSS animations and transitions. Devup UI does not depend on it:
+install it in the app (`npx expo install react-native-reanimated`). Without
+it, they are build errors that say so.
+
+```tsx
+const fadeIn = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+
+<Box animationName={fadeIn} animationDuration="400ms" />
+<Image opacity={on ? 1 : 0.6} transition="opacity 300ms" src={logo} />
+```
+
+- `keyframes()` compiles to the keyframes object Reanimated reads, with each
+  style converted as a prop is. A keyframe's styles cannot differ by theme,
+  breakpoint, orientation or state.
+- An element taking an animation or a transition renders Reanimated's
+  animated component (`Animated.View`, `Animated.Text`, `Animated.Image`,
+  or one created with `createAnimatedComponent`).
+- A number of milliseconds stays a number: `transitionDuration={300}`.
+- `transition` and `transitionProperty` name CSS properties, which compile
+  to React Native's: `background-color` becomes `backgroundColor`.
+- `animation` itself is a build error: write `animationName` and the other
+  longhands.
+- An element taking a press, hover or focus style cannot take an animation:
+  animate an element inside it.
+- With `as`, `css()` and a `styled()` component of a component other than
+  Devup UI's, the component given must be animated, such as `Animated.View`.
+
 ## `css()` and `className`
 
 `css()` compiles to the style it describes, the value React Native's `style`
@@ -254,11 +285,12 @@ The component reads style props only through `styled()`: on React Native,
 
 Only styles the build can decide are supported: literals, values read at
 runtime, theme tokens, responsive values, conditions between them and the
-platform, theme, orientation and interaction blocks, `css()` and `styled()`.
-These are build errors, reported by Metro at the file, line and column:
+platform, theme, orientation and interaction blocks, `css()`, `styled()`
+and animations. These are build errors, reported by Metro at the file, line and column:
 
 - selectors other than the states above (`_focusVisible`, `_checked`, `_before`, ...)
-- `globalCss()`, `keyframes()` and `Grid`
+- `globalCss()` and `Grid`
+- animations and transitions in an app without react-native-reanimated
 - any prop React Native has no style for
 - with `runtime: false`, a value that differs by theme or breakpoint,
   `_theme*` with more than one theme, `_portrait`, `_landscape`, and

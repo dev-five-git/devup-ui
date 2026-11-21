@@ -41,6 +41,7 @@ describe('the module Metro loads', () => {
       package: '@devup-ui/react',
       include: [],
       runtime: true,
+      reanimated: false,
       devupFile: join(root, 'devup.json'),
       engine: 'wasm',
     })

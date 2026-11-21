@@ -72,6 +72,7 @@ function setup(
     package: '@devup-ui/react',
     include: [],
     runtime: true,
+    reanimated: true,
     devupFile: join(root, 'devup.json'),
     ...overrides,
   }
@@ -106,7 +107,7 @@ describe('transform', () => {
       input: { ...input, src: 'compiled' },
     })
     expect(extract.mock.calls).toEqual([
-      ['src/App.tsx', APP, '@devup-ui/react', 'ios', false],
+      ['src/App.tsx', APP, '@devup-ui/react', 'ios', false, true],
     ])
     expect(free).toHaveBeenCalledTimes(1)
     expect(host.requireModule.mock.calls).toEqual([['/upstream.js']])

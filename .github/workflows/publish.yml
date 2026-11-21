@@ -14,6 +14,7 @@ on:
       - feat/react-native-pressed
       - feat/react-native-css
       - feat/react-native-styled
+      - feat/react-native-states
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main

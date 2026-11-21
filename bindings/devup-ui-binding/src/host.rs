@@ -287,8 +287,14 @@ pub fn extract_native(
     package: String,
     platform: String,
     runtime: bool,
+    reanimated: bool,
 ) -> Result<NativeOutput> {
-    core::code_extract_native((&filename, &code), &package, &platform, runtime)
-        .map(|output| NativeOutput(Some(output)))
-        .map_err(|error| binding_error(env, error))
+    core::code_extract_native(
+        (&filename, &code),
+        &package,
+        &platform,
+        (runtime, reanimated),
+    )
+    .map(|output| NativeOutput(Some(output)))
+    .map_err(|error| binding_error(env, error))
 }

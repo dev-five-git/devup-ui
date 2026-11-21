@@ -32,6 +32,7 @@ fn themed_option(platform: NativePlatform, runtime: bool, theme: NativeTheme) ->
         target: ExtractTarget::Native(NativeTarget {
             platform,
             runtime,
+            reanimated: true,
             theme: std::sync::Arc::new(theme),
         }),
         ..ExtractOption::default()
@@ -1351,4 +1352,65 @@ export const plain = <Input _focus={{ m: 1 }} />";
 )]
 fn compiles_interaction_states(#[case] name: &str, #[case] code: &str) {
     assert_snapshot!(name, compile_themed(two_themes(), true, code));
+}
+
+const ANIMATIONS: &str = r#"import { keyframes, css, styled } from '@devup-ui/react'
+const fade = keyframes({ from: { opacity: 0, transform: 'scale(0.9)' }, '50%': { opacity: 0.5, bg: '$same' }, to: { opacity: 1 } })
+export const pulse = keyframes({ 0: { w: [size], h: null, _ios: { p: 1 } }, [mid]: { opacity: 0.5 }, 100: { opacity: 1, opacity: 0.8 }, 99: {} })
+export function Card({ on, d }) {
+  return (
+    <Box animationName={fade} animationDuration="300ms" animationIterationCount="infinite" animationDirection="alternate" animationFillMode="both" animationTimingFunction="ease-in-out" animationDelay={d} animationPlayState={on ? 'running' : 'paused'} p={2}>
+      <Text transition="opacity 0.3s, background-color 1s ease, all" opacity={on ? 1 : 0.5}>Hi</Text>
+      <Input transitionProperty="border-color" transitionDuration={200} borderColor={on ? 'red' : 'blue'} _focus={{ borderColor: 'green' }} />
+      <Input transitionProperty="opacity, background-color, all" transitionDuration={200} transitionTimingFunction="linear" transitionDelay="1s" />
+      <Button animationName={on ? fade : pulse} animationDuration={300} />
+      <Button transitionDuration={300} />
+      <Image transitionProperty="opacity" transitionBehavior="allow-discrete" src="a.png" />
+      <Box as={Animated.ScrollView} animationName={fade} />
+      <Box _ios={{ animationDuration: '1s' }} bg="$primary" />
+      <Box icon={<Text transitionDuration="1s" />} _active={{ opacity: 0.5 }} />
+    </Box>
+  )
+}
+export const outside = <Box animationName={fade} bg="$primary" />
+export const Pulse = styled(Box)({ animationName: pulse, animationDuration: '1s' })
+export const Label = styled(Input)({ transition: 'opacity 1s' })
+export const Spin = styled(Animated.View)`animation-name: ${fade}; animation-duration: 1s;`
+export const spin = css({ animationName: fade, animationDuration: '1s' })
+export const text = css`transition: opacity 1s;`
+"#;
+
+const ANIMATION_ERRORS: &str = r#"import { keyframes } from '@devup-ui/react'
+const a = keyframes({ from: { bg: '$primary' }, to: { opacity: [0, 1] }, at: { opacity: on ? 0 : 1 } })
+const b = keyframes({ from: { _active: { opacity: 0 } }, to: 1, ...rest })
+const c = keyframes(frames, more)
+const c2 = keyframes(frames)
+const d = keyframes
+export const e = <Box animationName="fade" animation="spin 1s" />
+export const f = <Box _active={{ opacity: 0.5 }} transition="opacity 1s" />
+export const g = <Button _hover={{ opacity: 0.5 }} animationDuration="1s" />
+export const h = <Box animationDirection="sideways" />
+"#;
+
+const WITHOUT_REANIMATED: &str = r#"import { keyframes, css, styled } from '@devup-ui/react'
+export const b = <Box animationDuration="1s" />
+export const c = css({ transition: 'opacity 1s' })
+export const D = styled(Box)({ animationDuration: '1s' })
+export const E = styled(X)({ animationDuration: '1s' })
+"#;
+
+#[rstest]
+#[case::animations("animations", ANIMATIONS, true)]
+#[case::errors("animation_errors", ANIMATION_ERRORS, true)]
+#[case::without_reanimated("animations_without_reanimated", WITHOUT_REANIMATED, false)]
+fn compiles_animations(#[case] name: &str, #[case] code: &str, #[case] reanimated: bool) {
+    let mut option = themed_option(NativePlatform::Ios, true, two_themes());
+    if let ExtractTarget::Native(target) = &mut option.target {
+        target.reanimated = reanimated;
+    }
+    let output = match extract("test.tsx", &format!("{IMPORT}{code}"), option) {
+        Ok(output) => output.code,
+        Err(error) => format!("error: {error}"),
+    };
+    assert_snapshot!(name, output);
 }

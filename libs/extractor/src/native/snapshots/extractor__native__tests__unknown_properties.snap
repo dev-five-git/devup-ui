@@ -3,6 +3,5 @@ source: libs/extractor/src/native/tests.rs
 expression: compile(code)
 ---
 error: test.tsx:2:6: `<Box>` cannot use `gridTemplateColumns` on React Native: React Native has no `grid-template-columns` style. Fix: remove it, or write a style React Native reads
-test.tsx:2:32: `<Box>` cannot use `transition` on React Native: React Native has no `transition` style. Fix: remove it, or write a style React Native reads
 test.tsx:2:52: `<Box>` cannot use `float` on React Native: React Native has no `float` style. Fix: remove it, or write a style React Native reads
 test.tsx:2:65: `<Box>` cannot use `borderTop` on React Native: React Native has no `border-top` style. Fix: remove it, or write a style React Native reads

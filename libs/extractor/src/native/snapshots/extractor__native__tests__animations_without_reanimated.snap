@@ -1,0 +1,9 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+error: test.tsx:2:10: `keyframes` from `@devup-ui/react` cannot be used on React Native: animations and transitions run on react-native-reanimated, which the app does not have. Fix: install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro
+test.tsx:3:23: `<Box>` cannot use `animationDuration` on React Native: animations and transitions run on react-native-reanimated, which the app does not have. Fix: install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro
+test.tsx:4:24: `css()` cannot use `transition` on React Native: animations and transitions run on react-native-reanimated, which the app does not have. Fix: install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro
+test.tsx:5:32: `styled()` cannot use `animationDuration` on React Native: animations and transitions run on react-native-reanimated, which the app does not have. Fix: install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro
+test.tsx:6:30: `styled()` cannot use `animationDuration` on React Native: animations and transitions run on react-native-reanimated, which the app does not have. Fix: install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro

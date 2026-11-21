@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+error: test.tsx:3:23: `keyframes()` cannot use `from` on React Native: react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state or condition. Fix: write one value for each style of the keyframe
+test.tsx:3:49: `keyframes()` cannot use `to` on React Native: react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state or condition. Fix: write one value for each style of the keyframe
+test.tsx:3:74: `keyframes()` cannot use `at` on React Native: react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state or condition. Fix: write one value for each style of the keyframe
+test.tsx:4:23: `keyframes()` cannot use `from` on React Native: react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state or condition. Fix: write one value for each style of the keyframe
+test.tsx:4:62: `keyframes()` cannot use `to` on React Native: a keyframe holds style props. Fix: give it an object, such as `{ opacity: 0 }`
+test.tsx:4:65: `keyframes()` cannot compile here on React Native: the build reads only the keyframes written in the object. Fix: write each keyframe in it
+test.tsx:5:11: `keyframes()` cannot compile here on React Native: the build reads the keyframes written in the call. Fix: pass one object of keyframes, such as `keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })`
+test.tsx:6:12: `keyframes()` cannot compile here on React Native: the build reads the keyframes written in the call. Fix: pass one object of keyframes, such as `keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })`
+test.tsx:7:11: `keyframes` can only be called on React Native: the build compiles each call into styles. Fix: call it where the styles are used
+test.tsx:8:23: `<Box>` cannot use `animationName` on React Native: `animationName` takes the keyframes `keyframes()` gives on React Native, not a name. Fix: pass what `keyframes({ ... })` gives
+test.tsx:8:44: `<Box>` cannot use `animation` on React Native: react-native-reanimated reads the longhands of `animation`, and the keyframes as an object `keyframes()` gives. Fix: write `animationName={keyframes({ ... })}` with `animationDuration` and the other longhands
+test.tsx:9:50: `<Box>` cannot use `transition` on React Native: react-native-reanimated animates a `style` object, and a press, hover or focus style makes the `style` a function. Fix: animate an element inside the pressable one
+test.tsx:10:52: `<Button>` cannot use `animationDuration` on React Native: react-native-reanimated animates a `style` object, and a press, hover or focus style makes the `style` a function. Fix: animate an element inside the pressable one
+test.tsx:11:23: `<Box>` cannot use `animationDirection` on React Native: React Native does not read `sideways` here. Fix: use one of `normal`, `reverse`, `alternate` or `alternate-reverse`

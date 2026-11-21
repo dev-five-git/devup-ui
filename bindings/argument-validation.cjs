@@ -5,7 +5,8 @@ module.exports = function createBoundary() {
   const descriptors = {
     codeExtract: extraction,
     codeExtractWithoutSourceMap: extraction,
-    codeExtractNative: 'filename:s code:s _package:s platform:s runtime:b',
+    codeExtractNative:
+      'filename:s code:s _package:s platform:s runtime:b reanimated:b',
     dropSession: 'id:u',
     getCss: 'file_num:n import_main_css:b',
     getThemeInterface:

@@ -18,6 +18,8 @@ export interface MetroTransformerSettings {
   readonly include: readonly string[]
   /** Whether the React Native runtime may be imported for what needs it */
   readonly runtime: boolean
+  /** Whether the project has react-native-reanimated, which animations run on */
+  readonly reanimated: boolean
   /** Absolute path of devup.json */
   readonly devupFile: string
   /** The engine; native by default */

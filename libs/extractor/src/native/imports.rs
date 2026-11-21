@@ -12,7 +12,7 @@ use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::errors::{Problem, theme_api};
+use super::errors::{Problem, reanimated_problem, theme_api};
 use super::{NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 
@@ -25,6 +25,9 @@ pub(super) struct Imports {
     pub css: FxHashSet<SymbolId>,
     /// The bindings of `styled`, whose calls compile to components
     pub styled: FxHashSet<SymbolId>,
+    /// The bindings of `keyframes`, whose calls compile to the keyframes
+    /// react-native-reanimated reads
+    pub keyframes: FxHashSet<SymbolId>,
     pub replacements: Vec<Replacement>,
     pub errors: Vec<(u32, String)>,
     /// Whether the file imports the theme API of the runtime
@@ -80,10 +83,7 @@ fn unsupported(name: &str, target: &NativeTarget) -> Option<Problem> {
             "React Native has no document and no global stylesheet",
             "remove it from the React Native build",
         )),
-        "keyframes" => Some(Problem::new(
-            "animations need react-native-reanimated, which is not supported yet",
-            "animate with React Native's `Animated` or react-native-reanimated directly",
-        )),
+        "keyframes" => (!target.reanimated).then(reanimated_problem),
         "stylex" => Some(Problem::new(
             "StyleX has no React Native output",
             "write the styles as props of a Devup UI component",
@@ -186,12 +186,13 @@ impl Imports {
             return Destination::Kept;
         }
         let local = specifier.local.name.to_string();
-        if name == "css" || name == "styled" {
-            let bindings = if name == "css" {
-                &mut self.css
-            } else {
-                &mut self.styled
-            };
+        let bindings = match name.as_str() {
+            "css" => Some(&mut self.css),
+            "styled" => Some(&mut self.styled),
+            "keyframes" => Some(&mut self.keyframes),
+            _ => None,
+        };
+        if let Some(bindings) = bindings {
             bindings.extend(specifier.local.symbol_id.get());
             return Destination::Dropped;
         }

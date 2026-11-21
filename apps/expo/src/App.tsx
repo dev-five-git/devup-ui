@@ -5,6 +5,7 @@ import {
   Flex,
   Image,
   Input,
+  keyframes,
   setTheme,
   Text,
   useTheme,
@@ -15,6 +16,12 @@ import { Badge } from './Badge'
 
 /** The shape both buttons share */
 const button = css({ borderRadius: '8px', px: 5, py: 3 })
+
+/** The card fading in, which react-native-reanimated runs */
+const fadeIn = keyframes({
+  from: { opacity: 0 },
+  to: { opacity: 1 },
+})
 
 export function App() {
   const [name, setName] = useState('')
@@ -34,7 +41,10 @@ export function App() {
       <Image
         borderRadius="16px"
         h="64px"
+        opacity={name ? 1 : 0.6}
         src="https://reactnative.dev/img/tiny_logo.png"
+        transitionDuration="300ms"
+        transitionProperty="opacity"
         w="64px"
       />
       <Text color="$text" typography="title">
@@ -42,6 +52,8 @@ export function App() {
       </Text>
       <Badge label={`${theme ?? 'light'} theme`} />
       <Box
+        animationDuration="400ms"
+        animationName={fadeIn}
         bg="$card"
         borderRadius="$radius"
         boxShadow="$raised"

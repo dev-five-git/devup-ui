@@ -58,6 +58,9 @@ pub struct NativeTarget {
     /// Whether the React Native runtime may be imported for what needs it;
     /// with `false`, such styles are build errors
     pub runtime: bool,
+    /// Whether the app has react-native-reanimated, which runs animations and
+    /// transitions; without it, they are build errors
+    pub reanimated: bool,
     /// The theme tokens resolve in
     pub theme: Arc<NativeTheme>,
 }
@@ -77,6 +80,9 @@ pub(crate) const REACT_NATIVE: &str = "react-native";
 /// The module of the React Native runtime: the theme store and the hook and
 /// component that pick a style object by theme
 pub(crate) const RUNTIME: &str = "@devup-ui/react/native";
+
+/// The package animations and transitions run on
+pub(crate) const REANIMATED: &str = "react-native-reanimated";
 
 /// Compile `code` for React Native, or tell every place it cannot be, each
 /// led by `filename:line:column`

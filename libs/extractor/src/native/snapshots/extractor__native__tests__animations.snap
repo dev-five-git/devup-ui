@@ -1,0 +1,123 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, Themed as __Themed, Focused as __Focused, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { Pressable as __Pressable } from "react-native";
+import __Animated from "react-native-reanimated";
+const __AnimatedInput = __Animated.createAnimatedComponent(Input);
+const __AnimatedButton = __Animated.createAnimatedComponent(Button);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		animationDuration: "300ms",
+		animationIterationCount: "infinite",
+		animationDirection: "alternate",
+		animationFillMode: "both",
+		animationTimingFunction: "ease-in-out",
+		padding: 8
+	},
+	b: { animationPlayState: "running" },
+	c: { animationPlayState: "paused" },
+	d: { transition: "opacity 0.3s, backgroundColor 1s ease, all" },
+	e: { opacity: 1 },
+	f: { opacity: .5 },
+	g: {
+		transitionProperty: "borderColor",
+		transitionDuration: 200
+	},
+	h: { borderColor: "red" },
+	i: { borderColor: "blue" },
+	j: { borderColor: "green" },
+	k: {
+		transitionProperty: [
+			"opacity",
+			"backgroundColor",
+			"all"
+		],
+		transitionDuration: 200,
+		transitionTimingFunction: "linear",
+		transitionDelay: "1s"
+	},
+	l: { animationDuration: 300 },
+	m: { transitionDuration: 300 },
+	n: {
+		transitionProperty: "opacity",
+		transitionBehavior: "allow-discrete"
+	},
+	o: { animationDuration: "1s" },
+	p: { backgroundColor: "#5a44ff" },
+	q: { backgroundColor: "#8c7bff" },
+	r: { transitionDuration: "1s" },
+	s: { transition: "opacity 1s" }
+});
+const __u = (v, s) => {
+	if (typeof v === "number") return v * s;
+	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
+	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
+};
+const fade = {
+	from: {
+		opacity: 0,
+		transform: "scale(0.9)"
+	},
+	"50%": {
+		opacity: .5,
+		backgroundColor: "red"
+	},
+	to: { opacity: 1 }
+};
+export const pulse = {
+	0: {
+		width: __u(size, 4),
+		padding: 4
+	},
+	[mid]: { opacity: .5 },
+	100: { opacity: .8 },
+	99: {}
+};
+export function Card({ on, d }) {
+	const __t = __useThemeIndex();
+	return <__Animated.View style={[
+		__s.a,
+		{ animationName: fade },
+		{ animationDelay: d },
+		on ? __s.b : __s.c
+	]}>
+      <__Animated.Text style={[__s.d, on ? __s.e : __s.f]}>Hi</__Animated.Text>
+      <__Focused $c={__AnimatedInput} $s={(__f) => [
+		__s.g,
+		on ? __s.h : __s.i,
+		__f && __s.j
+	]} />
+      <__AnimatedInput style={__s.k} />
+      <__AnimatedButton style={[__s.l, on ? { animationName: fade } : { animationName: pulse }]} />
+      <__AnimatedButton style={__s.m} />
+      <__Animated.Image source={{ uri: "a.png" }} style={__s.n} />
+      <Animated.ScrollView style={{ animationName: fade }} />
+      <__Animated.View style={[__s.o, [__s.p, __s.q][__t]]} />
+      <__Pressable icon={<__Animated.Text style={__s.r} />} style={({ pressed: __p }) => __p && __s.f} />
+    </__Animated.View>;
+}
+export const outside = <__Themed $c={__Animated.View} $s={(__t) => [{ animationName: fade }, [__s.p, __s.q][__t]]} />;
+export const Pulse = (__props) => {
+	return <__Animated.View {...__props} style={[
+		__s.o,
+		{ animationName: pulse },
+		__props.style
+	]} />;
+};
+export const Label = (__props) => {
+	return <__AnimatedInput {...__props} style={[__s.s, __props.style]} />;
+};
+export const Spin = (__props) => {
+	return <Animated.View {...__props} style={[
+		__s.o,
+		{ animationName: fade },
+		__props.style
+	]} />;
+};
+export const spin = [__s.o, { animationName: fade }];
+export const text = __s.s;

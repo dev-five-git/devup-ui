@@ -93,3 +93,12 @@ pub(super) fn theme_api(name: &str) -> Problem {
         "remove it, or turn the runtime on",
     )
 }
+
+/// Why animations and transitions cannot compile in an app without
+/// react-native-reanimated, which runs them
+pub(super) fn reanimated_problem() -> Problem {
+    Problem::new(
+        "animations and transitions run on react-native-reanimated, which the app does not have",
+        "install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro",
+    )
+}
