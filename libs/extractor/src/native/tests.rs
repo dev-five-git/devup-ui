@@ -1193,6 +1193,11 @@ fn a_static_style_after_one_kept_in_order_checks_it() {
             Choice::Static(declarations(&[("margin", 2.0)])),
             Choice::Dynamic(vec![("width".to_string(), "w".to_string())]),
             Choice::Static(declarations(&[("padding", 1.0)])),
+            when(
+                State::Pressed,
+                Choice::Static(declarations(&[("height", 1.0)])),
+            ),
+            Choice::Static(declarations(&[("top", 1.0)])),
         ],
         vec![],
         &mut sheet,
@@ -1201,6 +1206,6 @@ fn a_static_style_after_one_kept_in_order_checks_it() {
     .map(|style| style.code);
     assert_eq!(
         code.as_deref(),
-        Some("[s.a, { margin: m }, s.b, { width: w }]")
+        Some("[s.a, { margin: m }, s.b, { width: w }, p && s.c]")
     );
 }
