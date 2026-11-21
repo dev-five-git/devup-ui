@@ -7,6 +7,13 @@ import { StyleSheet } from "react-native";
 const __s = StyleSheet.create({
 	a: { margin: 8 },
 	b: { padding: 4 },
-	c: { padding: 8 }
+	c: { padding: 8 },
+	d: { margin: 4 }
 });
 export const s = [__s.a, cond ? __s.b : __s.c];
+export const t = [
+	true,
+	on ? null : __s.b,
+	on && __s.d,
+	other.css({ p: 1 })
+];

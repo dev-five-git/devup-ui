@@ -7,7 +7,7 @@ use oxc_ast::ast::{
     ExportDefaultDeclaration, Expression, Function, FunctionBody, IdentifierReference,
     JSXAttribute, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement,
     JSXElementName, JSXExpression, LogicalOperator, ObjectExpression, ObjectPropertyKind, Program,
-    TSType, UnaryOperator, VariableDeclarator,
+    TSType, TaggedTemplateExpression, UnaryOperator, VariableDeclarator,
 };
 use std::cell::Cell;
 use std::fmt::Write;
@@ -388,6 +388,14 @@ impl<'a> Visit<'a> for Elements<'_> {
     }
 
     fn visit_ts_type(&mut self, _: &TSType<'a>) {}
+
+    fn visit_tagged_template_expression(&mut self, template: &TaggedTemplateExpression<'a>) {
+        if self.is_css(&template.tag) {
+            self.css_template(template);
+        } else {
+            walk::walk_tagged_template_expression(self, template);
+        }
+    }
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         if self.is_css(&call.callee) {

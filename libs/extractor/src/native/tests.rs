@@ -1181,7 +1181,7 @@ fn compiles_pressed(#[case] name: &str, #[case] runtime: bool, #[case] code: &st
     assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
 }
 
-const CSS_ELEMENTS: &str = r#"import { css as style, type DevupProps } from '@devup-ui/react'
+const CSS_ELEMENTS: &str = r"import { css as style, type DevupProps } from '@devup-ui/react'
 const card = style({ p: 4, borderRadius: '8px' })
 export function Card({ on, extra, children }) {
   const title = style({ color: '$text', fontSize: [14, null, 18] })
@@ -1195,14 +1195,19 @@ export function Card({ on, extra, children }) {
       <Box style={[style(), (on, extra)]} />
     </Box>
   )
-}"#;
+}";
 
 #[rstest]
 #[case::css("css_calls", true, CSS_ELEMENTS)]
 #[case::css_only(
     "css_only",
     true,
-    "import { css } from '@devup-ui/react'\nexport const s = css({ m: 2 }, cond ? { p: 1 } : { p: 2 })"
+    "import { css } from '@devup-ui/react'\nexport const s = css({ m: 2 }, cond ? { p: 1 } : { p: 2 })\nexport const t = css(true, on ? undefined : { p: 1 }, on ? { m: 1 } : false, (other.css({ p: 1 })))"
+)]
+#[case::text(
+    "css_text",
+    true,
+    "import { css } from '@devup-ui/react'\nexport function A({ size }) {\n  const s = css`\n    /* the card */\n    background-color: $primary;\n    padding: 8px 16px !important;\n    border-radius: ${size};\n    font-weight: ${'bold'};\n    /* unterminated`\n  return <Box className={s} />\n}\nexport const t = css``"
 )]
 #[case::runtime_off(
     "css_runtime_off",
@@ -1218,6 +1223,9 @@ export const b = css(...parts)
 export const c = css('flex', `p-2`, cond ? { p: 1 } : 2)
 export const d = css({ _hover: { p: 1 }, [key]: 1 })
 export const f = css
+export const g = css({ _ios: { className: 'a' } }, on ? 1 : { p: 1 })
+export const h = css`&:hover { color: red }`
+export const i = css`padding ${x}px; padding: ${x}px; -webkit-mask: red; color`
 export function E() {
   return <Box className="p-4" _active={{ p: 1 }} style={css({ _pressed: { m: 1 } })}><Box className /></Box>
 }"#

@@ -3,14 +3,16 @@
 
 use oxc_ast::ast::{
     CallExpression, Expression, IdentifierReference, JSXAttribute, LogicalOperator,
-    ObjectExpression,
+    ObjectExpression, TaggedTemplateExpression, TemplateLiteral,
 };
 use oxc_ast_visit::Visit;
 use oxc_span::{GetSpan, Span};
+use std::fmt::Write;
 
-use super::{Elements, Styles, attribute_expression};
+use super::{Elements, Prop, Styles, attribute_expression, classify};
 use crate::native::errors::Problem;
 use crate::native::style::{Choice, combined, style_code};
+use crate::native::values::Literal;
 
 /// The name `css()` errors call the call by
 const CSS: &str = "css()";
@@ -52,6 +54,18 @@ impl<'a> Elements<'_> {
                 .on(CSS, &name),
             );
         }
+        self.css_code(call.span, choices);
+    }
+
+    /// Compile `css` tagged with CSS text, such as `` css`padding: 8px;` ``,
+    /// to the style it describes
+    pub(super) fn css_template(&mut self, template: &TaggedTemplateExpression<'a>) {
+        let choices = self.css_text(&template.quasi, template.span.start);
+        self.css_code(template.span, choices);
+    }
+
+    /// Put the style `choices` describe in place of the `css` at `span`
+    fn css_code(&mut self, span: Span, choices: Vec<Choice>) {
         let code = style_code(
             choices,
             (Vec::new(), Vec::new()),
@@ -62,13 +76,79 @@ impl<'a> Elements<'_> {
             || "null".to_string(),
             |style| {
                 if style.reads.any() && !self.read_in_component(style.reads) {
-                    self.error(call.span.start, outside_component_problem());
+                    self.error(span.start, outside_component_problem());
                 }
                 style.code
             },
         );
         self.replacements
-            .push((call.span.start as usize, call.span.end as usize, code));
+            .push((span.start as usize, span.end as usize, code));
+    }
+
+    /// The styles CSS text declares, each value written in it or given whole
+    /// by an interpolation
+    pub(super) fn css_text(&mut self, template: &TemplateLiteral<'a>, offset: u32) -> Vec<Choice> {
+        let text = marked_text(template);
+        if text.contains(['{', '}']) {
+            self.error(
+                offset,
+                Problem::new(
+                    "CSS text on React Native holds only declarations: React Native has no selectors, nesting or at-rules",
+                    "write the declarations alone, and the styles of other states as props such as `_active`",
+                )
+                .call(CSS),
+            );
+            return Vec::new();
+        }
+        let mut choices = Vec::new();
+        for declaration in text
+            .split(';')
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            match self.css_declaration(declaration, &template.expressions) {
+                Ok(choice) => choices.push(choice),
+                Err((name, problem)) => self.error(offset, problem.on(CSS, &name)),
+            }
+        }
+        choices
+    }
+
+    /// The styles one declaration of CSS text declares
+    fn css_declaration(
+        &self,
+        declaration: &str,
+        expressions: &[Expression<'a>],
+    ) -> Result<Choice, (String, Problem)> {
+        let Some((name, value)) = declaration.split_once(':') else {
+            return Err((
+                unmarked(declaration),
+                Problem::new(
+                    "a declaration of CSS text is a property and a value",
+                    "write it as `property: value`",
+                ),
+            ));
+        };
+        let name = camel_case(name.trim());
+        let value = value.trim().trim_end_matches("!important").trim_end();
+        if classify(&name) != Prop::Declares {
+            return Err((
+                name,
+                Problem::new(
+                    "React Native has no such style",
+                    "remove it, or write a style React Native has",
+                ),
+            ));
+        }
+        let result = match marker_index(value) {
+            Some(index) => self.expression_choice(&name, &expressions[index]),
+            None if value.contains(MARKER) => Err(Problem::new(
+                "the build reads an interpolation in CSS text only as a whole value",
+                "compute the whole value in the interpolation, such as `${`${size}px`}`",
+            )),
+            None => self.static_choice(&name, &[(0, Literal::Text(value.to_string()))]),
+        };
+        result.map_err(|problem| (name, problem))
     }
 
     /// One argument of `css()`: an object of styles, a condition choosing
@@ -192,6 +272,70 @@ impl<'a> Elements<'_> {
             code
         }
     }
+}
+
+/// What marks an interpolation in CSS text, around its index
+const MARKER: char = char::MIN;
+
+/// The text of `template`, each interpolation marked by its index
+fn marked_text(template: &TemplateLiteral<'_>) -> String {
+    let mut text = String::new();
+    for (index, quasi) in template.quasis.iter().enumerate() {
+        text.push_str(quasi.value.raw.as_str());
+        if index < template.expressions.len() {
+            let _ = write!(text, "{MARKER}{index}{MARKER}");
+        }
+    }
+    strip_comments(&text)
+}
+
+/// `text` without its CSS comments
+fn strip_comments(text: &str) -> String {
+    let mut rest = text;
+    let mut kept = String::new();
+    while let Some(start) = rest.find("/*") {
+        kept.push_str(&rest[..start]);
+        rest = rest[start + 2..]
+            .find("*/")
+            .map_or("", |end| &rest[start + 2 + end + 2..]);
+    }
+    kept.push_str(rest);
+    kept
+}
+
+/// `text` as it is written, each interpolation as `${…}`
+fn unmarked(text: &str) -> String {
+    text.split(MARKER)
+        .enumerate()
+        .map(|(at, part)| if at % 2 == 1 { "${…}" } else { part })
+        .collect()
+}
+
+/// The index of the interpolation `value` is, when it is one whole
+fn marker_index(value: &str) -> Option<usize> {
+    value
+        .strip_prefix(MARKER)?
+        .strip_suffix(MARKER)?
+        .parse()
+        .ok()
+}
+
+/// A CSS property name as React Native names its style: `background-color`
+/// as `backgroundColor`
+fn camel_case(name: &str) -> String {
+    let mut camel = String::with_capacity(name.len());
+    let mut upper = false;
+    for character in name.chars() {
+        if character == '-' {
+            upper = !camel.is_empty();
+        } else if upper {
+            camel.extend(character.to_uppercase());
+            upper = false;
+        } else {
+            camel.push(character);
+        }
+    }
+    camel
 }
 
 /// Whether `expression` is an object of styles
