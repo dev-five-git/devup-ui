@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Add `@devup-ui/react/native/types`, which types each component as the React Native component it renders (`Box` takes `ViewProps`, `Button` takes `PressableProps`, ...) through the new `DevupElementProps` augmentation point. Web types are unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

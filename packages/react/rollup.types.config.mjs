@@ -19,8 +19,8 @@ const entries = {
 }
 const shared = '_shared'
 
-/** Declarations written by hand, which ambiently declare modules and stay as they are */
-const ambient = /^compat\/(?!index\.)[^/]+\.d\.ts$/
+/** Declarations written by hand, which declare or augment modules and stay as they are */
+const ambient = /^(compat\/(?!index\.)[^/]+|native\/types)\.d\.ts$/
 
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

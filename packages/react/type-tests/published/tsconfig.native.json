@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.bundler.json",
+  "files": ["native.tsx"]
+}

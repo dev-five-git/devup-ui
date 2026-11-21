@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@devup-ui/react": ["../../src/index.ts"],
+      "@devup-ui/react/*": ["../../src/*"]
+    }
+  },
+  "files": ["../../src/native/types.d.ts", "app.tsx"],
+  "include": []
+}

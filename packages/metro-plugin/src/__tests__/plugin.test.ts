@@ -1,8 +1,24 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import * as pluginUtils from '@devup-ui/plugin-utils'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type Mock,
+  spyOn,
+} from 'bun:test'
 
 import {
   REANIMATED_PACKAGE,
@@ -11,17 +27,22 @@ import {
   withDevupUI,
 } from '../plugin'
 import { readSettings, SETTINGS_ENV } from '../settings'
+import { NATIVE_TYPES } from '../types'
 
+const wasm = pluginUtils.loadCompiler('wasm')
 let root: string
 let previous: string | undefined
+let selection: Mock<typeof pluginUtils.loadCompiler>
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'devup-metro-plugin-'))
   previous = process.env[SETTINGS_ENV]
   delete process.env[SETTINGS_ENV]
+  selection = spyOn(pluginUtils, 'loadCompiler').mockReturnValue(wasm)
 })
 
 afterEach(() => {
+  selection.mockRestore()
   rmSync(root, { recursive: true, force: true })
   if (previous === undefined) delete process.env[SETTINGS_ENV]
   else process.env[SETTINGS_ENV] = previous
@@ -106,6 +127,35 @@ describe('withDevupUI', () => {
       devupFile: join(root, 'theme', 'devup.json'),
       engine: 'wasm',
     })
+    expect(selection.mock.calls).toEqual([['wasm']])
+  })
+
+  it('writes the types of the theme and of React Native into df', () => {
+    write(
+      'devup.json',
+      JSON.stringify({ theme: { colors: { default: { primary: '#000' } } } }),
+    )
+    withDevupUI({
+      projectRoot: root,
+      transformer: { babelTransformerPath: '/up.js' },
+    })
+    expect(readFileSync(join(root, 'df', 'theme.d.ts'), 'utf-8')).toContain(
+      'primary',
+    )
+    expect(readFileSync(join(root, 'df', 'native.d.ts'), 'utf-8')).toBe(
+      NATIVE_TYPES,
+    )
+    expect(readFileSync(join(root, 'df', '.gitignore'), 'utf-8')).toBe('*')
+  })
+
+  it('writes the types into the distDir option', () => {
+    withDevupUI(
+      { projectRoot: root, transformer: { babelTransformerPath: '/up.js' } },
+      { distDir: 'types/devup' },
+    )
+    expect(existsSync(join(root, 'types', 'devup', 'theme.d.ts'))).toBe(true)
+    expect(existsSync(join(root, 'types', 'devup', 'native.d.ts'))).toBe(true)
+    expect(existsSync(join(root, 'df'))).toBe(false)
   })
 
   it('resolves the upstreamTransformer option from the project root', () => {

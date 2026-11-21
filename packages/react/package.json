@@ -21,8 +21,8 @@
   "scripts": {
     "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
     "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && vite build && rollup -c rollup.types.config.mjs && bun run test:published-types",
-    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/tsconfig.json",
-    "test:published-types": "bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/published/tsconfig.bundler.json && bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/published/tsconfig.node16.json"
+    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/tsconfig.json && bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/native/tsconfig.json",
+    "test:published-types": "bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/published/tsconfig.bundler.json && bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/published/tsconfig.node16.json && bun ../../node_modules/@typescript/native/bin/tsc -p type-tests/published/tsconfig.native.json"
   },
   "publishConfig": {
     "access": "public"
@@ -74,6 +74,9 @@
       "types": "./dist/native/index.d.ts",
       "import": "./dist/native/index.js",
       "require": "./dist/native/index.cjs"
+    },
+    "./native/types": {
+      "types": "./dist/native/types.d.ts"
     }
   },
   "files": [

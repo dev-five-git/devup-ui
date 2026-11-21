@@ -17,6 +17,7 @@ on:
       - feat/react-native-states
       - feat/react-native-animations
       - feat/react-native-compat
+      - feat/react-native-web
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main
@@ -930,7 +931,7 @@ jobs:
           fi
           files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD)"
           echo "$files"
-          if grep -qE '^(libs/extractor/src/native/|libs/binding/|bindings/devup-ui-(binding|wasm)/|packages/(metro-plugin|plugin-utils)/|packages/react/src/native/|packages/react/src/utils/(theme-context|with-theme).|apps/expo/|\.github/workflows/publish\.yml$)' <<< "$files"; then
+          if grep -qE '^(libs/extractor/src/native/|libs/binding/|bindings/devup-ui-(binding|wasm)/|packages/(metro-plugin|plugin-utils)/|packages/react/src/(native|types)/|packages/react/src/utils/(theme-context|with-theme).|apps/expo/|\.github/workflows/publish\.yml$)' <<< "$files"; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -965,6 +966,10 @@ jobs:
       - name: Check the bundles
         working-directory: apps/expo
         run: bun run check
+      # Metro wrote df/theme.d.ts and df/native.d.ts when it read the config
+      - name: Type-check the app against the theme and React Native props
+        working-directory: apps/expo
+        run: bun run typecheck
       - *record-playwright-revisions
       - *restore-playwright-cache
       - *install-chromium
