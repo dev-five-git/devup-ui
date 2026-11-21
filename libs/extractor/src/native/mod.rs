@@ -12,8 +12,9 @@
 //! runtime of `@devup-ui/react/native` gives; a responsive value compiles to
 //! one style object a run of breakpoints, picked by the breakpoint the
 //! runtime gives, and `_portrait`/`_landscape` apply by its orientation.
-//! `_pressed` needs a runtime that this version does not include, and a prop
-//! React Native has no style for is a build error naming the prop.
+//! `_active`/`_pressed` make the element a `Pressable`, whose `style` is a
+//! function of whether it is pressed. A prop React Native has no style for is
+//! a build error naming the prop.
 
 mod element;
 mod errors;

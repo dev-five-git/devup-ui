@@ -10,6 +10,7 @@ on:
       - feat/napi-binding
       - feat/react-native-metro
       - feat/react-native-themes
+      - feat/react-native-responsive
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main

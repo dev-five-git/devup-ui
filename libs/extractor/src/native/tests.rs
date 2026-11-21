@@ -2,7 +2,7 @@ use insta::assert_snapshot;
 use rstest::rstest;
 
 use super::element::units_declaration;
-use super::errors::{Problem, RuntimeFeature};
+use super::errors::Problem;
 use super::props::Declaration;
 use super::sheet::{Sheet, key_name};
 use super::style::{Choice, State, Vars, cascade, in_theme, style_code, varied, when};
@@ -14,6 +14,7 @@ const VARS: Vars<'static> = Vars {
     theme: "t",
     breakpoint: "b",
     landscape: "l",
+    pressed: "p",
 };
 
 const IMPORT: &str =
@@ -209,10 +210,6 @@ fn compiles_files(#[case] name: &str, #[case] code: &str) {
 #[case::theme_token("theme_token", "<Box bg=\"$primary\" />")]
 #[case::theme_selector("theme_selector", "<Box _themeDark={{ bg: 'black' }} />")]
 #[case::typography("typography", "<Text typography=\"heading\" />")]
-#[case::pressed(
-    "pressed",
-    "<Button _pressed={{ bg: 'red' }} _active={{ bg: 'blue' }} />"
-)]
 #[case::selectors(
     "selectors",
     "<Box _hover={{ bg: 'red' }} _focus={{ bg: 'blue' }} selectors={{ '&:hover': {} }} />"
@@ -469,17 +466,6 @@ fn problems_format_for_props_and_imports() {
     assert_eq!(
         problem.import("css", "@devup-ui/react"),
         "`css` from `@devup-ui/react` cannot be used on React Native: why. Fix: how"
-    );
-    let target = NativeTarget {
-        platform: NativePlatform::Ios,
-        runtime: true,
-        theme: std::sync::Arc::default(),
-    };
-    assert!(
-        RuntimeFeature::Pressed
-            .problem(&target)
-            .fix
-            .contains("Pressable")
     );
 }
 
@@ -1143,4 +1129,43 @@ fn varied_choices_pick_by_breakpoint_and_theme() {
             when(State::Landscape(true), Choice::Static(a))
         )
     );
+}
+
+const PRESSED_ELEMENTS: &str = r#"export function Buttons({ on, go, extra }) {
+  return (
+    <Box>
+      <Button onPress={go} bg="$primary" p={2} _pressed={{ bg: '$text', opacity: 0.8 }}>
+        <Text>Go</Text>
+      </Button>
+      <Box onPress={go} _active={{ opacity: 0.5 }} p={[1, 2]} />
+      <Flex onPress={go} _pressed={{ p: on ? 1 : 2 }} style={extra}>
+        <Box />
+      </Flex>
+      <Box _themeDark={{ _pressed: { bg: 'red' } }} />
+      <Button _pressed={{}} />
+      <Box _active={{}} />
+    </Box>
+  )
+}
+export const outside = <Box _pressed={{ bg: '$primary' }} />"#;
+
+#[rstest]
+#[case::pressed("pressed_styles", true, PRESSED_ELEMENTS)]
+#[case::runtime_off(
+    "pressed_runtime_off",
+    false,
+    "export const a = <Box _pressed={{ m: 1, _pressed: { p: 1 } }} bg=\"red\" />"
+)]
+#[case::name_collisions(
+    "pressed_name_collisions",
+    true,
+    "const __p = 1, __Pressable = 2;\nexport const A = () => <Box _pressed={{ m: 1 }} />"
+)]
+#[case::errors(
+    "pressed_errors",
+    true,
+    "<Text _pressed={{ color: 'red' }} />;\n<Image _pressed={{ opacity: 0.5 }} />;\n<Input _pressed={{ bg: 'red' }} />;\n<Box as={Animated.View} _pressed={{ bg: 'red' }} />;\n<Box _pressed={1} />"
+)]
+fn compiles_pressed(#[case] name: &str, #[case] runtime: bool, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
 }

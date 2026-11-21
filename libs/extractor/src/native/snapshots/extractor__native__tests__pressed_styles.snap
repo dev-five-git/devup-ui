@@ -1,0 +1,47 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, useBreakpoint as __useBreakpoint, Themed as __Themed, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { Pressable as __Pressable } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 8 },
+	b: { backgroundColor: "#5a44ff" },
+	c: { backgroundColor: "#8c7bff" },
+	d: { backgroundColor: "#111" },
+	e: { backgroundColor: "#eee" },
+	f: { opacity: .8 },
+	g: { opacity: .5 },
+	h: { padding: 4 },
+	i: { flexDirection: "row" },
+	j: { backgroundColor: "red" }
+});
+export function Buttons({ on, go, extra }) {
+	const __t = __useThemeIndex();
+	const __b = __useBreakpoint();
+	return <Box>
+      <Button onPress={go} style={({ pressed: __p }) => [
+		__s.a,
+		[__s.b, __s.c][__t],
+		__p && [__s.d, __s.e][__t],
+		__p && __s.f
+	]}>
+        <Text>Go</Text>
+      </Button>
+      <__Pressable onPress={go} style={({ pressed: __p }) => [__p && __s.g, __b < 1 ? __s.h : __s.a]} />
+      <__Pressable onPress={go} style={({ pressed: __p }) => [
+		__s.i,
+		__p && (on ? __s.h : __s.a),
+		extra
+	]}>
+        <Box />
+      </__Pressable>
+      <__Pressable style={({ pressed: __p }) => __t === 1 && __p && __s.j} />
+      <Button />
+      <Box />
+    </Box>;
+}
+export const outside = <__Themed $c={__Pressable} $s={(__t) => (({ pressed: __p }) => __p && [__s.b, __s.c][__t])} />;

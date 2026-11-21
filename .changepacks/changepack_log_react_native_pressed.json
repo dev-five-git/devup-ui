@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles press styles for React Native (part of #411): `_active` and its React Native name `_pressed` make the element a `Pressable` (a `Box`, `Flex`, `Center` or `VStack` becomes one, a `Button` already is) whose `style` is a function of whether it is pressed, `({ pressed }) => [styles.a, pressed && styles.b]`. Press styles combine with responsive values, themes, platforms, orientations and conditions, and work with `runtime: false` as they need no runtime. They are build errors on a `Text`, an `Image` or an `Input`, and with `as`. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}
