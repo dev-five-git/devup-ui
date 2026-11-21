@@ -23,7 +23,10 @@ use super::errors::{Problem, RuntimeFeature};
 use super::imports::{self, native_component};
 use super::props::{Declaration, Tokens, declarations, dynamic_keys, literal_levels};
 use super::sheet::Sheet;
-use super::style::{Choice, Reads, State, Vars, cascade, in_theme, style_code, varied, when};
+use super::style::{
+    Choice, INTERACTIONS, Reads, State, Vars, cascade, in_theme, interaction_keys, style_code,
+    varied, when, without,
+};
 use super::theme::{DEFAULT_BREAKPOINTS, selector_theme};
 use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
 use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
@@ -53,6 +56,13 @@ struct Runtime {
     /// The variable holding whether the element is pressed, in the function
     /// `Pressable` calls for its style
     pressed: String,
+    /// The variables holding whether the pointer is over the element and
+    /// whether it has focus
+    hovered: String,
+    focused: String,
+    /// The component telling a `TextInput` whether it has focus
+    focused_wrapper: String,
+    focused_used: bool,
     /// The hooks reading each, by what they read
     hooks: [String; 3],
     /// What the hooks the file calls read
@@ -80,6 +90,10 @@ impl Runtime {
             breakpoint: fresh_name("__b", code),
             landscape: fresh_name("__l", code),
             pressed: fresh_name("__p", code),
+            hovered: fresh_name("__h", code),
+            focused: fresh_name("__f", code),
+            focused_wrapper: fresh_name("__Focused", code),
+            focused_used: false,
             hooks: HOOKS.map(|hook| fresh_name(&format!("__{hook}"), code)),
             hooks_used: Reads::default(),
             wrapper: fresh_name("__Themed", code),
@@ -97,6 +111,9 @@ impl Runtime {
             breakpoint: &self.breakpoint,
             landscape: &self.landscape,
             pressed: &self.pressed,
+            hovered: &self.hovered,
+            focused: &self.focused,
+            disabled: "false",
         }
     }
 
@@ -112,7 +129,7 @@ impl Runtime {
     /// The import of the runtime and the calls telling it the theme names
     /// and the breakpoints, when the file uses it
     fn prelude(&self, target: &NativeTarget, theme_api: bool) -> Option<String> {
-        if !(self.hooks_used.any() || self.wrapper_used || theme_api) {
+        if !(self.hooks_used.any() || self.wrapper_used || self.focused_used || theme_api) {
             return None;
         }
         let reads = self.hooks_used.union(self.wrapper_reads);
@@ -122,6 +139,9 @@ impl Runtime {
             .collect();
         if self.wrapper_used {
             specifiers.push(format!("Themed as {}", self.wrapper));
+        }
+        if self.focused_used {
+            specifiers.push(format!("Focused as {}", self.focused_wrapper));
         }
         let theme = &target.theme;
         let mut calls = String::new();
@@ -270,6 +290,9 @@ fn classify(name: &str) -> Prop {
         "_portrait" => Prop::When(State::Landscape(false)),
         "_landscape" => Prop::When(State::Landscape(true)),
         "_pressed" | "_active" => Prop::When(State::Pressed),
+        "_hover" => Prop::When(State::Hovered),
+        "_focus" => Prop::When(State::Focused),
+        "_disabled" => Prop::When(State::Disabled),
         "className" => Prop::ClassName,
         "typography" => Prop::Declares,
         "styleOrder" | "styleVars" => Prop::Unsupported(Problem::new(
@@ -366,6 +389,11 @@ struct Styles {
     removed: Vec<Span>,
     /// The `style` prop, which leaves the element with the style props
     style: Option<Span>,
+    /// The code of the element's `disabled` prop, which `_disabled` reads
+    disabled: Option<String>,
+    /// Whether `Focused` renders the element, which tells whether it has
+    /// focus: a `TextInput` taking a focus style
+    focus_wrapped: bool,
     /// The `style` prop's value compiled, which it keeps when the element
     /// takes no other style
     kept: Option<Replacement>,
@@ -687,8 +715,17 @@ impl<'a> Elements<'_> {
         }
         let retagged = tag.is_some();
         let press = self.press.take();
-        if let Some(press) = press.filter(|_| styles.blocks.iter().any(Choice::pressed)) {
-            tag = self.pressable(press, kind, local, tag);
+        let held: Vec<State> = INTERACTIONS
+            .into_iter()
+            .filter(|state| styles.blocks.iter().any(|choice| choice.holds(*state)))
+            .collect();
+        if let Some(press) = press.filter(|_| !held.is_empty()) {
+            if *kind == ExportVariableKind::Input && held == [State::Focused] && tag.is_none() {
+                // A `TextInput` tells its focus only through its events
+                styles.focus_wrapped = true;
+            } else {
+                tag = self.pressable(press, kind, local, tag);
+            }
         }
         self.finish(element, styles, (tag, local), previous_end);
         self.children(element, kind, local, retagged);
@@ -709,6 +746,12 @@ impl<'a> Elements<'_> {
             return None;
         };
         let name = name.name.as_str();
+        if name == "disabled" {
+            styles.disabled = Some(
+                attribute_expression(attribute)
+                    .map_or_else(|| "true".to_string(), |value| self.source(value)),
+            );
+        }
         if name == "src" && *kind == ExportVariableKind::Image {
             self.image_source(attribute, local);
             return None;
@@ -914,11 +957,12 @@ impl<'a> Elements<'_> {
         offset: u32,
         local: &str,
     ) -> Vec<Choice> {
-        // `Pressable` tells whether it is pressed; only the orientation needs
-        // the runtime
-        if state == State::Pressed {
+        // `Pressable` tells whether it is pressed, hovered or focused, and
+        // `disabled` whether it is disabled: only the orientation needs the
+        // runtime
+        if INTERACTIONS.contains(&state) {
             self.press.get_or_insert_with(|| (offset, name.to_string()));
-        } else if !self.target.runtime {
+        } else if !self.target.runtime && state != State::Disabled {
             self.error(
                 offset,
                 RuntimeFeature::Orientation.problem().on(local, name),
@@ -1207,50 +1251,75 @@ impl<'a> Elements<'_> {
             style,
             kept,
             opaque_spread,
+            disabled,
+            focus_wrapped,
         } = styles;
         choices.extend(blocks);
-        let pressed = choices.iter().any(Choice::pressed);
-        let mut style_code = style_code(
-            choices,
-            (classes, given),
-            &mut self.sheet,
-            &self.runtime.vars(),
-        );
+        if disabled.is_none() {
+            // `_disabled` applies only to an element given `disabled`
+            choices = choices
+                .into_iter()
+                .map(|choice| without(choice, State::Disabled))
+                .collect();
+        }
+        let disabled = disabled.unwrap_or_default();
+        let vars = Vars {
+            disabled: &disabled,
+            ..self.runtime.vars()
+        };
+        let keys = interaction_keys(&choices, &vars);
+        let mut style_code = style_code(choices, (classes, given), &mut self.sheet, &vars);
         let reads = style_code
             .as_ref()
             .map_or_else(Reads::default, |style| style.reads);
-        if let Some(style) = style_code.as_mut().filter(|_| pressed) {
+        let focus_wrapped = focus_wrapped && style_code.is_some();
+        if let Some(style) = style_code
+            .as_mut()
+            .filter(|_| !keys.is_empty() && !focus_wrapped)
+        {
             // `Pressable` calls a function for its style with its state
-            style.code = format!(
-                "({{ pressed: {} }}) => {}",
-                self.runtime.pressed, style.code
-            );
+            style.code = format!("({{ {} }}) => {}", keys.join(", "), style.code);
         }
-        let wrapped = reads.any() && !self.read_in_component(reads);
-        if wrapped {
-            self.runtime.wrapper_used = true;
+        let in_component = !reads.any() || self.read_in_component(reads);
+        if !in_component {
             self.runtime.wrapper_reads = self.runtime.wrapper_reads.union(reads);
-            let wrapper = self.runtime.wrapper.clone();
-            self.rename(element, &wrapper);
-        } else if let Some(tag) = &tag {
-            self.rename(element, tag);
+        }
+        let wrapper = if focus_wrapped {
+            self.runtime.focused_used = true;
+            Some(self.runtime.focused_wrapper.clone())
+        } else if in_component {
+            None
+        } else {
+            self.runtime.wrapper_used = true;
+            Some(self.runtime.wrapper.clone())
+        };
+        if let Some(name) = wrapper.as_ref().or(tag.as_ref()) {
+            self.rename(element, name);
         }
         let Some(style_code) = style_code else {
             self.remove(&removed);
             self.replacements.extend(kept);
             return;
         };
-        let code = if wrapped {
-            // The wrapper gives the theme, the breakpoint and the orientation,
-            // in this order: the style takes them up to the last it reads
-            let read = self.runtime.variables(reads).last().map_or(0, |(at, _)| at);
-            let parameters = [
+        let code = if wrapper.is_some() {
+            // `Focused` gives whether the element has focus first; a wrapper
+            // gives the theme, the breakpoint and the orientation, in this
+            // order, to an element outside a component: the style takes them
+            // up to the last it reads
+            let focus = focus_wrapped.then_some(self.runtime.focused.as_str());
+            let read = self.runtime.variables(reads).last().map(|(at, _)| at);
+            let runtime = [
                 &self.runtime.index,
                 &self.runtime.breakpoint,
                 &self.runtime.landscape,
-            ][..=read]
-                .iter()
-                .map(|name| name.as_str())
+            ];
+            let parameters = focus
+                .into_iter()
+                .chain(
+                    runtime[..read.filter(|_| !in_component).map_or(0, |at| at + 1)]
+                        .iter()
+                        .map(|name| name.as_str()),
+                )
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
@@ -1290,12 +1359,12 @@ impl<'a> Elements<'_> {
                 return Some(self.pressable.clone());
             }
             (_, Some(_)) => Problem::new(
-                "a press style makes the element React Native's `Pressable`, which cannot render the component `as` gives",
+                "a press, hover or focus style makes the element React Native's `Pressable`, which cannot render the component `as` gives",
                 "remove `as`, or pass a function reading `pressed` to the `style` of a `Pressable`",
             ),
             (native, None) => Problem::new(
                 format!(
-                    "a press style needs React Native's `Pressable`, and the element renders React Native's `{native}`"
+                    "a press, hover or focus style needs React Native's `Pressable`, and the element renders React Native's `{native}`"
                 ),
                 "wrap it in a `Box` or a `Button` with `_pressed`",
             ),

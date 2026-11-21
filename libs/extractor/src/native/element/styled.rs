@@ -8,7 +8,7 @@ use oxc_span::{GetSpan, Span};
 use super::{Elements, Frame, HookAt, component_name, defaults};
 use crate::component::ExportVariableKind;
 use crate::native::errors::Problem;
-use crate::native::style::{Choice, Reads, style_code};
+use crate::native::style::{Choice, Reads, Vars, interaction_keys, style_code};
 
 /// The name `styled()` errors call the call by
 const STYLED: &str = "styled()";
@@ -168,7 +168,7 @@ impl<'a> Elements<'_> {
                 self.error(
                     offset,
                     Problem::new(
-                        "a press style needs React Native's `Pressable`, which the build knows only a Devup UI component renders",
+                        "a press, hover or focus style needs React Native's `Pressable`, which the build knows only a Devup UI component renders",
                         "style a `Box` or a `Button`, or pass a function reading `pressed` to the `style` of a `Pressable`",
                     )
                     .on(STYLED, &name),
@@ -177,15 +177,15 @@ impl<'a> Elements<'_> {
             }
             (None, _) => tag,
         };
-        let pressed = choices.iter().any(Choice::pressed);
         let props = self.props.clone();
         let given = format!("{props}.style");
-        let style = style_code(
-            choices,
-            (Vec::new(), vec![given]),
-            &mut self.sheet,
-            &self.runtime.vars(),
-        );
+        let disabled = format!("{props}.disabled");
+        let vars = Vars {
+            disabled: &disabled,
+            ..self.runtime.vars()
+        };
+        let keys = interaction_keys(&choices, &vars);
+        let style = style_code(choices, (Vec::new(), vec![given]), &mut self.sheet, &vars);
         let reads = style
             .as_ref()
             .map_or_else(Reads::default, |style| style.reads)
@@ -196,13 +196,10 @@ impl<'a> Elements<'_> {
             String::new()
         };
         let style = style.map_or_else(String::new, |style| {
-            let code = if pressed {
-                format!(
-                    "({{ pressed: {} }}) => {}",
-                    self.runtime.pressed, style.code
-                )
-            } else {
+            let code = if keys.is_empty() {
                 style.code
+            } else {
+                format!("({{ {} }}) => {}", keys.join(", "), style.code)
             };
             format!(" style={{{code}}}")
         });

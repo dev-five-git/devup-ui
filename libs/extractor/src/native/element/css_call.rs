@@ -12,7 +12,7 @@ use std::fmt::Write;
 use super::styled::{gives_style_props, is_function};
 use super::{Elements, Prop, Styles, attribute_expression, classify};
 use crate::native::errors::Problem;
-use crate::native::style::{Choice, combined, style_code};
+use crate::native::style::{Choice, State, combined, style_code};
 use crate::native::values::Literal;
 
 /// The name `css()` errors call the call by
@@ -49,7 +49,7 @@ impl<'a> Elements<'_> {
             self.error(
                 offset,
                 Problem::new(
-                    "a press style applies while an element is pressed, which `css()` cannot tell",
+                    "a press, hover or focus style applies while the element is in that state, which `css()` cannot tell",
                     format!("give `{name}` to the element"),
                 )
                 .on(CSS, &name),
@@ -67,6 +67,16 @@ impl<'a> Elements<'_> {
 
     /// Put the style `choices` describe in place of the `css` at `span`
     fn css_code(&mut self, span: Span, choices: Vec<Choice>) {
+        if choices.iter().any(|choice| choice.holds(State::Disabled)) {
+            self.error(
+                span.start,
+                Problem::new(
+                    "`_disabled` applies while the element is disabled, which `css()` cannot tell",
+                    "give `_disabled` to the element",
+                )
+                .call(CSS),
+            );
+        }
         let code = style_code(
             choices,
             (Vec::new(), Vec::new()),

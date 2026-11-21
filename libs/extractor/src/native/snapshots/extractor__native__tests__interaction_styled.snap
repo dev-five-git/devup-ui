@@ -1,0 +1,17 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { margin: 4 },
+	b: { opacity: .5 }
+});
+export const A = (__props) => {
+	return <Button {...__props} style={({ hovered: __h }) => [
+		__h && __s.a,
+		__props.disabled && __s.b,
+		__props.style
+	]} />;
+};

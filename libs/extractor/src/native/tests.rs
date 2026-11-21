@@ -15,6 +15,9 @@ const VARS: Vars<'static> = Vars {
     breakpoint: "b",
     landscape: "l",
     pressed: "p",
+    hovered: "h",
+    focused: "f",
+    disabled: "d",
 };
 
 const IMPORT: &str =
@@ -1318,5 +1321,34 @@ export const G = styled(Box, { p: 1 }, extra)
 export const H = styled"
 )]
 fn compiles_styled(#[case] name: &str, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), true, code));
+}
+
+const STATE_ELEMENTS: &str = r"export function Form({ busy, go, value }) {
+  return (
+    <Box>
+      <Button disabled={busy} onPress={go} bg='$primary' _hover={{ opacity: 0.9 }} _focus={{ borderColor: 'blue' }} _disabled={{ opacity: 0.4 }} _active={{ opacity: 0.7 }} />
+      <Box _hover={{ bg: 'red' }} _disabled={{ m: 1 }} />
+      <Input _focus={{ borderColor: '$primary' }} value={value} onFocus={go} />
+      <Input _focus={{ borderColor: 'red' }} disabled _disabled={{ opacity: 0.5 }} />
+      <Input _focus={{}} />
+    </Box>
+  )
+}
+export const outside = <Input _focus={{ bg: '$primary', p: [1, 2] }} />
+export const plain = <Input _focus={{ m: 1 }} />";
+
+#[rstest]
+#[case::states("interaction_states", STATE_ELEMENTS)]
+#[case::styled(
+    "interaction_styled",
+    "import { styled } from '@devup-ui/react'\nexport const A = styled(Button)({ _hover: { m: 1 }, _disabled: { opacity: 0.5 } })"
+)]
+#[case::errors(
+    "interaction_errors",
+    "import { css } from '@devup-ui/react'\nexport const B = css({ _disabled: { m: 1 } })\nexport const C = css({ _hover: { m: 1 } });\n<Text _hover={{ m: 1 }} />;\n<Input as={X} _focus={{ m: 1 }} />;\n<Input _hover={{ m: 1 }} />;
+<Box _ios={{ _before: { m: 1 } }} />"
+)]
+fn compiles_interaction_states(#[case] name: &str, #[case] code: &str) {
     assert_snapshot!(name, compile_themed(two_themes(), true, code));
 }

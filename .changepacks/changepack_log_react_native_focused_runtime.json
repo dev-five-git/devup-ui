@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "`@devup-ui/react/native` adds `Focused` (internal), which renders a `TextInput` with the style the build compiles for whether it has focus, following its `onFocus` and `onBlur` and still calling the ones it is given. The runtime grows from 630 B to 702 B min+gzip.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

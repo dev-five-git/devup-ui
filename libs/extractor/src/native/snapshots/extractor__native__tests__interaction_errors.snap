@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:3:18: `css()` cannot compile here on React Native: `_disabled` applies while the element is disabled, which `css()` cannot tell. Fix: give `_disabled` to the element
+test.tsx:4:24: `css()` cannot use `_hover` on React Native: a press, hover or focus style applies while the element is in that state, which `css()` cannot tell. Fix: give `_hover` to the element
+test.tsx:5:7: `<Text>` cannot use `_hover` on React Native: a press, hover or focus style needs React Native's `Pressable`, and the element renders React Native's `Text`. Fix: wrap it in a `Box` or a `Button` with `_pressed`
+test.tsx:6:15: `<Input>` cannot use `_focus` on React Native: a press, hover or focus style makes the element React Native's `Pressable`, which cannot render the component `as` gives. Fix: remove `as`, or pass a function reading `pressed` to the `style` of a `Pressable`
+test.tsx:7:8: `<Input>` cannot use `_hover` on React Native: a press, hover or focus style needs React Native's `Pressable`, and the element renders React Native's `TextInput`. Fix: wrap it in a `Box` or a `Button` with `_pressed`
+test.tsx:8:14: `<Box>` cannot use `_before` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state

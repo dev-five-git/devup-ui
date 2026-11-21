@@ -2,6 +2,7 @@ import {
   createElement,
   type ElementType,
   type ReactElement,
+  useState,
   useSyncExternalStore,
 } from 'react'
 import { Appearance, Dimensions } from 'react-native'
@@ -172,5 +173,44 @@ export function Themed({
   return createElement($c, {
     ...props,
     style: $s(useThemeIndex(), useBreakpoint(), useLandscape()),
+  })
+}
+
+/**
+ * Renders `$c`, a `TextInput`, with the style `$s` gives for whether it has
+ * focus, which a `TextInput` tells only through its events, and for the
+ * theme, the breakpoint and the orientation, as `Themed` does. The build
+ * renders an input taking a focus style with it.
+ * @internal
+ */
+export function Focused({
+  $c,
+  $s,
+  onFocus,
+  onBlur,
+  ...props
+}: {
+  $c: ElementType
+  $s: (
+    focused: boolean,
+    theme: number,
+    breakpoint: number,
+    landscape: boolean,
+  ) => unknown
+  onFocus?: (event: unknown) => void
+  onBlur?: (event: unknown) => void
+} & Record<string, unknown>): ReactElement {
+  const [focused, setFocused] = useState(false)
+  return createElement($c, {
+    ...props,
+    onFocus: (event: unknown) => {
+      setFocused(true)
+      onFocus?.(event)
+    },
+    onBlur: (event: unknown) => {
+      setFocused(false)
+      onBlur?.(event)
+    },
+    style: $s(focused, useThemeIndex(), useBreakpoint(), useLandscape()),
   })
 }
