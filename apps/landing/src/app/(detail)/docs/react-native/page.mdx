@@ -1,0 +1,105 @@
+export const metadata = {
+  title: 'React Native',
+  alternates: { canonical: '/docs/react-native' },
+}
+
+# React Native
+
+> **Experimental (0.x).** React Native support is in progress
+> ([#411](https://github.com/dev-five-git/devup-ui/issues/411)) and
+> `@devup-ui/metro-plugin` is not published yet. Its API may change.
+
+Devup UI compiles for React Native in Metro, the bundler of React Native and
+Expo. You keep importing `Box`, `Text`, `css`, `styled`, ... from
+`@devup-ui/react`. At build time each element becomes a React Native component,
+and its style props become style objects hoisted into one `StyleSheet.create`
+per file. CSS is never parsed at runtime.
+
+## Setup
+
+```bash
+npm install @devup-ui/react @devup-ui/metro-plugin
+```
+
+```js
+// metro.config.js (Expo)
+const { getDefaultConfig } = require('expo/metro-config')
+const { withDevupUI } = require('@devup-ui/metro-plugin')
+
+module.exports = withDevupUI(getDefaultConfig(__dirname))
+```
+
+```js
+// metro.config.js (React Native CLI)
+const { getDefaultConfig } = require('@react-native/metro-config')
+const { withDevupUI } = require('@devup-ui/metro-plugin')
+
+module.exports = withDevupUI(getDefaultConfig(__dirname))
+```
+
+```tsx
+import { Box, Flex, Text } from '@devup-ui/react'
+
+export function Card() {
+  return (
+    <Flex bg="$card" borderRadius="12px" gap={2} p={[4, null, 6]}>
+      <Text color="$text" typography="title">
+        Hello
+      </Text>
+      <Box bg="red" h="8px" w="8px" />
+    </Flex>
+  )
+}
+```
+
+Metro writes `df/theme.d.ts` and `df/native.d.ts` when it reads the config.
+With them, theme tokens complete in your editor, and each component takes the
+props of the React Native component it renders (`onPress`, `onChangeText`,
+`testID`, ...).
+
+## Elements
+
+| Element                           | React Native                     |
+| --------------------------------- | -------------------------------- |
+| `Box`, `Flex`, `VStack`, `Center` | `View`                           |
+| `Text`                            | `Text`                           |
+| `Image`                           | `Image` (`src` becomes `source`) |
+| `Input`                           | `TextInput`                      |
+| `Button`                          | `Pressable`                      |
+
+## Differences from the web
+
+The same component code builds for both, but React Native has no CSS, so some
+things work differently.
+
+|                                            | Web                                          | React Native                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Output                                     | Atomic CSS classes in a stylesheet           | Style objects in one `StyleSheet.create` per file                                                                                                                                                                                                                                                                               |
+| Runtime                                    | None                                         | None for static styles. A small runtime (about 1.2 kB gzip) reads the theme, the window and press, hover and focus states, but only for the styles that use them. With `runtime: false`, those styles are build errors instead.                                                                                                 |
+| Numbers                                    | `p={4}` is `16px`                            | `p={4}` is `16`: density-independent pixels, with the same scale as the web                                                                                                                                                                                                                                                     |
+| Units                                      | Any CSS unit                                 | Pixels, `rem` and `em` (16 pixels each), percentages and `auto`. `vw`, `vh` and other units are build errors.                                                                                                                                                                                                                   |
+| Themes                                     | CSS variables, switched by `data-theme`      | The runtime picks the style object of the current theme. `setTheme`, `useTheme` and `getTheme` work, and the system appearance picks `light` or `dark`.                                                                                                                                                                         |
+| Breakpoints                                | Media queries                                | The window width, with the `breakpoints` of devup.json. A component renders again only when the window crosses into another breakpoint.                                                                                                                                                                                         |
+| `_active`, `_hover`, `_focus`, `_disabled` | CSS pseudo-classes                           | `Pressable` tells its style function whether it is pressed, hovered or focused: a `Button` is one, and a `Box` with these styles becomes one. `_focus` on an `Input` works through the runtime. `_disabled` reads the `disabled` prop. Hover and focus happen only where there is a pointer or keyboard focus, such as the web. |
+| Other selectors                            | `_before`, `_focusVisible`, `selectors`, ... | Build errors: React Native has no selectors                                                                                                                                                                                                                                                                                     |
+| `_ios`, `_android`, `_web`                 | —                                            | Apply on that platform only                                                                                                                                                                                                                                                                                                     |
+| `_portrait`, `_landscape`                  | Media queries                                | The window's orientation                                                                                                                                                                                                                                                                                                        |
+| `className={css(...)}`                     | A class                                      | The build turns it into the element's styles                                                                                                                                                                                                                                                                                    |
+| `keyframes`, `animation*`, `transition*`   | CSS animations                               | [react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/): an element that animates renders Reanimated's animated component. Without Reanimated installed, these are build errors.                                                                                                                         |
+| `globalCss`, `Grid`                        | Supported                                    | Build errors                                                                                                                                                                                                                                                                                                                    |
+| styled-components and Emotion              | `styled-components`, `@emotion/styled`, ...  | `styled-components/native` and `@emotion/native` compile the same way. Their numbers are pixels, as those packages read them.                                                                                                                                                                                                   |
+| Unsupported properties                     | —                                            | A property React Native has no style for (`gridTemplateColumns`, `float`, ...) is a build error                                                                                                                                                                                                                                 |
+
+Build errors point at the file, line and column of the style, as on the web.
+
+## Expo web
+
+On the web, Expo bundles the app with Metro through
+[react-native-web](https://necolas.github.io/react-native-web/), and the same
+native output turns into CSS there. A site that is not an Expo app keeps using
+the [Vite, Next.js, Webpack, Rsbuild or Bun plugin](/docs/installation), which
+output atomic CSS instead.
+
+See the
+[`@devup-ui/metro-plugin` README](https://github.com/dev-five-git/devup-ui/tree/main/packages/metro-plugin)
+for every option and each feature in detail.
