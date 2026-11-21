@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles `styled()` for React Native (part of #411): `styled(Target)(...parts)`, `` styled(Target)`css text` `` and `styled(Target, styles)` compile to a function component rendering its target with the styles it describes, before the `style` it is given. It takes the parts `css()` takes; a function in them is called with the component's props, as a value or as a part giving what `css()` gives. A Devup UI target keeps the styles it declares first, and a styled `Box` with a press style becomes a `Pressable`. The hooks its styles read are called in the component. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

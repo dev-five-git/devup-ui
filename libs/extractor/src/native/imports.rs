@@ -23,6 +23,8 @@ pub(super) struct Imports {
     pub components: FxHashMap<SymbolId, (ExportVariableKind, String)>,
     /// The bindings of `css`, whose calls compile to style objects
     pub css: FxHashSet<SymbolId>,
+    /// The bindings of `styled`, whose calls compile to components
+    pub styled: FxHashSet<SymbolId>,
     pub replacements: Vec<Replacement>,
     pub errors: Vec<(u32, String)>,
     /// Whether the file imports the theme API of the runtime
@@ -72,10 +74,6 @@ fn unsupported(name: &str, target: &NativeTarget) -> Option<Problem> {
         "Grid" => Some(Problem::new(
             "React Native has no grid layout",
             "lay the items out with `Flex` and `flexWrap`",
-        )),
-        "styled" => Some(Problem::new(
-            "`styled` is not compiled for React Native yet",
-            "write the styles as props of a Devup UI component",
         )),
         name if is_theme_api(name) => (!target.runtime).then(|| theme_api(name)),
         "ThemeScript" | "initTheme" | "globalCss" => Some(Problem::new(
@@ -188,8 +186,13 @@ impl Imports {
             return Destination::Kept;
         }
         let local = specifier.local.name.to_string();
-        if name == "css" {
-            self.css.extend(specifier.local.symbol_id.get());
+        if name == "css" || name == "styled" {
+            let bindings = if name == "css" {
+                &mut self.css
+            } else {
+                &mut self.styled
+            };
+            bindings.extend(specifier.local.symbol_id.get());
             return Destination::Dropped;
         }
         if is_theme_api(&name) {

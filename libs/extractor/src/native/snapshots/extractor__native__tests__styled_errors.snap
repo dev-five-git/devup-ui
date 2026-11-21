@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:3:25: `styled()` cannot compile here on React Native: a `styled()` component on React Native renders a component, not a tag. Fix: pass a Devup UI or React Native component, such as `styled(View)`
+test.tsx:4:18: `styled()` cannot compile here on React Native: the build compiles `styled()` called with a component and its styles. Fix: write `styled(Target)({ ... })`, `` styled(Target)`...` `` or `styled(Target, { ... })`
+test.tsx:5:18: `styled()` cannot compile here on React Native: the build reads only the styles written in the call. Fix: pass each part to `styled()` itself
+test.tsx:6:33: `styled()` cannot use `_active` on React Native: a press style needs React Native's `Pressable`, which the build knows only a Devup UI component renders. Fix: style a `Box` or a `Button`, or pass a function reading `pressed` to the `style` of a `Pressable`
+test.tsx:7:33: `styled()` cannot use `_active` on React Native: a press style needs React Native's `Pressable`, and the element renders React Native's `Text`. Fix: wrap it in a `Box` or a `Button` with `_pressed`
+test.tsx:8:31: `styled()` cannot compile here on React Native: a function of the props gives style props, which React Native cannot read at runtime. Fix: return what `css()` gives, or write each value as a function of the props
+test.tsx:8:57: `styled()` cannot compile here on React Native: a function of the props gives style props, which React Native cannot read at runtime. Fix: return what `css()` gives, or write each value as a function of the props
+test.tsx:9:18: `styled()` cannot compile here on React Native: the build compiles `styled()` called with a component and its styles. Fix: write `styled(Target)({ ... })`, `` styled(Target)`...` `` or `styled(Target, { ... })`
+test.tsx:10:18: `styled` can only be called on React Native: the build compiles each call into styles. Fix: call it where the styles are used
