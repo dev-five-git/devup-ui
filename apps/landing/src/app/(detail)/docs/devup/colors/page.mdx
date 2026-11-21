@@ -161,10 +161,22 @@ Token names start with a letter, a digit or `_` and continue with letters, digit
 ```tsx
 import { getTheme, setTheme, useTheme } from '@devup-ui/react'
 
-setTheme('dark') // the user's choice: saved, wins over the system, reaches other tabs
-setTheme(null) // forget the choice: back to the system preference, followed again
-getTheme() // the theme the page shows now, e.g. 'dark'
-useTheme() // the same, re-rendering when it changes
+function ThemeMenu() {
+  // the theme the page shows now, re-rendering when it changes
+  const theme = useTheme()
+  return (
+    <div>
+      {/* the user's choice: saved, wins over the system, reaches other tabs */}
+      <button
+        onClick={() => setTheme(getTheme() === 'dark' ? 'light' : 'dark')}
+      >
+        {theme}
+      </button>
+      {/* forget the choice: back to the system preference, followed again */}
+      <button onClick={() => setTheme(null)}>System</button>
+    </div>
+  )
+}
 ```
 
 `setTheme(null)` removes the saved choice in every tab and applies the theme the page would start with, so `getTheme()` and `useTheme()` keep returning the theme in effect rather than `null`. Without `ThemeScript` or `initTheme()` on the page, it takes the system preference once.
