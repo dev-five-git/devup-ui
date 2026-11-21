@@ -9,6 +9,7 @@ use oxc_ast::ast::{
     JSXElementName, JSXExpression, LogicalOperator, ObjectExpression, ObjectPropertyKind, Program,
     TSType, TaggedTemplateExpression, UnaryOperator, VariableDeclarator,
 };
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt::Write;
 
@@ -698,13 +699,11 @@ impl<'a> Elements<'_> {
     /// breakpoint it is paired with on: one style object, or one a
     /// breakpoint and a theme where the styles differ by them
     fn static_choice(&self, name: &str, items: &[(usize, Literal)]) -> Result<Choice, Problem> {
-        let pixels;
-        let items = if self.compat {
-            // A number of a compat package is pixels, as React Native reads it
-            pixels = in_pixels(name, items);
-            &pixels
+        // A number of a compat package is pixels, as React Native reads it
+        let items: Cow<[(usize, Literal)]> = if self.compat {
+            Cow::Owned(in_pixels(name, items))
         } else {
-            items
+            Cow::Borrowed(items)
         };
         let theme = &self.target.theme;
         let themes = match self.theme_scope {
@@ -725,7 +724,7 @@ impl<'a> Elements<'_> {
             for index in themes.clone() {
                 row.push(cell(
                     name,
-                    items,
+                    &items,
                     &Tokens {
                         theme,
                         index,
