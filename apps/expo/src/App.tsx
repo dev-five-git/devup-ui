@@ -59,6 +59,7 @@ export function App() {
         boxShadow="$raised"
         maxW={[null, null, '480px']}
         p={[4, null, 6]}
+        testID="card"
         w="100%"
       >
         <Text color="$muted" fontSize="14px" mb={2}>
@@ -72,6 +73,7 @@ export function App() {
           onChangeText={setName}
           px={3}
           py={2}
+          testID="name"
           value={name}
         />
         <Text color={name ? '$text' : '$placeholder'} mt={2}>
@@ -88,6 +90,7 @@ export function App() {
           bg="#5a44ff"
           className={button}
           onPress={() => setCount(count + 1)}
+          testID="count"
         >
           <Text color="#fff" fontWeight="600">
             Pressed {count} times
@@ -98,6 +101,7 @@ export function App() {
           border="1px solid $border"
           className={button}
           onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          testID="theme"
         >
           <Text color="$text">
             Switch to {theme === 'dark' ? 'light' : 'dark'}

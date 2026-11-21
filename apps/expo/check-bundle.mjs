@@ -114,7 +114,7 @@ function runtimeUsers(code, locate) {
   return users
 }
 
-for (const platform of ['ios', 'android']) {
+for (const platform of ['ios', 'android', 'web']) {
   const directory = join(root, platform)
   const bundles = readdirSync(directory).filter((file) => file.endsWith('.js'))
   if (bundles.length === 0) failures.push(`${platform}: no JavaScript bundle`)

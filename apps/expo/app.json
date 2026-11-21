@@ -3,6 +3,6 @@
     "name": "Devup UI Expo",
     "slug": "devup-ui-expo",
     "version": "0.1.0",
-    "platforms": ["ios", "android"]
+    "platforms": ["ios", "android", "web"]
   }
 }
