@@ -41,6 +41,7 @@ export interface NativeCompiler {
     packageName: string,
     platform: string,
     runtime: boolean,
+    reanimated: boolean,
   ): {
     readonly code: string
     readonly map?: string | null
@@ -172,6 +173,7 @@ export function createTransformer(host: TransformerHost = defaultHost) {
         settings.package,
         options.platform ?? '',
         settings.runtime,
+        settings.reanimated,
       )
     } catch (error) {
       throw locatedError(error, filename, src)

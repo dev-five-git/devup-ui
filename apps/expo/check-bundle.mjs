@@ -7,7 +7,8 @@
 // runtime; src/Badge.tsx is styled the same in every theme and at every
 // width, so it must not use the runtime. Its buttons take press styles, which
 // React Native's `Pressable` applies through a function for `style`, and its
-// input a focus style, which the runtime's `Focused` applies.
+// input a focus style, which the runtime's `Focused` applies. Its card fades
+// in and its logo fades, which react-native-reanimated runs.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -124,6 +125,8 @@ for (const platform of ['ios', 'android']) {
       'backgroundColor:"#4330d9"',
       'StyleSheet',
       'style:({pressed:',
+      'animationName:',
+      'transitionProperty:"opacity"',
     ]) {
       if (!code.replaceAll(' ', '').includes(style)) {
         failures.push(`${platform}/${file}: lacks ${style}`)
@@ -137,6 +140,9 @@ for (const platform of ['ios', 'android']) {
       if (REACT_PACKAGE.test(source) && !NATIVE_RUNTIME.test(source)) {
         failures.push(`${platform}/${file}: bundles ${source}`)
       }
+    }
+    if (!sources.some((source) => /react-native-reanimated/.test(source))) {
+      failures.push(`${platform}/${file}: lacks react-native-reanimated`)
     }
     if (!sources.some((source) => NATIVE_RUNTIME.test(source))) {
       failures.push(`${platform}/${file}: lacks @devup-ui/react/native`)

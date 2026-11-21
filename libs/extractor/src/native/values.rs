@@ -22,6 +22,8 @@ pub(super) enum Literal {
 pub(super) enum NativeValue {
     Number(f64),
     Text(String),
+    /// Texts as an array
+    List(Vec<String>),
 }
 
 impl NativeValue {
@@ -30,6 +32,7 @@ impl NativeValue {
         match self {
             Self::Number(number) => number_code(*number),
             Self::Text(text) => serde_json::Value::String(text.clone()).to_string(),
+            Self::List(texts) => serde_json::Value::from(texts.clone()).to_string(),
         }
     }
 }
@@ -49,12 +52,22 @@ pub(super) fn number(text: &str) -> Option<f64> {
 
 /// The CSS value the web build gives `literal` for the CSS `property`: a
 /// number is four pixels a unit, but for the properties taking a plain number
+/// The properties of an animation or a transition a number of milliseconds or
+/// a count is given to, kept as it is
+pub(super) const TIMED: [&str; 5] = [
+    "animation-duration",
+    "animation-delay",
+    "animation-iteration-count",
+    "transition-duration",
+    "transition-delay",
+];
+
 pub(super) fn css_text<'a>(property: &str, literal: &'a Literal) -> Cow<'a, str> {
     let text = match literal {
         Literal::Number(number) => Cow::Owned(number_code(*number)),
         Literal::Text(text) => Cow::Borrowed(text.as_str()),
     };
-    if is_maintain_value_property(property) {
+    if is_maintain_value_property(property) || TIMED.contains(&property) {
         return text;
     }
     match convert_value(&text) {

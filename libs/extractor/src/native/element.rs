@@ -33,8 +33,11 @@ use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
 
+mod animation;
 mod css_call;
 mod styled;
+
+use animation::Animated;
 
 use styled::is_function;
 
@@ -201,6 +204,9 @@ pub(super) fn compile(
         components: &imports.components,
         css: &imports.css,
         styled: &imports.styled,
+        keyframes: &imports.keyframes,
+        animation: None,
+        animated: Animated::new(code),
         props: fresh_name("__props", code),
         in_styled: false,
         sheet: Sheet::new(fresh_name("__s", code)),
@@ -216,7 +222,11 @@ pub(super) fn compile(
         replacements: imports.replacements,
         errors: imports.errors,
     };
-    if !visitor.components.is_empty() || !visitor.css.is_empty() || !visitor.styled.is_empty() {
+    if !(visitor.components.is_empty()
+        && visitor.css.is_empty()
+        && visitor.styled.is_empty()
+        && visitor.keyframes.is_empty())
+    {
         visitor.visit_program(program);
     }
     let Elements {
@@ -226,6 +236,7 @@ pub(super) fn compile(
         pressable,
         pressable_used,
         runtime,
+        animated,
         mut replacements,
         errors,
         ..
@@ -239,6 +250,7 @@ pub(super) fn compile(
             "import {{ Pressable as {pressable} }} from \"{REACT_NATIVE}\";"
         );
     }
+    prelude.push_str(&animated.prelude());
     if !sheet.is_empty() {
         prelude.push_str(&sheet_prelude(&sheet, code));
     }
@@ -345,6 +357,12 @@ struct Elements<'s> {
     css: &'s FxHashSet<SymbolId>,
     /// The bindings of `styled`
     styled: &'s FxHashSet<SymbolId>,
+    /// The bindings of `keyframes`
+    keyframes: &'s FxHashSet<SymbolId>,
+    /// The offset and the name of the first animation or transition of the
+    /// element read
+    animation: Option<(u32, String)>,
+    animated: Animated,
     /// The parameter holding the props of a component `styled()` gives
     props: String,
     /// Whether the styles of a `styled()` component are being read, where a
@@ -417,7 +435,10 @@ impl<'a> Visit<'a> for Elements<'_> {
                     "`{local}` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<{local} />`, or use a React Native component here"
                 ),
             ));
-        } else if self.is_css_reference(identifier) || self.is_styled_reference(identifier) {
+        } else if self.is_css_reference(identifier)
+            || self.is_styled_reference(identifier)
+            || self.is_keyframes_reference(identifier)
+        {
             self.errors.push((
                 identifier.span.start,
                 format!(
@@ -447,6 +468,8 @@ impl<'a> Visit<'a> for Elements<'_> {
             self.styled_call(call, target);
         } else if self.is_styled(&call.callee) {
             self.styled_direct(call);
+        } else if self.is_keyframes(&call.callee) {
+            self.keyframes_call(call);
         } else {
             walk::walk_call_expression(self, call);
         }
@@ -686,6 +709,8 @@ impl<'a> Elements<'_> {
     /// Compile one Devup UI element
     fn element(&mut self, element: &JSXElement<'a>, kind: &ExportVariableKind, local: &str) {
         let opening = &element.opening_element;
+        // What an element in a prop notes is its own
+        let outer = (self.press.take(), self.animation.take());
         let mut styles = Styles {
             choices: defaults(kind),
             ..Styles::default()
@@ -727,6 +752,11 @@ impl<'a> Elements<'_> {
                 tag = self.pressable(press, kind, local, tag);
             }
         }
+        if let Some(animation) = self.animation.take() {
+            let interactive = !held.is_empty() && !styles.focus_wrapped;
+            tag = self.animated(&animation, (kind, local), local, tag, interactive);
+        }
+        (self.press, self.animation) = outer;
         self.finish(element, styles, (tag, local), previous_end);
         self.children(element, kind, local, retagged);
     }
@@ -765,6 +795,7 @@ impl<'a> Elements<'_> {
             Prop::ClassName => self.class_name(attribute, span, local, styles),
             Prop::Declares => {
                 styles.removed.push(span);
+                self.note_animation(name, attribute.span.start);
                 match self.value_choice(name, attribute.value.as_ref()) {
                     Ok(choice) => styles.choices.push(choice),
                     Err(problem) => self.error(attribute.span.start, problem.on(local, name)),
@@ -1026,10 +1057,13 @@ impl<'a> Elements<'_> {
         local: &str,
     ) -> Vec<Choice> {
         match classify(key) {
-            Prop::Declares => match self.expression_choice(key, value) {
-                Ok(choice) => return vec![choice],
-                Err(problem) => self.error(offset, problem.on(local, key)),
-            },
+            Prop::Declares => {
+                self.note_animation(key, offset);
+                match self.expression_choice(key, value) {
+                    Ok(choice) => return vec![choice],
+                    Err(problem) => self.error(offset, problem.on(local, key)),
+                }
+            }
             Prop::Platform(platform) => {
                 let choices = self.block(Some(value), key, offset, local);
                 if platform == self.target.platform {

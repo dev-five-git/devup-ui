@@ -12,6 +12,7 @@ const settings = {
   package: '@devup-ui/react',
   include: ['lib'],
   runtime: false,
+  reanimated: true,
   devupFile: '/devup.json',
   engine: 'wasm',
 } as const

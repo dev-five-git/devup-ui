@@ -55,6 +55,10 @@ impl<'a> Elements<'_> {
                 .on(CSS, &name),
             );
         }
+        if let Some(animation) = self.animation.take() {
+            // The element given the style animates when it is animated
+            self.reanimated(&animation, CSS);
+        }
         self.css_code(call.span, choices);
     }
 
@@ -117,6 +121,9 @@ impl<'a> Elements<'_> {
             .map(str::trim)
             .filter(|text| !text.is_empty())
         {
+            if let Some((name, _)) = declaration.split_once(':') {
+                self.note_animation(&camel_case(name.trim()), offset);
+            }
             match self.css_declaration(declaration, &template.expressions) {
                 Ok(choice) => choices.push(choice),
                 Err((name, problem)) => self.error(offset, problem.on(CSS, &name)),

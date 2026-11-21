@@ -82,8 +82,8 @@ exports.createBinding = function createBinding(raw) {
     Output: raw.Output,
     codeExtract,
     codeExtractWithoutSourceMap,
-    codeExtractNative: (filename, code, pkg, platform, runtime) =>
-      raw.extractNative(filename, code, pkg, platform, runtime),
+    codeExtractNative: (filename, code, pkg, platform, runtime, reanimated) =>
+      raw.extractNative(filename, code, pkg, platform, runtime, reanimated),
     createSession: () => raw.createSession(),
     dropSession: (id) => raw.dropSession(id),
     exportCanonicalMap: raw.exportCanonicalMap,

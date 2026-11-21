@@ -35,6 +35,16 @@ pub(super) enum Kind {
     Text,
     /// One of a set of keywords
     Keyword(&'static [&'static str]),
+    /// Milliseconds or a count as a number, or a time or `infinite` as text,
+    /// which a value read at runtime is given as it is
+    Timed,
+    /// What `keyframes()` gives, which no literal writes
+    Keyframes,
+    /// The CSS properties a transition animates, each under its React Native
+    /// key
+    TransitionProperty,
+    /// Transitions, each led by the CSS property it animates
+    Transition,
 }
 
 const ALIGN: &[&str] = &["flex-start", "flex-end", "center", "stretch", "baseline"];
@@ -188,6 +198,20 @@ static NATIVE_PROPERTIES: phf::Map<&'static str, (&'static str, Kind)> = phf_map
     "user-select" => ("userSelect", Kind::Keyword(&["auto", "none", "text", "contain", "all"])),
     "vertical-align" => ("verticalAlign", Kind::Keyword(&["auto", "top", "bottom", "middle"])),
     "object-fit" => ("objectFit", Kind::Keyword(&["cover", "contain", "fill", "scale-down", "none"])),
+    "animation-name" => ("animationName", Kind::Keyframes),
+    "animation-duration" => ("animationDuration", Kind::Timed),
+    "animation-delay" => ("animationDelay", Kind::Timed),
+    "animation-timing-function" => ("animationTimingFunction", Kind::Text),
+    "animation-iteration-count" => ("animationIterationCount", Kind::Timed),
+    "animation-direction" => ("animationDirection", Kind::Keyword(&["normal", "reverse", "alternate", "alternate-reverse"])),
+    "animation-fill-mode" => ("animationFillMode", Kind::Keyword(&["none", "forwards", "backwards", "both"])),
+    "animation-play-state" => ("animationPlayState", Kind::Keyword(&["running", "paused"])),
+    "transition" => ("transition", Kind::Transition),
+    "transition-property" => ("transitionProperty", Kind::TransitionProperty),
+    "transition-duration" => ("transitionDuration", Kind::Timed),
+    "transition-delay" => ("transitionDelay", Kind::Timed),
+    "transition-timing-function" => ("transitionTimingFunction", Kind::Text),
+    "transition-behavior" => ("transitionBehavior", Kind::Keyword(&["normal", "allow-discrete"])),
 };
 
 /// A style React Native reads: its key and value
@@ -196,6 +220,12 @@ pub(super) type Declaration = (String, NativeValue);
 /// The React Native key and kind of the CSS `property`
 fn native_property(property: &str) -> Result<(&'static str, Kind), Problem> {
     NATIVE_PROPERTIES.get(property).copied().ok_or_else(|| {
+        if property == "animation" {
+            return Problem::new(
+                "react-native-reanimated reads the longhands of `animation`, and the keyframes as an object `keyframes()` gives",
+                "write `animationName={keyframes({ ... })}` with `animationDuration` and the other longhands",
+            );
+        }
         Problem::new(
             format!("React Native has no `{property}` style"),
             "remove it, or write a style React Native reads",
@@ -208,11 +238,53 @@ fn native_value(kind: Kind, text: &str) -> Result<NativeValue, Problem> {
     match kind {
         Kind::Length => length(text),
         Kind::Number => plain_number(text),
-        Kind::Ratio => Ok(number_or_text(text)),
+        Kind::Ratio | Kind::Timed => Ok(number_or_text(text)),
         Kind::FontWeight => Ok(font_weight(text)),
         Kind::LineHeight => line_height(text),
         Kind::Text => Ok(NativeValue::Text(text.trim().to_string())),
         Kind::Keyword(keywords) => keyword(text, keywords),
+        Kind::Keyframes => Err(Problem::new(
+            "`animationName` takes the keyframes `keyframes()` gives on React Native, not a name",
+            "pass what `keyframes({ ... })` gives",
+        )),
+        Kind::TransitionProperty => Ok(transition_properties(text)),
+        Kind::Transition => Ok(NativeValue::Text(
+            text.split(',')
+                .map(transition_part)
+                .collect::<Vec<_>>()
+                .join(", "),
+        )),
+    }
+}
+
+/// The React Native key of the CSS `property` a transition names, or the name
+/// as it is for one React Native has no style for, such as `all`
+fn transition_key(property: &str) -> &str {
+    native_property(property).map_or(property, |(key, _)| key)
+}
+
+/// The properties of `transition-property`: one name, or a list of them
+fn transition_properties(text: &str) -> NativeValue {
+    let keys: Vec<String> = text
+        .split(',')
+        .map(|property| transition_key(property.trim()).to_string())
+        .collect();
+    match <[String; 1]>::try_from(keys) {
+        Ok([key]) => NativeValue::Text(key),
+        Err(keys) => NativeValue::List(keys),
+    }
+}
+
+/// One transition of `transition`, with the property leading it under its
+/// React Native key
+fn transition_part(part: &str) -> String {
+    let part = part.trim();
+    let (property, rest) = part.split_once(char::is_whitespace).unwrap_or((part, ""));
+    let key = transition_key(property);
+    if rest.is_empty() {
+        key.to_string()
+    } else {
+        format!("{key} {}", rest.trim_start())
     }
 }
 
@@ -505,7 +577,13 @@ fn runtime_scale(property: &str, kind: Kind) -> Option<u32> {
     match kind {
         Kind::Length if !is_maintain_value_property(property) => Some(4),
         Kind::Length | Kind::Number | Kind::Ratio | Kind::LineHeight => Some(1),
-        Kind::FontWeight | Kind::Text | Kind::Keyword(_) => None,
+        Kind::FontWeight
+        | Kind::Text
+        | Kind::Keyword(_)
+        | Kind::Timed
+        | Kind::Keyframes
+        | Kind::TransitionProperty
+        | Kind::Transition => None,
     }
 }
 

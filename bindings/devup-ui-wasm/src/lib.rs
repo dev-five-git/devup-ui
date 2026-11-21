@@ -733,9 +733,9 @@ pub fn code_extract_native_internal(
     code: &str,
     package: &str,
     platform: &str,
-    runtime: bool,
+    (runtime, reanimated): (bool, bool),
 ) -> Result<Output, String> {
-    binding_core::code_extract_native((filename, code), package, platform, runtime)
+    binding_core::code_extract_native((filename, code), package, platform, (runtime, reanimated))
         .map(Output::from)
 }
 
@@ -744,7 +744,8 @@ pub fn code_extract_native_internal(
 /// Devup UI elements become React Native components whose styles are hoisted
 /// into one `StyleSheet.create`; the output has the code and its source map
 /// but no CSS. `runtime: false` makes what needs the React Native runtime a
-/// build error.
+/// build error, and `reanimated: false`, telling the app lacks
+/// react-native-reanimated, makes animations and transitions one.
 #[cfg(not(tarpaulin_include))]
 #[wasm_bindgen(js_name = "codeExtractNative")]
 pub fn code_extract_native(
@@ -753,8 +754,10 @@ pub fn code_extract_native(
     package: &str,
     platform: &str,
     runtime: bool,
+    reanimated: bool,
 ) -> Result<Output, JsValue> {
-    code_extract_native_internal(filename, code, package, platform, runtime).map_err(js_error)
+    code_extract_native_internal(filename, code, package, platform, (runtime, reanimated))
+        .map_err(js_error)
 }
 
 /// Internal function to register theme (testable without `JsValue`)
@@ -1067,7 +1070,7 @@ mod tests {
             "import { Text } from '@devup-ui/react'\n<Text color=\"red\">Hi</Text>\n",
             "@devup-ui/react",
             "ios",
-            true,
+            (true, true),
         )
         .unwrap();
         assert!(
@@ -1083,7 +1086,8 @@ mod tests {
         // The sheet is not touched
         assert_eq!(get_css(None, false).unwrap(), "");
         assert!(
-            code_extract_native_internal("view.tsx", "", "@devup-ui/react", "tv", true).is_err()
+            code_extract_native_internal("view.tsx", "", "@devup-ui/react", "tv", (true, true))
+                .is_err()
         );
     }
 

@@ -201,18 +201,26 @@ add('located-extractor-error', (h) => {
 })
 add('react-native-target', (h) => {
   const native = `import { Flex, Text } from '${pkg}'\nexport const view = <Flex bg="red" p={2} _ios={{ opacity: 0.5 }} _android={{ opacity: 0.8 }}><Text color={on ? 'blue' : color}>Hi</Text></Flex>`
-  for (const [code, platform, runtime] of [
-    [native, 'ios', true],
-    [native, 'android', false],
-    [native, 'web', true],
-    ['export const value = 1', 'ios', true],
-    [box('p={[1, 2]}'), 'ios', false],
-    [native, 'windows', true],
+  for (const [code, platform, runtime, reanimated] of [
+    [native, 'ios', true, true],
+    [native, 'android', false, true],
+    [native, 'web', true, false],
+    ['export const value = 1', 'ios', true, true],
+    [box('p={[1, 2]}'), 'ios', false, true],
+    [box('animationDuration="1s"'), 'ios', true, false],
+    [native, 'windows', true, true],
   ])
     h.step(
       'codeExtractNative',
       () => {
-        const out = h.w.codeExtractNative(file, code, pkg, platform, runtime)
+        const out = h.w.codeExtractNative(
+          file,
+          code,
+          pkg,
+          platform,
+          runtime,
+          reanimated,
+        )
         try {
           return {
             instanceOfOutput: out instanceof h.w.Output,
@@ -227,7 +235,7 @@ add('react-native-target', (h) => {
           out.free()
         }
       },
-      [code, platform, runtime],
+      [code, platform, runtime, reanimated],
     )
 })
 export const extraction = cases

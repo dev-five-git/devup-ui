@@ -8,7 +8,7 @@ use oxc_span::{GetSpan, Span};
 use super::{Elements, Frame, HookAt, component_name, defaults};
 use crate::component::ExportVariableKind;
 use crate::native::errors::Problem;
-use crate::native::style::{Choice, Reads, Vars, interaction_keys, style_code};
+use crate::native::style::{Choice, INTERACTIONS, Reads, Vars, interaction_keys, style_code};
 
 /// The name `styled()` errors call the call by
 const STYLED: &str = "styled()";
@@ -173,6 +173,21 @@ impl<'a> Elements<'_> {
                     )
                     .on(STYLED, &name),
                 );
+                tag
+            }
+            (None, _) => tag,
+        };
+        let tag = match (self.animation.take(), &target) {
+            (Some(animation), Target::Devup(kind, local)) => {
+                let interactive = INTERACTIONS
+                    .iter()
+                    .any(|state| choices.iter().any(|choice| choice.holds(*state)));
+                self.animated(&animation, (kind, local), STYLED, None, interactive)
+                    .unwrap_or(tag)
+            }
+            (Some(animation), Target::Other(_)) => {
+                // The component given animates when it is animated
+                self.reanimated(&animation, STYLED);
                 tag
             }
             (None, _) => tag,

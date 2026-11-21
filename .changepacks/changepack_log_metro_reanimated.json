@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/metro-plugin/package.json": "Patch"
+  },
+  "note": "`withDevupUI()` tells the compiler whether the project has react-native-reanimated, which runs `keyframes()` and the `animation*` and `transition*` props on React Native; without it, they are build errors asking to install it.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

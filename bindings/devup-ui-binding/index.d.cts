@@ -40,7 +40,9 @@ export function codeExtractWithoutSourceMap(
  * Compile a source for React Native on `platform`: Devup UI elements become
  * React Native components whose styles are hoisted into one
  * `StyleSheet.create`. No CSS is emitted (`css` and `cssFile` are undefined);
- * `runtime: false` makes what needs the React Native runtime a build error.
+ * `runtime: false` makes what needs the React Native runtime a build error,
+ * and `reanimated: false`, telling the app lacks react-native-reanimated,
+ * makes animations and transitions one.
  */
 export function codeExtractNative(
   filename: string,
@@ -48,6 +50,7 @@ export function codeExtractNative(
   packageName: string,
   platform: 'ios' | 'android' | 'web',
   runtime: boolean,
+  reanimated: boolean,
 ): Output
 /** Create an engine session with a clean state; select it before each call. */
 export function createSession(): number

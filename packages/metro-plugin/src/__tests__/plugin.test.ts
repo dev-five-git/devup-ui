@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
 import {
+  REANIMATED_PACKAGE,
   TRANSFORMER_PATH,
   UpstreamTransformerNotFoundError,
   withDevupUI,
@@ -70,9 +71,19 @@ describe('withDevupUI', () => {
       package: '@devup-ui/react',
       include: [],
       runtime: true,
+      reanimated: false,
       devupFile: join(root, 'devup.json'),
       engine: undefined,
     })
+  })
+
+  it('tells the transformer whether the project has react-native-reanimated', () => {
+    install(REANIMATED_PACKAGE, 'index.js')
+    withDevupUI({
+      projectRoot: root,
+      transformer: { babelTransformerPath: '/up.js' },
+    })
+    expect(readSettings().reanimated).toBe(true)
   })
 
   it('passes the options to the transformer', () => {
@@ -91,6 +102,7 @@ describe('withDevupUI', () => {
       package: '@acme/ui',
       include: ['lib'],
       runtime: false,
+      reanimated: false,
       devupFile: join(root, 'theme', 'devup.json'),
       engine: 'wasm',
     })

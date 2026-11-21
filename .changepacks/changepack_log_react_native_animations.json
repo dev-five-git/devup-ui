@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles `keyframes()` and the `animation*` and `transition*` props for React Native on react-native-reanimated (part of #411): `keyframes()` becomes the keyframes object Reanimated reads, and an element taking an animation or a transition renders Reanimated's animated component. It takes a new `reanimated` argument telling whether the app has react-native-reanimated; without it, these are build errors asking to install it. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

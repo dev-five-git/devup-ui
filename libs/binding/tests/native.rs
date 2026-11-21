@@ -6,7 +6,12 @@ const SOURCE: &str =
 #[test]
 fn native_extraction_gives_code_and_a_map_without_css() -> Result<(), String> {
     // When
-    let output = code_extract_native(("view.tsx", SOURCE), "@devup-ui/react", "android", true)?;
+    let output = code_extract_native(
+        ("view.tsx", SOURCE),
+        "@devup-ui/react",
+        "android",
+        (true, true),
+    )?;
     // Then: React Native's View with a hoisted style, and nothing for a stylesheet.
     assert!(output.code.contains("View as Box"));
     assert!(output.code.contains("backgroundColor: \"red\""));
@@ -22,9 +27,14 @@ fn native_extraction_gives_code_and_a_map_without_css() -> Result<(), String> {
 #[test]
 fn native_extraction_rejects_an_unknown_platform() {
     // When
-    let error = code_extract_native(("view.tsx", SOURCE), "@devup-ui/react", "windows", true)
-        .err()
-        .unwrap_or_default();
+    let error = code_extract_native(
+        ("view.tsx", SOURCE),
+        "@devup-ui/react",
+        "windows",
+        (true, true),
+    )
+    .err()
+    .unwrap_or_default();
     // Then
     assert_eq!(
         error,
@@ -42,7 +52,7 @@ fn native_extraction_reports_build_errors() {
         ),
         "@devup-ui/react",
         "ios",
-        false,
+        (false, true),
     )
     .err()
     .unwrap_or_default();
@@ -147,7 +157,7 @@ fn native_extraction_resolves_the_registered_theme() -> Result<(), String> {
         ),
         "@devup-ui/react",
         "ios",
-        true,
+        (true, true),
     );
     devup_ui_binding_core::register_theme_internal(sheet::theme::Theme::default());
     // Then
