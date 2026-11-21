@@ -1183,3 +1183,24 @@ fn blocks_apply_after_the_other_styles(#[case] name: &str, #[case] code: &str) {
     let code = format!("export function A() {{ return {code} }}");
     assert_snapshot!(name, compile_themed(two_themes(), true, &code));
 }
+
+#[test]
+fn a_static_style_after_one_kept_in_order_checks_it() {
+    let mut sheet = Sheet::new("s".to_string());
+    let code = style_code(
+        vec![
+            Choice::Dynamic(vec![("margin".to_string(), "m".to_string())]),
+            Choice::Static(declarations(&[("margin", 2.0)])),
+            Choice::Dynamic(vec![("width".to_string(), "w".to_string())]),
+            Choice::Static(declarations(&[("padding", 1.0)])),
+        ],
+        vec![],
+        &mut sheet,
+        &VARS,
+    )
+    .map(|style| style.code);
+    assert_eq!(
+        code.as_deref(),
+        Some("[s.a, { margin: m }, s.b, { width: w }]")
+    );
+}
