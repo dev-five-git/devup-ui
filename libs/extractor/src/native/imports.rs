@@ -150,7 +150,8 @@ impl Imports {
                 )),
             }
         }
-        let dropped = natives.len() + runtime.len() + kept.len() < declaration.specifiers.iter().flatten().count();
+        let dropped = natives.len() + runtime.len() + kept.len()
+            < declaration.specifiers.iter().flatten().count();
         if natives.is_empty() && runtime.is_empty() && !dropped {
             return;
         }

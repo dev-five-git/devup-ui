@@ -1237,3 +1237,17 @@ fn css_alone_drops_its_import() {
         )
     );
 }
+
+#[rstest]
+#[case::theme("block_order_theme", "<Box _themeDark={{ bg: 'red' }} bg=\"blue\" />")]
+#[case::orientation("block_order_orientation", "<Box _landscape={{ p: 1 }} p={2} />")]
+#[case::pressed("block_order_pressed", "<Box _active={{ m: 1 }} m={2} />")]
+#[case::nested(
+    "block_order_nested",
+    "<Box _landscape={{ _active: { m: 1 }, m: 2, _themeDark: { m: 3 }, p: 4 }} p={5} />"
+)]
+#[case::platform("block_order_platform", "<Box _ios={{ m: 1 }} m={2} />")]
+fn blocks_apply_after_the_other_styles(#[case] name: &str, #[case] code: &str) {
+    let code = format!("export function A() {{ return {code} }}");
+    assert_snapshot!(name, compile_themed(two_themes(), true, &code));
+}

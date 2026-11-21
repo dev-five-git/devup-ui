@@ -196,9 +196,7 @@ impl Choice {
     /// What the choice reads from the runtime
     pub(super) fn reads(&self) -> Reads {
         match self {
-            Self::Empty | Self::Static(_) | Self::Dynamic(_) | Self::Given(_) => {
-                Reads::default()
-            }
+            Self::Empty | Self::Static(_) | Self::Dynamic(_) | Self::Given(_) => Reads::default(),
             Self::Condition {
                 consequent,
                 alternate,

@@ -24,6 +24,6 @@ export function Screen({ on }) {
 		__l && (on ? __s.e : __s.f),
 		__l && __s.g
 	]}>
-      <Box style={[__l && __s.c, __s.d]} />
+      <Box style={[__s.d, __l && __s.c]} />
     </Flex>;
 }

@@ -1,0 +1,27 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, &code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, useLandscape as __useLandscape, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { Pressable as __Pressable } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 20 },
+	b: { margin: 8 },
+	c: { padding: 16 },
+	d: { margin: 4 },
+	e: { margin: 12 }
+});
+export function A() {
+	const __t = __useThemeIndex();
+	const __l = __useLandscape();
+	return <__Pressable style={({ pressed: __p }) => [
+		__s.a,
+		__l && __s.b,
+		__l && __s.c,
+		__l && __p && __s.d,
+		__l && [null, __s.e][__t]
+	]} />;
+}

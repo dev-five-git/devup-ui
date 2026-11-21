@@ -2,7 +2,8 @@
 //! code an element's `style` takes, and `className` passes that style on.
 
 use oxc_ast::ast::{
-    CallExpression, Expression, IdentifierReference, JSXAttribute, LogicalOperator, ObjectExpression,
+    CallExpression, Expression, IdentifierReference, JSXAttribute, LogicalOperator,
+    ObjectExpression,
 };
 use oxc_ast_visit::Visit;
 use oxc_span::{GetSpan, Span};
@@ -57,15 +58,15 @@ impl<'a> Elements<'_> {
             &mut self.sheet,
             &self.runtime.vars(),
         )
-            .map_or_else(
-                || "null".to_string(),
-                |style| {
-                    if style.reads.any() && !self.read_in_component(style.reads) {
-                        self.error(call.span.start, outside_component_problem());
-                    }
-                    style.code
-                },
-            );
+        .map_or_else(
+            || "null".to_string(),
+            |style| {
+                if style.reads.any() && !self.read_in_component(style.reads) {
+                    self.error(call.span.start, outside_component_problem());
+                }
+                style.code
+            },
+        );
         self.replacements
             .push((call.span.start as usize, call.span.end as usize, code));
     }
@@ -195,7 +196,10 @@ impl<'a> Elements<'_> {
 
 /// Whether `expression` is an object of styles
 fn is_object(expression: &Expression<'_>) -> bool {
-    matches!(expression.without_parentheses(), Expression::ObjectExpression(_))
+    matches!(
+        expression.without_parentheses(),
+        Expression::ObjectExpression(_)
+    )
 }
 
 /// Whether `expression` gives no style: `null`, `undefined` or `false`

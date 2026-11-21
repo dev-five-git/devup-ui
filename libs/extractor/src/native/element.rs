@@ -4,11 +4,10 @@
 
 use oxc_ast::ast::{
     ArrayExpression, ArrayExpressionElement, ArrowFunctionExpression, CallExpression,
-    ExportDefaultDeclaration,
-    Expression, Function, FunctionBody, IdentifierReference, JSXAttribute, JSXAttributeItem,
-    JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression,
-    LogicalOperator, ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
-    VariableDeclarator,
+    ExportDefaultDeclaration, Expression, Function, FunctionBody, IdentifierReference,
+    JSXAttribute, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement,
+    JSXElementName, JSXExpression, LogicalOperator, ObjectExpression, ObjectPropertyKind, Program,
+    TSType, UnaryOperator, VariableDeclarator,
 };
 use std::cell::Cell;
 use std::fmt::Write;
