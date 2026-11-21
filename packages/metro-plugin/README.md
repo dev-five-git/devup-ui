@@ -158,6 +158,24 @@ with a press style becomes one, so it takes `onPress` and the other props of
 runtime. It is a build error on a `Text`, an `Image` or an `Input`, and with
 `as`.
 
+### Hover, focus and disabled
+
+`_hover` and `_focus` apply while the pointer is over the element and while
+it has focus. A `Pressable` tells these to its style function too
+(`({ hovered, focused }) => ...`). React Native reports them where the
+platform has a pointer or keyboard focus, such as the web through
+react-native-web, and never on a phone's touch screen. An `Input` with
+`_focus` renders through the runtime's `Focused`, which follows its
+`onFocus` and `onBlur` and still calls yours. `_hover` on an `Input`, and any
+of these on a `Text` or an `Image`, is a build error.
+
+`_disabled` applies while the element's `disabled` prop is true:
+`<Button disabled={busy} _disabled={{ opacity: 0.4 }} />` compiles to
+`busy && styles.a`. On an element without `disabled` it never applies, and in
+a `styled()` component it reads the component's `disabled` prop. In `css()`,
+`_hover`, `_focus`, `_active` and `_disabled` are build errors: give them to
+the element.
+
 ## `css()` and `className`
 
 `css()` compiles to the style it describes, the value React Native's `style`
@@ -236,10 +254,10 @@ The component reads style props only through `styled()`: on React Native,
 
 Only styles the build can decide are supported: literals, values read at
 runtime, theme tokens, responsive values, conditions between them and the
-platform, theme, orientation and press blocks, `css()` and `styled()`. These
-are build errors, reported by Metro at the file, line and column:
+platform, theme, orientation and interaction blocks, `css()` and `styled()`.
+These are build errors, reported by Metro at the file, line and column:
 
-- interaction states other than `_active`/`_pressed` (`_hover`, `_focus`, ...)
+- selectors other than the states above (`_focusVisible`, `_checked`, `_before`, ...)
 - `globalCss()`, `keyframes()` and `Grid`
 - any prop React Native has no style for
 - with `runtime: false`, a value that differs by theme or breakpoint,

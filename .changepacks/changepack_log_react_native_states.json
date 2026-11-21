@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles `_hover`, `_focus` and `_disabled` for React Native (part of #411): `_hover` and `_focus` read the `hovered` and `focused` that `Pressable` gives its style function, an `Input` with `_focus` renders through the runtime's `Focused`, and `_disabled` applies while the element's `disabled` prop is true. In `css()` these and `_active` are build errors. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

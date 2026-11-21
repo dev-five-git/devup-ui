@@ -241,3 +241,49 @@ describe('Themed with breakpoints', () => {
     expect(style()).toBe('1-2-true')
   })
 })
+
+describe('Focused', () => {
+  it('renders the component with the style for whether it has focus', () => {
+    const calls: string[] = []
+    const Probe = ({
+      style,
+      onFocus,
+      onBlur,
+    }: {
+      style?: { color: string }
+      onFocus: (event: unknown) => void
+      onBlur: (event: unknown) => void
+    }) =>
+      createElement('input', {
+        'data-color': style?.color,
+        onFocus: () => onFocus('focus'),
+        onBlur: () => onBlur('blur'),
+      })
+    const { container, rerender } = render(
+      createElement(runtime.Focused, {
+        $c: Probe,
+        $s: (focused: boolean, theme: number) => ({
+          color: `${focused ? 'focused' : 'idle'} ${theme}`,
+        }),
+        onFocus: (event: unknown) => calls.push(String(event)),
+        onBlur: (event: unknown) => calls.push(String(event)),
+      }),
+    )
+    const input = () => container.querySelector('input')
+    expect(input()?.getAttribute('data-color')).toBe('idle 0')
+    act(() => input()?.focus())
+    expect(input()?.getAttribute('data-color')).toBe('focused 0')
+    act(() => input()?.blur())
+    expect(input()?.getAttribute('data-color')).toBe('idle 0')
+    expect(calls).toEqual(['focus', 'blur'])
+    rerender(
+      createElement(runtime.Focused, {
+        $c: Probe,
+        $s: (focused: boolean) => ({ color: String(focused) }),
+      }),
+    )
+    act(() => input()?.focus())
+    act(() => input()?.blur())
+    expect(input()?.getAttribute('data-color')).toBe('false')
+  })
+})

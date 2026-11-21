@@ -6,16 +6,17 @@
 // the breakpoint and the orientation, so it calls each of those hooks of the
 // runtime; src/Badge.tsx is styled the same in every theme and at every
 // width, so it must not use the runtime. Its buttons take press styles, which
-// React Native's `Pressable` applies through a function for `style`.
+// React Native's `Pressable` applies through a function for `style`, and its
+// input a focus style, which the runtime's `Focused` applies.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const PLACEHOLDER = 'Cannot run on the runtime'
 /** Names of the runtime that only code using it holds, as minified code keeps them */
 const RUNTIME_NAMES =
-  /\b(?:defineThemes|useThemeIndex|useBreakpoint|useLandscape)\b/g
-/** The hooks src/App.tsx must call */
-const APP_HOOKS = ['useThemeIndex', 'useBreakpoint', 'useLandscape']
+  /\b(?:defineThemes|useThemeIndex|useBreakpoint|useLandscape|Focused)\b/g
+/** What src/App.tsx must use from the runtime */
+const APP_HOOKS = ['useThemeIndex', 'useBreakpoint', 'useLandscape', 'Focused']
 /** Modules of @devup-ui/react, by the path Metro resolves */
 const REACT_PACKAGE = /(^|[\\/])(@devup-ui[\\/]react|packages[\\/]react)[\\/]/
 /** The React Native runtime among them */
@@ -144,7 +145,7 @@ for (const platform of ['ios', 'android']) {
     for (const hook of APP_HOOKS) {
       const callers = [...(users.get(hook) ?? [])]
       if (!callers.some((source) => /src[\\/]App\.tsx$/.test(source))) {
-        failures.push(`${platform}/${file}: src/App.tsx does not call ${hook}`)
+        failures.push(`${platform}/${file}: src/App.tsx does not use ${hook}`)
       }
     }
     const all = [

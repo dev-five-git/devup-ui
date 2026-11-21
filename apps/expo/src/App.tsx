@@ -53,6 +53,7 @@ export function App() {
           Your name
         </Text>
         <Input
+          _focus={{ borderColor: '#5a44ff' }}
           border="1px solid $border"
           borderRadius="8px"
           color="$text"

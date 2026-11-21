@@ -20,6 +20,12 @@ pub(super) enum State {
     Landscape(bool),
     /// The element is pressed
     Pressed,
+    /// The pointer is over the element
+    Hovered,
+    /// The element has focus
+    Focused,
+    /// The element is disabled
+    Disabled,
 }
 
 /// The styles one prop declares
@@ -84,6 +90,10 @@ pub(super) struct Vars<'v> {
     pub breakpoint: &'v str,
     pub landscape: &'v str,
     pub pressed: &'v str,
+    pub hovered: &'v str,
+    pub focused: &'v str,
+    /// The code telling whether the element is disabled
+    pub disabled: &'v str,
 }
 
 /// The choice of `grid`, as small as it can be: the last breakpoints that
@@ -214,16 +224,20 @@ impl Choice {
         }
     }
 
-    /// Whether the choice applies styles only while the element is pressed
-    pub(super) fn pressed(&self) -> bool {
+    /// Whether the choice applies styles only while the element is in
+    /// `state`
+    pub(super) fn holds(&self, state: State) -> bool {
         match self {
             Self::Condition {
                 consequent,
                 alternate,
                 ..
-            } => consequent.pressed() || alternate.pressed(),
-            Self::When { state, choice } => *state == State::Pressed || choice.pressed(),
-            Self::All(choices) => choices.iter().any(Self::pressed),
+            } => consequent.holds(state) || alternate.holds(state),
+            Self::When {
+                state: held,
+                choice,
+            } => *held == state || choice.holds(state),
+            Self::All(choices) => choices.iter().any(|choice| choice.holds(state)),
             _ => false,
         }
     }
@@ -313,6 +327,9 @@ impl State {
             Self::Landscape(true) => vars.landscape.to_string(),
             Self::Landscape(false) => format!("!{}", vars.landscape),
             Self::Pressed => vars.pressed.to_string(),
+            Self::Hovered => vars.hovered.to_string(),
+            Self::Focused => vars.focused.to_string(),
+            Self::Disabled => operand(vars.disabled),
         }
     }
 }
@@ -624,4 +641,48 @@ pub(super) fn style_code(
         format!("[{}]", entries.join(", "))
     };
     Some(StyleCode { code, reads })
+}
+
+/// The states `Pressable` tells the function it calls for its style
+pub(super) const INTERACTIONS: [State; 3] = [State::Pressed, State::Hovered, State::Focused];
+
+/// The keys of the state `Pressable` gives its style function that `choices`
+/// read, each bound to its variable, such as `pressed: __p`
+pub(super) fn interaction_keys(choices: &[Choice], vars: &Vars<'_>) -> Vec<String> {
+    [
+        (State::Pressed, "pressed", vars.pressed),
+        (State::Hovered, "hovered", vars.hovered),
+        (State::Focused, "focused", vars.focused),
+    ]
+    .into_iter()
+    .filter(|(state, _, _)| choices.iter().any(|choice| choice.holds(*state)))
+    .map(|(_, key, variable)| format!("{key}: {variable}"))
+    .collect()
+}
+
+/// `choice` without what applies only in `state`, which never holds
+pub(super) fn without(choice: Choice, state: State) -> Choice {
+    match choice {
+        Choice::When { state: held, .. } if held == state => Choice::Empty,
+        Choice::When {
+            state: held,
+            choice,
+        } => when(held, without(*choice, state)),
+        Choice::Condition {
+            test,
+            consequent,
+            alternate,
+        } => Choice::Condition {
+            test,
+            consequent: Box::new(without(*consequent, state)),
+            alternate: Box::new(without(*alternate, state)),
+        },
+        Choice::All(choices) => Choice::All(
+            choices
+                .into_iter()
+                .map(|choice| without(choice, state))
+                .collect(),
+        ),
+        choice => choice,
+    }
 }
