@@ -89,6 +89,7 @@ const ENGLISH_EXPORTED_ROUTES = [
   '/docs/migration/vanilla-extract',
   '/docs/overview',
   '/docs/quick-start',
+  '/docs/react-native',
   '/showcase',
   '/team',
 ] as const

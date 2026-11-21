@@ -38,6 +38,7 @@ export function LeftMenu() {
       <MenuItem to="/docs/features">Features</MenuItem>
       <MenuItem to="/docs/limitations">Supported Syntax & Limitations</MenuItem>
       <MenuItem to="/docs/build-errors">Build Errors</MenuItem>
+      <MenuItem to="/docs/react-native">React Native</MenuItem>
       <MenuItem
         subMenu={[
           {
