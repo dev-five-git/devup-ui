@@ -2,26 +2,12 @@
 
 import type { DevupTheme } from '../types/theme'
 import type { Conditional } from '../types/utils'
-
-const STORAGE_KEY = '__DF_THEME_SELECTED__'
-const DARK_QUERY = '(prefers-color-scheme:dark)'
-
-function readSavedTheme(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY)
-  } catch {
-    // Blocked storage: no saved theme
-    return null
-  }
-}
-
-function prefersDark(): boolean {
-  try {
-    return window.matchMedia(DARK_QUERY).matches
-  } catch {
-    return false
-  }
-}
+import {
+  darkQuery,
+  readSavedTheme,
+  STORAGE_KEY,
+  systemTheme,
+} from './theme-system'
 
 /**
  * Initialize the theme, if you can't use the `ThemeScript` component
@@ -29,8 +15,9 @@ function prefersDark(): boolean {
  *
  * A theme saved by `setTheme` is an explicit choice and wins. Without one, the
  * system preference decides when `auto` is set, and is followed as it changes;
- * a theme saved in another tab is followed too. Where there is no page (server
- * rendering) nothing happens.
+ * a theme saved in another tab is followed too, and so is `setTheme(null)`
+ * forgetting the choice. Where there is no page (server rendering) nothing
+ * happens.
  * @param auto - Whether to use the system theme
  * @param theme - The theme to use
  * @returns Stops following the system and other tabs
@@ -47,13 +34,7 @@ export function initTheme(
   }
 
   const apply = () => {
-    root.setAttribute(
-      'data-theme',
-      readSavedTheme() ||
-        (auto && prefersDark()
-          ? 'dark'
-          : (process.env.DEVUP_UI_DEFAULT_THEME ?? 'default')),
-    )
+    root.setAttribute('data-theme', readSavedTheme() || systemTheme(auto))
   }
   const onStorage = (e: StorageEvent) => {
     if (e.key === STORAGE_KEY || e.key === null) apply()
@@ -63,7 +44,7 @@ export function initTheme(
   let query: MediaQueryList | undefined
   if (auto) {
     try {
-      query = window.matchMedia(DARK_QUERY)
+      query = darkQuery()
       query.addEventListener('change', apply)
     } catch {
       query = undefined

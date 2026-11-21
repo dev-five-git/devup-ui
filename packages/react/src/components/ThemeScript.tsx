@@ -19,8 +19,8 @@ function escapeScriptClosingTag(script: string) {
  * Sets `data-theme` before the page paints. Reading the saved theme or the
  * system preference can throw (storage blocked, no `matchMedia`), so each read
  * falls back to the default theme. The script follows the system while no theme
- * was chosen, and the choice another tab saves. Pass `nonce` under a
- * nonce-based CSP.
+ * was chosen, and the choice another tab saves or `setTheme(null)` forgets.
+ * Pass `nonce` under a nonce-based CSP.
  */
 export function ThemeScript({
   auto = true,
