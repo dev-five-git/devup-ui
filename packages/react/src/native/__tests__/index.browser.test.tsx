@@ -8,7 +8,21 @@ const appearance = {
   listeners: [] as (() => void)[],
 }
 
+/** The window React Native reports, and who listens to its changes */
+const dimensions = {
+  width: 390,
+  height: 844,
+  listeners: [] as (() => void)[],
+}
+
 mock.module('react-native', () => ({
+  Dimensions: {
+    get: () => ({ width: dimensions.width, height: dimensions.height }),
+    addEventListener: (event: string, listener: () => void) => {
+      if (event === 'change') dimensions.listeners.push(listener)
+      return { remove: () => {} }
+    },
+  },
   Appearance: {
     getColorScheme: () => appearance.scheme,
     addChangeListener: (listener: () => void) => {
@@ -26,12 +40,34 @@ function changeAppearance(scheme: string | null) {
   })
 }
 
+/** The window resizing to `width` by `height` */
+function resize(width: number, height: number) {
+  act(() => {
+    dimensions.width = width
+    dimensions.height = height
+    for (const listener of dimensions.listeners) listener()
+  })
+}
+
 const runtime = await import('../index')
-const { defineThemes, getTheme, setTheme, Themed, useTheme, useThemeIndex } =
-  runtime
+const {
+  defineBreakpoints,
+  defineThemes,
+  getBreakpoint,
+  getTheme,
+  setTheme,
+  Themed,
+  useBreakpoint,
+  useLandscape,
+  useTheme,
+  useThemeIndex,
+} = runtime
 
 beforeEach(() => {
   appearance.scheme = 'light'
+  dimensions.width = 390
+  dimensions.height = 844
+  defineBreakpoints([0, 480, 768, 992, 1280, 1600])
   defineThemes(['light', 'dark', 'sepia'], 1)
   setTheme(null)
 })
@@ -121,5 +157,87 @@ describe('Themed', () => {
     expect(span()?.getAttribute('data-color')).toBe('white')
     act(() => setTheme('sepia' as Parameters<typeof setTheme>[0]))
     expect(span()?.getAttribute('data-color')).toBe('brown')
+  })
+})
+
+describe('getBreakpoint and useBreakpoint', () => {
+  it('give the last breakpoint the window width reaches', () => {
+    expect(getBreakpoint()).toBe(0)
+    dimensions.width = 480
+    expect(getBreakpoint()).toBe(1)
+    dimensions.width = 1599
+    expect(getBreakpoint()).toBe(4)
+    dimensions.width = 4000
+    expect(getBreakpoint()).toBe(5)
+  })
+
+  it('read the breakpoints devup.json gives', () => {
+    defineBreakpoints([100, 600])
+    dimensions.width = 50
+    expect(getBreakpoint()).toBe(0)
+    dimensions.width = 599
+    expect(getBreakpoint()).toBe(0)
+    dimensions.width = 600
+    expect(getBreakpoint()).toBe(1)
+    defineBreakpoints([])
+    expect(getBreakpoint()).toBe(0)
+  })
+
+  it('render again only when the window crosses a breakpoint', () => {
+    let renders = 0
+    const { result } = renderHook(() => {
+      renders += 1
+      return useBreakpoint()
+    })
+    expect([result.current, renders]).toEqual([0, 1])
+    resize(400, 844)
+    resize(479, 844)
+    expect([result.current, renders]).toEqual([0, 1])
+    resize(480, 844)
+    expect([result.current, renders]).toEqual([1, 2])
+    resize(700, 844)
+    expect([result.current, renders]).toEqual([1, 2])
+    resize(1024, 844)
+    expect(result.current).toBe(3)
+    resize(320, 844)
+    expect(result.current).toBe(0)
+  })
+})
+
+describe('useLandscape', () => {
+  it('renders again when the window turns', () => {
+    const { result } = renderHook(() => useLandscape())
+    expect(result.current).toBe(false)
+    resize(844, 390)
+    expect(result.current).toBe(true)
+    resize(390, 844)
+    expect(result.current).toBe(false)
+  })
+
+  it('shares one listener of the window with every hook', () => {
+    renderHook(() => [useLandscape(), useBreakpoint(), useTheme()])
+    renderHook(() => useBreakpoint())
+    expect(dimensions.listeners).toHaveLength(1)
+  })
+})
+
+describe('Themed with breakpoints', () => {
+  it('renders the style of the breakpoint and orientation of the window', () => {
+    const Probe = ({ style }: { style?: string }) =>
+      createElement('span', { 'data-style': style })
+    const { container } = render(
+      createElement(Themed, {
+        $c: Probe,
+        $s: (theme: number, breakpoint: number, landscape: boolean) =>
+          `${theme}-${breakpoint}-${landscape}`,
+      }),
+    )
+    const style = () =>
+      container.querySelector('span')?.getAttribute('data-style')
+    expect(style()).toBe('0-0-false')
+    resize(844, 390)
+    expect(style()).toBe('0-2-true')
+    changeAppearance('dark')
+    expect(style()).toBe('1-2-true')
   })
 })

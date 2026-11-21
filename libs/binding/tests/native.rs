@@ -159,3 +159,12 @@ fn native_extraction_resolves_the_registered_theme() -> Result<(), String> {
     assert!(code.contains("backgroundColor: \"#fff\""), "{code}");
     Ok(())
 }
+
+#[test]
+fn native_theme_keeps_the_breakpoints() {
+    // The web's breakpoints by default, and those devup.json sets
+    let default = devup_ui_binding_core::native_theme(&theme("{}"));
+    let custom = devup_ui_binding_core::native_theme(&theme(r#"{ "breakpoints": [0, 600] }"#));
+    assert_eq!(default.breakpoints, [0, 480, 768, 992, 1280, 1600]);
+    assert_eq!(custom.breakpoints, [0, 600]);
+}

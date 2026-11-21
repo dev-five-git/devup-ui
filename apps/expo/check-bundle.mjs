@@ -3,14 +3,18 @@
 // placeholders of @devup-ui/react or any module of that package but its React
 // Native runtime (`@devup-ui/react/native`), and the styles of src/App.tsx
 // must be there as React Native style objects. src/App.tsx reads the theme,
-// so it uses the runtime; src/Badge.tsx is styled the same in every theme, so
-// it must not.
+// the breakpoint and the orientation, so it calls each of those hooks of the
+// runtime; src/Badge.tsx is styled the same in every theme and at every
+// width, so it must not use the runtime.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const PLACEHOLDER = 'Cannot run on the runtime'
 /** Names of the runtime that only code using it holds, as minified code keeps them */
-const RUNTIME_NAMES = /\b(?:defineThemes|useThemeIndex)\b/g
+const RUNTIME_NAMES =
+  /\b(?:defineThemes|useThemeIndex|useBreakpoint|useLandscape)\b/g
+/** The hooks src/App.tsx must call */
+const APP_HOOKS = ['useThemeIndex', 'useBreakpoint', 'useLandscape']
 /** Modules of @devup-ui/react, by the path Metro resolves */
 const REACT_PACKAGE = /(^|[\\/])(@devup-ui[\\/]react|packages[\\/]react)[\\/]/
 /** The React Native runtime among them */
@@ -89,17 +93,19 @@ function mapSources(map) {
     : map.sources
 }
 
-/** The sources of the code that names the runtime */
+/** Each name of the runtime, with the sources of the code that names it */
 function runtimeUsers(code, locate) {
-  const users = new Set()
+  const users = new Map()
   code.split('\n').forEach((line, index) => {
     for (const match of line.matchAll(RUNTIME_NAMES)) {
-      users.add(locate(index, match.index))
+      const source = locate(index, match.index)
+      if (source === null || NATIVE_RUNTIME.test(source)) continue
+      const sources = users.get(match[0]) ?? new Set()
+      sources.add(source)
+      users.set(match[0], sources)
     }
   })
-  return [...users].filter(
-    (source) => source !== null && !NATIVE_RUNTIME.test(source),
-  )
+  return users
 }
 
 for (const platform of ['ios', 'android']) {
@@ -129,16 +135,22 @@ for (const platform of ['ios', 'android']) {
       failures.push(`${platform}/${file}: lacks @devup-ui/react/native`)
     }
     const users = runtimeUsers(code, sourceLocator(map))
-    if (!users.some((source) => /src[\\/]App\.tsx$/.test(source))) {
-      failures.push(`${platform}/${file}: src/App.tsx does not use the runtime`)
+    for (const hook of APP_HOOKS) {
+      const callers = [...(users.get(hook) ?? [])]
+      if (!callers.some((source) => /src[\\/]App\.tsx$/.test(source))) {
+        failures.push(`${platform}/${file}: src/App.tsx does not call ${hook}`)
+      }
     }
-    for (const source of users.filter((source) =>
+    const all = [
+      ...new Set([...users.values()].flatMap((sources) => [...sources])),
+    ]
+    for (const source of all.filter((source) =>
       /src[\\/]Badge\.tsx$/.test(source),
     )) {
       failures.push(`${platform}/${file}: ${source} uses the runtime`)
     }
     console.info(
-      `${platform}/${file}: ${sources.length} modules, runtime used by ${users.join(', ')}`,
+      `${platform}/${file}: ${sources.length} modules, runtime used by ${all.join(', ')}`,
     )
   }
 }

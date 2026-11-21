@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles responsive values for React Native (part of #411): responsive arrays (`p={[1, null, 3]}`, `null` keeping the value before as on the web), `length`, `shadow` and `typography` tokens with a value at each breakpoint, responsive values inside `_ios`, `_theme*` and conditions, and `_portrait`/`_landscape`. The breakpoints of devup.json are measured against the window width. The build precomputes one style object for each run of breakpoints that share their styles, only for the styles that differ, and picks one by the breakpoint `useBreakpoint()` of `@devup-ui/react/native` gives (by breakpoint and theme where both differ). A value read at runtime in an array applies from its breakpoint on. With `runtime: false` these are build errors. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}
