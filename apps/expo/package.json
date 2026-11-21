@@ -7,7 +7,8 @@
     "start": "expo start",
     "export": "expo export --platform ios --platform android --platform web --no-bytecode --source-maps",
     "check": "node check-bundle.mjs",
-    "check:web": "node check-web.mjs"
+    "check:web": "node check-web.mjs",
+    "typecheck": "bun ../../node_modules/@typescript/native/bin/tsc --noEmit"
   },
   "dependencies": {
     "@devup-ui/react": "workspace:^",

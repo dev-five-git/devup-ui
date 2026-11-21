@@ -67,6 +67,8 @@ withDevupUI(config, {
   package: '@devup-ui/react',
   // devup.json, from the project root. Default: 'devup.json'
   devupFile: 'devup.json',
+  // Where the theme and React Native types are written. Default: 'df'
+  distDir: 'df',
   // Packages in node_modules that ship uncompiled Devup UI. Default: []
   include: [],
   // Whether styles that need the React Native runtime may import it.
@@ -79,6 +81,24 @@ withDevupUI(config, {
   upstreamTransformer: undefined,
 })
 ```
+
+## TypeScript
+
+When Metro reads the config, the plugin writes two declaration files into
+`df` (the `distDir` option), which ignores itself in git:
+
+- `theme.d.ts`: the tokens of devup.json, as the web plugins write them, so
+  `bg="$primary"` and `typography="title"` complete and check.
+- `native.d.ts`: it imports `@devup-ui/react/native/types`, so each
+  component takes the props of the React Native component it renders:
+  `Box`, `Flex`, `VStack`, `Center` and `Grid` take `View`'s (`onLayout`,
+  `testID`, ...), `Text` takes `Text`'s, `Image` takes `Image`'s, `Input` takes
+  `TextInput`'s (`onChangeText`, ...) and `Button` takes `Pressable`'s
+  (`onPress`, ...). Each also takes `className`, for `css()`. HTML props that
+  React Native lacks, such as `href` or `onInput`, become type errors.
+
+A tsconfig that names its files (`include`) must list `df/*.d.ts`. Expo's
+default tsconfig includes every file of the project.
 
 ## Themes
 

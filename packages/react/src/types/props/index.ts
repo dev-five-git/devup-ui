@@ -63,12 +63,28 @@ type DevupDefaultIntrinsicPropConflicts =
   | 'width'
   | keyof DevupCustomShorthands
 
+/**
+ * The props a component takes, by the HTML element it renders on the web, in
+ * place of that element's: empty on the web, and filled by
+ * `@devup-ui/react/native/types` with the props of the React Native component
+ * each renders on React Native (`div` a `View`, `span` a `Text`, ...).
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: public module augmentation point for React Native.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DevupElementProps {}
+
+/** The props of the element `T` a component renders */
+export type DevupIntrinsicProps<T extends keyof React.JSX.IntrinsicElements> =
+  T extends keyof DevupElementProps
+    ? DevupElementProps[T]
+    : React.ComponentProps<T>
+
 // Component declarations put this overload first for fast resolution and last
 // so Parameters<typeof Component> keeps describing the default element.
 export type DevupDefaultComponentMergedProps<
   T extends keyof React.JSX.IntrinsicElements,
-> = Omit<React.ComponentProps<T>, DevupDefaultIntrinsicPropConflicts> & {
-  props?: FilterChildren<React.ComponentProps<T>>
+> = Omit<DevupIntrinsicProps<T>, DevupDefaultIntrinsicPropConflicts> & {
+  props?: FilterChildren<DevupIntrinsicProps<T>>
 } & DevupComponentProps<T>
 
 export type DevupComponentBaseProps<T extends React.ElementType> =

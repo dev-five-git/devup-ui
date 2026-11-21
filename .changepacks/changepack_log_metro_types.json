@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/metro-plugin/package.json": "Patch"
+  },
+  "note": "Write `df/theme.d.ts` (the tokens of devup.json) and `df/native.d.ts` (React Native props for each component) when Metro reads the config, with a `distDir` option, as the web plugins do.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

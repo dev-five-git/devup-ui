@@ -13,6 +13,7 @@ import {
   readSettings,
   writeSettings,
 } from './settings'
+import { writeTypes } from './types'
 
 export interface DevupUIMetroPluginOptions {
   /**
@@ -24,6 +25,12 @@ export interface DevupUIMetroPluginOptions {
   package?: string
   /** Path of devup.json, from the project root. Defaults to `devup.json`. */
   devupFile?: string
+  /**
+   * Where the TypeScript declarations are written, from the project root:
+   * the theme's tokens and the React Native props of each component.
+   * Defaults to `df`, as in the other plugins.
+   */
+  distDir?: string
   /**
    * Packages in `node_modules` whose files are compiled as well: a library
    * that ships Devup UI components uncompiled. Each name matches that whole
@@ -127,7 +134,8 @@ function upstreamTransformer(
  * Compile Devup UI for React Native in Metro: the config's Babel transformer
  * becomes Devup UI's, which compiles each file that imports Devup UI and then
  * hands the code to the transformer the config had (Expo's or React
- * Native's).
+ * Native's). The TypeScript declarations of the theme and of the React Native
+ * props are written into `distDir`.
  *
  * ```js
  * // metro.config.js
@@ -159,6 +167,12 @@ export function withDevupUI<T extends MetroConfigLike>(
     engine: options.engine,
   }
   writeSettings(settings)
+  writeTypes({
+    distDir: resolve(projectRoot, options.distDir ?? 'df'),
+    devupFile: settings.devupFile,
+    package: settings.package,
+    engine: settings.engine,
+  })
   return {
     ...config,
     transformer: {
