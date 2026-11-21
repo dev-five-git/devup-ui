@@ -310,6 +310,19 @@ const Card = styled.View({ padding: 8, backgroundColor: '$surface' })
   `runtime: false` they are build errors.
 - Any other import stays on the package.
 
+## Expo web
+
+On the web, Expo bundles the app with Metro through
+[react-native-web](https://necolas.github.io/react-native-web/), and this
+plugin compiles it as for iOS and Android: the same `StyleSheet` objects,
+which react-native-web turns into CSS. `_web` blocks apply there, and
+`_hover` and `_focus` follow the mouse and the keyboard. Install the web
+dependencies Expo asks for (`npx expo install react-dom react-native-web
+@expo/metro-runtime`) and add `"web"` to the `platforms` of app.json.
+
+A site that is not an Expo app keeps using the Vite, Next.js, Webpack,
+Rsbuild or Bun plugin, which output atomic CSS instead.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at

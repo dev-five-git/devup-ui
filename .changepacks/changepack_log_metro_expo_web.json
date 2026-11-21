@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/metro-plugin/package.json": "Patch"
+  },
+  "note": "Document Expo web (part of #411): Metro compiles the web build through react-native-web with the same output as iOS and Android, which the Expo example now exports and checks in Chromium.",
+  "date": "2026-11-21T00:00:00.000Z"
+}
