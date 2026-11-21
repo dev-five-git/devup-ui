@@ -18,6 +18,8 @@ pub(super) enum State {
     AtLeast(usize),
     /// The window is in landscape (`true`) or portrait (`false`) orientation
     Landscape(bool),
+    /// The element is pressed
+    Pressed,
 }
 
 /// The styles one prop declares
@@ -55,6 +57,7 @@ pub(super) struct Reads {
 }
 
 impl Reads {
+    /// Whether it reads what a hook of the runtime gives
     pub(super) const fn any(self) -> bool {
         self.theme || self.breakpoint || self.landscape
     }
@@ -78,6 +81,7 @@ pub(super) struct Vars<'v> {
     pub theme: &'v str,
     pub breakpoint: &'v str,
     pub landscape: &'v str,
+    pub pressed: &'v str,
 }
 
 /// The choice of `grid`, as small as it can be: the last breakpoints that
@@ -207,6 +211,20 @@ impl Choice {
         }
     }
 
+    /// Whether the choice applies styles only while the element is pressed
+    pub(super) fn pressed(&self) -> bool {
+        match self {
+            Self::Condition {
+                consequent,
+                alternate,
+                ..
+            } => consequent.pressed() || alternate.pressed(),
+            Self::When { state, choice } => *state == State::Pressed || choice.pressed(),
+            Self::All(choices) => choices.iter().any(Self::pressed),
+            _ => false,
+        }
+    }
+
     /// The code of the choice, its static styles named in `sheet`
     fn code(&self, sheet: &mut Sheet, vars: &Vars<'_>) -> String {
         match self {
@@ -290,6 +308,7 @@ impl State {
             Self::AtLeast(level) => format!("{} >= {level}", vars.breakpoint),
             Self::Landscape(true) => vars.landscape.to_string(),
             Self::Landscape(false) => format!("!{}", vars.landscape),
+            Self::Pressed => vars.pressed.to_string(),
         }
     }
 }

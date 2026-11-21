@@ -140,6 +140,24 @@ is in that orientation.
 A value read at runtime in an array (`p={[x, 2]}`) applies from its
 breakpoint on as it is.
 
+## Press styles
+
+`_active` (or its React Native name, `_pressed`) applies its styles while the
+element is pressed. React Native tells only a `Pressable` whether it is
+pressed, so the build passes it a function for its `style`:
+
+```tsx
+<Box onPress={open} bg="$primary" _active={{ opacity: 0.6 }} />
+// renders
+<Pressable onPress={open} style={({ pressed }) => [styles.a, pressed && styles.b]} />
+```
+
+A `Button` is already a `Pressable`. A `Box`, `Flex`, `Center` or `VStack`
+with a press style becomes one, so it takes `onPress` and the other props of
+`Pressable`. A press style works with `runtime: false` too, as it needs no
+runtime. It is a build error on a `Text`, an `Image` or an `Input`, and with
+`as`.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at
@@ -147,14 +165,12 @@ runtime, theme tokens, responsive values, conditions between them and the
 platform, theme and orientation blocks. These are build errors, reported by
 Metro at the file, line and column:
 
-- interaction states (`_hover`, `_active`, `_pressed`, `_focus`, ...)
+- interaction states other than `_active`/`_pressed` (`_hover`, `_focus`, ...)
 - `css()`, `styled()`, `globalCss()`, `keyframes()` and `Grid`
 - any prop React Native has no style for
 - with `runtime: false`, a value that differs by theme or breakpoint,
   `_theme*` with more than one theme, `_portrait`, `_landscape`, and
   `useTheme`, `getTheme` and `setTheme`
-
-The runtime that brings `_pressed` comes in a later version.
 
 Metro reads devup.json when it starts, so restart Metro after changing it
 (`--reset-cache` is not needed).

@@ -5,7 +5,8 @@
 // must be there as React Native style objects. src/App.tsx reads the theme,
 // the breakpoint and the orientation, so it calls each of those hooks of the
 // runtime; src/Badge.tsx is styled the same in every theme and at every
-// width, so it must not use the runtime.
+// width, so it must not use the runtime. Its buttons take press styles, which
+// React Native's `Pressable` applies through a function for `style`.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -117,7 +118,12 @@ for (const platform of ['ios', 'android']) {
     if (code.includes(PLACEHOLDER)) {
       failures.push(`${platform}/${file}: holds "${PLACEHOLDER}"`)
     }
-    for (const style of ['backgroundColor:"#5a44ff"', 'StyleSheet']) {
+    for (const style of [
+      'backgroundColor:"#5a44ff"',
+      'backgroundColor:"#4330d9"',
+      'StyleSheet',
+      'style:({pressed:',
+    ]) {
       if (!code.replaceAll(' ', '').includes(style)) {
         failures.push(`${platform}/${file}: lacks ${style}`)
       }

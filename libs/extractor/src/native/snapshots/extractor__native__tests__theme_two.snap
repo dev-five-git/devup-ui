@@ -83,7 +83,7 @@ export function Card({ on, color }) {
 	]} />
       <Box style={[__s.v, __s.w][__t]} />
       <Text style={[null, __s.x][__t]} />
-      <Box style={__s.r} />
+      <Box style={[__s.r, [null, __s.y][__t]]} />
       <Box style={[__s.y, __t === 1 && (on ? __s.t : __s.u)]} />
     </Box>;
 }

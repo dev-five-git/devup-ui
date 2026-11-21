@@ -67,6 +67,7 @@ export function App() {
         gap={3}
       >
         <Button
+          _active={{ bg: '#4330d9' }}
           bg="#5a44ff"
           borderRadius="8px"
           onPress={() => setCount(count + 1)}
@@ -78,6 +79,7 @@ export function App() {
           </Text>
         </Button>
         <Button
+          _active={{ opacity: 0.6 }}
           border="1px solid $border"
           borderRadius="8px"
           onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

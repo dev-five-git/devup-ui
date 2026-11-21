@@ -2,7 +2,7 @@ use insta::assert_snapshot;
 use rstest::rstest;
 
 use super::element::units_declaration;
-use super::errors::{Problem, RuntimeFeature};
+use super::errors::Problem;
 use super::props::Declaration;
 use super::sheet::{Sheet, key_name};
 use super::style::{Choice, State, Vars, cascade, in_theme, style_code, varied, when};
@@ -14,6 +14,7 @@ const VARS: Vars<'static> = Vars {
     theme: "t",
     breakpoint: "b",
     landscape: "l",
+    pressed: "p",
 };
 
 const IMPORT: &str =
@@ -209,10 +210,6 @@ fn compiles_files(#[case] name: &str, #[case] code: &str) {
 #[case::theme_token("theme_token", "<Box bg=\"$primary\" />")]
 #[case::theme_selector("theme_selector", "<Box _themeDark={{ bg: 'black' }} />")]
 #[case::typography("typography", "<Text typography=\"heading\" />")]
-#[case::pressed(
-    "pressed",
-    "<Button _pressed={{ bg: 'red' }} _active={{ bg: 'blue' }} />"
-)]
 #[case::selectors(
     "selectors",
     "<Box _hover={{ bg: 'red' }} _focus={{ bg: 'blue' }} selectors={{ '&:hover': {} }} />"
@@ -469,17 +466,6 @@ fn problems_format_for_props_and_imports() {
     assert_eq!(
         problem.import("css", "@devup-ui/react"),
         "`css` from `@devup-ui/react` cannot be used on React Native: why. Fix: how"
-    );
-    let target = NativeTarget {
-        platform: NativePlatform::Ios,
-        runtime: true,
-        theme: std::sync::Arc::default(),
-    };
-    assert!(
-        RuntimeFeature::Pressed
-            .problem(&target)
-            .fix
-            .contains("Pressable")
     );
 }
 
@@ -1142,5 +1128,84 @@ fn varied_choices_pick_by_breakpoint_and_theme() {
             State::Theme(1),
             when(State::Landscape(true), Choice::Static(a))
         )
+    );
+}
+
+const PRESSED_ELEMENTS: &str = r#"export function Buttons({ on, go, extra }) {
+  return (
+    <Box>
+      <Button onPress={go} bg="$primary" p={2} _pressed={{ bg: '$text', opacity: 0.8 }}>
+        <Text>Go</Text>
+      </Button>
+      <Box onPress={go} _active={{ opacity: 0.5 }} p={[1, 2]} />
+      <Flex onPress={go} _pressed={{ p: on ? 1 : 2 }} style={extra}>
+        <Box />
+      </Flex>
+      <Box _themeDark={{ _pressed: { bg: 'red' } }} />
+      <Button _pressed={{}} />
+      <Box _active={{}} />
+    </Box>
+  )
+}
+export const outside = <Box _pressed={{ bg: '$primary' }} />"#;
+
+#[rstest]
+#[case::pressed("pressed_styles", true, PRESSED_ELEMENTS)]
+#[case::runtime_off(
+    "pressed_runtime_off",
+    false,
+    "export const a = <Box _pressed={{ m: 1, _pressed: { p: 1 } }} bg=\"red\" />"
+)]
+#[case::name_collisions(
+    "pressed_name_collisions",
+    true,
+    "const __p = 1, __Pressable = 2;\nexport const A = () => <Box _pressed={{ m: 1 }} />"
+)]
+#[case::errors(
+    "pressed_errors",
+    true,
+    "<Text _pressed={{ color: 'red' }} />;\n<Image _pressed={{ opacity: 0.5 }} />;\n<Input _pressed={{ bg: 'red' }} />;\n<Box as={Animated.View} _pressed={{ bg: 'red' }} />;\n<Box _pressed={1} />"
+)]
+fn compiles_pressed(#[case] name: &str, #[case] runtime: bool, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
+}
+
+#[rstest]
+#[case::theme("block_order_theme", "<Box _themeDark={{ bg: 'red' }} bg=\"blue\" />")]
+#[case::orientation("block_order_orientation", "<Box _landscape={{ p: 1 }} p={2} />")]
+#[case::pressed("block_order_pressed", "<Box _active={{ m: 1 }} m={2} />")]
+#[case::nested(
+    "block_order_nested",
+    "<Box _landscape={{ _active: { m: 1 }, m: 2, _themeDark: { m: 3 }, p: 4 }} p={5} />"
+)]
+#[case::platform("block_order_platform", "<Box _ios={{ m: 1 }} m={2} />")]
+fn blocks_apply_after_the_other_styles(#[case] name: &str, #[case] code: &str) {
+    let code = format!("export function A() {{ return {code} }}");
+    assert_snapshot!(name, compile_themed(two_themes(), true, &code));
+}
+
+#[test]
+fn a_static_style_after_one_kept_in_order_checks_it() {
+    let mut sheet = Sheet::new("s".to_string());
+    let code = style_code(
+        vec![
+            Choice::Dynamic(vec![("margin".to_string(), "m".to_string())]),
+            Choice::Static(declarations(&[("margin", 2.0)])),
+            Choice::Dynamic(vec![("width".to_string(), "w".to_string())]),
+            Choice::Static(declarations(&[("padding", 1.0)])),
+            when(
+                State::Pressed,
+                Choice::Static(declarations(&[("height", 1.0)])),
+            ),
+            Choice::Static(declarations(&[("top", 1.0)])),
+        ],
+        vec![],
+        &mut sheet,
+        &VARS,
+    )
+    .map(|style| style.code);
+    assert_eq!(
+        code.as_deref(),
+        Some("[s.a, { margin: m }, s.b, { width: w }, p && s.c]")
     );
 }

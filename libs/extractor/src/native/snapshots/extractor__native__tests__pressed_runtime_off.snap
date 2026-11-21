@@ -1,0 +1,17 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { Pressable as __Pressable } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { backgroundColor: "red" },
+	b: { margin: 4 },
+	c: { padding: 4 }
+});
+export const a = <__Pressable style={({ pressed: __p }) => [
+	__s.a,
+	__p && __s.b,
+	__p && __s.c
+]} />;
