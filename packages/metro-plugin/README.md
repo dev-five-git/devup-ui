@@ -281,6 +281,35 @@ The component reads style props only through `styled()`: on React Native,
 `<Card p={1} />` passes `p` on to the target, so give it `style` or
 `className` instead.
 
+## styled-components and Emotion
+
+Files importing `styled-components/native` or `@emotion/native` compile
+without those packages at runtime: their `styled` and `css` compile as Devup
+UI's, so the CSS is parsed at build time instead of on every render.
+
+```tsx
+import styled, { ThemeProvider } from 'styled-components/native'
+
+const Title = styled.Text`
+  color: ${(props) => props.theme.primary};
+  font-size: 18px;
+`
+const Card = styled.View({ padding: 8, backgroundColor: '$surface' })
+```
+
+- `styled.View`, `styled.Text`, `styled.Pressable` and any other
+  `styled.Name` render React Native's component of that name; `styled(X)`
+  works as Devup UI's `styled()`.
+- A number is pixels, as those packages read it: `padding: 8` is 8, not
+  Devup UI's `8 * 4`. Devup UI's shorthands and `$` tokens work too.
+- A function of the props is called with `props.theme`, the theme of the
+  nearest `ThemeProvider`. A function giving an object gives React Native
+  styles as they are.
+- `ThemeProvider`, `useTheme` and `withTheme` are the runtime's: a React
+  context, whose theme a provider merges over the outer one's. With
+  `runtime: false` they are build errors.
+- Any other import stays on the package.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at

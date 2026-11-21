@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+export const value = "styled-components/native";

@@ -20,9 +20,12 @@ const RUNTIME_NAMES =
 const APP_HOOKS = ['useThemeIndex', 'useBreakpoint', 'useLandscape', 'Focused']
 /** Modules of @devup-ui/react, by the path Metro resolves */
 const REACT_PACKAGE = /(^|[\\/])(@devup-ui[\\/]react|packages[\\/]react)[\\/]/
-/** The React Native runtime among them */
+/**
+ * The React Native runtime among them, with the theme context of
+ * styled-components and Emotion it shares with the web build
+ */
 const NATIVE_RUNTIME =
-  /(^|[\\/])(@devup-ui[\\/]react|packages[\\/]react)[\\/]dist[\\/]native[\\/]/
+  /(^|[\\/])(@devup-ui[\\/]react|packages[\\/]react)[\\/]dist[\\/](native[\\/]|utils[\\/](theme-context|with-theme)\.)/
 const root = join(import.meta.dirname, 'dist', '_expo', 'static', 'js')
 const failures = []
 

@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+error: test.tsx:2:10: `ThemeProvider` from `@emotion/native` cannot be used on React Native: `ThemeProvider` gives the theme of `ThemeProvider` through the React Native runtime, which `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:2:25: `useTheme` from `@emotion/native` cannot be used on React Native: `useTheme` gives the theme of `ThemeProvider` through the React Native runtime, which `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:2:35: `withTheme` from `@emotion/native` cannot be used on React Native: `withTheme` gives the theme of `ThemeProvider` through the React Native runtime, which `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:3:8: `* as S` from `styled-components/native` cannot be used on React Native: the build reads only components imported by name. Fix: import each component by name, such as `import { Box } from 'styled-components/native'`

@@ -1,0 +1,60 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { ThemeProvider, useStyledTheme as useTheme, withTheme } from "@devup-ui/react/native";
+import { ThemeContext, type DefaultTheme } from "styled-components/native";
+import { useThemeIndex as __useThemeIndex, useStyledTheme as __useStyledTheme, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { Text as __Text, View as __View } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { margin: 1 },
+	b: { fontSize: 18 },
+	c: { padding: 2 },
+	d: { backgroundColor: "#5a44ff" },
+	e: { backgroundColor: "#8c7bff" },
+	f: { flexDirection: "row" },
+	g: { padding: 4 },
+	h: { opacity: .5 }
+});
+const shared = __s.a;
+export const Title = (__props) => {
+	const __themed = {
+		theme: __useStyledTheme(),
+		...__props
+	};
+	return <__Text {...__props} style={[
+		__s.b,
+		{ color: ((props) => props.theme.primary)(__themed) },
+		__props.style
+	]} />;
+};
+export const Card = (__props) => {
+	const __t = __useThemeIndex();
+	return <__View {...__props} style={[
+		__s.c,
+		[__s.d, __s.e][__t],
+		__props.style
+	]} />;
+};
+export const Row = (__props) => {
+	return <__View {...__props} style={[__s.f, __props.style]} />;
+};
+export const Plain = (__props) => {
+	return <Box {...__props} style={[__s.g, __props.style]} />;
+};
+export const Note = (__props) => {
+	const __themed = {
+		theme: __useStyledTheme(),
+		...__props
+	};
+	return <Text {...__props} style={[((props) => props.theme.dim && __s.h)(__themed), __props.style]} />;
+};
+export function App() {
+	const theme = useTheme();
+	return <ThemeProvider theme={{ primary: "red" }}><Title style={shared}>Hi</Title></ThemeProvider>;
+}
+export const Themed = withTheme(App);
+export const context = ThemeContext;

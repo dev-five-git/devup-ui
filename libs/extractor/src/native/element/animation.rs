@@ -97,8 +97,27 @@ impl<'a> Elements<'_> {
         tag: Option<String>,
         interactive: bool,
     ) -> Option<String> {
-        if !self.reanimated(animation, on) {
+        if tag.is_some() && !interactive {
+            // The component `as` gives animates when it is animated
+            self.reanimated(animation, on);
             return tag;
+        }
+        self.animated_native(animation, (native_component(kind), local), on, interactive)
+            .or(tag)
+    }
+
+    /// Reanimated's animated component of the React Native component
+    /// `native`, which `local` is bound to, for an element taking an
+    /// animation
+    pub(super) fn animated_native(
+        &mut self,
+        animation: &(u32, String),
+        (native, local): (&str, &str),
+        on: &str,
+        interactive: bool,
+    ) -> Option<String> {
+        if !self.reanimated(animation, on) {
+            return None;
         }
         if interactive {
             self.error(
@@ -109,24 +128,25 @@ impl<'a> Elements<'_> {
                 )
                 .on(on, &animation.1),
             );
-            return tag;
+            return None;
         }
-        // The component `as` gives animates when it is animated
-        tag.or_else(|| Some(self.animated_component(kind, local)))
+        Some(self.animated_component(native, local))
     }
 
-    /// Reanimated's animated component of the React Native component `local`
-    /// is bound to
-    fn animated_component(&mut self, kind: &ExportVariableKind, local: &str) -> String {
+    /// Reanimated's animated component of the React Native component
+    /// `native`, which `local` is bound to
+    fn animated_component(&mut self, native: &str, local: &str) -> String {
         self.animated.used = true;
-        let native = native_component(kind);
         if ANIMATED.contains(&native) {
             return format!("{}.{native}", self.animated.name);
         }
         if let Some((_, name)) = self.animated.created.iter().find(|(of, _)| of == local) {
             return name.clone();
         }
-        let name = fresh_name(&format!("__Animated{local}"), self.code);
+        let name = fresh_name(
+            &format!("__Animated{}", local.trim_start_matches('_')),
+            self.code,
+        );
         self.animated
             .created
             .push((local.to_string(), name.clone()));

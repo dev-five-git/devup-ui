@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "`@devup-ui/react/native` adds `ThemeProvider`, `useStyledTheme` and `withTheme`, the theme context the build imports for styled-components and Emotion on React Native. They share the context and `withTheme` of the web compat entry. The runtime grows from 702 B to 1,185 B min+gzip.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

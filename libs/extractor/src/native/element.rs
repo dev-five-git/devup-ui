@@ -9,6 +9,7 @@ use oxc_ast::ast::{
     JSXElementName, JSXExpression, LogicalOperator, ObjectExpression, ObjectPropertyKind, Program,
     TSType, TaggedTemplateExpression, UnaryOperator, VariableDeclarator,
 };
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt::Write;
 
@@ -28,9 +29,10 @@ use super::style::{
     varied, when, without,
 };
 use super::theme::{DEFAULT_BREAKPOINTS, selector_theme};
-use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
+use super::values::{Literal, NativeValue, ROOT_FONT_SIZE, TIMED, number_code};
 use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
+use crate::extract_style::constant::is_maintain_value_property;
 use crate::fresh_name::fresh_name;
 
 mod animation;
@@ -66,6 +68,9 @@ struct Runtime {
     /// The component telling a `TextInput` whether it has focus
     focused_wrapper: String,
     focused_used: bool,
+    /// The hook giving the theme of a compat `ThemeProvider`
+    styled_theme: String,
+    styled_theme_used: bool,
     /// The hooks reading each, by what they read
     hooks: [String; 3],
     /// What the hooks the file calls read
@@ -97,6 +102,8 @@ impl Runtime {
             focused: fresh_name("__f", code),
             focused_wrapper: fresh_name("__Focused", code),
             focused_used: false,
+            styled_theme: fresh_name("__useStyledTheme", code),
+            styled_theme_used: false,
             hooks: HOOKS.map(|hook| fresh_name(&format!("__{hook}"), code)),
             hooks_used: Reads::default(),
             wrapper: fresh_name("__Themed", code),
@@ -132,7 +139,12 @@ impl Runtime {
     /// The import of the runtime and the calls telling it the theme names
     /// and the breakpoints, when the file uses it
     fn prelude(&self, target: &NativeTarget, theme_api: bool) -> Option<String> {
-        if !(self.hooks_used.any() || self.wrapper_used || self.focused_used || theme_api) {
+        if !(self.hooks_used.any()
+            || self.wrapper_used
+            || self.focused_used
+            || self.styled_theme_used
+            || theme_api)
+        {
             return None;
         }
         let reads = self.hooks_used.union(self.wrapper_reads);
@@ -142,6 +154,9 @@ impl Runtime {
             .collect();
         if self.wrapper_used {
             specifiers.push(format!("Themed as {}", self.wrapper));
+        }
+        if self.styled_theme_used {
+            specifiers.push(format!("useStyledTheme as {}", self.styled_theme));
         }
         if self.focused_used {
             specifiers.push(format!("Focused as {}", self.focused_wrapper));
@@ -204,6 +219,10 @@ pub(super) fn compile(
         components: &imports.components,
         css: &imports.css,
         styled: &imports.styled,
+        compat_bindings: &imports.compat,
+        compat: false,
+        props_called: Cell::new(false),
+        natives: Vec::new(),
         keyframes: &imports.keyframes,
         animation: None,
         animated: Animated::new(code),
@@ -237,6 +256,7 @@ pub(super) fn compile(
         pressable_used,
         runtime,
         animated,
+        natives,
         mut replacements,
         errors,
         ..
@@ -248,6 +268,17 @@ pub(super) fn compile(
         let _ = writeln!(
             prelude,
             "import {{ Pressable as {pressable} }} from \"{REACT_NATIVE}\";"
+        );
+    }
+    if !natives.is_empty() {
+        let specifiers: Vec<String> = natives
+            .iter()
+            .map(|(name, local)| format!("{name} as {local}"))
+            .collect();
+        let _ = writeln!(
+            prelude,
+            "import {{ {} }} from \"{REACT_NATIVE}\";",
+            specifiers.join(", ")
         );
     }
     prelude.push_str(&animated.prelude());
@@ -357,6 +388,17 @@ struct Elements<'s> {
     css: &'s FxHashSet<SymbolId>,
     /// The bindings of `styled`
     styled: &'s FxHashSet<SymbolId>,
+    /// The bindings of `styled` and `css` imported from a compat package
+    compat_bindings: &'s FxHashSet<SymbolId>,
+    /// Whether the styles read are a compat package's, whose numbers are
+    /// pixels as React Native reads them
+    compat: bool,
+    /// Whether a function was called with `props`, the props of the
+    /// `styled()` component being read
+    props_called: Cell<bool>,
+    /// The React Native components `styled.Name` renders: each name and the
+    /// local name it is imported under
+    natives: Vec<(String, String)>,
     /// The bindings of `keyframes`
     keyframes: &'s FxHashSet<SymbolId>,
     /// The offset and the name of the first animation or transition of the
@@ -657,6 +699,12 @@ impl<'a> Elements<'_> {
     /// breakpoint it is paired with on: one style object, or one a
     /// breakpoint and a theme where the styles differ by them
     fn static_choice(&self, name: &str, items: &[(usize, Literal)]) -> Result<Choice, Problem> {
+        // A number of a compat package is pixels, as React Native reads it
+        let items: Cow<[(usize, Literal)]> = if self.compat {
+            Cow::Owned(in_pixels(name, items))
+        } else {
+            Cow::Borrowed(items)
+        };
         let theme = &self.target.theme;
         let themes = match self.theme_scope {
             Some(index) => index..index + 1,
@@ -676,7 +724,7 @@ impl<'a> Elements<'_> {
             for index in themes.clone() {
                 row.push(cell(
                     name,
-                    items,
+                    &items,
                     &Tokens {
                         theme,
                         index,
@@ -1218,6 +1266,8 @@ impl<'a> Elements<'_> {
 
     /// `code`, converted at runtime when its numbers take `scale`
     fn converted(&self, code: &str, scale: Option<u32>) -> String {
+        // A number of a compat package is pixels, as React Native reads it
+        let scale = scale.map(|scale| if self.compat { 1 } else { scale });
         scale.map_or_else(
             || code.to_string(),
             |scale| {
@@ -1232,6 +1282,7 @@ impl<'a> Elements<'_> {
         let code = expression.span().source_text(self.code);
         if self.in_styled && is_function(expression) {
             // A function in the styles of a `styled()` component takes its props
+            self.props_called.set(true);
             return format!("({code})({})", self.props);
         }
         if matches!(
@@ -1584,4 +1635,21 @@ fn text_child(child: &JSXChild<'_>) -> Option<Span> {
         },
         _ => None,
     }
+}
+
+/// `items`, the literals of the style prop `name`, with each number of a
+/// length as pixels, as styled-components and Emotion read it
+fn in_pixels(name: &str, items: &[(usize, Literal)]) -> Vec<(usize, Literal)> {
+    let unitless = css::disassemble_property(name).into_iter().any(|property| {
+        is_maintain_value_property(&property) || TIMED.contains(&property.as_ref())
+    });
+    items
+        .iter()
+        .map(|(level, literal)| match literal {
+            Literal::Number(number) if !unitless => {
+                (*level, Literal::Text(format!("{}px", number_code(*number))))
+            }
+            literal => (*level, literal.clone()),
+        })
+        .collect()
 }

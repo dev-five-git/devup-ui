@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { act, render, renderHook } from 'bun-test-env-dom'
 import { createElement, type ReactNode } from 'react'
 
+import type { StyledTheme } from '../../types/props'
+
 /** The system appearance React Native reports, and who listens to it */
 const appearance = {
   scheme: 'light' as string | null,
@@ -285,5 +287,53 @@ describe('Focused', () => {
     act(() => input()?.focus())
     act(() => input()?.blur())
     expect(input()?.getAttribute('data-color')).toBe('false')
+  })
+})
+
+describe('ThemeProvider, useStyledTheme and withTheme', () => {
+  it('give the theme merged over the outer one, or what a function makes of it', () => {
+    const seen: StyledTheme[] = []
+    const Probe = () => {
+      seen.push(runtime.useStyledTheme())
+      return null
+    }
+    render(createElement(Probe))
+    render(
+      createElement(
+        runtime.ThemeProvider,
+        { theme: { a: 1, b: 1 } },
+        createElement(
+          runtime.ThemeProvider,
+          { theme: { b: 2 } },
+          createElement(Probe),
+        ),
+        createElement(
+          runtime.ThemeProvider,
+          {
+            theme: (outer: StyledTheme | undefined) => ({ ...outer, c: 3 }),
+          },
+          createElement(Probe),
+        ),
+      ),
+    )
+    expect(seen).toEqual([{}, { a: 1, b: 2 }, { a: 1, b: 1, c: 3 }])
+  })
+
+  it('gives a component the theme as its prop unless it is given one', () => {
+    const Named = ({ theme }: { theme?: { name?: string } }) =>
+      createElement('span', null, theme?.name)
+    const ThemedNamed = runtime.withTheme(Named)
+    expect(ThemedNamed.displayName).toBe('WithTheme(Named)')
+    const { container } = render(
+      createElement(
+        runtime.ThemeProvider,
+        { theme: { name: 'ctx' } },
+        createElement(ThemedNamed),
+        createElement(ThemedNamed, { theme: { name: 'own' } }),
+      ),
+    )
+    expect(
+      [...container.querySelectorAll('span')].map((span) => span.textContent),
+    ).toEqual(['ctx', 'own'])
   })
 })

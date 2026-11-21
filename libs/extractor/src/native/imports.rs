@@ -12,8 +12,8 @@ use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::errors::{Problem, reanimated_problem, theme_api};
-use super::{NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
+use super::errors::{Problem, compat_theme_problem, reanimated_problem, theme_api};
+use super::{COMPAT_PACKAGES, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 
 /// The Devup UI components a file imports, and how its imports change
@@ -25,6 +25,9 @@ pub(super) struct Imports {
     pub css: FxHashSet<SymbolId>,
     /// The bindings of `styled`, whose calls compile to components
     pub styled: FxHashSet<SymbolId>,
+    /// The bindings of `styled` and `css` imported from a compat package, whose
+    /// function parts read the theme of its `ThemeProvider`
+    pub compat: FxHashSet<SymbolId>,
     /// The bindings of `keyframes`, whose calls compile to the keyframes
     /// react-native-reanimated reads
     pub keyframes: FxHashSet<SymbolId>,
@@ -103,8 +106,11 @@ pub(super) fn read(
     for statement in &program.body {
         match statement {
             Statement::ImportDeclaration(declaration) => {
-                if declaration.source.value == package && !declaration.import_kind.is_type() {
-                    imports.declaration(declaration, code, package, target);
+                let source = declaration.source.value.as_str().unwrap_or_default();
+                let compat = COMPAT_PACKAGES.contains(&source);
+                if (source == package || compat) && !declaration.import_kind.is_type() {
+                    let package = if compat { source } else { package };
+                    imports.declaration(declaration, code, (package, compat), target);
                 }
             }
             statement => {
@@ -122,7 +128,7 @@ impl Imports {
         &mut self,
         declaration: &ImportDeclaration<'_>,
         code: &str,
-        package: &str,
+        (package, compat): (&str, bool),
         target: &NativeTarget,
     ) {
         let mut natives = Vec::new();
@@ -130,8 +136,17 @@ impl Imports {
         let mut kept = Vec::new();
         for specifier in declaration.specifiers.iter().flatten() {
             match specifier {
+                ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) if compat => {
+                    // The default export of a compat package is its `styled`
+                    self.compat_styled(specifier.local.symbol_id.get());
+                }
                 ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
-                    match self.specifier(specifier, package, target) {
+                    let destination = if compat {
+                        self.compat_specifier(specifier, package, target)
+                    } else {
+                        self.specifier(specifier, package, target)
+                    };
+                    match destination {
                         Destination::Native(native) => natives.push(native),
                         Destination::Runtime(name) => runtime.push(name),
                         Destination::Kept => kept.push(specifier_code(specifier, code)),
@@ -153,7 +168,7 @@ impl Imports {
         if natives.is_empty() && runtime.is_empty() && !dropped {
             return;
         }
-        self.theme_api |= !runtime.is_empty();
+        self.theme_api |= !runtime.is_empty() && !compat;
         let source = declaration.source.span.source_text(code).to_string();
         let text: Vec<String> = [
             (natives, format!("\"{REACT_NATIVE}\"")),
@@ -167,6 +182,54 @@ impl Imports {
         let span = declaration.span;
         self.replacements
             .push((span.start as usize, span.end as usize, text.join("\n")));
+    }
+
+    /// Bind `styled` of a compat package, whose function parts read the theme
+    /// of its `ThemeProvider`
+    fn compat_styled(&mut self, symbol: Option<SymbolId>) {
+        self.styled.extend(symbol);
+        self.compat.extend(symbol);
+    }
+
+    /// Where a specifier of a compat package goes on React Native: `styled`
+    /// and `css` compile as Devup UI's, the theme API is the runtime's, and
+    /// the rest stays on the package
+    fn compat_specifier(
+        &mut self,
+        specifier: &ImportSpecifier<'_>,
+        package: &str,
+        target: &NativeTarget,
+    ) -> Destination {
+        if specifier.import_kind.is_type() {
+            return Destination::Kept;
+        }
+        let name = imported_name(&specifier.imported);
+        let symbol = specifier.local.symbol_id.get();
+        match name.as_str() {
+            "styled" => self.compat_styled(symbol),
+            "css" => {
+                self.css.extend(symbol);
+                self.compat.extend(symbol);
+            }
+            "ThemeProvider" | "useTheme" | "withTheme" if !target.runtime => {
+                self.errors.push((
+                    specifier.span.start,
+                    compat_theme_problem(&name).import(&name, package),
+                ));
+                return Destination::Kept;
+            }
+            "ThemeProvider" | "withTheme" => {
+                return Destination::Runtime(renamed(&name, specifier.local.name.to_string()));
+            }
+            "useTheme" => {
+                return Destination::Runtime(renamed(
+                    "useStyledTheme",
+                    specifier.local.name.to_string(),
+                ));
+            }
+            _ => return Destination::Kept,
+        }
+        Destination::Dropped
     }
 
     /// Where a specifier goes on React Native
