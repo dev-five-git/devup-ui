@@ -15,9 +15,16 @@ import { join } from 'node:path'
 const PLACEHOLDER = 'Cannot run on the runtime'
 /** Names of the runtime that only code using it holds, as minified code keeps them */
 const RUNTIME_NAMES =
-  /\b(?:defineThemes|useThemeIndex|useBreakpoint|useLandscape|Focused)\b/g
+  /\b(?:defineThemes|useThemeIndex|useBreakpoint|useLandscape|useReducedMotion|useWindowWidth|useWindowHeight|Focused)\b/g
 /** What src/App.tsx must use from the runtime */
-const APP_HOOKS = ['useThemeIndex', 'useBreakpoint', 'useLandscape', 'Focused']
+const APP_HOOKS = [
+  'useThemeIndex',
+  'useBreakpoint',
+  'useLandscape',
+  'useReducedMotion',
+  'useWindowHeight',
+  'Focused',
+]
 /** Modules of @devup-ui/react, by the path Metro resolves */
 const REACT_PACKAGE = /(^|[\\/])(@devup-ui[\\/]react|packages[\\/]react)[\\/]/
 /**
@@ -99,13 +106,21 @@ function mapSources(map) {
     : map.sources
 }
 
-/** Each name of the runtime, with the sources of the code that names it */
+/**
+ * Each name of the runtime, with the sources of the app that name it: a
+ * package may name its own hook the same (Reanimated's `useReducedMotion`)
+ */
 function runtimeUsers(code, locate) {
   const users = new Map()
   code.split('\n').forEach((line, index) => {
     for (const match of line.matchAll(RUNTIME_NAMES)) {
       const source = locate(index, match.index)
-      if (source === null || NATIVE_RUNTIME.test(source)) continue
+      if (
+        source === null ||
+        NATIVE_RUNTIME.test(source) ||
+        /[\\/]node_modules[\\/]/.test(source)
+      )
+        continue
       const sources = users.get(match[0]) ?? new Set()
       sources.add(source)
       users.set(match[0], sources)

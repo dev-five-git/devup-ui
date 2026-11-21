@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/metro-plugin/package.json": "Patch"
+  },
+  "note": "Compile `vw`/`vh`/`vmin`/`vmax` (and their small, large and dynamic forms) to one multiplication of the window size, and `_motionReduce`/`_motionSafe` to the system's reduced-motion setting, on React Native.",
+  "date": "2026-11-22T00:00:00.000Z"
+}

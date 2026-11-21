@@ -1,0 +1,32 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useReducedMotion as __useReducedMotion, Themed as __Themed } from "@devup-ui/react/native";
+import __Animated from "react-native-reanimated";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 4 },
+	b: { opacity: 1 },
+	c: { opacity: .5 },
+	d: { padding: 8 },
+	e: {
+		transitionDuration: "300ms",
+		transitionProperty: "opacity"
+	},
+	f: { transitionDuration: "0ms" }
+});
+export function A() {
+	const __m = __useReducedMotion();
+	return <Box style={[
+		__s.a,
+		__m && __s.b,
+		!__m && __s.c
+	]} />;
+}
+export const b = <__Themed $c={Box} $s={(__t, __b, __l, __m) => __m && __s.d} />;
+export function C() {
+	const __m = __useReducedMotion();
+	return <__Animated.View style={[__s.e, __m && __s.f]} />;
+}

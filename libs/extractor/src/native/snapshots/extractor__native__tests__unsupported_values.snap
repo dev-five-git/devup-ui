@@ -4,7 +4,6 @@ expression: compile(code)
 ---
 error: test.tsx:2:6: `<Box>` cannot use `display` on React Native: React Native does not read `grid` here. Fix: use one of `none`, `flex` or `contents`
 test.tsx:2:21: `<Box>` cannot use `position` on React Native: React Native does not read `fixed` here. Fix: use one of `absolute`, `relative` or `static`
-test.tsx:2:38: `<Box>` cannot use `w` on React Native: `10vw` needs the window size, which React Native knows only at runtime. Fix: use a number of pixels or a percentage
 test.tsx:2:47: `<Box>` cannot use `h` on React Native: React Native cannot compute `calc(100% - 4px)`. Fix: write the value itself
 test.tsx:2:68: `<Box>` cannot use `maxW` on React Native: React Native cannot compute `var(--w)`. Fix: write the value itself
 test.tsx:3:3: `<Box>` cannot use `minW` on React Native: React Native styles have no `!important`. Fix: remove `!important`; a later style already wins

@@ -2,7 +2,7 @@
 source: libs/extractor/src/native/tests.rs
 expression: "compile_themed(two_themes(), runtime, code)"
 ---
-error: test.tsx:3:18: `css()` cannot compile here on React Native: its styles differ by theme, breakpoint or orientation, which only a function component or a hook can read. Fix: call `css()` in the component that uses it
+error: test.tsx:3:18: `css()` cannot compile here on React Native: its styles differ by theme, breakpoint, orientation, motion or the window's size, which only a function component or a hook can read. Fix: call `css()` in the component that uses it
 test.tsx:4:22: `css()` cannot compile here on React Native: the build reads only the parts written in the call. Fix: pass each part to `css()` itself
 test.tsx:5:22: `css()` cannot use `a part` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
 test.tsx:5:30: `css()` cannot use `a part` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props

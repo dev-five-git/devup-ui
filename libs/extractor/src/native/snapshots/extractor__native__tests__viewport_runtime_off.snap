@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:3:15: `<Box>` cannot use `w` on React Native: a viewport length is computed from the window's size, which needs the React Native runtime that `runtime: false` turns off. Fix: use a number of pixels or a percentage, or turn the runtime on

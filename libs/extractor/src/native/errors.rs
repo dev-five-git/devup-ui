@@ -53,6 +53,8 @@ pub(super) enum RuntimeFeature {
     Responsive,
     Orientation,
     Theme,
+    Motion,
+    Viewport,
 }
 
 impl RuntimeFeature {
@@ -61,14 +63,17 @@ impl RuntimeFeature {
             Self::Responsive => "a responsive value is chosen by the window width",
             Self::Orientation => "an orientation style is chosen by the orientation of the window",
             Self::Theme => "a theme variant is chosen by the theme the app shows",
+            Self::Motion => "a motion style is chosen by whether the system reduces motion",
+            Self::Viewport => "a viewport length is computed from the window's size",
         }
     }
 
     const fn fix(self) -> &'static str {
         match self {
             Self::Responsive => "give one value, or turn the runtime on",
-            Self::Orientation => "remove it, or turn the runtime on",
+            Self::Orientation | Self::Motion => "remove it, or turn the runtime on",
             Self::Theme => "give the value for one theme, or turn the runtime on",
+            Self::Viewport => "use a number of pixels or a percentage, or turn the runtime on",
         }
     }
 

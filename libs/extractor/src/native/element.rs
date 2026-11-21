@@ -22,14 +22,16 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::errors::{Problem, RuntimeFeature};
 use super::imports::{self, native_component};
-use super::props::{Declaration, Tokens, declarations, dynamic_keys, literal_levels};
+use super::props::{Declaration, Tokens, declarations, dynamic_keys, length_keys, literal_levels};
 use super::sheet::Sheet;
 use super::style::{
-    Choice, INTERACTIONS, Reads, State, Vars, cascade, in_theme, interaction_keys, style_code,
-    varied, when, without,
+    Choice, INTERACTIONS, READS, Read, Reads, State, Vars, cascade, in_theme, interaction_keys,
+    style_code, varied, when, without,
 };
 use super::theme::{DEFAULT_BREAKPOINTS, selector_theme};
-use super::values::{Literal, NativeValue, ROOT_FONT_SIZE, TIMED, number_code};
+use super::values::{
+    Literal, NativeValue, ROOT_FONT_SIZE, TIMED, Viewport, number_code, viewport_length,
+};
 use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::extract_style::constant::is_maintain_value_property;
@@ -58,6 +60,11 @@ struct Runtime {
     breakpoint: String,
     /// The variable holding whether the window is in landscape
     landscape: String,
+    /// The variable holding whether the system reduces motion
+    motion: String,
+    /// The variables holding the window's width and height
+    width: String,
+    height: String,
     /// The variable holding whether the element is pressed, in the function
     /// `Pressable` calls for its style
     pressed: String,
@@ -72,13 +79,15 @@ struct Runtime {
     styled_theme: String,
     styled_theme_used: bool,
     /// The hooks reading each, by what they read
-    hooks: [String; 3],
+    hooks: [String; READS],
     /// What the hooks the file calls read
     hooks_used: Reads,
     /// The component that reads them itself, for an element outside a
     /// function component
-    wrapper: String,
-    wrapper_used: bool,
+    wrapper: Import,
+    /// The one that also reads the window's size, for such an element taking
+    /// a viewport length
+    sized_wrapper: Import,
     /// What the elements rendered through it read
     wrapper_reads: Reads,
     /// The function telling the runtime the theme names
@@ -87,9 +96,37 @@ struct Runtime {
     define_breakpoints: String,
 }
 
+/// A name the file imports from the runtime under, and whether it uses it
+struct Import {
+    name: String,
+    used: bool,
+}
+
+impl Import {
+    fn new(name: &str, code: &str) -> Self {
+        Self {
+            name: fresh_name(name, code),
+            used: false,
+        }
+    }
+
+    /// The name, which the file now uses
+    fn use_name(&mut self) -> String {
+        self.used = true;
+        self.name.clone()
+    }
+}
+
 /// The runtime hooks, in the order they are called, by the name they are
-/// exported under: they read the theme, the breakpoint and the orientation
-const HOOKS: [&str; 3] = ["useThemeIndex", "useBreakpoint", "useLandscape"];
+/// exported under: they read what each `Read` names
+const HOOKS: [&str; READS] = [
+    "useThemeIndex",
+    "useBreakpoint",
+    "useLandscape",
+    "useReducedMotion",
+    "useWindowWidth",
+    "useWindowHeight",
+];
 
 impl Runtime {
     fn new(code: &str) -> Self {
@@ -97,6 +134,9 @@ impl Runtime {
             index: fresh_name("__t", code),
             breakpoint: fresh_name("__b", code),
             landscape: fresh_name("__l", code),
+            motion: fresh_name("__m", code),
+            width: fresh_name("__vw", code),
+            height: fresh_name("__vh", code),
             pressed: fresh_name("__p", code),
             hovered: fresh_name("__h", code),
             focused: fresh_name("__f", code),
@@ -106,8 +146,8 @@ impl Runtime {
             styled_theme_used: false,
             hooks: HOOKS.map(|hook| fresh_name(&format!("__{hook}"), code)),
             hooks_used: Reads::default(),
-            wrapper: fresh_name("__Themed", code),
-            wrapper_used: false,
+            wrapper: Import::new("__Themed", code),
+            sized_wrapper: Import::new("__Sized", code),
             wrapper_reads: Reads::default(),
             define: fresh_name("__defineThemes", code),
             define_breakpoints: fresh_name("__defineBreakpoints", code),
@@ -120,6 +160,7 @@ impl Runtime {
             theme: &self.index,
             breakpoint: &self.breakpoint,
             landscape: &self.landscape,
+            motion: &self.motion,
             pressed: &self.pressed,
             hovered: &self.hovered,
             focused: &self.focused,
@@ -129,18 +170,32 @@ impl Runtime {
 
     /// The variables of `reads`, in the order of the hooks
     fn variables(&self, reads: Reads) -> impl Iterator<Item = (usize, &str)> {
-        [&self.index, &self.breakpoint, &self.landscape]
+        self.runtime_variables()
             .into_iter()
             .enumerate()
             .filter(move |(at, _)| reads.flags()[*at])
             .map(|(at, name)| (at, name.as_str()))
     }
 
+    /// The variables holding what the runtime tells, in the order of the
+    /// hooks
+    const fn runtime_variables(&self) -> [&String; READS] {
+        [
+            &self.index,
+            &self.breakpoint,
+            &self.landscape,
+            &self.motion,
+            &self.width,
+            &self.height,
+        ]
+    }
+
     /// The import of the runtime and the calls telling it the theme names
     /// and the breakpoints, when the file uses it
     fn prelude(&self, target: &NativeTarget, theme_api: bool) -> Option<String> {
         if !(self.hooks_used.any()
-            || self.wrapper_used
+            || self.wrapper.used
+            || self.sized_wrapper.used
             || self.focused_used
             || self.styled_theme_used
             || theme_api)
@@ -152,8 +207,10 @@ impl Runtime {
             .variables(self.hooks_used)
             .map(|(at, _)| format!("{} as {}", HOOKS[at], self.hooks[at]))
             .collect();
-        if self.wrapper_used {
-            specifiers.push(format!("Themed as {}", self.wrapper));
+        for (export, import) in [("Themed", &self.wrapper), ("Sized", &self.sized_wrapper)] {
+            if import.used {
+                specifiers.push(format!("{export} as {}", import.name));
+            }
         }
         if self.styled_theme_used {
             specifiers.push(format!("useStyledTheme as {}", self.styled_theme));
@@ -163,7 +220,7 @@ impl Runtime {
         }
         let theme = &target.theme;
         let mut calls = String::new();
-        if reads.theme || theme_api {
+        if reads.has(Read::Theme) || theme_api {
             specifiers.push(format!("defineThemes as {}", self.define));
             let names = serde_json::Value::from(theme.names.clone()).to_string();
             let dark = theme
@@ -171,7 +228,7 @@ impl Runtime {
                 .map_or_else(String::new, |dark| format!(", {dark}"));
             let _ = writeln!(calls, "{}({names}{dark});", self.define);
         }
-        if reads.breakpoint && theme.breakpoints != DEFAULT_BREAKPOINTS {
+        if reads.has(Read::Breakpoint) && theme.breakpoints != DEFAULT_BREAKPOINTS {
             specifiers.push(format!("defineBreakpoints as {}", self.define_breakpoints));
             let breakpoints = serde_json::Value::from(theme.breakpoints.clone()).to_string();
             let _ = writeln!(calls, "{}({breakpoints});", self.define_breakpoints);
@@ -313,8 +370,9 @@ enum Prop {
     Platform(NativePlatform),
     /// `_themeDark` and the like: styles for the theme named
     Theme(String),
-    /// `_landscape`, `_portrait` and `_pressed`: styles applied while the
-    /// window is in that orientation or the element is pressed
+    /// `_landscape`, `_motionReduce`, `_pressed` and the like: styles
+    /// applied while the window is in that orientation, the system reduces
+    /// motion or the element is pressed
     When(State),
     /// What React Native has no equivalent of
     Unsupported(Problem),
@@ -332,6 +390,8 @@ fn classify(name: &str) -> Prop {
         "_web" => Prop::Platform(NativePlatform::Web),
         "_portrait" => Prop::When(State::Landscape(false)),
         "_landscape" => Prop::When(State::Landscape(true)),
+        "_motionReduce" => Prop::When(State::ReducedMotion(true)),
+        "_motionSafe" => Prop::When(State::ReducedMotion(false)),
         "_pressed" | "_active" => Prop::When(State::Pressed),
         "_hover" => Prop::When(State::Hovered),
         "_focus" => Prop::When(State::Focused),
@@ -705,6 +765,13 @@ impl<'a> Elements<'_> {
         } else {
             Cow::Borrowed(items)
         };
+        if items
+            .iter()
+            .any(|(_, literal)| viewport_of(literal).is_some())
+            && let Some(keys) = length_keys(name)
+        {
+            return self.viewport_choice(name, &keys, &items);
+        }
         let theme = &self.target.theme;
         let themes = match self.theme_scope {
             Some(index) => index..index + 1,
@@ -739,14 +806,73 @@ impl<'a> Elements<'_> {
         Ok(choice)
     }
 
+    /// The styles of the literals of the style prop `name`, which sets
+    /// `keys`, where one at least is a viewport length: each from its
+    /// breakpoint on, a viewport length computed from the window's size
+    fn viewport_choice(
+        &self,
+        name: &str,
+        keys: &[&str],
+        items: &[(usize, Literal)],
+    ) -> Result<Choice, Problem> {
+        if !self.target.runtime {
+            return Err(RuntimeFeature::Viewport.problem());
+        }
+        let mut choices = Vec::with_capacity(items.len());
+        for (level, literal) in items {
+            let choice = match viewport_of(literal) {
+                Some(length) => self.computed(keys, length),
+                None => self.static_choice(name, &[(0, literal.clone())])?,
+            };
+            choices.push(if *level == 0 {
+                choice
+            } else {
+                when(State::AtLeast(*level), choice)
+            });
+        }
+        Ok(if choices.len() == 1 {
+            choices.remove(0)
+        } else {
+            Choice::All(choices)
+        })
+    }
+
+    /// The styles `keys` take from a viewport length: the hundredths
+    /// `amount` of what `viewport` measures, one multiplication of the size
+    /// the runtime tells
+    fn computed(&self, keys: &[&str], (amount, viewport): (f64, Viewport)) -> Choice {
+        let (width, height) = (&self.runtime.width, &self.runtime.height);
+        let both = Reads::default()
+            .with(Read::Width, true)
+            .with(Read::Height, true);
+        let (side, reads) = match viewport {
+            Viewport::Width => (width.clone(), Reads::default().with(Read::Width, true)),
+            Viewport::Height => (height.clone(), Reads::default().with(Read::Height, true)),
+            Viewport::Min => (format!("Math.min({width}, {height})"), both),
+            Viewport::Max => (format!("Math.max({width}, {height})"), both),
+        };
+        let factor = number_code(amount / 100.0);
+        let code = if factor == "1" {
+            side
+        } else {
+            format!("{side} * {factor}")
+        };
+        Choice::Computed(
+            keys.iter()
+                .map(|key| ((*key).to_string(), code.clone()))
+                .collect(),
+            reads,
+        )
+    }
+
     /// Fail for a choice the runtime makes when it is turned off
     fn check_runtime(&self, choice: &Choice) -> Result<(), Problem> {
         let reads = choice.reads();
         let feature = if self.target.runtime {
             None
-        } else if reads.breakpoint {
+        } else if reads.has(Read::Breakpoint) {
             Some(RuntimeFeature::Responsive)
-        } else if reads.theme {
+        } else if reads.has(Read::Theme) {
             Some(RuntimeFeature::Theme)
         } else {
             None
@@ -1042,10 +1168,12 @@ impl<'a> Elements<'_> {
         if INTERACTIONS.contains(&state) {
             self.press.get_or_insert_with(|| (offset, name.to_string()));
         } else if !self.target.runtime && state != State::Disabled {
-            self.error(
-                offset,
-                RuntimeFeature::Orientation.problem().on(local, name),
-            );
+            let feature = if matches!(state, State::ReducedMotion(_)) {
+                RuntimeFeature::Motion
+            } else {
+                RuntimeFeature::Orientation
+            };
+            self.error(offset, feature.problem().on(local, name));
             return Vec::new();
         }
         self.block(value, name, offset, local)
@@ -1369,15 +1497,17 @@ impl<'a> Elements<'_> {
         if !in_component {
             self.runtime.wrapper_reads = self.runtime.wrapper_reads.union(reads);
         }
-        let wrapper = if focus_wrapped {
-            self.runtime.focused_used = true;
-            Some(self.runtime.focused_wrapper.clone())
-        } else if in_component {
-            None
-        } else {
-            self.runtime.wrapper_used = true;
-            Some(self.runtime.wrapper.clone())
-        };
+        if focus_wrapped && !in_component && reads.sized() {
+            self.error(
+                element.span.start,
+                Problem::new(
+                    "an input with a focus style outside a function component cannot read the window's size, which a viewport length needs",
+                    "render the input in a function component",
+                )
+                .on(local, "_focus"),
+            );
+        }
+        let wrapper = self.wrapper(focus_wrapped, in_component, reads);
         if let Some(name) = wrapper.as_ref().or(tag.as_ref()) {
             self.rename(element, name);
         }
@@ -1393,11 +1523,7 @@ impl<'a> Elements<'_> {
             // up to the last it reads
             let focus = focus_wrapped.then_some(self.runtime.focused.as_str());
             let read = self.runtime.variables(reads).last().map(|(at, _)| at);
-            let runtime = [
-                &self.runtime.index,
-                &self.runtime.breakpoint,
-                &self.runtime.landscape,
-            ];
+            let runtime = self.runtime.runtime_variables();
             let parameters = focus
                 .into_iter()
                 .chain(
@@ -1425,6 +1551,24 @@ impl<'a> Elements<'_> {
         self.remove(&removed);
         self.replacements
             .push((attributes_end as usize, attributes_end as usize, code));
+    }
+
+    /// The component rendering an element that reads `reads` from the
+    /// runtime for it: `Focused` for an input with a focus style, none in a
+    /// function component, else `Themed`, or `Sized` where it reads the
+    /// window's size
+    fn wrapper(&mut self, focus_wrapped: bool, in_component: bool, reads: Reads) -> Option<String> {
+        let runtime = &mut self.runtime;
+        if focus_wrapped {
+            runtime.focused_used = true;
+            Some(runtime.focused_wrapper.clone())
+        } else if in_component {
+            None
+        } else if reads.sized() {
+            Some(runtime.sized_wrapper.use_name())
+        } else {
+            Some(runtime.wrapper.use_name())
+        }
     }
 
     /// The component an element taking a press style renders: React Native's
@@ -1622,6 +1766,14 @@ pub(super) fn units_declaration(name: &str) -> String {
     format!(
         r#"const {name} = (v, s) => {{ if (typeof v === "number") return v * s; const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v); return m ? Number(m[1]) * (m[2] ? (m[2] === "px" ? 1 : {ROOT_FONT_SIZE}) : s) : v; }};"#
     ) + "\n"
+}
+
+/// The viewport length `literal` writes, if it writes one
+fn viewport_of(literal: &Literal) -> Option<(f64, Viewport)> {
+    match literal {
+        Literal::Text(text) => viewport_length(text),
+        Literal::Number(_) => None,
+    }
 }
 
 /// The span of a child writing text, if it writes any

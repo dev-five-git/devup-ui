@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "The React Native runtime adds `useReducedMotion` (from `AccessibilityInfo`), `useWindowWidth`, `useWindowHeight` and the `Sized` wrapper, for `_motionReduce`/`_motionSafe` and viewport lengths. Window changes now notify every hook, and React renders again only the components whose value changed. The runtime grows from 1,185 B to 1,302 B min+gzip.",
+  "date": "2026-11-22T00:00:00.000Z"
+}

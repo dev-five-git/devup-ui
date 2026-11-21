@@ -244,7 +244,7 @@ impl<'a> Elements<'_> {
         self.error(
             property.span.start,
             Problem::new(
-                "react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state or condition",
+                "react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state, condition or the window's size",
                 "write one value for each style of the keyframe",
             )
             .on(KEYFRAMES, &key),

@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { Appearance, Dimensions } from 'react-native'
+import { AccessibilityInfo, Appearance, Dimensions } from 'react-native'
 
 import type { StyledTheme } from '../types/props'
 import type { DevupTheme } from '../types/theme'
@@ -18,8 +18,9 @@ import { StyledThemeContext } from '../utils/theme-context'
  * The React Native runtime of Devup UI. The build compiles every style to
  * `StyleSheet` objects, one a theme or a breakpoint when a value differs by
  * them; this module only tells which theme shows, which breakpoint the
- * window is at and whether it is in landscape. It reads no CSS, resolves no
- * token and computes no style. Web builds never import it.
+ * window is at, whether it is in landscape, whether the system reduces
+ * motion and, for viewport lengths, the window's size. It reads no CSS and
+ * resolves no token. Web builds never import it.
  */
 
 type ThemeName = keyof DevupTheme extends undefined ? string : keyof DevupTheme
@@ -32,35 +33,33 @@ let dark = -1
 let chosen: string | null = null
 /** The window widths the breakpoints start at, as devup.json gives them */
 let breakpoints: readonly number[] = [0, 480, 768, 992, 1280, 1600]
-/** The breakpoint and orientation listeners last heard of, as one number */
-let layout = -1
+/** Whether the system asks apps to reduce motion */
+let reduced = false
 let following = false
 const listeners = new Set<() => void>()
 
+/**
+ * Tells every listener that something changed. Each hook reads only its own
+ * value, and React renders a component again only when the value its hook
+ * reads changes, so a resize that crosses no breakpoint renders again only
+ * the components reading the window's size.
+ */
 function notify(): void {
   for (const listener of listeners) listener()
 }
 
-/** The breakpoint the window is at and whether it is in landscape, as one number */
-function readLayout(): number {
-  return getBreakpoint() * 2 + Number(getLandscape())
-}
-
-/** Tells the listeners when the window crosses a breakpoint or turns */
-function resize(): void {
-  const next = readLayout()
-  if (next !== layout) {
-    layout = next
-    notify()
-  }
+function setReduced(value: boolean): void {
+  reduced = value
+  notify()
 }
 
 function subscribe(listener: () => void): () => void {
   if (!following) {
     following = true
-    layout = readLayout()
     Appearance.addChangeListener(notify)
-    Dimensions.addEventListener('change', resize)
+    Dimensions.addEventListener('change', notify)
+    AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced)
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduced)
   }
   listeners.add(listener)
   return () => {
@@ -160,32 +159,111 @@ export function useLandscape(): boolean {
   return useSyncExternalStore(subscribe, getLandscape, getLandscape)
 }
 
+/** Whether the system asks apps to reduce motion */
+function getReducedMotion(): boolean {
+  return reduced
+}
+
+/**
+ * Whether the system asks apps to reduce motion, which `_motionReduce` and
+ * `_motionSafe` apply by, rendering again when the setting changes
+ * @internal
+ */
+export function useReducedMotion(): boolean {
+  return useSyncExternalStore(subscribe, getReducedMotion, getReducedMotion)
+}
+
+function getWindowWidth(): number {
+  return Dimensions.get('window').width
+}
+
+function getWindowHeight(): number {
+  return Dimensions.get('window').height
+}
+
+/**
+ * The window's width, which a `vw` length is a hundredth of, rendering again
+ * when it changes
+ * @internal
+ */
+export function useWindowWidth(): number {
+  return useSyncExternalStore(subscribe, getWindowWidth, getWindowWidth)
+}
+
+/**
+ * The window's height, which a `vh` length is a hundredth of, rendering
+ * again when it changes
+ * @internal
+ */
+export function useWindowHeight(): number {
+  return useSyncExternalStore(subscribe, getWindowHeight, getWindowHeight)
+}
+
+/** What `Themed` gives the style: what the runtime tells, in this order */
+type Reads = (
+  theme: number,
+  breakpoint: number,
+  landscape: boolean,
+  reducedMotion: boolean,
+) => unknown
+
 /**
  * Renders `$c` with the style `$s` gives for the theme the app shows, the
- * breakpoint the window is at and whether it is in landscape. The build
- * renders an element through it where no function component can read them
- * for it.
+ * breakpoint the window is at, whether it is in landscape and whether the
+ * system reduces motion. The build renders an element through it where no
+ * function component can read them for it.
  * @internal
  */
 export function Themed({
   $c,
   $s,
   ...props
+}: { $c: ElementType; $s: Reads } & Record<string, unknown>): ReactElement {
+  return createElement($c, {
+    ...props,
+    style: $s(
+      useThemeIndex(),
+      useBreakpoint(),
+      useLandscape(),
+      useReducedMotion(),
+    ),
+  })
+}
+
+/**
+ * `Themed` for an element that also takes a viewport length: its style also
+ * takes the window's width and height. Only such elements render through it,
+ * so a resize renders again only them.
+ * @internal
+ */
+export function Sized({
+  $c,
+  $s,
+  ...props
 }: {
   $c: ElementType
-  $s: (theme: number, breakpoint: number, landscape: boolean) => unknown
+  $s: (
+    ...reads: [...Parameters<Reads>, width: number, height: number]
+  ) => unknown
 } & Record<string, unknown>): ReactElement {
   return createElement($c, {
     ...props,
-    style: $s(useThemeIndex(), useBreakpoint(), useLandscape()),
+    style: $s(
+      useThemeIndex(),
+      useBreakpoint(),
+      useLandscape(),
+      useReducedMotion(),
+      useWindowWidth(),
+      useWindowHeight(),
+    ),
   })
 }
 
 /**
  * Renders `$c`, a `TextInput`, with the style `$s` gives for whether it has
  * focus, which a `TextInput` tells only through its events, and for the
- * theme, the breakpoint and the orientation, as `Themed` does. The build
- * renders an input taking a focus style with it.
+ * theme, the breakpoint, the orientation and reduced motion, as `Themed`
+ * does. The build renders an input taking a focus style with it.
  * @internal
  */
 export function Focused({
@@ -196,12 +274,7 @@ export function Focused({
   ...props
 }: {
   $c: ElementType
-  $s: (
-    focused: boolean,
-    theme: number,
-    breakpoint: number,
-    landscape: boolean,
-  ) => unknown
+  $s: (focused: boolean, ...reads: Parameters<Reads>) => unknown
   onFocus?: (event: unknown) => void
   onBlur?: (event: unknown) => void
 } & Record<string, unknown>): ReactElement {
@@ -216,7 +289,13 @@ export function Focused({
       setFocused(false)
       onBlur?.(event)
     },
-    style: $s(focused, useThemeIndex(), useBreakpoint(), useLandscape()),
+    style: $s(
+      focused,
+      useThemeIndex(),
+      useBreakpoint(),
+      useLandscape(),
+      useReducedMotion(),
+    ),
   })
 }
 
