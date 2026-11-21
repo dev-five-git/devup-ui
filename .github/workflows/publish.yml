@@ -12,6 +12,7 @@ on:
       - feat/react-native-themes
       - feat/react-native-responsive
       - feat/react-native-pressed
+      - feat/react-native-css
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main

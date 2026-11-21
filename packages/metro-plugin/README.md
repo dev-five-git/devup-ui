@@ -196,15 +196,51 @@ errors:
 `className`, not to the `style` of a React Native component, which TypeScript
 types as a string.
 
+## `styled()`
+
+`styled()` compiles to a function component that renders its target with the
+styles it describes, before the `style` the component is given:
+
+```tsx
+const Card = styled(Box)({ bg: '$surface', p: [2, null, 4] })
+const Title = styled(Text)`
+  color: ${(props) => props.color};
+  font-size: 18px;
+`
+// compiles to
+const Card = (props) => {
+  const t = useThemeIndex(), b = useBreakpoint()
+  return <View {...props} style={[[s.a, s.b][t], b < 2 ? s.c : s.d, props.style]} />
+}
+```
+
+It takes the parts `css()` takes, as `styled(Target)(...parts)`,
+`` styled(Target)`css text` `` or `styled(Target, styles)`. A function in
+them is called with the component's props: a value (`w: (p) => p.width`, or
+an interpolation in CSS text), or a part giving what `css()` gives
+(`(p) => p.active && css({ opacity: 0.5 })`). The target is a Devup UI
+component, which keeps the styles it declares first (`Flex` its row), or any
+React Native component. A press style makes a styled `Box` a `Pressable`.
+These are build errors:
+
+- a tag (`styled('div')`, `styled.div`)
+- a function of the props giving style props (`(p) => ({ bg: p.color })`):
+  return what `css()` gives instead
+- a press style on a component other than a `Box` or a `Button`
+
+The component reads style props only through `styled()`: on React Native,
+`<Card p={1} />` passes `p` on to the target, so give it `style` or
+`className` instead.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at
 runtime, theme tokens, responsive values, conditions between them and the
-platform, theme, orientation and press blocks, and `css()`. These are build
-errors, reported by Metro at the file, line and column:
+platform, theme, orientation and press blocks, `css()` and `styled()`. These
+are build errors, reported by Metro at the file, line and column:
 
 - interaction states other than `_active`/`_pressed` (`_hover`, `_focus`, ...)
-- `styled()`, `globalCss()`, `keyframes()` and `Grid`
+- `globalCss()`, `keyframes()` and `Grid`
 - any prop React Native has no style for
 - with `runtime: false`, a value that differs by theme or breakpoint,
   `_theme*` with more than one theme, `_portrait`, `_landscape`, and
