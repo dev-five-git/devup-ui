@@ -1414,3 +1414,60 @@ fn compiles_animations(#[case] name: &str, #[case] code: &str, #[case] reanimate
     };
     assert_snapshot!(name, output);
 }
+
+const STYLED_COMPONENTS: &str = r"import styled, { css, ThemeProvider, useTheme, withTheme, ThemeContext, type DefaultTheme } from 'styled-components/native'
+const shared = css({ m: 1 })
+export const Title = styled.Text`
+  color: ${(props) => props.theme.primary};
+  font-size: 18px;
+`
+export const Card = styled.View({ p: 2, bg: '$primary' })
+export const Row = styled.View`flex-direction: row;`
+export const Plain = styled(Box)`padding: 4px;`
+export const Note = styled(Text)((props) => props.theme.dim && css({ opacity: 0.5 }))
+export function App() {
+  const theme = useTheme()
+  return <ThemeProvider theme={{ primary: 'red' }}><Title style={shared}>Hi</Title></ThemeProvider>
+}
+export const Themed = withTheme(App)
+export const context = ThemeContext
+";
+
+const EMOTION_NATIVE: &str = r"import styled from '@emotion/native'
+import { css } from '@emotion/native'
+import { styled as named } from 'styled-components/native'
+export const Named = named.View({ m: 1 })
+export const Press = styled.Pressable({ p: 2, _active: { opacity: 0.5 } })
+export const Label = styled.Text((props) => ({ color: props.color }))
+export const Sized = styled.View`padding: 8px; margin: ${(p) => p.gap}; opacity: 0.5;`
+export const Spaced = styled.View({ padding: 8, flex: 1, transitionDuration: 300 })
+export const Fading = styled.View({ transition: 'opacity 1s' })
+export const Moving = styled.Pressable({ transition: 'opacity 1s' })
+export const Box2 = styled(View, { m: 1 })
+export const pad = css({ p: 1 })
+";
+
+#[rstest]
+#[case::styled_components("compat_styled_components", STYLED_COMPONENTS, true)]
+#[case::emotion("compat_emotion", EMOTION_NATIVE, true)]
+#[case::runtime_off(
+    "compat_runtime_off",
+    "import { ThemeProvider, useTheme, withTheme } from '@emotion/native'\nimport * as S from 'styled-components/native'\n",
+    false
+)]
+#[case::alone(
+    "compat_alone",
+    "export const value = 'styled-components/native'\n",
+    true
+)]
+fn compiles_compat_packages(#[case] name: &str, #[case] code: &str, #[case] runtime: bool) {
+    let output = match extract(
+        "test.tsx",
+        &format!("{IMPORT}{code}"),
+        themed_option(NativePlatform::Ios, runtime, two_themes()),
+    ) {
+        Ok(output) => output.code,
+        Err(error) => format!("error: {error}"),
+    };
+    assert_snapshot!(name, output);
+}

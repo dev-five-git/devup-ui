@@ -102,3 +102,14 @@ pub(super) fn reanimated_problem() -> Problem {
         "install react-native-reanimated 4 or later (`npx expo install react-native-reanimated`), then restart Metro",
     )
 }
+
+/// Why `name`, the theme API of styled-components or Emotion, cannot be
+/// imported with the runtime off
+pub(super) fn compat_theme_problem(name: &str) -> Problem {
+    Problem::new(
+        format!(
+            "`{name}` gives the theme of `ThemeProvider` through the React Native runtime, which `runtime: false` turns off"
+        ),
+        "remove it, or turn the runtime on",
+    )
+}

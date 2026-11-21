@@ -1,0 +1,72 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useStyledTheme as __useStyledTheme } from "@devup-ui/react/native";
+import { View as __View, Pressable as __Pressable, Text as __Text } from "react-native";
+import __Animated from "react-native-reanimated";
+const __AnimatedPressable = __Animated.createAnimatedComponent(__Pressable);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { margin: 1 },
+	b: { padding: 2 },
+	c: { opacity: .5 },
+	d: {
+		padding: 8,
+		opacity: .5
+	},
+	e: {
+		padding: 8,
+		flex: 1,
+		transitionDuration: 300
+	},
+	f: { transition: "opacity 1s" },
+	g: { padding: 1 }
+});
+const __u = (v, s) => {
+	if (typeof v === "number") return v * s;
+	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
+	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
+};
+export const Named = (__props) => {
+	return <__View {...__props} style={[__s.a, __props.style]} />;
+};
+export const Press = (__props) => {
+	return <__Pressable {...__props} style={({ pressed: __p }) => [
+		__s.b,
+		__p && __s.c,
+		__props.style
+	]} />;
+};
+export const Label = (__props) => {
+	const __themed = {
+		theme: __useStyledTheme(),
+		...__props
+	};
+	return <__Text {...__props} style={[((props) => ({ color: props.color }))(__themed), __props.style]} />;
+};
+export const Sized = (__props) => {
+	const __themed = {
+		theme: __useStyledTheme(),
+		...__props
+	};
+	return <__View {...__props} style={[
+		__s.d,
+		{ margin: __u(((p) => p.gap)(__themed), 1) },
+		__props.style
+	]} />;
+};
+export const Spaced = (__props) => {
+	return <__Animated.View {...__props} style={[__s.e, __props.style]} />;
+};
+export const Fading = (__props) => {
+	return <__Animated.View {...__props} style={[__s.f, __props.style]} />;
+};
+export const Moving = (__props) => {
+	return <__AnimatedPressable {...__props} style={[__s.f, __props.style]} />;
+};
+export const Box2 = (__props) => {
+	return <View {...__props} style={[__s.a, __props.style]} />;
+};
+export const pad = __s.g;

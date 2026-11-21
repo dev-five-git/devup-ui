@@ -84,6 +84,10 @@ pub(crate) const RUNTIME: &str = "@devup-ui/react/native";
 /// The package animations and transitions run on
 pub(crate) const REANIMATED: &str = "react-native-reanimated";
 
+/// The React Native packages of styled-components and Emotion, whose
+/// `styled` and `css` compile as Devup UI's
+pub(crate) const COMPAT_PACKAGES: [&str; 2] = ["@emotion/native", "styled-components/native"];
+
 /// Compile `code` for React Native, or tell every place it cannot be, each
 /// led by `filename:line:column`
 pub(crate) fn extract(
@@ -93,7 +97,7 @@ pub(crate) fn extract(
     target: NativeTarget,
     source_map: bool,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    if !code.contains(package) {
+    if !code.contains(package) && !COMPAT_PACKAGES.iter().any(|compat| code.contains(compat)) {
         return Ok(unchanged(code));
     }
     let source_type = crate::supported_source_type(filename)?;

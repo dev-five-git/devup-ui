@@ -38,6 +38,8 @@ impl<'a> Elements<'_> {
 
     /// Compile a call of `css` to the style it describes
     pub(super) fn css_call(&mut self, call: &CallExpression<'a>) {
+        let compat = self.is_compat(&call.callee);
+        let outer = std::mem::replace(&mut self.compat, compat);
         let mut choices = Vec::new();
         for argument in &call.arguments {
             match argument.as_expression() {
@@ -60,12 +62,16 @@ impl<'a> Elements<'_> {
             self.reanimated(&animation, CSS);
         }
         self.css_code(call.span, choices);
+        self.compat = outer;
     }
 
     /// Compile `css` tagged with CSS text, such as `` css`padding: 8px;` ``,
     /// to the style it describes
     pub(super) fn css_template(&mut self, template: &TaggedTemplateExpression<'a>) {
+        let compat = self.is_compat(&template.tag);
+        let outer = std::mem::replace(&mut self.compat, compat);
         let choices = self.css_text(&template.quasi, template.span.start);
+        self.compat = outer;
         self.css_code(template.span, choices);
     }
 
@@ -204,7 +210,8 @@ impl<'a> Elements<'_> {
             }
             expression if is_nothing(expression) => {}
             expression if self.in_styled && is_function(expression) => {
-                if gives_style_props(expression) {
+                // A compat package's function gives React Native styles
+                if !self.compat && gives_style_props(expression) {
                     self.error(
                         expression.span().start,
                         Problem::new(
@@ -216,6 +223,7 @@ impl<'a> Elements<'_> {
                     return;
                 }
                 let code = format!("({})({})", self.rewritten(expression), self.props);
+                self.props_called.set(true);
                 choices.push(Choice::Given(code));
             }
             expression => {

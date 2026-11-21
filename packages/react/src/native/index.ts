@@ -2,12 +2,17 @@ import {
   createElement,
   type ElementType,
   type ReactElement,
+  type ReactNode,
+  useContext,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from 'react'
 import { Appearance, Dimensions } from 'react-native'
 
+import type { StyledTheme } from '../types/props'
 import type { DevupTheme } from '../types/theme'
+import { StyledThemeContext } from '../utils/theme-context'
 
 /**
  * The React Native runtime of Devup UI. The build compiles every style to
@@ -213,4 +218,37 @@ export function Focused({
     },
     style: $s(focused, useThemeIndex(), useBreakpoint(), useLandscape()),
   })
+}
+
+export { withTheme } from '../utils/with-theme'
+
+/**
+ * The `ThemeProvider` of styled-components and Emotion, which the build
+ * imports for theirs: it gives its descendants `theme`, merged over the
+ * theme of an outer provider, or what a function of that theme returns. The
+ * `styled()` components of those packages call their functions with it as
+ * `props.theme`, and `withTheme` gives it as the `theme` prop.
+ */
+export function ThemeProvider({
+  theme,
+  children,
+}: {
+  theme: StyledTheme | ((outer: StyledTheme | undefined) => StyledTheme)
+  children?: ReactNode
+}): ReactElement {
+  const outer = useContext(StyledThemeContext)
+  const value = useMemo(
+    () => (typeof theme === 'function' ? theme(outer) : { ...outer, ...theme }),
+    [outer, theme],
+  )
+  return createElement(StyledThemeContext.Provider, { value }, children)
+}
+
+/**
+ * The theme of the nearest `ThemeProvider`, or an empty object outside one:
+ * the `useTheme` of styled-components and Emotion, which the build imports
+ * for theirs
+ */
+export function useStyledTheme(): StyledTheme {
+  return useContext(StyledThemeContext) ?? {}
 }

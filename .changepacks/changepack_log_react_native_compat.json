@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles `styled-components/native` and `@emotion/native` (part of #411): their `styled` (including `styled.View` and any other `styled.Name`) and `css` compile as Devup UI's with numbers as pixels, function parts receive `props.theme` from the runtime's `ThemeProvider`, and `ThemeProvider`, `useTheme` and `withTheme` import from the React Native runtime. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

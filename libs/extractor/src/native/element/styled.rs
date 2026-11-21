@@ -5,8 +5,13 @@
 use oxc_ast::ast::{CallExpression, Expression, IdentifierReference, TaggedTemplateExpression};
 use oxc_span::{GetSpan, Span};
 
+use std::fmt::Write;
+
+use oxc_syntax::symbol::SymbolId;
+
 use super::{Elements, Frame, HookAt, component_name, defaults};
 use crate::component::ExportVariableKind;
+use crate::fresh_name::fresh_name;
 use crate::native::errors::Problem;
 use crate::native::style::{Choice, INTERACTIONS, Reads, Vars, interaction_keys, style_code};
 
@@ -18,6 +23,9 @@ pub(super) enum Target {
     /// A Devup UI component, which renders its React Native component with
     /// the styles it declares first
     Devup(ExportVariableKind, String),
+    /// A React Native component `styled.Name` names, and the local name it is
+    /// imported under
+    Native(String, String),
     /// Any other component, by its code
     Other(String),
 }
@@ -33,24 +41,49 @@ impl<'a> Elements<'_> {
 
     /// Whether `identifier` reads the `styled` the file imports
     pub(super) fn is_styled_reference(&self, identifier: &IdentifierReference<'_>) -> bool {
+        self.symbol(identifier)
+            .is_some_and(|symbol| self.styled.contains(&symbol))
+    }
+
+    /// Whether `callee` reads the `styled` or the `css` of a compat package,
+    /// whose numbers are pixels and whose function parts read the theme of
+    /// its `ThemeProvider`
+    pub(super) fn is_compat(&self, callee: &Expression<'_>) -> bool {
+        matches!(
+            callee.without_parentheses(),
+            Expression::Identifier(identifier) if self
+                .symbol(identifier)
+                .is_some_and(|symbol| self.compat_bindings.contains(&symbol))
+        )
+    }
+
+    /// The binding `identifier` reads
+    fn symbol(&self, identifier: &IdentifierReference<'_>) -> Option<SymbolId> {
         identifier
             .reference_id
             .get()
             .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
-            .is_some_and(|symbol| self.styled.contains(&symbol))
     }
 
-    /// The target of `callee` when it is `styled(Target)`, whose call or
-    /// tagged template gives the styles
-    pub(super) fn styled_target(&mut self, callee: &Expression<'a>) -> Option<Target> {
-        let Expression::CallExpression(call) = callee.without_parentheses() else {
-            return None;
-        };
-        if !self.is_styled(&call.callee) || call.arguments.len() != 1 {
-            return None;
+    /// The target of `callee` when it is `styled(Target)` or `styled.Name`,
+    /// whose call or tagged template gives the styles, and whether the
+    /// `styled` is a compat package's
+    pub(super) fn styled_target(&mut self, callee: &Expression<'a>) -> Option<(Target, bool)> {
+        match callee.without_parentheses() {
+            Expression::CallExpression(call)
+                if self.is_styled(&call.callee) && call.arguments.len() == 1 =>
+            {
+                let target = call.arguments[0].as_expression()?;
+                Some((self.target(target), self.is_compat(&call.callee)))
+            }
+            Expression::StaticMemberExpression(member) if self.is_styled(&member.object) => {
+                // `styled.View`: the React Native component of that name
+                let name = member.property.name.to_string();
+                let local = self.native_import(&name);
+                Some((Target::Native(name, local), self.is_compat(&member.object)))
+            }
+            _ => None,
         }
-        let target = call.arguments[0].as_expression()?;
-        Some(self.target(target))
     }
 
     /// The target `expression` names
@@ -75,7 +108,11 @@ impl<'a> Elements<'_> {
     }
 
     /// `styled(Target)(...styles)`
-    pub(super) fn styled_call(&mut self, call: &CallExpression<'a>, target: Target) {
+    pub(super) fn styled_call(
+        &mut self,
+        call: &CallExpression<'a>,
+        (target, compat): (Target, bool),
+    ) {
         let arguments: Vec<&Expression<'a>> = call
             .arguments
             .iter()
@@ -91,7 +128,7 @@ impl<'a> Elements<'_> {
                 .call(STYLED),
             );
         }
-        self.styled_component(call.span, target, |visitor, choices| {
+        self.styled_component(call.span, (target, compat), |visitor, choices| {
             for argument in arguments {
                 visitor.css_part(argument, choices);
             }
@@ -102,9 +139,9 @@ impl<'a> Elements<'_> {
     pub(super) fn styled_template(
         &mut self,
         template: &TaggedTemplateExpression<'a>,
-        target: Target,
+        (target, compat): (Target, bool),
     ) {
-        self.styled_component(template.span, target, |visitor, choices| {
+        self.styled_component(template.span, (target, compat), |visitor, choices| {
             let text = visitor.css_text(&template.quasi, template.span.start);
             choices.extend(text);
         });
@@ -129,7 +166,8 @@ impl<'a> Elements<'_> {
             return;
         };
         let target = self.target(target);
-        self.styled_component(call.span, target, |visitor, choices| {
+        let compat = self.is_compat(&call.callee);
+        self.styled_component(call.span, (target, compat), |visitor, choices| {
             visitor.css_part(styles, choices);
         });
     }
@@ -139,12 +177,12 @@ impl<'a> Elements<'_> {
     fn styled_component(
         &mut self,
         span: Span,
-        target: Target,
+        (target, compat): (Target, bool),
         read: impl FnOnce(&mut Self, &mut Vec<Choice>),
     ) {
         let (tag, mut choices) = match &target {
             Target::Devup(kind, local) => (local.clone(), defaults(kind)),
-            Target::Other(code) => (code.clone(), Vec::new()),
+            Target::Native(_, code) | Target::Other(code) => (code.clone(), Vec::new()),
         };
         // The component calls the hooks its styles read, as a function
         // component does
@@ -154,8 +192,21 @@ impl<'a> Elements<'_> {
             hook_at: HookAt::Body(span.start as usize),
         });
         let outer = std::mem::replace(&mut self.in_styled, true);
+        let outer_compat = std::mem::replace(&mut self.compat, compat);
+        // A compat package's function parts read the theme of its
+        // `ThemeProvider`, which the props they are called with hold
+        let props = self.props.clone();
+        let themed = fresh_name("__themed", self.code);
+        if compat {
+            self.props.clone_from(&themed);
+        }
+        let called = self.props_called.replace(false);
         read(self, &mut choices);
+        let themed = (compat && self.props_called.get()).then_some(themed);
+        self.props_called.set(called);
+        self.props = props;
         self.in_styled = outer;
+        self.compat = outer_compat;
         let frame_reads = self
             .frames
             .pop()
@@ -164,7 +215,9 @@ impl<'a> Elements<'_> {
             (Some(press), Target::Devup(kind, _)) => {
                 self.pressable(press, kind, "styled()", None).unwrap_or(tag)
             }
-            (Some((offset, name)), Target::Other(_)) => {
+            // `Pressable` calls the function its `style` is with its state
+            (Some(_), Target::Native(native, _)) if native == "Pressable" => tag,
+            (Some((offset, name)), Target::Native(..) | Target::Other(_)) => {
                 self.error(
                     offset,
                     Problem::new(
@@ -183,6 +236,13 @@ impl<'a> Elements<'_> {
                     .iter()
                     .any(|state| choices.iter().any(|choice| choice.holds(*state)));
                 self.animated(&animation, (kind, local), STYLED, None, interactive)
+                    .unwrap_or(tag)
+            }
+            (Some(animation), Target::Native(native, local)) => {
+                let interactive = INTERACTIONS
+                    .iter()
+                    .any(|state| choices.iter().any(|choice| choice.holds(*state)));
+                self.animated_native(&animation, (native, local), STYLED, interactive)
                     .unwrap_or(tag)
             }
             (Some(animation), Target::Other(_)) => {
@@ -205,11 +265,19 @@ impl<'a> Elements<'_> {
             .as_ref()
             .map_or_else(Reads::default, |style| style.reads)
             .union(frame_reads);
-        let hooks = if reads.any() {
+        let mut hooks = if reads.any() {
             format!("{} ", self.hook_calls(reads))
         } else {
             String::new()
         };
+        if let Some(themed) = themed {
+            self.runtime.styled_theme_used = true;
+            let _ = write!(
+                hooks,
+                "const {themed} = {{ theme: {}(), ...{props} }}; ",
+                self.runtime.styled_theme
+            );
+        }
         let style = style.map_or_else(String::new, |style| {
             let code = if keys.is_empty() {
                 style.code
@@ -250,5 +318,17 @@ fn holds_object(expression: &Expression<'_>) -> bool {
         }
         Expression::LogicalExpression(logical) => holds_object(&logical.right),
         _ => false,
+    }
+}
+
+impl Elements<'_> {
+    /// The local name the React Native component `name` is imported under
+    fn native_import(&mut self, name: &str) -> String {
+        if let Some((_, local)) = self.natives.iter().find(|(native, _)| native == name) {
+            return local.clone();
+        }
+        let local = fresh_name(&format!("__{name}"), self.code);
+        self.natives.push((name.to_string(), local.clone()));
+        local
     }
 }
