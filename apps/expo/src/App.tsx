@@ -58,11 +58,17 @@ export function App() {
         borderRadius="$radius"
         boxShadow="$raised"
         maxW={[null, null, '480px']}
+        minH="30vh"
         p={[4, null, 6]}
         testID="card"
         w="100%"
       >
-        <Text color="$muted" fontSize="14px" mb={2}>
+        <Text
+          _motionReduce={{ fontStyle: 'italic' }}
+          color="$muted"
+          fontSize="14px"
+          mb={2}
+        >
           Your name
         </Text>
         <Input

@@ -1,0 +1,25 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useBreakpoint as __useBreakpoint, useWindowWidth as __useWindowWidth, useWindowHeight as __useWindowHeight } from "@devup-ui/react/native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		height: 32,
+		backgroundColor: "10vw"
+	},
+	b: { width: 16 }
+});
+export function A() {
+	const __b = __useBreakpoint();
+	const __vw = __useWindowWidth();
+	const __vh = __useWindowHeight();
+	return <Box style={[
+		__s.a,
+		{ width: __vw },
+		__b >= 2 && __s.b,
+		__b >= 1 && { height: __vh * .5 }
+	]} />;
+}

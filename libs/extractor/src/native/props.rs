@@ -570,6 +570,21 @@ pub(super) fn dynamic_keys(prop: &str) -> Result<Vec<(&'static str, Option<u32>)
         .collect()
 }
 
+/// The React Native keys a viewport length of the style prop `prop` sets,
+/// when each takes a length
+pub(super) fn length_keys(prop: &str) -> Option<Vec<&'static str>> {
+    css::disassemble_property(prop)
+        .map(|property| match property.as_ref() {
+            "margin" => Some("margin"),
+            "padding" => Some("padding"),
+            property => native_property(property)
+                .ok()
+                .filter(|(_, kind)| matches!(kind, Kind::Length | Kind::LineHeight))
+                .map(|(key, _)| key),
+        })
+        .collect()
+}
+
 /// The scale a number read at runtime for the CSS `property` of `kind` is
 /// multiplied by, as the web build scales a literal: four pixels a unit for a
 /// length, but for the properties taking a plain number

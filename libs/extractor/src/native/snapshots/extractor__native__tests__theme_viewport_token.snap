@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `w` on React Native: `50vw` is a viewport length, which the build computes only where a style prop writes it. Fix: write the viewport length in the style prop, or use a number of pixels or a percentage

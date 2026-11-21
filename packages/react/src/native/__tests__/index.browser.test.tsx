@@ -17,7 +17,20 @@ const dimensions = {
   listeners: [] as (() => void)[],
 }
 
+/** Whether the system reduces motion, and who listens to it */
+const accessibility = {
+  listeners: [] as ((reduced: boolean) => void)[],
+}
+
 mock.module('react-native', () => ({
+  AccessibilityInfo: {
+    isReduceMotionEnabled: () => Promise.resolve(false),
+    addEventListener: (event: string, listener: (reduced: boolean) => void) => {
+      if (event === 'reduceMotionChanged')
+        accessibility.listeners.push(listener)
+      return { remove: () => {} }
+    },
+  },
   Dimensions: {
     get: () => ({ width: dimensions.width, height: dimensions.height }),
     addEventListener: (event: string, listener: () => void) => {
@@ -51,6 +64,13 @@ function resize(width: number, height: number) {
   })
 }
 
+/** The system starting or stopping to reduce motion */
+function reduceMotion(reduced: boolean) {
+  act(() => {
+    for (const listener of accessibility.listeners) listener(reduced)
+  })
+}
+
 const runtime = await import('../index')
 const {
   defineBreakpoints,
@@ -58,11 +78,15 @@ const {
   getBreakpoint,
   getTheme,
   setTheme,
+  Sized,
   Themed,
   useBreakpoint,
   useLandscape,
+  useReducedMotion,
   useTheme,
   useThemeIndex,
+  useWindowHeight,
+  useWindowWidth,
 } = runtime
 
 beforeEach(() => {
@@ -220,6 +244,66 @@ describe('useLandscape', () => {
     renderHook(() => [useLandscape(), useBreakpoint(), useTheme()])
     renderHook(() => useBreakpoint())
     expect(dimensions.listeners).toHaveLength(1)
+  })
+})
+
+describe('useReducedMotion', () => {
+  it('follows whether the system reduces motion', async () => {
+    const { result } = renderHook(() => useReducedMotion())
+    await act(async () => {})
+    expect(result.current).toBe(false)
+    reduceMotion(true)
+    expect(result.current).toBe(true)
+    reduceMotion(false)
+    expect(result.current).toBe(false)
+    expect(accessibility.listeners).toHaveLength(1)
+  })
+})
+
+describe('useWindowWidth and useWindowHeight', () => {
+  it('render again with the size of the window', () => {
+    const { result } = renderHook(() => [useWindowWidth(), useWindowHeight()])
+    expect(result.current).toEqual([390, 844])
+    resize(400, 800)
+    expect(result.current).toEqual([400, 800])
+  })
+
+  it('leave the components reading only the breakpoint alone', () => {
+    let breakpointRenders = 0
+    let widthRenders = 0
+    renderHook(() => {
+      breakpointRenders++
+      return useBreakpoint()
+    })
+    renderHook(() => {
+      widthRenders++
+      return useWindowWidth()
+    })
+    resize(400, 844)
+    resize(410, 844)
+    expect(breakpointRenders).toBe(1)
+    expect(widthRenders).toBe(3)
+  })
+})
+
+describe('Sized', () => {
+  it('renders the style of what the runtime tells and of the window size', () => {
+    const Probe = ({ style }: { style?: string }) =>
+      createElement('span', { 'data-style': style })
+    const { container } = render(
+      createElement(Sized, {
+        $c: Probe,
+        $s: (...reads: unknown[]) => reads.join('-'),
+      }),
+    )
+    const style = () =>
+      container.querySelector('span')?.getAttribute('data-style')
+    expect(style()).toBe('0-0-false-false-390-844')
+    resize(844, 390)
+    expect(style()).toBe('0-2-true-false-844-390')
+    reduceMotion(true)
+    expect(style()).toBe('0-2-true-true-844-390')
+    reduceMotion(false)
   })
 })
 

@@ -160,6 +160,40 @@ is in that orientation.
 A value read at runtime in an array (`p={[x, 2]}`) applies from its
 breakpoint on as it is.
 
+## Viewport lengths
+
+`vw`, `vh`, `vmin` and `vmax` measure the window, as on the web. Its small,
+large and dynamic forms (`svh`, `dvh`, ...) measure the same, since an app's
+window has no browser bar that comes and goes. The build turns each length
+into one multiplication of the window's size, which the runtime gives:
+
+```tsx
+<Box w="50vw" minH="30vh" />
+// const __vw = __useWindowWidth(); const __vh = __useWindowHeight();
+// <View style={[{ width: __vw * .5 }, { minHeight: __vh * .3 }]} />
+```
+
+A component renders again when the window's size changes only if it uses a
+viewport length. Components that read only the breakpoint or the theme
+render again only when those change. A viewport length works in responsive
+arrays, `css()` and `styled()`. With `runtime: false`, it is a build error.
+In a theme token, it is a build error too: write it in the style prop.
+
+## Reduced motion
+
+`_motionReduce` applies its styles while the system asks apps to reduce
+motion (React Native's `AccessibilityInfo`), and `_motionSafe` applies its
+styles while it does not. The runtime asks the system once and follows its
+changes:
+
+```tsx
+<Box
+  _motionReduce={{ transitionDuration: '0ms' }}
+  transitionDuration="300ms"
+  transitionProperty="opacity"
+/>
+```
+
 ## Press styles
 
 `_active` (or its React Native name, `_pressed`) applies its styles while the
@@ -347,16 +381,17 @@ Rsbuild or Bun plugin, which output atomic CSS instead.
 
 Only styles the build can decide are supported: literals, values read at
 runtime, theme tokens, responsive values, conditions between them and the
-platform, theme, orientation and interaction blocks, `css()`, `styled()`
-and animations. These are build errors, reported by Metro at the file, line and column:
+platform, theme, orientation, motion and interaction blocks, viewport
+lengths, `css()`, `styled()` and animations. These are build errors, reported by Metro at the file, line and column:
 
 - selectors other than the states above (`_focusVisible`, `_checked`, `_before`, ...)
 - `globalCss()` and `Grid`
 - animations and transitions in an app without react-native-reanimated
 - any prop React Native has no style for
 - with `runtime: false`, a value that differs by theme or breakpoint,
-  `_theme*` with more than one theme, `_portrait`, `_landscape`, and
-  `useTheme`, `getTheme` and `setTheme`
+  `_theme*` with more than one theme, `_portrait`, `_landscape`,
+  `_motionReduce`, `_motionSafe`, viewport lengths, and `useTheme`,
+  `getTheme` and `setTheme`
 
 Metro reads devup.json when it starts, so restart Metro after changing it
 (`--reset-cache` is not needed).

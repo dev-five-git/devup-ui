@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:2:23: `<Box>` cannot use `_motionReduce` on React Native: a motion style is chosen by whether the system reduces motion, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on
+test.tsx:2:48: `<Box>` cannot use `_motionSafe` on React Native: a motion style is chosen by whether the system reduces motion, which needs the React Native runtime that `runtime: false` turns off. Fix: remove it, or turn the runtime on

@@ -18,6 +18,8 @@ pub(super) enum State {
     AtLeast(usize),
     /// The window is in landscape (`true`) or portrait (`false`) orientation
     Landscape(bool),
+    /// The system reduces motion (`true`) or does not (`false`)
+    ReducedMotion(bool),
     /// The element is pressed
     Pressed,
     /// The pointer is over the element
@@ -53,34 +55,68 @@ pub(super) enum Choice {
     All(Vec<Self>),
     /// A style passed on whole, by its code, which may declare any style
     Given(String),
+    /// Styles whose values the element computes from what the runtime
+    /// tells, as a viewport length from the window's size: each key with the
+    /// code of its value
+    Computed(Vec<(String, String)>, Reads),
 }
 
-/// What the runtime tells a style: which theme shows, which breakpoint the
-/// window is at, and whether it is in landscape
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct Reads {
-    pub theme: bool,
-    pub breakpoint: bool,
-    pub landscape: bool,
+/// What the runtime tells, by the hook telling it, in the order the hooks
+/// are called and a wrapper gives them to a style
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Read {
+    /// Which theme shows
+    Theme,
+    /// Which breakpoint the window is at
+    Breakpoint,
+    /// Whether the window is in landscape
+    Landscape,
+    /// Whether the system reduces motion
+    Motion,
+    /// The window's width
+    Width,
+    /// The window's height
+    Height,
 }
+
+/// How many things the runtime tells
+pub(super) const READS: usize = 6;
+
+/// What a style reads from the runtime
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Reads([bool; READS]);
 
 impl Reads {
+    /// Reading `read` too when `on`
+    pub(super) const fn with(mut self, read: Read, on: bool) -> Self {
+        if on {
+            self.0[read as usize] = true;
+        }
+        self
+    }
+
+    /// Whether it reads `read`
+    pub(super) const fn has(self, read: Read) -> bool {
+        self.0[read as usize]
+    }
+
     /// Whether it reads what a hook of the runtime gives
-    pub(super) const fn any(self) -> bool {
-        self.theme || self.breakpoint || self.landscape
+    pub(super) fn any(self) -> bool {
+        self.0.contains(&true)
+    }
+
+    /// Whether it reads the window's size
+    pub(super) const fn sized(self) -> bool {
+        self.has(Read::Width) || self.has(Read::Height)
     }
 
     /// What it reads, in the order of the runtime's hooks
-    pub(super) const fn flags(self) -> [bool; 3] {
-        [self.theme, self.breakpoint, self.landscape]
+    pub(super) const fn flags(self) -> [bool; READS] {
+        self.0
     }
 
-    pub(super) const fn union(self, other: Self) -> Self {
-        Self {
-            theme: self.theme || other.theme,
-            breakpoint: self.breakpoint || other.breakpoint,
-            landscape: self.landscape || other.landscape,
-        }
+    pub(super) fn union(self, other: Self) -> Self {
+        Self(std::array::from_fn(|at| self.0[at] || other.0[at]))
     }
 }
 
@@ -89,6 +125,7 @@ pub(super) struct Vars<'v> {
     pub theme: &'v str,
     pub breakpoint: &'v str,
     pub landscape: &'v str,
+    pub motion: &'v str,
     pub pressed: &'v str,
     pub hovered: &'v str,
     pub focused: &'v str,
@@ -187,7 +224,9 @@ impl Choice {
         match self {
             Self::Empty => false,
             Self::Static(declarations) => declares(declarations, key),
-            Self::Dynamic(values) => values.iter().any(|(name, _)| name == key),
+            Self::Dynamic(values) | Self::Computed(values, _) => {
+                values.iter().any(|(name, _)| name == key)
+            }
             Self::Given(_) => true,
             Self::Condition {
                 consequent,
@@ -207,16 +246,15 @@ impl Choice {
     pub(super) fn reads(&self) -> Reads {
         match self {
             Self::Empty | Self::Static(_) | Self::Dynamic(_) | Self::Given(_) => Reads::default(),
+            Self::Computed(_, reads) => *reads,
             Self::Condition {
                 consequent,
                 alternate,
                 ..
             } => consequent.reads().union(alternate.reads()),
-            Self::Varied(grid) => Reads {
-                theme: themes_of(grid) > 1,
-                breakpoint: grid.len() > 1,
-                landscape: false,
-            },
+            Self::Varied(grid) => Reads::default()
+                .with(Read::Theme, themes_of(grid) > 1)
+                .with(Read::Breakpoint, grid.len() > 1),
             Self::When { state, choice } => choice.reads().union(state.reads()),
             Self::All(choices) => choices.iter().fold(Reads::default(), |reads, choice| {
                 reads.union(choice.reads())
@@ -247,7 +285,7 @@ impl Choice {
         match self {
             Self::Empty => "null".to_string(),
             Self::Static(declarations) => sheet.reference(declarations),
-            Self::Dynamic(values) => object_code(values),
+            Self::Dynamic(values) | Self::Computed(values, _) => object_code(values),
             Self::Given(code) => code.clone(),
             Self::Condition {
                 test,
@@ -312,11 +350,16 @@ impl Choice {
 
 impl State {
     const fn reads(self) -> Reads {
-        Reads {
-            theme: matches!(self, Self::Theme(_)),
-            breakpoint: matches!(self, Self::AtLeast(_)),
-            landscape: matches!(self, Self::Landscape(_)),
-        }
+        let read = match self {
+            Self::Theme(_) => Read::Theme,
+            Self::AtLeast(_) => Read::Breakpoint,
+            Self::Landscape(_) => Read::Landscape,
+            Self::ReducedMotion(_) => Read::Motion,
+            Self::Pressed | Self::Hovered | Self::Focused | Self::Disabled => {
+                return Reads([false; READS]);
+            }
+        };
+        Reads([false; READS]).with(read, true)
     }
 
     /// The code testing that the state holds
@@ -326,6 +369,8 @@ impl State {
             Self::AtLeast(level) => format!("{} >= {level}", vars.breakpoint),
             Self::Landscape(true) => vars.landscape.to_string(),
             Self::Landscape(false) => format!("!{}", vars.landscape),
+            Self::ReducedMotion(true) => vars.motion.to_string(),
+            Self::ReducedMotion(false) => format!("!{}", vars.motion),
             Self::Pressed => vars.pressed.to_string(),
             Self::Hovered => vars.hovered.to_string(),
             Self::Focused => vars.focused.to_string(),

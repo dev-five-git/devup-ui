@@ -5,7 +5,7 @@ use super::element::units_declaration;
 use super::errors::Problem;
 use super::props::Declaration;
 use super::sheet::{Sheet, key_name};
-use super::style::{Choice, State, Vars, cascade, in_theme, style_code, varied, when};
+use super::style::{Choice, Read, State, Vars, cascade, in_theme, style_code, varied, when};
 use super::values::{Literal, NativeValue, css_text, number_or_text, quoted_list};
 use super::{NativePlatform, NativeTarget, NativeTheme, TokenLevels, TypographyProperties};
 use crate::{ExtractOption, ExtractTarget, extract, extract_without_source_map};
@@ -14,6 +14,7 @@ const VARS: Vars<'static> = Vars {
     theme: "t",
     breakpoint: "b",
     landscape: "l",
+    motion: "m",
     pressed: "p",
     hovered: "h",
     focused: "f",
@@ -646,6 +647,7 @@ fn two_themes() -> NativeTheme {
             ("onlyDark", &[None, Some("#000")]),
             ("captionSize", &[Some("12px"), Some("14px")]),
             ("primary-100", &[Some("#eef"), Some("#223")]),
+            ("wide", &[Some("50vw"), Some("50vw")]),
         ],
     )
 }
@@ -840,6 +842,7 @@ fn runtime_off_keeps_single_values(#[case] name: &str, #[case] theme: NativeThem
 )]
 #[case::unknown_theme("theme_unknown_theme", "<Box _themeSepia={{ p: 1 }} _themeDark={1} />")]
 #[case::token_loop("theme_token_loop", "<Box bg=\"$loopA\" />")]
+#[case::viewport_token("theme_viewport_token", "<Box w=\"$wide\" />")]
 #[case::bad_values(
     "theme_bad_values",
     "<Text typography=\"caption\" lineHeight=\"$primary\" fontSize=\"$same\" />"
@@ -1108,7 +1111,7 @@ fn varied_choices_pick_by_breakpoint_and_theme() {
         vec![c.clone(), c.clone()],
     ]));
     assert_eq!(both, "b < 1 ? [s.a, s.b][t] : s.c");
-    assert!(reads.theme && reads.breakpoint && !reads.landscape);
+    assert!(reads.has(Read::Theme) && reads.has(Read::Breakpoint) && !reads.has(Read::Landscape));
     // In a condition, and applied while a state holds
     let (condition, reads) = code(Choice::Condition {
         test: "on".to_string(),
@@ -1116,7 +1119,7 @@ fn varied_choices_pick_by_breakpoint_and_theme() {
         alternate: Box::new(when(State::Landscape(false), Choice::Static(c))),
     });
     assert_eq!(condition, "on ? (b < 1 ? s.a : s.b) : (!l && s.c)");
-    assert!(!reads.theme && reads.breakpoint && reads.landscape);
+    assert!(!reads.has(Read::Theme) && reads.has(Read::Breakpoint) && reads.has(Read::Landscape));
     let (nested, _) = code(Choice::Condition {
         test: "on".to_string(),
         consequent: Box::new(Choice::Varied(vec![
@@ -1182,6 +1185,78 @@ export const outside = <Box _pressed={{ bg: '$primary' }} />"#;
     "<Text _pressed={{ color: 'red' }} />;\n<Image _pressed={{ opacity: 0.5 }} />;\n<Input _pressed={{ bg: 'red' }} />;\n<Box as={Animated.View} _pressed={{ bg: 'red' }} />;\n<Box _pressed={1} />"
 )]
 fn compiles_pressed(#[case] name: &str, #[case] runtime: bool, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
+}
+
+#[rstest]
+#[case::lengths(
+    "viewport_lengths",
+    true,
+    "export function A() {
+  return <Box w=\"50vw\" h=\"100vh\" minW=\"10vmin\" maxW=\"80vmax\" p=\"2dvh\" mx=\"-5svw\" m=\"1vi\" lineHeight=\"4vh\" />
+}"
+)]
+#[case::responsive(
+    "viewport_responsive",
+    true,
+    "export function A() {
+  return <Box w={[\"100vw\", null, \"$containerX\"]} h={[8, \"50vh\"]} bg=\"10vw\" />
+}"
+)]
+#[case::outside_component(
+    "viewport_outside_component",
+    true,
+    "export const a = <Box w=\"50vw\" bg=\"$primary\" />
+export const b = <Box bg=\"$primary\" />"
+)]
+#[case::css_and_styled(
+    "viewport_css_and_styled",
+    true,
+    "import { css, styled } from '@devup-ui/react'
+export const Tall = styled.View({ h: '50vh' })
+export function A() {
+  const wide = css({ w: '50vw' })
+  return <Box className={wide} />
+}"
+)]
+#[case::focused_input(
+    "viewport_focused_input",
+    true,
+    "export const a = <Input w=\"50vw\" _focus={{ borderColor: 'red' }} />
+export function B() {
+  return <Input w=\"50vw\" _focus={{ borderColor: 'red' }} />
+}"
+)]
+#[case::keyframes(
+    "viewport_keyframes",
+    true,
+    "import { keyframes } from '@devup-ui/react'
+const grow = keyframes({ from: { w: '0vw' }, to: { w: '100vw' } })"
+)]
+#[case::runtime_off(
+    "viewport_runtime_off",
+    false,
+    "export function A() {
+  return <Box w=\"50vw\" />
+}"
+)]
+#[case::motion(
+    "motion_blocks",
+    true,
+    "export function A() {
+  return <Box _motionReduce={{ opacity: 1 }} _motionSafe={{ opacity: 0.5 }} p={1} />
+}
+export const b = <Box _motionReduce={{ p: 2 }} />
+export function C() {
+  return <Box _motionReduce={{ transitionDuration: '0ms' }} transitionDuration=\"300ms\" transitionProperty=\"opacity\" />
+}"
+)]
+#[case::motion_runtime_off(
+    "motion_runtime_off",
+    false,
+    "export const a = <Box _motionReduce={{ p: 2 }} _motionSafe={{ p: 1 }} />"
+)]
+fn compiles_viewport_and_motion(#[case] name: &str, #[case] runtime: bool, #[case] code: &str) {
     assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
 }
 

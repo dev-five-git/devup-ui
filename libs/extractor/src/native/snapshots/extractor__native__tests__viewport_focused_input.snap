@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:2:18: `<Input>` cannot use `_focus` on React Native: an input with a focus style outside a function component cannot read the window's size, which a viewport length needs. Fix: render the input in a function component

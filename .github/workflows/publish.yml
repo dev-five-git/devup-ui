@@ -19,6 +19,7 @@ on:
       - feat/react-native-compat
       - feat/react-native-web
       - feat/react-native-types
+      - feat/react-native-docs
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main

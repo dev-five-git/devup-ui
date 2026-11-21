@@ -399,7 +399,7 @@ fn spread_problem() -> String {
 
 fn outside_component_problem() -> String {
     Problem::new(
-        "its styles differ by theme, breakpoint or orientation, which only a function component or a hook can read",
+        "its styles differ by theme, breakpoint, orientation, motion or the window's size, which only a function component or a hook can read",
         "call `css()` in the component that uses it",
     )
     .call(CSS)

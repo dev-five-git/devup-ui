@@ -100,14 +100,66 @@ pub(super) fn scaled_length(text: &str) -> Option<f64> {
         })
 }
 
+/// What a viewport length measures a hundredth of
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Viewport {
+    Width,
+    Height,
+    /// The smaller of the width and the height
+    Min,
+    /// The larger of the width and the height
+    Max,
+}
+
+/// The viewport units, by what they measure. A window has no browser
+/// interface that comes and goes, so the small, large and dynamic units
+/// measure the window as the plain ones do; the inline and block axes are
+/// the width and the height
+const VIEWPORT_UNITS: [(&str, Viewport); 24] = [
+    ("vw", Viewport::Width),
+    ("svw", Viewport::Width),
+    ("lvw", Viewport::Width),
+    ("dvw", Viewport::Width),
+    ("vi", Viewport::Width),
+    ("vh", Viewport::Height),
+    ("svh", Viewport::Height),
+    ("lvh", Viewport::Height),
+    ("dvh", Viewport::Height),
+    ("vb", Viewport::Height),
+    ("vmin", Viewport::Min),
+    ("svmin", Viewport::Min),
+    ("lvmin", Viewport::Min),
+    ("dvmin", Viewport::Min),
+    ("vmax", Viewport::Max),
+    ("svmax", Viewport::Max),
+    ("lvmax", Viewport::Max),
+    ("dvmax", Viewport::Max),
+    ("svi", Viewport::Width),
+    ("lvi", Viewport::Width),
+    ("dvi", Viewport::Width),
+    ("svb", Viewport::Height),
+    ("lvb", Viewport::Height),
+    ("dvb", Viewport::Height),
+];
+
+/// The number of hundredths `text` measures and of what, for a viewport
+/// length such as `50vw`
+pub(super) fn viewport_length(text: &str) -> Option<(f64, Viewport)> {
+    let text = text.trim();
+    VIEWPORT_UNITS.iter().find_map(|(unit, viewport)| {
+        text.strip_suffix(unit)
+            .and_then(number)
+            .map(|amount| (amount, *viewport))
+    })
+}
+
 fn unsupported_length(text: &str) -> Problem {
-    if ["vw", "vh", "vmin", "vmax", "dvh", "svh", "lvh"]
-        .iter()
-        .any(|unit| text.ends_with(unit))
-    {
+    if viewport_length(text).is_some() {
         return Problem::new(
-            format!("`{text}` needs the window size, which React Native knows only at runtime"),
-            "use a number of pixels or a percentage",
+            format!(
+                "`{text}` is a viewport length, which the build computes only where a style prop writes it"
+            ),
+            "write the viewport length in the style prop, or use a number of pixels or a percentage",
         );
     }
     Problem::new(

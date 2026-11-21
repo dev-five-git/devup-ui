@@ -1,0 +1,16 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useWindowWidth as __useWindowWidth, useWindowHeight as __useWindowHeight } from "@devup-ui/react/native";
+import { View as __View } from "react-native";
+export const Tall = (__props) => {
+	const __vh = __useWindowHeight();
+	return <__View {...__props} style={[{ height: __vh * .5 }, __props.style]} />;
+};
+export function A() {
+	const __vw = __useWindowWidth();
+	const wide = { width: __vw * .5 };
+	return <Box style={wide} />;
+}

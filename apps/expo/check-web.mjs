@@ -1,6 +1,7 @@
 // Opens the web export (`expo export --platform web` wrote dist/) in Chromium
 // and checks that react-native-web renders the styles Devup UI compiled: the
-// card takes the theme's color and switches with the theme, the input takes
+// card takes the theme's color and switches with the theme and is at least
+// 30vh tall, the input takes
 // its focus style through the runtime's `Focused`, and the button, a
 // `Pressable`, counts a press.
 import { createReadStream, existsSync, statSync } from 'node:fs'
@@ -65,6 +66,11 @@ try {
     await style(card, 'backgroundColor'),
     'rgb(255, 255, 255)',
     'the card in the light theme',
+  )
+  expectEqual(
+    await style(card, 'minHeight'),
+    `${(await page.evaluate(() => window.innerHeight)) * 0.3}px`,
+    'the card, at least 30vh tall',
   )
   expectEqual(
     await style(count, 'backgroundColor'),

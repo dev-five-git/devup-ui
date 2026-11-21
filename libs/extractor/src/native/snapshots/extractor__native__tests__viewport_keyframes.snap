@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:3:26: `keyframes()` cannot use `from` on React Native: react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state, condition or the window's size. Fix: write one value for each style of the keyframe
+test.tsx:3:46: `keyframes()` cannot use `to` on React Native: react-native-reanimated reads each keyframe once, so its styles cannot differ by theme, breakpoint, orientation, state, condition or the window's size. Fix: write one value for each style of the keyframe
