@@ -38,6 +38,8 @@ export const box = (
 // @ts-expect-error a typography the theme does not define
 export const unknownTypography = <Box typography="nope" />
 setTheme('dark')
+// forgets the choice and follows the system again
+setTheme(null)
 // @ts-expect-error a theme the theme does not define
 setTheme('sepia')
 export const className = css({ typography: 'heading' })

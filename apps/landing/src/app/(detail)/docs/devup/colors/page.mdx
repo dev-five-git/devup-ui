@@ -154,6 +154,33 @@ Each variant also sets the page's native color scheme — form controls, scrollb
 
 Token names start with a letter, a digit or `_` and continue with letters, digits, `-`, `_` and `.` (`primary`, `text-primary`, `gray.100`); a dot becomes a dash in the CSS variable, so `gray.100` is `var(--gray-100)`. The build reports a name outside these characters, and two tokens of a variant that become the same variable (`a-b` and `a.b`), instead of emitting CSS the browser would drop. Colors, `length` and `shadow` tokens share one namespace of CSS variables, so a color `card` and a shadow `card` (both `--card`) are a build error too: rename one.
 
+## Switching Themes
+
+`ThemeScript` (in `<head>`) or `initTheme()` picks the first theme before the page paints: a theme the user chose wins, otherwise `dark` for a system that prefers it (with `auto`, the default) and the default theme for one that does not, following the system as it changes.
+
+```tsx
+import { getTheme, setTheme, useTheme } from '@devup-ui/react'
+
+function ThemeMenu() {
+  // the theme the page shows now, re-rendering when it changes
+  const theme = useTheme()
+  return (
+    <div>
+      {/* the user's choice: saved, wins over the system, reaches other tabs */}
+      <button
+        onClick={() => setTheme(getTheme() === 'dark' ? 'light' : 'dark')}
+      >
+        {theme}
+      </button>
+      {/* forget the choice: back to the system preference, followed again */}
+      <button onClick={() => setTheme(null)}>System</button>
+    </div>
+  )
+}
+```
+
+`setTheme(null)` removes the saved choice in every tab and applies the theme the page would start with, so `getTheme()` and `useTheme()` keep returning the theme in effect rather than `null`. Without `ThemeScript` or `initTheme()` on the page, it takes the system preference once.
+
 ## Semantic Color Naming
 
 Organize colors by their purpose rather than their appearance:
