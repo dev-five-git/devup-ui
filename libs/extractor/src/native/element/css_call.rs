@@ -244,16 +244,8 @@ impl<'a> Elements<'_> {
         let mark = self.replacements.len();
         self.visit_expression(expression);
         let (start, end) = (span.start as usize, span.end as usize);
-        let mut inner = Vec::new();
-        let mut index = mark;
-        while index < self.replacements.len() {
-            let (from, to, _) = self.replacements[index];
-            if start <= from && to <= end {
-                inner.push(self.replacements.remove(index));
-            } else {
-                index += 1;
-            }
-        }
+        // What visiting the expression changes lies in it
+        let mut inner = self.replacements.split_off(mark);
         inner.sort_by_key(|(from, to, _)| (*from, *to));
         let mut code = String::new();
         let mut at = start;

@@ -1202,7 +1202,8 @@ export function Card({ on, extra, children }) {
 #[case::css_only(
     "css_only",
     true,
-    "import { css } from '@devup-ui/react'\nexport const s = css({ m: 2 }, cond ? { p: 1 } : { p: 2 })\nexport const t = css(true, on ? undefined : { p: 1 }, on ? { m: 1 } : false, (other.css({ p: 1 })))"
+    "import { css } from '@devup-ui/react'\nexport const s = css({ m: 2 }, cond ? { p: 1 } : { p: 2 })\nexport const t = css(true, on ? undefined : { p: 1 }, on ? { m: 1 } : false, (other.css({ p: 1 })))\nexport const useU = () => css(t, { p: 1 }, { _landscape: { m: 1 } }, { m: 2 }, on ? {} : { p: 2, _landscape: { p: 3 } }, other`x`)
+export const useV = () => css({ _landscape: { m: 1 } }, { p: 2 })"
 )]
 #[case::text(
     "css_text",
