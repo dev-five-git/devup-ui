@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:3:18: `css()` cannot compile here on React Native: its styles differ by theme, breakpoint or orientation, which only a function component or a hook can read. Fix: call `css()` in the component that uses it
+test.tsx:4:22: `css()` cannot compile here on React Native: the build reads only the parts written in the call. Fix: pass each part to `css()` itself
+test.tsx:5:22: `css()` cannot use `a part` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
+test.tsx:5:30: `css()` cannot use `a part` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
+test.tsx:5:55: `css()` cannot use `?` on React Native: a condition in `css()` chooses between objects of styles. Fix: write each branch as an object, or as `null`
+test.tsx:6:24: `css()` cannot use `_hover` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state
+test.tsx:6:42: `css()` cannot use `[key]` on React Native: the build reads only keys written in a block. Fix: write the key itself
+test.tsx:7:18: `css` can only be called on React Native: the build compiles each call into styles. Fix: call it where the styles are used
+test.tsx:9:15: `<Box>` cannot use `className` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
+test.tsx:9:31: `css()` cannot use `_active` on React Native: a press style applies while an element is pressed, which `css()` cannot tell. Fix: give `_active` to the element
+test.tsx:9:91: `<Box>` cannot use `className` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props

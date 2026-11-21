@@ -1,0 +1,12 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { margin: 8 },
+	b: { padding: 4 },
+	c: { padding: 8 }
+});
+export const s = [__s.a, cond ? __s.b : __s.c];

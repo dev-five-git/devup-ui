@@ -15,10 +15,24 @@ impl Problem {
         }
     }
 
-    /// The error for the prop `prop` of `<element>`
+    /// The error for the prop `prop` of `<element>`, or the key `prop` of a
+    /// call such as `css()`
     pub(super) fn on(&self, element: &str, prop: &str) -> String {
+        let subject = if element.ends_with(')') {
+            element.to_string()
+        } else {
+            format!("<{element}>")
+        };
         format!(
-            "`<{element}>` cannot use `{prop}` on React Native: {}. Fix: {}",
+            "`{subject}` cannot use `{prop}` on React Native: {}. Fix: {}",
+            self.reason, self.fix
+        )
+    }
+
+    /// The error for a call such as `css()`
+    pub(super) fn call(&self, call: &str) -> String {
+        format!(
+            "`{call}` cannot compile here on React Native: {}. Fix: {}",
             self.reason, self.fix
         )
     }

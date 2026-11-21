@@ -430,7 +430,7 @@ fn style_code_orders_and_merges_choices() {
             ),
             Choice::Static(declarations(&[("padding", 5.0)])),
         ],
-        vec!["given".to_string()],
+        (vec![], vec!["given".to_string()]),
         &mut sheet,
         &VARS,
     )
@@ -448,11 +448,22 @@ fn style_code_orders_and_merges_choices() {
     assert!(
         style_code(
             vec![Choice::Empty],
-            vec!["given".to_string()],
+            (vec![], vec!["given".to_string()]),
             &mut sheet,
             &VARS
         )
         .is_none()
+    );
+    assert_eq!(
+        style_code(
+            vec![Choice::Empty],
+            (vec!["class".to_string()], vec!["given".to_string()]),
+            &mut sheet,
+            &VARS
+        )
+        .map(|style| style.code)
+        .as_deref(),
+        Some("[class, given]")
     );
 }
 
@@ -1076,7 +1087,7 @@ fn varied_choices_pick_by_breakpoint_and_theme() {
     let c = declarations(&[("padding", 3.0)]);
     let mut sheet = Sheet::new("s".to_string());
     let mut code = |choice: Choice| {
-        style_code(vec![choice], vec![], &mut sheet, &VARS)
+        style_code(vec![choice], (vec![], vec![]), &mut sheet, &VARS)
             .map_or_else(Default::default, |style| (style.code, style.reads))
     };
     // Three runs of breakpoints, the first without styles
@@ -1168,4 +1179,78 @@ export const outside = <Box _pressed={{ bg: '$primary' }} />"#;
 )]
 fn compiles_pressed(#[case] name: &str, #[case] runtime: bool, #[case] code: &str) {
     assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
+}
+
+const CSS_ELEMENTS: &str = r#"import { css as style, type DevupProps } from '@devup-ui/react'
+const card = style({ p: 4, borderRadius: '8px' })
+export function Card({ on, extra, children }) {
+  const title = style({ color: '$text', fontSize: [14, null, 18] })
+  return (
+    <Box className={card} p={2} style={extra}>
+      <Text className={style(title, on && { fontWeight: 700 }, on ? { color: 'red' } : null)}>{children}</Text>
+      <Box className={style({ _themeDark: { bg: '$surface' } }, false, undefined, [card])} />
+      <Box className={on ? card : undefined} />
+      <View style={style({ m: 1 }, extra)} />
+      <Box style={style({ p: 1 })} className={(0, card)} />
+      <Box style={[style(), (on, extra)]} />
+    </Box>
+  )
+}"#;
+
+#[rstest]
+#[case::css("css_calls", true, CSS_ELEMENTS)]
+#[case::css_only(
+    "css_only",
+    true,
+    "import { css } from '@devup-ui/react'\nexport const s = css({ m: 2 }, cond ? { p: 1 } : { p: 2 })"
+)]
+#[case::runtime_off(
+    "css_runtime_off",
+    false,
+    "import { css } from '@devup-ui/react'\nexport const s = css({ m: [1, 2] })"
+)]
+#[case::errors(
+    "css_errors",
+    true,
+    r#"import { css } from '@devup-ui/react'
+export const a = css({ bg: '$surface' })
+export const b = css(...parts)
+export const c = css('flex', `p-2`, cond ? { p: 1 } : 2)
+export const d = css({ _hover: { p: 1 }, [key]: 1 })
+export const f = css
+export function E() {
+  return <Box className="p-4" _active={{ p: 1 }} style={css({ _pressed: { m: 1 } })}><Box className /></Box>
+}"#
+)]
+fn compiles_css(#[case] name: &str, #[case] runtime: bool, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), runtime, code));
+}
+
+#[test]
+fn css_alone_drops_its_import() {
+    assert_snapshot!(
+        "css_alone",
+        compile_for(
+            NativePlatform::Android,
+            false,
+            "import { css } from '@devup-ui/react'\nimport { View } from 'react-native'\nexport const A = () => <View style={css({ p: 1 })} />"
+        )
+    );
+}
+
+#[test]
+fn css_alone_drops_its_import() {
+    assert_snapshot!(
+        "css_alone",
+        compile_for(
+            NativePlatform::Android,
+            false,
+            "import { css } from '@devup-ui/react'\nimport { View } from 'react-native'\nexport const A = () => <View style={css({ p: 1 })} />"
+        )
+    );
+}
+
+#[test]
+fn zz_probe() {
+    println!("{}", compile_themed(two_themes(), true, "export function A() { return <><Box _themeDark={{ bg: 'red' }} bg=\"blue\" /><Box _landscape={{ p: 1 }} p={2} /><Box _active={{ m: 1 }} m={2} /><Box _ios={{ m: 1 }} m={2} /></> }"));
 }

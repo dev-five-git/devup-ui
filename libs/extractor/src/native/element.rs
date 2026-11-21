@@ -3,7 +3,8 @@
 //! component its import is now bound to.
 
 use oxc_ast::ast::{
-    ArrayExpression, ArrayExpressionElement, ArrowFunctionExpression, ExportDefaultDeclaration,
+    ArrayExpression, ArrayExpressionElement, ArrowFunctionExpression, CallExpression,
+    ExportDefaultDeclaration,
     Expression, Function, FunctionBody, IdentifierReference, JSXAttribute, JSXAttributeItem,
     JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression,
     LogicalOperator, ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
@@ -29,6 +30,8 @@ use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
 use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
+
+mod css_call;
 
 /// The changes compiling a file makes, or why it cannot compile
 pub(super) struct Compiled {
@@ -174,6 +177,7 @@ pub(super) fn compile(
         target,
         scoping,
         components: &imports.components,
+        css: &imports.css,
         sheet: Sheet::new(fresh_name("__s", code)),
         units: fresh_name("__u", code),
         units_used: Cell::new(false),
@@ -187,7 +191,7 @@ pub(super) fn compile(
         replacements: imports.replacements,
         errors: imports.errors,
     };
-    if !visitor.components.is_empty() {
+    if !visitor.components.is_empty() || !visitor.css.is_empty() {
         visitor.visit_program(program);
     }
     let Elements {
@@ -233,6 +237,8 @@ enum Prop {
     As,
     /// `style`, given whole
     Style,
+    /// `className`, the styles `css()` gives
+    ClassName,
     /// A style prop
     Declares,
     /// `_ios`, `_android` or `_web`: styles for one platform
@@ -259,10 +265,7 @@ fn classify(name: &str) -> Prop {
         "_portrait" => Prop::When(State::Landscape(false)),
         "_landscape" => Prop::When(State::Landscape(true)),
         "_pressed" | "_active" => Prop::When(State::Pressed),
-        "className" => Prop::Unsupported(Problem::new(
-            "React Native has no class names",
-            "write the styles as props, or pass them in `style`",
-        )),
+        "className" => Prop::ClassName,
         "typography" => Prop::Declares,
         "styleOrder" | "styleVars" => Prop::Unsupported(Problem::new(
             "React Native has no stylesheet order and no CSS variables",
@@ -310,6 +313,8 @@ struct Elements<'s> {
     target: &'s NativeTarget,
     scoping: &'s Scoping,
     components: &'s FxHashMap<SymbolId, (ExportVariableKind, String)>,
+    /// The bindings of `css`
+    css: &'s FxHashSet<SymbolId>,
     sheet: Sheet,
     /// The name of the function converting values read at runtime
     units: String,
@@ -336,13 +341,22 @@ struct Elements<'s> {
 /// What the props of one element give its `style`
 #[derive(Default)]
 struct Styles {
+    /// The code of what `className` gives, before the style props
+    classes: Vec<String>,
     choices: Vec<Choice>,
+    /// The styles of the theme, orientation and press blocks, which apply
+    /// after the other styles whatever the order of the props, as their
+    /// selectors and media queries do on the web
+    blocks: Vec<Choice>,
     /// The code of each style given whole, in prop order
     given: Vec<String>,
     /// The span of each prop leaving the element once it takes `style`
     removed: Vec<Span>,
     /// The `style` prop, which leaves the element with the style props
     style: Option<Span>,
+    /// The `style` prop's value compiled, which it keeps when the element
+    /// takes no other style
+    kept: Option<Replacement>,
     /// A spread whose `style` cannot be read twice
     opaque_spread: Option<Span>,
 }
@@ -363,10 +377,26 @@ impl<'a> Visit<'a> for Elements<'_> {
                     "`{local}` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<{local} />`, or use a React Native component here"
                 ),
             ));
+        } else if self.is_css_reference(identifier) {
+            self.errors.push((
+                identifier.span.start,
+                format!(
+                    "`{}` can only be called on React Native: the build compiles each call into styles. Fix: call it where the styles are used",
+                    identifier.name
+                ),
+            ));
         }
     }
 
     fn visit_ts_type(&mut self, _: &TSType<'a>) {}
+
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if self.is_css(&call.callee) {
+            self.css_call(call);
+        } else {
+            walk::walk_call_expression(self, call);
+        }
+    }
 
     fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
         if let (Some(name), Some(init)) = (declarator.id.get_identifier_name(), &declarator.init)
@@ -626,7 +656,7 @@ impl<'a> Elements<'_> {
         }
         let retagged = tag.is_some();
         let press = self.press.take();
-        if let Some(press) = press.filter(|_| styles.choices.iter().any(Choice::pressed)) {
+        if let Some(press) = press.filter(|_| styles.blocks.iter().any(Choice::pressed)) {
             tag = self.pressable(press, kind, local, tag);
         }
         self.finish(element, styles, (tag, local), previous_end);
@@ -658,6 +688,7 @@ impl<'a> Elements<'_> {
                 return self.tag(attribute, local);
             }
             Prop::Style => self.given_style(attribute, span, local, styles),
+            Prop::ClassName => self.class_name(attribute, span, local, styles),
             Prop::Declares => {
                 styles.removed.push(span);
                 match self.value_choice(name, attribute.value.as_ref()) {
@@ -685,7 +716,7 @@ impl<'a> Elements<'_> {
                     attribute.span.start,
                     local,
                 );
-                styles.choices.extend(choices);
+                styles.blocks.extend(choices);
             }
             Prop::When(state) => {
                 styles.removed.push(span);
@@ -695,7 +726,7 @@ impl<'a> Elements<'_> {
                     attribute.span.start,
                     local,
                 );
-                styles.choices.extend(choices);
+                styles.blocks.extend(choices);
             }
             Prop::Unsupported(problem) => self.error(attribute.span.start, problem.on(local, name)),
             Prop::Pass => self.pass(attribute),
@@ -720,11 +751,11 @@ impl<'a> Elements<'_> {
     ) {
         match attribute_expression(attribute) {
             Some(expression) => {
-                styles
-                    .given
-                    .push(expression.span().source_text(self.code).to_string());
+                let code = self.rewritten(expression);
+                let at = expression.span();
+                styles.kept = Some((at.start as usize, at.end as usize, code.clone()));
+                styles.given.push(code);
                 styles.style = Some(span);
-                self.visit_expression(expression);
             }
             None => self.error(
                 attribute.span.start,
@@ -872,6 +903,7 @@ impl<'a> Elements<'_> {
     /// The styles of an object of style props
     fn object_choices(&mut self, object: &ObjectExpression<'a>, local: &str) -> Vec<Choice> {
         let mut choices = Vec::new();
+        let mut blocks = Vec::new();
         for property in &object.properties {
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 self.error(
@@ -901,8 +933,12 @@ impl<'a> Elements<'_> {
                 );
                 continue;
             };
-            choices.extend(self.object_property(&key, &property.value, property.span.start, local));
+            let block = matches!(classify(&key), Prop::Theme(_) | Prop::When(_));
+            let property_choices =
+                self.object_property(&key, &property.value, property.span.start, local);
+            if block { &mut blocks } else { &mut choices }.extend(property_choices);
         }
+        choices.extend(blocks);
         choices
     }
 
@@ -932,7 +968,7 @@ impl<'a> Elements<'_> {
                 return self.state_block(Some(value), (key, state), offset, local);
             }
             Prop::Unsupported(problem) => self.error(offset, problem.on(local, key)),
-            Prop::As | Prop::Style | Prop::Pass => self.error(
+            Prop::As | Prop::Style | Prop::ClassName | Prop::Pass => self.error(
                 offset,
                 Problem::new(
                     "a block holds only style props",
@@ -1128,14 +1164,23 @@ impl<'a> Elements<'_> {
         attributes_end: u32,
     ) {
         let Styles {
-            choices,
+            classes,
+            mut choices,
+            blocks,
             given,
             mut removed,
             style,
+            kept,
             opaque_spread,
         } = styles;
+        choices.extend(blocks);
         let pressed = choices.iter().any(Choice::pressed);
-        let mut style_code = style_code(choices, given, &mut self.sheet, &self.runtime.vars());
+        let mut style_code = style_code(
+            choices,
+            (classes, given),
+            &mut self.sheet,
+            &self.runtime.vars(),
+        );
         let reads = style_code
             .as_ref()
             .map_or_else(Reads::default, |style| style.reads);
@@ -1157,6 +1202,7 @@ impl<'a> Elements<'_> {
         }
         let Some(style_code) = style_code else {
             self.remove(&removed);
+            self.replacements.extend(kept);
             return;
         };
         let code = if wrapped {

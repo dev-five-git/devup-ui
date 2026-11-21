@@ -10,7 +10,7 @@ use oxc_ast::ast::{
 };
 use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::errors::{Problem, theme_api};
 use super::{NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
@@ -21,6 +21,8 @@ use crate::component::ExportVariableKind;
 pub(super) struct Imports {
     /// Each component's binding: its kind and local name
     pub components: FxHashMap<SymbolId, (ExportVariableKind, String)>,
+    /// The bindings of `css`, whose calls compile to style objects
+    pub css: FxHashSet<SymbolId>,
     pub replacements: Vec<Replacement>,
     pub errors: Vec<(u32, String)>,
     /// Whether the file imports the theme API of the runtime
@@ -58,6 +60,8 @@ enum Destination {
     Runtime(String),
     /// The package, as it is: a name only types read
     Kept,
+    /// Nowhere: the build compiles each use of the name away
+    Dropped,
 }
 
 /// Why an export of the package cannot be imported on React Native, or `None`
@@ -69,8 +73,8 @@ fn unsupported(name: &str, target: &NativeTarget) -> Option<Problem> {
             "React Native has no grid layout",
             "lay the items out with `Flex` and `flexWrap`",
         )),
-        "css" | "styled" => Some(Problem::new(
-            format!("`{name}` is not compiled for React Native yet"),
+        "styled" => Some(Problem::new(
+            "`styled` is not compiled for React Native yet",
             "write the styles as props of a Devup UI component",
         )),
         name if is_theme_api(name) => (!target.runtime).then(|| theme_api(name)),
@@ -133,6 +137,7 @@ impl Imports {
                         Destination::Native(native) => natives.push(native),
                         Destination::Runtime(name) => runtime.push(name),
                         Destination::Kept => kept.push(specifier_code(specifier, code)),
+                        Destination::Dropped => {}
                     }
                 }
                 specifier => self.errors.push((
@@ -145,7 +150,8 @@ impl Imports {
                 )),
             }
         }
-        if natives.is_empty() && runtime.is_empty() {
+        let dropped = natives.len() + runtime.len() + kept.len() < declaration.specifiers.iter().flatten().count();
+        if natives.is_empty() && runtime.is_empty() && !dropped {
             return;
         }
         self.theme_api |= !runtime.is_empty();
@@ -181,6 +187,10 @@ impl Imports {
             return Destination::Kept;
         }
         let local = specifier.local.name.to_string();
+        if name == "css" {
+            self.css.extend(specifier.local.symbol_id.get());
+            return Destination::Dropped;
+        }
         if is_theme_api(&name) {
             return Destination::Runtime(renamed(&name, local));
         }
