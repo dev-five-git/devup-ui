@@ -1237,20 +1237,3 @@ fn css_alone_drops_its_import() {
         )
     );
 }
-
-#[test]
-fn css_alone_drops_its_import() {
-    assert_snapshot!(
-        "css_alone",
-        compile_for(
-            NativePlatform::Android,
-            false,
-            "import { css } from '@devup-ui/react'\nimport { View } from 'react-native'\nexport const A = () => <View style={css({ p: 1 })} />"
-        )
-    );
-}
-
-#[test]
-fn zz_probe() {
-    println!("{}", compile_themed(two_themes(), true, "export function A() { return <><Box _themeDark={{ bg: 'red' }} bg=\"blue\" /><Box _landscape={{ p: 1 }} p={2} /><Box _active={{ m: 1 }} m={2} /><Box _ios={{ m: 1 }} m={2} /></> }"));
-}
