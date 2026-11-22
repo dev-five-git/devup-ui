@@ -4,11 +4,7 @@ import { getTranslations } from 'next-intl/server'
 
 import { Link } from '@/i18n/navigation'
 
-export async function GetStartedButton({
-  locale = 'en',
-}: {
-  locale?: Locale
-}) {
+export async function GetStartedButton({ locale = 'en' }: { locale?: Locale }) {
   const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <Link

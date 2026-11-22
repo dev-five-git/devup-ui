@@ -1,11 +1,11 @@
 import { Box } from '@devup-ui/react'
 import type { Metadata } from 'next'
 
-import { Container } from '@/components/Container'
-import { Discord } from '@/components/Discord'
 import { Bench } from '@/app/Bench'
 import { Feature } from '@/app/Feature'
 import { TopBanner } from '@/app/TopBanner'
+import { Container } from '@/components/Container'
+import { Discord } from '@/components/Discord'
 
 const description =
   'Zero Config, Zero FOUC, Zero Runtime을 실현하는 CSS-in-JS 전처리기'
