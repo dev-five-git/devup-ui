@@ -1,6 +1,6 @@
 'use client'
 import { Box, css, Flex, Text, VStack } from '@devup-ui/react'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
 
 import { Link, usePathname } from '@/i18n/navigation'
@@ -42,6 +42,7 @@ function IndexMenu({
 export function RightIndex() {
   const pathname = usePathname()
   const locale = useLocale()
+  const t = useTranslations('RightIndex')
   const isDocs = pathname.startsWith('/docs/')
   const isComponents = pathname.startsWith('/components/')
   const editUrl = isDocs
@@ -100,7 +101,7 @@ export function RightIndex() {
       <VStack>
         <Flex alignItems="center" gap="10px" py="6px">
           <Text color="$text" flex="1" typography="captionBold">
-            Contents
+            {t('contents')}
           </Text>
         </Flex>
         {menus.map((menu) => (
@@ -130,7 +131,7 @@ export function RightIndex() {
             textAlign="right"
             typography="small"
           >
-            Edit this page
+            {t('editThisPage')}
           </Text>
           <svg
             aria-hidden="true"

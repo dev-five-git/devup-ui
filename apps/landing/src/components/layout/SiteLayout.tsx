@@ -2,7 +2,7 @@ import { Box, css, globalCss, ThemeScript } from '@devup-ui/react'
 import { resetCss } from '@devup-ui/reset-css'
 import ReactLenis from 'lenis/react'
 import { NextIntlClientProvider } from 'next-intl'
-import { setRequestLocale } from 'next-intl/server'
+import { getMessages, setRequestLocale } from 'next-intl/server'
 
 import { AnchorScroll } from '@/components/AnchorScroll'
 import { Footer } from '@/components/Footer'
@@ -115,7 +115,7 @@ globalCss({
   },
 })
 
-export function SiteLayout({
+export async function SiteLayout({
   children,
   locale = 'en',
 }: Readonly<{
@@ -123,6 +123,7 @@ export function SiteLayout({
   locale?: 'en' | 'ko'
 }>) {
   setRequestLocale(locale)
+  const messages = await getMessages({ locale })
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
@@ -170,12 +171,12 @@ export function SiteLayout({
         <noscript>
           <span data-javascript-disabled="" hidden />
         </noscript>
-        <NextIntlClientProvider locale={locale} messages={{}}>
+        <NextIntlClientProvider locale={locale} messages={messages}>
           <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
             <AnchorScroll />
             <SearchModal />
             <Box bg="$background">
-              <Header />
+              <Header locale={locale} />
               <Box as="main">{children}</Box>
             </Box>
             <Footer />

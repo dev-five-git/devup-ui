@@ -1,0 +1,57 @@
+{
+  "ComponentsMenu": {
+    "form": "Form",
+    "layout": "Layout",
+    "overview": "Overview",
+    "theme": "Theme"
+  },
+  "DocsMenu": {
+    "breakpoints": "Breakpoints",
+    "buildErrors": "Build Errors",
+    "colors": "Colors",
+    "coreConcepts": "Core Concepts",
+    "customShorthands": "Custom Shorthands",
+    "devupFigmaPlugin": "Devup Figma Plugin",
+    "devupJsonConfiguration": "devup.json Configuration",
+    "features": "Features",
+    "figmaAndThemeIntegration": "Figma and Theme Integration",
+    "figmaPlugin": "Figma Plugin",
+    "groupSelector": "Group Selector",
+    "installation": "Installation",
+    "length": "Length",
+    "limitations": "Supported Syntax & Limitations",
+    "migration": "Migration",
+    "migrationOverview": "Overview",
+    "nmBase": "N/M Base",
+    "noDependencies": "No Dependencies",
+    "optimizeCss": "Optimize CSS",
+    "overview": "Overview",
+    "quickStart": "Quick Start",
+    "selector": "Selector",
+    "shadow": "Shadow",
+    "styleProps": "Style Props",
+    "styleStorage": "Style Storage",
+    "typeInferenceSystem": "Type Inference System",
+    "typography": "Typography",
+    "whatIsDevup": "What is devup?",
+    "zeroRuntime": "Zero Runtime"
+  },
+  "Header": {
+    "components": "Components",
+    "docs": "Docs",
+    "menuButton": "Menu Button",
+    "primaryNavigation": "Primary navigation",
+    "searchPlaceholder": "Search documentation...",
+    "showcase": "Showcase",
+    "team": "Team",
+    "toggleTheme": "Toggle color theme"
+  },
+  "RightIndex": {
+    "contents": "Contents",
+    "editThisPage": "Edit this page"
+  },
+  "Search": {
+    "loading": "Loading...",
+    "noResults": "No recent searches"
+  }
+}

@@ -1,11 +1,13 @@
 'use client'
 
 import { Box, css, getTheme, setTheme } from '@devup-ui/react'
+import { useTranslations } from 'next-intl'
 
 export function ThemeSwitch() {
+  const t = useTranslations('Header')
   return (
     <Box
-      aria-label="Toggle color theme"
+      aria-label={t('toggleTheme')}
       as="button"
       bg="transparent"
       border="0"

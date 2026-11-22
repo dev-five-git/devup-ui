@@ -20,18 +20,25 @@ test('English remains the default and Korean overview is translated', async ({
     page.getByRole('heading', { name: 'Devup UI란?', exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByRole('link', { name: 'Edit this page' }),
+    page.getByRole('link', { name: '이 페이지 편집' }),
   ).toHaveAttribute(
     'href',
     /src\/app\/\(detail\)\/docs\/overview\/page\.ko\.mdx$/u,
   )
+  await expect(
+    page.getByRole('navigation', { name: '주요 메뉴' }).getByText('문서'),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: '색상 테마 전환' }),
+  ).toBeVisible()
+  await expect(page.getByPlaceholder('문서 검색...')).toBeVisible()
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
     'https://devup-ui.com/ko/docs/overview',
   )
 
   await page
-    .getByRole('link', { name: 'Build Errors', exact: true })
+    .getByRole('link', { name: '빌드 오류', exact: true })
     .first()
     .click()
   await expect(page).toHaveURL(/(?<!ko)\/docs\/build-errors$/u)
@@ -71,6 +78,8 @@ test('Korean search finds translated content and English fallback pages', async 
       .filter({ hasText: 'Build Errors' })
       .last(),
   ).toBeVisible()
+  await page.goto('/ko/docs/overview?search=1&query=zzzz-no-match')
+  await expect(page.getByText('검색 결과가 없습니다')).toBeVisible()
 })
 
 test('Korean routes render translated or English content without JavaScript', async ({

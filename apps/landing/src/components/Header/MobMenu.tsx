@@ -1,4 +1,5 @@
 import { Box, css, Flex, Text } from '@devup-ui/react'
+import { getTranslations } from 'next-intl/server'
 
 import { Link } from '@/i18n/navigation'
 
@@ -8,7 +9,8 @@ import { HeaderInput } from './HeaderInput'
 import { HeaderInputWrap } from './HeaderInputWrap'
 import { MobMenuWrap } from './MobMenuWrap'
 
-export function MobMenu() {
+export async function MobMenu({ locale }: { locale: 'en' | 'ko' }) {
+  const t = await getTranslations({ locale, namespace: 'Header' })
   return (
     <MobMenuWrap>
       <Box px={4} py={2.5}>
@@ -25,7 +27,7 @@ export function MobMenu() {
         >
           <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
-              Docs
+              {t('docs')}
             </Text>
           </Flex>
         </Link>
@@ -38,7 +40,7 @@ export function MobMenu() {
         >
           <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
-              Components
+              {t('components')}
             </Text>
           </Flex>
         </Link>
@@ -51,7 +53,7 @@ export function MobMenu() {
         >
           <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
-              Team
+              {t('team')}
             </Text>
           </Flex>
         </Link>
