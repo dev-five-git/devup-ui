@@ -1,4 +1,5 @@
 import { Box, css, Flex, Text } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
 import { getTranslations } from 'next-intl/server'
 
 import { Link } from '@/i18n/navigation'
@@ -9,7 +10,7 @@ import { HeaderInput } from './HeaderInput'
 import { HeaderInputWrap } from './HeaderInputWrap'
 import { MobMenuWrap } from './MobMenuWrap'
 
-export async function MobMenu({ locale }: { locale: 'en' | 'ko' }) {
+export async function MobMenu({ locale }: { locale: Locale }) {
   const t = await getTranslations({ locale, namespace: 'Header' })
   return (
     <MobMenuWrap>

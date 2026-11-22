@@ -1,7 +1,7 @@
 import { Box, css, globalCss, ThemeScript } from '@devup-ui/react'
 import { resetCss } from '@devup-ui/reset-css'
 import ReactLenis from 'lenis/react'
-import { NextIntlClientProvider } from 'next-intl'
+import { type Locale, NextIntlClientProvider } from 'next-intl'
 import { getMessages, setRequestLocale } from 'next-intl/server'
 
 import { AnchorScroll } from '@/components/AnchorScroll'
@@ -120,7 +120,7 @@ export async function SiteLayout({
   locale = 'en',
 }: Readonly<{
   children: React.ReactNode
-  locale?: 'en' | 'ko'
+  locale?: Locale
 }>) {
   setRequestLocale(locale)
   const messages = await getMessages({ locale })

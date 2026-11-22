@@ -23,7 +23,7 @@ function mergeMessages(overrides: MessageOverrides): Messages {
 const koreanMessages = mergeMessages(koreanOverrides)
 
 export default getRequestConfig(async ({ requestLocale }) => {
-  const locale = (await requestLocale) ?? 'en'
+  const locale = (await requestLocale) === 'ko' ? 'ko' : 'en'
   return {
     locale,
     messages: locale === 'ko' ? koreanMessages : en,

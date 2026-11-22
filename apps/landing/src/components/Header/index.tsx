@@ -1,4 +1,5 @@
 import { Box, Center, css, Flex } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
 import { getTranslations } from 'next-intl/server'
 import { Suspense } from 'react'
 
@@ -33,7 +34,7 @@ function HeaderIconWrap({ children }: { children: React.ReactNode }) {
   )
 }
 
-export async function Header({ locale }: { locale: 'en' | 'ko' }) {
+export async function Header({ locale }: { locale: Locale }) {
   const t = await getTranslations({ locale, namespace: 'Header' })
   const top = (
     <Flex alignItems="center">
