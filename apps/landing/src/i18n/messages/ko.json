@@ -1,4 +1,10 @@
 {
+  "ComponentPage": {
+    "copy": "복사",
+    "description": "{name} 컴포넌트",
+    "examples": "예제",
+    "showCode": "코드 보기"
+  },
   "ComponentsMenu": {
     "form": "폼",
     "layout": "레이아웃",

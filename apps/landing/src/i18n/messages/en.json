@@ -1,4 +1,10 @@
 {
+  "ComponentPage": {
+    "copy": "Copy",
+    "description": "{name} component",
+    "examples": "Examples",
+    "showCode": "Show Code"
+  },
   "ComponentsMenu": {
     "form": "Form",
     "layout": "Layout",
