@@ -141,6 +141,17 @@ export function getTranslatedRoutes(): string[] {
     .sort()
 }
 
+/**
+ * The `/ko` routes without a Korean page, each answered by an HTML refresh to
+ * its English page. Empty once every page is translated.
+ */
+export function getUntranslatedRoutes(): string[] {
+  const translated = new Set(getTranslatedRoutes())
+  return EXPECTED_EXPORTED_ROUTES.filter(
+    (route) => route.startsWith('/ko') && !translated.has(route),
+  )
+}
+
 function toOutputPath(path: string): string {
   return relative(LANDING_OUTPUT_ROOT, path).split(sep).join('/')
 }

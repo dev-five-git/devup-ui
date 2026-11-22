@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { getUntranslatedRoutes } from './exported-routes'
+
 test('English remains the default and Korean overview is translated', async ({
   page,
 }) => {
@@ -216,4 +218,20 @@ test('Korean component pages translate their prose and keep API names', async ({
   await expect(page.getByText('준비 중', { exact: true })).toBeVisible()
   await page.goto('/components/tooltip')
   await expect(page.getByText('Coming Soon', { exact: true })).toBeVisible()
+})
+
+test('untranslated Korean routes fall back to English without JavaScript', async ({
+  browser,
+}) => {
+  const untranslated = getUntranslatedRoutes()
+  test.skip(untranslated.length === 0, 'Every page has a Korean translation')
+  const context = await browser.newContext({ javaScriptEnabled: false })
+  const page = await context.newPage()
+  for (const route of untranslated) {
+    const english = route.slice('/ko'.length) || '/'
+    await page.goto(route)
+    await expect(page).toHaveURL(new URL(english, 'http://localhost:3099').href)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  }
+  await context.close()
 })
