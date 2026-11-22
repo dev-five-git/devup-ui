@@ -1,9 +1,6 @@
 import { COMPONENT_GROUPS } from '@/constants'
 
-import {
-  ComponentDoc,
-  getComponentMetadata,
-} from '../ComponentDoc'
+import { ComponentDoc, getComponentMetadata } from '../ComponentDoc'
 
 export const generateMetadata = async ({
   params,

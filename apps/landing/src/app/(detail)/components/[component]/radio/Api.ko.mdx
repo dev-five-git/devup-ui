@@ -1,0 +1,133 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Radio` props는 input HTML 속성(`type` 제외)을 확장합니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: '라디오의 레이블 내용',
+      type: '`React.ReactNode`',
+      default: '`undefined`',
+    },
+    {
+      property: 'checked',
+      description: '라디오의 선택 여부',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: '라디오의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'variant',
+      description: '라디오의 시각적 variant',
+      type: "`'default' | 'button'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'firstButton',
+      description: '버튼 그룹의 첫 번째 버튼인지 여부(button variant 전용)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'lastButton',
+      description: '버튼 그룹의 마지막 버튼인지 여부(button variant 전용)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'classNames',
+      description: '내부 요소에 적용할 사용자 정의 클래스 이름',
+      type: '```{<br>  label?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'styles',
+      description: '내부 요소에 적용할 사용자 정의 인라인 스타일',
+      type: '```{<br>  label?: React.CSSProperties<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: '라디오의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  border?: string<br>  text?: string<br>  bg?: string<br>  hoverBg?: string<br>  hoverBorder?: string<br>  hoverColor?: string<br>  checkedBg?: string<br>  checkedBorder?: string<br>  checkedColor?: string<br>  disabledBg?: string<br>  disabledColor?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
+
+###### RadioGroup API
+
+`RadioGroup`은 라디오 버튼 그룹을 관리하는 컴포넌트입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'options',
+      description: '라디오 그룹의 옵션 배열',
+      type: '```{ value: string | number | boolean; label: React.ReactNode }[]```',
+      default: '-',
+    },
+    {
+      property: 'value',
+      description: '라디오 그룹의 제어 값',
+      type: '`string | number | boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultValue',
+      description: '라디오 그룹의 기본값(비제어)',
+      type: '`string | number | boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'onChange',
+      description: '선택한 값이 바뀔 때 호출되는 콜백',
+      type: '`(value: string | number | boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: '그룹 안 모든 라디오의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'direction',
+      description: '라디오 그룹의 배치 방향',
+      type: "`'row' | 'column'`",
+      default: "`'row'`",
+    },
+    {
+      property: 'variant',
+      description: '라디오 버튼의 시각적 variant',
+      type: "`'default' | 'button'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'colors',
+      description: '사용자 정의 색상 변수(Radio의 colors와 동일)',
+      type: '`RadioColors`',
+      default: '`undefined`',
+    },
+    {
+      property: 'classNames',
+      description: '내부 요소에 적용할 사용자 정의 클래스 이름',
+      type: '```{<br>  label?: string<br>  container?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'styles',
+      description: '내부 요소에 적용할 사용자 정의 인라인 스타일',
+      type: '```{<br>  label?: React.CSSProperties<br>  container?: React.CSSProperties<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

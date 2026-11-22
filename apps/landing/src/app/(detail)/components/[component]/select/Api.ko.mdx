@@ -1,0 +1,183 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+Select 컴포넌트는 여러 부분으로 구성된 컴파운드 컴포넌트입니다.
+
+###### Select
+
+select에 컨텍스트를 제공하는 루트 컴포넌트입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'select의 내용(Trigger, Container, Options)',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'value',
+      description: 'select의 제어 값',
+      type: '`string | string[]`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultValue',
+      description: 'select의 기본값(비제어)',
+      type: '`string | string[]`',
+      default: '`undefined`',
+    },
+    {
+      property: 'onChange',
+      description: '선택한 값이 바뀔 때 호출되는 콜백',
+      type: '`(value: string) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'open',
+      description: 'select 드롭다운의 열림 여부(제어)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultOpen',
+      description: 'select 드롭다운의 기본 열림 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'onOpenChange',
+      description: '열림 상태가 바뀔 때 호출되는 콜백',
+      type: '`(open: boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'type',
+      description: 'select의 선택 모드',
+      type: "`'default' | 'radio' | 'checkbox'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'typography',
+      description: '테마의 타이포그래피 스타일 키',
+      type: '`DevupThemeTypographyKeys`',
+      default: '`undefined`',
+    },
+    {
+      property: 'options',
+      description: '컴파운드 컴포넌트 없이 옵션을 정의하는 축약형',
+      type: '```{ label?: string; disabled?: boolean; value: string; showCheck?: boolean; onClick?: (value, e) => void }[]```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'select의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  border?: string<br>  inputBackground?: string<br>  inputDisabledBackground?: string<br>  inputDisabledText?: string<br>  base10?: string<br>  title?: string<br>  selectDisabled?: string<br>  primaryBg?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
+
+###### SelectTrigger
+
+드롭다운을 열고 닫는 버튼입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: '트리거의 내용',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'asChild',
+      description: 'Button 대신 자식 요소로 렌더링할지 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+  ]}
+/>
+
+###### SelectContainer
+
+옵션을 담는 드롭다운 컨테이너입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: '컨테이너의 내용(Options)',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'showConfirmButton',
+      description: '확인 버튼을 표시할지 여부(checkbox type 전용)',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'confirmButtonText',
+      description: '확인 버튼의 텍스트',
+      type: '`string`',
+      default: "`'D�'`",
+    },
+    {
+      property: 'x',
+      description: '드롭다운 위치의 가로 오프셋',
+      type: '`number`',
+      default: '`0`',
+    },
+    {
+      property: 'y',
+      description: '드롭다운 위치의 세로 오프셋',
+      type: '`number`',
+      default: '`0`',
+    },
+  ]}
+/>
+
+###### SelectOption
+
+select 드롭다운 안의 개별 옵션입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: '옵션의 내용',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'value',
+      description: '옵션의 값',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: '옵션의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'showCheck',
+      description: '선택했을 때 체크 아이콘을 표시할지 여부',
+      type: '`boolean`',
+      default: '`true`',
+    },
+    {
+      property: 'onClick',
+      description: '옵션의 사용자 정의 클릭 핸들러',
+      type: '`(value: string | undefined, e?: React.MouseEvent) => void`',
+      default: '`undefined`',
+    },
+  ]}
+/>
+
+###### SelectDivider
+
+옵션 사이를 시각적으로 나누는 구분선입니다.

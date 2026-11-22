@@ -1,7 +1,7 @@
 import { Box, Flex, Text, VStack } from '@devup-ui/react'
 import type { MDXProps } from 'mdx/types'
 import type { Metadata } from 'next'
-import type { Locale } from 'next-intl'
+import { createTranslator, type Locale } from 'next-intl'
 import { getTranslations } from 'next-intl/server'
 import type { ComponentType } from 'react'
 
@@ -12,6 +12,7 @@ import { CustomParagraph } from '@/components/mdx/components/CustomParagraph'
 import { CustomPre } from '@/components/mdx/components/CustomPre'
 import { CustomStrong } from '@/components/mdx/components/CustomStrong'
 import { PropsTable } from '@/components/PropsTable'
+import { getLocaleMessages } from '@/i18n/messages'
 import { getDemos } from '@/utils/get-demos'
 
 import MdxCard from './MdxCard'
@@ -24,11 +25,15 @@ export function getComponentName(component: string) {
     .join(' ')
 }
 
-export async function getComponentMetadata(
+export function getComponentMetadata(
   component: string,
   locale: Locale = 'en',
-): Promise<Metadata> {
-  const t = await getTranslations({ locale, namespace: 'ComponentPage' })
+): Metadata {
+  const t = createTranslator({
+    locale,
+    messages: getLocaleMessages(locale),
+    namespace: 'ComponentPage',
+  })
   const name = getComponentName(component)
   const englishPath = `/components/${component}`
   const path = locale === 'en' ? englishPath : `/${locale}${englishPath}`

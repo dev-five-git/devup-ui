@@ -1,0 +1,70 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Input` props는 input HTML 속성(`type` 제외)을 확장합니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'type',
+      description: '입력 필드의 type(file 타입 제외)',
+      type: "`Exclude<InputType, 'file'>`",
+      default: '`undefined`',
+    },
+    {
+      property: 'typography',
+      description: '테마의 타이포그래피 스타일 키',
+      type: '`keyof DevupThemeTypography`',
+      default: '`undefined`',
+    },
+    {
+      property: 'error',
+      description: '입력 필드의 오류 상태 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'errorMessage',
+      description: '입력 필드 아래에 표시할 오류 메시지',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'allowClear',
+      description: '입력값이 있을 때 지우기 버튼을 표시할지 여부',
+      type: '`boolean`',
+      default: '`true`',
+    },
+    {
+      property: 'onClear',
+      description: '지우기 버튼을 클릭했을 때 호출되는 콜백',
+      type: '`() => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'icon',
+      description: '입력 필드 왼쪽에 표시할 아이콘',
+      type: '`React.ReactNode`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: '입력 필드의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'classNames',
+      description: '내부 요소에 적용할 사용자 정의 클래스 이름',
+      type: '```{<br>  container?: string<br>  input?: string<br>  icon?: string<br>  errorMessage?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: '입력 필드의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  error?: string<br>  text?: string<br>  base?: string<br>  iconBold?: string<br>  border?: string<br>  inputBackground?: string<br>  primaryFocus?: string<br>  negative20?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

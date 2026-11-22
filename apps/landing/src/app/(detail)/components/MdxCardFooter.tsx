@@ -1,6 +1,7 @@
 'use client'
 
 import { Box, Center, Flex, Grid, Image, Text, VStack } from '@devup-ui/react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 
 import IconCode from '@/components/icons/IconCode'
@@ -12,6 +13,7 @@ export default function MdxCardFooter({
   code: string
   children: React.ReactNode
 }) {
+  const t = useTranslations('ComponentPage')
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -53,7 +55,7 @@ export default function MdxCardFooter({
           w="fit-content"
         >
           <IconCode open={isOpen} />
-          <Text>Show Code</Text>
+          <Text>{t('showCode')}</Text>
         </Center>
       </Flex>
       <Grid
@@ -92,7 +94,7 @@ export default function MdxCardFooter({
                 src={copied ? '/icons/copied.svg' : '/icons/copy-code.svg'}
               />
               <Text color="$captionBold" typography="caption">
-                Copy
+                {t('copy')}
               </Text>
             </Center>
           </Box>

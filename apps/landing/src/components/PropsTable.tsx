@@ -12,6 +12,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from './mdx/components/Table'
+import { PropsTableLabel } from './PropsTableLabel'
 
 interface ComponentProp {
   property: string
@@ -45,17 +46,27 @@ export const PropsTable = async (props: PropTableProps) => {
       <Table border={0} style={{ minWidth: '600px' }}>
         <TableHead>
           <TableRow>
-            <TableHeaderCell>Prop</TableHeaderCell>
-            <TableHeaderCell>description</TableHeaderCell>
-            <TableHeaderCell>Type</TableHeaderCell>
-            <TableHeaderCell>Default</TableHeaderCell>
+            <TableHeaderCell>
+              <PropsTableLabel name="prop" />
+            </TableHeaderCell>
+            <TableHeaderCell>
+              <PropsTableLabel name="description" />
+            </TableHeaderCell>
+            <TableHeaderCell>
+              <PropsTableLabel name="type" />
+            </TableHeaderCell>
+            <TableHeaderCell>
+              <PropsTableLabel name="default" />
+            </TableHeaderCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {componentProps.length === 0 && (
             <TableRow>
               <TableCell colSpan={3}>
-                <Text>No props to display</Text>
+                <Text>
+                  <PropsTableLabel name="empty" />
+                </Text>
               </TableCell>
             </TableRow>
           )}

@@ -1,0 +1,70 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Toggle` 컴포넌트의 props입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'value',
+      description: '토글의 제어 값',
+      type: '`boolean | null`',
+      default: '`null`',
+    },
+    {
+      property: 'defaultValue',
+      description: '토글의 기본값(비제어)',
+      type: '`boolean | null`',
+      default: '`null`',
+    },
+    {
+      property: 'onChange',
+      description: '토글 값이 바뀔 때 호출되는 콜백',
+      type: '`(value: boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: '토글의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'variant',
+      description: '토글의 시각적 variant',
+      type: "`'default' | 'switch'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'className',
+      description: '토글 컨테이너에 추가할 클래스 이름',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'style',
+      description: '토글 컨테이너의 인라인 스타일',
+      type: '`React.CSSProperties`',
+      default: '`undefined`',
+    },
+    {
+      property: 'classNames',
+      description: '내부 요소에 적용할 사용자 정의 클래스 이름',
+      type: '```{<br>  toggle?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'styles',
+      description: '내부 요소에 적용할 사용자 정의 인라인 스타일',
+      type: '```{<br>  toggle?: React.CSSProperties<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: '토글의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  bg?: string<br>  hoverBg?: string<br>  primaryHoverBg?: string<br>  disabledBg?: string<br>  switchHoverOutline?: string<br>  switchShadow?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

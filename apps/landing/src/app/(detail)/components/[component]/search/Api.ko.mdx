@@ -1,0 +1,48 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Search` props는 `Input` props(`type` 제외)를 확장하므로 `value`, `defaultValue`, `onChange`, `error`, `errorMessage`, `classNames`, `colors`가 [Textbox](/components/textbox)에서와 같이 동작합니다. `<input type="search">`를 렌더링하므로 보조 기술은 이를 검색 상자로 안내합니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'onSearch',
+      description:
+        'Enter를 누르면 현재 검색어와 함께 호출되는 콜백(IME 조합을 확정하는 Enter에서는 호출되지 않음)',
+      type: '`(value: string) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'icon',
+      description: '입력 필드 왼쪽의 아이콘. `null`이면 숨깁니다',
+      type: '`React.ReactNode`',
+      default: '돋보기 아이콘',
+    },
+    {
+      property: 'allowClear',
+      description:
+        '검색어가 있을 때 지우기 버튼을 표시하고 Escape로 지울 수 있게 할지 여부',
+      type: '`boolean`',
+      default: '`true`',
+    },
+    {
+      property: 'onClear',
+      description: '지우기 버튼이나 Escape로 검색어를 지웠을 때 호출되는 콜백',
+      type: '`() => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'enterKeyHint',
+      description: '가상 키보드의 Enter 키 레이블',
+      type: '`string`',
+      default: "`'search'`",
+    },
+    {
+      property: 'disabled',
+      description: '검색 입력 필드의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+  ]}
+/>

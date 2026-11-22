@@ -1,0 +1,72 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+Stepper 컴포넌트는 여러 부분으로 구성된 컴파운드 컴포넌트입니다.
+
+###### Stepper
+
+stepper에 컨텍스트를 제공하는 루트 컴포넌트입니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'stepper의 내용(Container, Buttons, Input)',
+      type: '`React.ReactNode`',
+      default: '`undefined`',
+    },
+    {
+      property: 'value',
+      description: 'stepper의 제어 값',
+      type: '`number`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultValue',
+      description: 'stepper의 기본값(비제어)',
+      type: '`number`',
+      default: '`0`',
+    },
+    {
+      property: 'onValueChange',
+      description: 'stepper 값이 바뀔 때 호출되는 콜백',
+      type: '`(value: number) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'min',
+      description: '허용되는 최솟값',
+      type: '`number`',
+      default: '`0`',
+    },
+    {
+      property: 'max',
+      description: '허용되는 최댓값',
+      type: '`number`',
+      default: '`100`',
+    },
+    {
+      property: 'type',
+      description: '값을 input으로 편집할 수 있게 할지, 텍스트로 표시할지 여부',
+      type: "`'input' | 'text'`",
+      default: "`'input'`",
+    },
+  ]}
+/>
+
+###### StepperContainer
+
+stepper 요소를 감싸는 flex 컨테이너입니다.
+
+###### StepperDecreaseButton
+
+stepper 값을 1 줄이는 버튼입니다. 값이 min에 도달하면 자동으로 비활성화됩니다.
+
+###### StepperIncreaseButton
+
+stepper 값을 1 늘리는 버튼입니다. 값이 max에 도달하면 자동으로 비활성화됩니다.
+
+###### StepperInput
+
+현재 값을 표시합니다. type이 'input'이면 사용자가 값을 직접 편집할 수 있습니다.
