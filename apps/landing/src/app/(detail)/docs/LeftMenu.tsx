@@ -13,7 +13,10 @@ export function LeftMenu() {
       <MenuItem to="/docs/installation">{t('installation')}</MenuItem>
       <MenuItem
         subMenu={[
-          { to: '/docs/core-concepts/zero-runtime', children: t('zeroRuntime') },
+          {
+            to: '/docs/core-concepts/zero-runtime',
+            children: t('zeroRuntime'),
+          },
           {
             to: '/docs/core-concepts/no-dependencies',
             children: t('noDependencies'),
