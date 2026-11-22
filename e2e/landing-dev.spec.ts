@@ -78,7 +78,9 @@ for (const [route, target] of routes) {
     await expect(
       page.locator('vite-error-overlay, nextjs-portal [data-nextjs-dialog]'),
     ).toHaveCount(0)
-    const theme = page.getByRole('button', { name: 'Toggle color theme' })
+    const theme = page.getByRole('button', {
+      name: target.startsWith('/ko') ? '색상 테마 전환' : 'Toggle color theme',
+    })
     const initialTheme = await page.locator('html').getAttribute('data-theme')
     await theme.click()
     await expect(page.locator('html')).toHaveAttribute(
