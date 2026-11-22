@@ -1,10 +1,12 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
+import { useTranslations } from 'next-intl'
 
 interface ShowcaseCardProps {
   name: string
   image: string
 }
 export function ShowcaseCard({ name, image }: ShowcaseCardProps) {
+  const t = useTranslations('Showcase')
   return (
     <VStack cursor="pointer" data-group gap="8px">
       <Box h="auto" overflow="hidden" w="100%">
@@ -30,7 +32,7 @@ export function ShowcaseCard({ name, image }: ShowcaseCardProps) {
         </Text>
         <Flex alignItems="center" gap="4px">
           <Text color="$caption" typography="small">
-            Visit Site
+            {t('visitSite')}
           </Text>
           <Box
             bg="$text"

@@ -11,6 +11,11 @@ import { TopBanner } from '../TopBanner'
 export const metadata: Metadata = {
   alternates: {
     canonical: '/',
+    languages: {
+      en: '/',
+      ko: '/ko',
+      'x-default': '/',
+    },
   },
 }
 

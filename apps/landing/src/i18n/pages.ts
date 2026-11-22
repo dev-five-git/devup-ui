@@ -11,6 +11,13 @@ interface TranslatedPage {
 
 // Keep translated content beside its English source; share the original layout.
 export const translatedPages: Record<string, TranslatedPage | undefined> = {
+  // Home and showcase render inside the shared site layout alone.
+  '/': {
+    load: () => import('@/app/(detail)/page.ko'),
+  },
+  '/showcase': {
+    load: () => import('@/app/(detail)/showcase/page.ko'),
+  },
   '/docs/devup/figma-plugin': {
     load: () => import('@/app/(detail)/docs/devup/figma-plugin/page.ko.mdx'),
     Layout: DocsLayout,

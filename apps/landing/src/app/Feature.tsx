@@ -1,57 +1,35 @@
 import { Box, css, Flex, Grid, Image, Text, VStack } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
 import { Link } from '@/i18n/navigation'
 
 const FEATURES = [
-  {
-    icon: '/idea.svg',
-    title: 'Zero Runtime',
-    desc: 'A futuristic design that eliminates the root causes of performance degradation.',
-  },
-  {
-    icon: '/trophy.svg',
-    title: 'Top Performance',
-    desc: 'The fastest build speed and the smallest bundle size among CSS-in-JS solutions.',
-  },
-  {
-    icon: '/heart.svg',
-    title: 'Type Safety',
-    desc: 'Enhanced DX with typing-based support.',
-  },
-  {
-    icon: '/notice.svg',
-    title: 'Figma Plugin',
-    desc: 'A Figma plugin enabling safer and faster development.',
-    extra: (
-      <Box
-        pos="absolute"
-        right={['10px', null, null, null, '20px']}
-        top={['10px', null, null, null, '20px']}
-      >
-        <FigmaButton />
-      </Box>
-    ),
-  },
-]
+  { icon: '/idea.svg', key: 'zeroRuntime' },
+  { icon: '/trophy.svg', key: 'topPerformance' },
+  { icon: '/heart.svg', key: 'typeSafety' },
+  { icon: '/notice.svg', key: 'figmaPlugin' },
+] as const
 
-export function Feature() {
+export async function Feature({ locale = 'en' }: { locale?: Locale }) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <VStack alignItems="center" py={['30px', null, '50px']} w="100%">
       <VStack gap="40px" maxW="1440px" px={['16px', null, '40px']} w="100%">
         <VStack gap="16px">
           <Text as="h2" color="$title" m="0" typography="h4">
-            Features
+            {t('featuresTitle')}
           </Text>
           <Text color="$text" typography="textL">
-            Devup UI offers a performance-optimized CSS-in-JS system, theme
-            typing, <Box as="br" display={['none', null, 'initial']} />
-            and amazing features for faster and safer development.
+            {t.rich('featuresDescription', {
+              br: () => <Box as="br" display={['none', null, 'initial']} />,
+            })}
           </Text>
         </VStack>
         <Grid gap="16px" gridTemplateColumns={['1fr', null, '1fr 1fr']}>
-          {FEATURES.map(({ icon, title, desc, extra }) => (
+          {FEATURES.map(({ icon, key }) => (
             <Flex
-              key={title}
+              key={key}
               bg="$containerBackground"
               border="1px solid $border"
               borderRadius="20px"
@@ -66,13 +44,21 @@ export function Feature() {
               <Image boxSize="32px" src={icon} />
               <VStack gap="10px">
                 <Text as="h3" color="$title" m="0" typography="h6">
-                  {title}
+                  {t(`features.${key}.title`)}
                 </Text>
                 <Text color="$text" typography="body">
-                  {desc}
+                  {t(`features.${key}.description`)}
                 </Text>
               </VStack>
-              {extra}
+              {key === 'figmaPlugin' && (
+                <Box
+                  pos="absolute"
+                  right={['10px', null, null, null, '20px']}
+                  top={['10px', null, null, null, '20px']}
+                >
+                  <FigmaButton label={t('goFigmaCommunity')} />
+                </Box>
+              )}
             </Flex>
           ))}
         </Grid>
@@ -80,7 +66,7 @@ export function Feature() {
     </VStack>
   )
 }
-export function FigmaButton() {
+function FigmaButton({ label }: { label: string }) {
   return (
     <Link
       className={css({
@@ -104,7 +90,7 @@ export function FigmaButton() {
             display={['none', null, 'revert']}
             typography="body"
           >
-            Go Figma Community
+            {label}
           </Text>
           <Box
             aspectRatio="1"
