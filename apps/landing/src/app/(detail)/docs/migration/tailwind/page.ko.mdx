@@ -1,0 +1,115 @@
+export const metadata = {
+  title: '마이그레이션',
+  alternates: {
+    canonical: '/ko/docs/migration/tailwind',
+    languages: {
+      en: '/docs/migration/tailwind',
+      ko: '/ko/docs/migration/tailwind',
+      'x-default': '/docs/migration/tailwind',
+    },
+  },
+}
+
+# Tailwind CSS
+
+Devup UI 컴포넌트(`Box`, `Flex`, `Text` ...)의 `className`에 작성한 Tailwind CSS 클래스는 스타일 props와 같은 방식으로 빌드 시점에 Devup UI 클래스로 컴파일됩니다. 브라우저에서는 아무것도 실행되지 않으며, 이 클래스들을 위한 Tailwind 빌드도 필요 없습니다. 클래스는 Tailwind CSS **v4**를 따릅니다.
+
+```tsx
+<Box className="flex items-center gap-4 bg-red-500/50 hover:bg-primary md:p-4!" />
+```
+
+## 클래스가 컴파일되는 경우
+
+클래스는 빌드가 그 **전체**를 이해할 때만 컴파일됩니다. 모든 variant(`md:`, `hover:`, `data-[state=open]:`, `[&>*]:` ...), 유틸리티, 그 값과 modifier(`/50`, `!`)를 모두 이해해야 합니다. 그러면 클래스는 Tailwind CSS v4가 작성하는 선언이 됩니다.
+
+그 밖의 모든 클래스는 **작성한 그대로 `className`에 남으므로**, 그 클래스를 정의하는 다른 무언가가 계속 동작합니다. 여기에는 다음이 포함됩니다:
+
+- 직접 만든 클래스(`card`)와 플러그인 클래스(`prose`),
+- Tailwind CSS v4가 정의하지 않는 클래스(v3에 있던 `bg-gradient-to-r`),
+- 빌드가 정확히 재현할 수 없는 클래스([작성한 그대로 남는 것](#작성한-그대로-남는-것) 참고),
+- 프로젝트의 Tailwind CSS가 빌드가 읽을 수 없는 방식으로 테마 값을 정의한 클래스.
+
+클래스는 Tailwind CSS가 생성하는 것과 다른 무언가로 다시 작성되지 않습니다. v4의 선언으로 컴파일되거나, 그대로 남습니다. Tailwind 이름을 가진 클래스는 Tailwind의 의미로 컴파일되므로, 직접 만든 클래스에 Tailwind 유틸리티의 이름을 붙이지 마세요.
+
+## 클래스를 읽는 위치
+
+클래스는 Devup UI 컴포넌트의 `className`에서 컴파일되며, 빌드는 알 수 있는 것만 읽습니다:
+
+- 문자열 리터럴, 템플릿 리터럴, `cond ? 'a' : 'b'`, `a && 'b'`, `a || 'b'`, 괄호,
+- 같은 파일에서 문자열에 바인딩된 `const`(`const base = 'p-4 card'`는 `className`이 읽는 곳 어디서든 담고 있는 클래스로 읽힙니다. `let`, 매개변수, `${}`가 있는 템플릿은 읽히지 않습니다),
+- `clsx(...)`, `classnames(...)`, `classNames(...)`의 인자(문자열, 배열, 객체의 키)와 `['a', cond && 'b'].join(' ')`. 각 클래스는 작성된 위치에서 컴파일됩니다,
+- **모든** 인자가 문자열, `${}`가 없는 템플릿, 또는 이들의 배열인 `cn(...)`과 `twMerge(...)`: 빌드는 tailwind-merge처럼 이를 병합하므로, 나중 클래스가 다시 설정하는 Tailwind 클래스는 제거되고(`cn('p-4 m-2', 'p-2')`는 `m-2`와 `p-2`를 유지합니다. variant(`hover:p-2`), 브레이크포인트, `!`는 각각 별개로 취급되며, `px-4`와 `p-2`는 둘 다 남습니다) 남은 것을 컴파일합니다. `cn`은 `twMerge(clsx(...))`로 읽히므로, 직접 만든 `cn`이 다른 일을 한다면 다른 이름을 붙이세요. 조건이나 그 밖의 인자가 있는 `cn()`은 결과를 런타임에만 알 수 있고 그 안의 문자열이 작성한 그대로 `twMerge`에 전달되어야 하므로 그대로 둡니다,
+- Devup UI를 import하는 파일 안의 `cva(base, { variants, compoundVariants })` 문자열: base, 모든 variant 옵션, 모든 compound variant의 `class`/`className`은 작성된 위치에서 컴파일됩니다(`cva`는 이들을 합치기만 하므로 각 클래스는 클래스로 유지됩니다). Devup UI import가 없는 파일은 전혀 컴파일되지 않으므로, `cva` 호출은 Devup UI import가 있는 파일에 두세요.
+
+런타임에만 알 수 있는 클래스(prop, 계산된 문자열, import한 상수, 조건이 있는 `cn()`)는 컴파일할 수 없습니다. 어떤 경우든 `className`은 일반 텍스트로서 이전처럼 계속 동작합니다.
+
+일반 DOM 요소(`<div className="p-4" />`)나 Devup UI 컴포넌트가 아닌 컴포넌트는 **건드리지 않습니다**. 그 `className`은 작성한 그대로 전달되므로 Tailwind(자체 빌드)가 스타일을 적용할 수 있습니다. 클래스를 컴파일하려면 `<Box as="div" className="p-4" />`를 사용하세요.
+
+## 테마 값
+
+Tailwind CSS v4 기본 팔레트의 색상(`oklch`로 정의된 `bg-red-500`)과 `devup.json`의 값을 함께 사용할 수 있습니다:
+
+- `devup.json` 색상은 토큰 이름을 가진 Tailwind 색상입니다. `bg-primary`, `text-text`, `border-primary/50`은 `var(--primary)`, `var(--text)` 등이 됩니다. 어떤 이름이 `devup.json` 색상이면서 팔레트 색상이기도 하면 `devup.json` 색상이 사용됩니다.
+- `devup.json` 그림자 토큰은 `shadow-<token>`(`shadow-card`)으로 동작합니다.
+- 브레이크포인트는 Tailwind가 아니라 Devup UI의 것(`devup.json`의 `theme.breakpoints`)입니다. `sm:`, `md:`, `lg:`, `xl:`, `2xl:`는 base 다음의 첫 다섯 브레이크포인트입니다. 변경은 `devup.json`에서 하세요.
+- `dark:`는 Devup UI 테마를 따릅니다(`data-theme`로 테마를 설정하기 전까지는 `prefers-color-scheme`).
+
+## Tailwind CSS 정의
+
+`tailwindcss`를 import하는 프로젝트의 CSS 파일은 Tailwind 자체에서처럼 추가 정의를 할 수 있습니다:
+
+```css
+@import 'tailwindcss';
+
+@theme {
+  --color-brand: oklch(60% 0.2 250);
+  --spacing-gutter: 3rem;
+  --breakpoint-3xl: 120rem;
+  --animate-wiggle: wiggle 1s ease-in-out infinite;
+  @keyframes wiggle {
+    50% {
+      transform: rotate(3deg);
+    }
+  }
+}
+
+@utility content-auto {
+  content-visibility: auto;
+}
+
+@custom-variant theme-midnight (&:where([data-theme='midnight'] *));
+```
+
+모든 플러그인은 빌드가 시작될 때 이 파일을 읽고, 이 파일이나 이 파일이 상대 경로로 import하는 CSS 파일이 바뀌면 다시 읽습니다. Vite, webpack, Next.js, Rsbuild는 모든 모듈을 다시 컴파일하고, Bun 플러그인(자체 리빌드가 없는 런타임 플러그인)은 정의를 다시 읽으므로 모듈은 Bun이 다음에 로드할 때 새 정의로 컴파일됩니다. 따라서 `bg-brand`, `p-gutter`, `3xl:flex`, `animate-wiggle`, `content-auto`, `theme-midnight:bg-black`이 컴파일됩니다.
+
+파일은 다음 순서로 찾습니다: `devup.json`의 `tailwind.css` 옵션, 그렇지 않으면 `src/app/globals.css`, `app/globals.css`, `src/globals.css`, `src/index.css`, `src/styles/globals.css`, `src/styles.css`, `src/style.css`, `src/app.css`, `styles/globals.css`, `app/app.css` 중 `tailwindcss`를 import하는 첫 번째 파일입니다.
+
+```json
+{
+  "tailwind": { "css": "src/styles/tailwind.css" }
+}
+```
+
+아무 파일도 읽지 않으려면 `"css": false`를 사용하세요.
+
+읽는 것:
+
+- color, spacing(`--spacing`, `--spacing-*`), shadow, inset-shadow, text-shadow, drop-shadow, blur, radius, ease, animate, perspective, container(`@sm:`), `default-transition-*`, breakpoint 네임스페이스의 `@theme` 변수(그리고 `@theme` 안의 `@keyframes`), 그리고 `--color-*: initial`과 `--*: initial` 같은 초기화.
+- 선언과 `@apply` 줄이 있는 `@utility name { ... }`. `@apply`는 지정한 유틸리티(`@apply px-4 py-2!`)를 풀어서 작성하며, 유틸리티를 적용하는 다른 `@utility`를 거쳐서도 마찬가지입니다. variant가 있는 유틸리티(`hover:p-4`), 자식에 스타일을 적용하는 유틸리티(`space-x-4`), 알 수 없는 유틸리티, 또는 순환이 있으면 `@utility` 전체를 작성한 그대로 둡니다.
+- 선언이 `--value(...)`와 `--modifier(...)`를 읽는 함수형 `@utility name-* { ... }`. 인자는 `integer`, `number`, `percentage`, 리터럴(`'inherit'`), 테마 네임스페이스(`--tab-size-*`, `--color-*`, `--spacing-*`), 또는 임의 값 타입(`[length]`, `[color]`, `[number]`, `[url]`)이며, 값이 맞는 첫 번째 인자가 사용됩니다. 주어지지 않은 `--modifier()`를 읽는 선언은 제거되고, 어떤 인자에도 맞지 않는 `--value()`는 클래스를 작성한 그대로 남깁니다. `--spacing()`, `--alpha()` 등 유틸리티의 다른 함수는 실행되지 않으므로, 이를 사용하는 유틸리티는 작성한 그대로 남습니다.
+- 선택자 목록, 또는 선택자, `@media`, `@supports` 안에 `@slot;`을 담은 블록으로 작성한 `@custom-variant`. 내장 variant의 이름(`dark`)을 가진 `@custom-variant`는 그 variant를 대체합니다.
+- 임의 값 안의 `theme(--name)`(`p-[theme(--spacing-gutter)]`, `bg-[theme(--color-brand)]`, `w-[calc(theme(--spacing)*2)]`): 프로젝트의 테마 변수, 색상, 또는 spacing 단계. 빌드가 읽을 수 없는 변수에 대한 호출(v3 형태인 `theme(colors.red.500)` 포함)은 클래스를 작성한 그대로 남깁니다.
+
+읽지 않는 것은 그 클래스를 작성한 그대로 남깁니다: `@plugin`과 `@config`(이들은 JavaScript를 실행하며 빌드는 그 출력을 알 수 없습니다. `@tailwindcss/typography` 같은 플러그인이 만드는 `prose` 같은 클래스는 Tailwind 자체 빌드를 위해 `className`에 남습니다), `@utility` 안의 중첩 규칙, CSS 안의 `theme()`(임의 값 바깥), `--theme()`, 중괄호의 짝이 맞지 않는 파일. 프로젝트가 빌드가 읽지 않는 네임스페이스(`--text-*`, `--font-*`, `--leading-*`, `--tracking-*`, `--container-*`, `--perspective-*`, `--aspect-*`)의 값을 바꾸면, 그 값을 읽는 클래스(`text-lg`, `font-bold`, `max-w-sm` ...)도 프로젝트가 대체한 기본값으로 컴파일되는 대신 작성한 그대로 남습니다.
+
+## 한 요소의 클래스와 스타일 props
+
+Tailwind 클래스와 Devup UI props는 모두 같은 스타일시트에서 속성마다 하나의 원자적 클래스가 되므로, 두 props와 같은 규칙을 따릅니다:
+
+- 요소의 Tailwind 클래스가 먼저 컴파일되고, Devup props는 그 뒤에 컴파일됩니다. **같은 속성**(`p-4`와 `p={12}`)에 대해서는 JSX에서 어느 쪽이 먼저 오든 prop이 스타일시트에서 뒤에 오므로 prop이 적용됩니다.
+- 속성은 축약 속성이 개별 속성보다 앞에 오도록 정렬됩니다. `bg="green"`은 `background`이고 `bg-red-500`은 그 뒤에 오는 `background-color`이므로, 이 경우에는 Tailwind 클래스가 적용됩니다. 두 쪽이 모두 같은 속성을 설정하게 될 때는 한쪽만 사용하세요.
+- 반응형 스타일과 `hover:` 스타일은 props에서처럼 같은 속성의 기본 스타일 뒤에 옵니다.
+
+## 작성한 그대로 남는 것
+
+이 빌드가 컴파일하지 않는 유틸리티는 `className`에 남습니다: `container`(브레이크포인트마다 너비를 설정하므로 하나의 클래스로는 담을 수 없습니다), 그라디언트 마스크(`mask-linear-*`, `mask-radial-*`, `mask-conic-*`, `mask-t|r|b|l|x|y-from|to-*`), 그리고 Tailwind CSS v4에 정의되지 않은 variant와 값. 컨테이너 쿼리(`@sm:`, `@max-md:`, `@min-[400px]:`, `@sm/main:`)와 `@container` 유틸리티, 그 밖의 마스크(`mask-none`, `mask-[...]`, 크기, 위치, 반복, clip, origin, composite, mode), `text-shadow-*`, `inset-shadow-*`, `font-variant-numeric`(`tabular-nums` 등, 조합 가능), 3D 변환(`rotate-x|y|z-*`, `translate-z-*`, `scale-z-*`, `translate-3d`, `scale-3d`, `transform-3d`, `backface-*`, `perspective-*`), `contain-*`, `outline-hidden`은 Tailwind CSS v4가 작성하는 그대로 컴파일됩니다.

@@ -1,0 +1,144 @@
+export const metadata = {
+  title: 'Shadow',
+  alternates: {
+    canonical: '/ko/docs/devup/shadow',
+    languages: {
+      en: '/docs/devup/shadow',
+      ko: '/ko/docs/devup/shadow',
+      'x-default': '/docs/devup/shadow',
+    },
+  },
+}
+
+# Shadow
+
+Devup UI는 `box-shadow` 값에 사용할 수 있는 반응형 shadow 토큰을 지원합니다. 타이포그래피, length와 마찬가지로 shadow 토큰도 `devup.json`에서 반응형 배열로 정의할 수 있습니다.
+
+## Shadow 토큰 정의
+
+`devup.json`에 shadow 토큰을 정의합니다.
+
+```json
+{
+  "theme": {
+    "shadow": {
+      "default": {
+        "sm": "0 1px 2px rgba(0,0,0,0.05)",
+        "card": [
+          "0 1px 2px rgba(0,0,0,0.1)",
+          null,
+          null,
+          "0 4px 8px rgba(0,0,0,0.1)"
+        ],
+        "modal": [
+          "0 4px 12px rgba(0,0,0,0.15)",
+          null,
+          null,
+          "0 8px 24px rgba(0,0,0,0.15)"
+        ]
+      }
+    }
+  }
+}
+```
+
+배열의 각 인덱스는 하나의 브레이크포인트에 대응합니다. `null`을 사용하면 해당 브레이크포인트를 건너뛰고 이전 값을 그대로 이어받습니다.
+
+## 사용법
+
+`boxShadow`에 `$` 접두사를 붙여 shadow 토큰을 사용합니다.
+
+{/* conformance: theme */}
+
+```tsx
+<>
+  <Box boxShadow="$card" />
+  <Box boxShadow="$sm" />
+  <Box boxShadow="$modal" />
+</>
+```
+
+`"$token"`과 `{"$token"}` 모두 반응형 토큰을 브레이크포인트별 여러 클래스로 확장합니다. 테마는 각 토큰을 브레이크포인트별 CSS 변수로 정의하고(색상은 hex로 변환됩니다), 모든 클래스는 이 변수를 읽습니다.
+
+```css
+@layer t {
+  :root {
+    --card: 0 1px 2px #0000001a;
+    --modal: 0 4px 12px #00000026;
+    --sm: 0 1px 2px #0000000d;
+  }
+  @media (min-width: 992px) {
+    :root {
+      --card: 0 4px 8px #0000001a;
+      --modal: 0 8px 24px #00000026;
+    }
+  }
+}
+.a {
+  box-shadow: var(--card);
+}
+.c {
+  box-shadow: var(--sm);
+}
+.d {
+  box-shadow: var(--modal);
+}
+@media (min-width: 992px) {
+  .b {
+    box-shadow: var(--card);
+  }
+  .e {
+    box-shadow: var(--modal);
+  }
+}
+```
+
+## 반응형 배열에서의 동작
+
+`$token`이 반응형 배열 안에 있으면 확장되지 **않습니다**. 배열 자체가 브레이크포인트를 정의하기 때문입니다.
+
+```tsx
+{
+  /* "$card" stays as a single class at breakpoint index 3 */
+}
+;<Box boxShadow={['none', null, null, '$card']} />
+```
+
+인덱스 3의 클래스는 여전히 `var(--card)`를 읽습니다. 테마가 브레이크포인트와 테마 변형마다 `--card`를 다시 정의하므로, 해당 미디어 쿼리가 적용되는 곳에서는 언제나 토큰의 현재 값이 표시됩니다.
+
+핵심적인 차이는 다음과 같습니다.
+
+| 문법                                        | 동작                                 | 클래스 수 |
+| ------------------------------------------- | ------------------------------------ | --------- |
+| `boxShadow="$card"`                         | 정의된 모든 브레이크포인트로 확장    | 여러 개   |
+| `boxShadow={"$card"}`                       | 정의된 모든 브레이크포인트로 확장    | 여러 개   |
+| `boxShadow={["$card"]}`                     | 인덱스 0에 `var(--card)`             | 1         |
+| `boxShadow={["none", null, null, "$card"]}` | 인덱스 0에 `none`, 3에 `var(--card)` | 2         |
+
+## 테마 변형
+
+shadow 토큰은 색상과 마찬가지로 테마 변형을 지원합니다.
+
+```json
+{
+  "theme": {
+    "shadow": {
+      "default": {
+        "card": "0 2px 4px rgba(0,0,0,0.1)"
+      },
+      "dark": {
+        "card": "0 2px 4px rgba(0,0,0,0.4)"
+      }
+    }
+  }
+}
+```
+
+## 타입 안전성
+
+shadow 토큰은 완전한 타입 안전성을 갖습니다. `$`를 입력하면 TypeScript가 사용 가능한 토큰을 자동 완성합니다.
+
+```tsx
+// 자동 완성 목록: $sm, $card, $modal 등
+<Box boxShadow="$" />
+```

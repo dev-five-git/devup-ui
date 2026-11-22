@@ -1,0 +1,105 @@
+export const metadata = {
+  title: '마이그레이션',
+  alternates: {
+    canonical: '/ko/docs/migration/overview',
+    languages: {
+      en: '/docs/migration/overview',
+      ko: '/ko/docs/migration/overview',
+      'x-default': '/docs/migration/overview',
+    },
+  },
+}
+
+# 다른 CSS-in-JS 라이브러리에서 마이그레이션하기
+
+Devup UI는 styled-components, Emotion, vanilla-extract, StyleX 소스를 그대로 읽습니다. 호출 위치를 다시 작성할 필요도, 원래 라이브러리를 설치해 둘 필요도 없습니다. 빌드가 import를 다시 작성하고 모든 호출을 정적 CSS로 컴파일합니다.
+
+## 코드에 일어나는 일
+
+```tsx
+// 작성한 코드
+import styled from 'styled-components'
+
+const Card = styled.div`
+  color: red;
+`
+```
+
+```tsx
+// 배포되는 코드(단순화) — styled-components도, 런타임도 없음
+// (실제 출력은 `ref`도 전달하고, `as`를 받으며, `$` props를 제거합니다)
+const Card = ({ style, className, ...rest }) => (
+  <div
+    {...rest}
+    className={['a', className].filter(Boolean).join(' ')}
+    style={style}
+  />
+)
+```
+
+```css
+.a {
+  color: red;
+}
+```
+
+import는 단순히 `@devup-ui/react`를 가리키도록 바뀌는 것이 아닙니다. 추출기가 호출을 소비하고 specifier를 제거하므로, import 문은 출력에서 완전히 사라집니다.
+
+## 두 단계
+
+1. **import 재작성** — `import { style } from '@vanilla-extract/css'`는 `import { css as style } from '@devup-ui/react'`가 됩니다. 실제로 대응하는 Devup UI API가 있는 이름만 옮겨지며, 나머지는 자체 타입이 계속 동작하도록 그대로 남습니다.
+2. **추출** — `style({ ... })`는 클래스 이름으로 컴파일되고, specifier가 제거되며, 비게 된 import는 삭제됩니다.
+
+두 번째 단계 덕분에 중간 단계의 `css as style` alias는 번들에 포함되지 않습니다.
+
+## 활성화하기
+
+모든 플러그인은 기본 alias를 자동으로 켭니다:
+
+```ts
+// vite.config.ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+
+export default DevupUI({})
+```
+
+기본값은 `styled-components`, `@emotion/styled`, `@emotion/react`, `@emotion/css`, `@vanilla-extract/css`를 포함합니다. StyleX는 alias가 필요 없습니다. `@stylexjs/stylex`는 직접 인식됩니다.
+
+원래 라이브러리를 계속 사용하려면 해당 패키지를 제외하세요:
+
+```ts
+DevupUI({
+  importAliases: {
+    'styled-components': false,
+  },
+})
+```
+
+## 원래 패키지 제거하기
+
+import가 다시 작성되고 나면, 빌드가 오류를 보고하지 않는 한 의존성을 제거할 수 있습니다. Devup UI에 대응하는 API가 없는 export(`@emotion/react`의 `ThemeContext`나 `withEmotionCache`, `@emotion/css/create-instance`, vanilla-extract의 `recipes`와 `sprinkles`)는 패키지를 남겨 두는 대신 그 이름을 알려 주는 빌드 오류가 됩니다. `@emotion/css`의 `cache`, `flush`, `hydrate`, `sheet`는 런타임에 삽입된 스타일을 다루므로 `@emotion/css`에 남으며, 이를 사용하는 파일은 해당 패키지를 유지합니다. TypeScript는 여전히 작성한 specifier를 해석해야 하므로, 플러그인은 활성화한 alias에 대한 ambient 선언을 담은 `<distDir>/compat.d.ts`를 생성합니다:
+
+```ts
+/// <reference types="@devup-ui/react/compat/styled-components" />
+/// <reference types="@devup-ui/react/compat/emotion" />
+/// <reference types="@devup-ui/react/compat/stylex" />
+/// <reference types="@devup-ui/react/compat/vanilla-extract" />
+```
+
+이 파일은 프로젝트 안의 `theme.d.ts` 옆에 생성되므로, 별도 설정 없이 `tsconfig.json`이 인식합니다. 비활성화한 alias는 의도적으로 제외됩니다. ambient 선언은 설치된 패키지보다 우선하며, 제외한 라이브러리는 자체 타입을 유지해야 하기 때문입니다.
+
+## 어떤 스타일이 적용되는가
+
+빌드가 볼 수 있는 합성은 같은 속성에 대해 나중 스타일이 적용된다는 원래 라이브러리의 규칙을 유지합니다: `css(a, b)`와 Emotion의 `cx(a, b)`, 파일에서 정의한 컴포넌트의 `styled(Base)` 확장, `.attrs()`, vanilla-extract의 `style([a, b])`, StyleX의 `props(a, b)`가 여기에 해당합니다. 빌드는 이들을 하나의 클래스 집합으로 병합하므로, `color`를 덮어쓰는 `styled(Base)`는 새 색상만 배포합니다.
+
+런타임에만 일어나는 합성은 병합할 수 없으며, 이 경우 작성한 순서가 아니라 CSS 캐스케이드가 결과를 결정합니다. props로 전달된 `className`, CSS Modules나 다른 라이브러리의 클래스, 런타임에 만든 클래스 문자열을 Devup UI 클래스와 합치는 경우가 그렇습니다. 런타임 라이브러리가 나중 스타일을 마지막에 삽입하는 동작에 의존하던 코드는 여기서 결과가 달라질 수 있습니다. 변형은 prop, 조건(`cond ? a : b`), 또는 같은 파일 안의 `styled()` 확장으로 전달해서 빌드가 양쪽을 모두 볼 수 있게 하세요.
+
+전체 목록은 [스타일 덮어쓰기 규칙](/docs/limitations)을 참고하세요.
+
+## 흡수한 API의 위치
+
+다른 라이브러리를 흡수하기 위해서만 존재하는 API(`ThemeProvider`, `createGlobalStyle`, `ServerStyleSheet` 등)는 `@devup-ui/react`가 아니라 `@devup-ui/react/compat`에서 export됩니다. Devup UI를 직접 사용하면 이들을 볼 일이 없으며, compat 엔트리는 원래 이름을 그대로 유지할 수 있습니다. 그 `useTheme`가 Devup UI 자체의 `useTheme`와 충돌하지 않기 때문입니다.
+
+```tsx
+// rewritten for you
+```

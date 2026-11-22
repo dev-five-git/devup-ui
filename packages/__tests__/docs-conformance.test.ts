@@ -37,9 +37,13 @@ const CHECKED_PAGES = [
   'api/input/page.mdx',
   'api/text/page.mdx',
   'api/v-stack/page.mdx',
+  'devup/breakpoints/page.ko.mdx',
   'devup/breakpoints/page.mdx',
+  'devup/colors/page.ko.mdx',
   'devup/colors/page.mdx',
+  'devup/length/page.ko.mdx',
   'devup/length/page.mdx',
+  'devup/shadow/page.ko.mdx',
   'devup/shadow/page.mdx',
 ]
 

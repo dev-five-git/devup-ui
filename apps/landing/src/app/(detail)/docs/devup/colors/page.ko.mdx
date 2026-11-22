@@ -1,0 +1,224 @@
+export const metadata = {
+  title: '색상',
+  alternates: {
+    canonical: '/ko/docs/devup/colors',
+    languages: {
+      en: '/docs/devup/colors',
+      ko: '/ko/docs/devup/colors',
+      'x-default': '/docs/devup/colors',
+    },
+  },
+}
+
+# 색상
+
+Devup UI는 직접 지정한 값과 테마 토큰을 통해 유연하게 색상을 관리할 수 있도록 지원합니다.
+
+## 색상 값 직접 지정
+
+모든 컴포넌트에 색상 값을 직접 전달할 수 있습니다.
+
+{/* conformance */}
+
+```tsx
+// Hex colors
+const example1 = <Box bg="#FF0000" />
+const example2 = <Box bg="#F00" />
+
+// RGB/RGBA
+const example3 = <Box bg="rgb(255, 0, 0)" />
+const example4 = <Box bg="rgba(255, 0, 0, 0.5)" />
+
+// HSL
+const example5 = <Box bg="hsl(0, 100%, 50%)" />
+
+// Named colors
+const example6 = <Box bg="red" />
+const example7 = <Box bg="tomato" />
+```
+
+> Devup UI는 빌드 시점에 색상 값을 자동으로 최적화합니다. `#FF0000`, `#F00`, `rgb(255, 0, 0)`은 모두 `#F00`이 되어 하나의 클래스를 공유하고, `rgba(255, 0, 0, 0.5)`는 `#FF000080`이 됩니다.
+
+```css
+.a {
+  background: #f00;
+}
+.b {
+  background: #ff000080;
+}
+.c {
+  background: hsl(0, 100%, 50%);
+}
+.d {
+  background: red;
+}
+.e {
+  background: tomato;
+}
+```
+
+## 테마 색상
+
+규모가 큰 프로젝트에서는 일관성과 테마 지원을 위해 `devup.json`에 색상을 정의하세요.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "secondary": "#7928ca",
+        "success": "#0070f3",
+        "warning": "#f5a623",
+        "error": "#e00",
+        "text": "#000",
+        "textSecondary": "#666",
+        "background": "#fff",
+        "border": "#eaeaea"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "secondary": "#8a63d2",
+        "success": "#3291ff",
+        "warning": "#f7b955",
+        "error": "#f33",
+        "text": "#fff",
+        "textSecondary": "#888",
+        "background": "#000",
+        "border": "#333"
+      }
+    }
+  }
+}
+```
+
+테마 색상은 `$` 접두사를 붙여 사용합니다.
+
+{/* conformance: theme */}
+
+```tsx
+const boxExample1 = <Box bg="$primary" />
+const textExample = <Text color="$text" />
+const boxExample2 = <Box borderColor="$border" />
+```
+
+각 토큰은 CSS 변수를 읽으므로 테마를 전환해도 새 클래스가 필요하지 않습니다.
+
+```css
+.a {
+  background: var(--primary);
+}
+.b {
+  color: var(--text);
+}
+.c {
+  border-color: var(--border);
+}
+```
+
+## 여러 테마 변형
+
+`default`와 `dark` 외에도 여러 테마 변형을 정의할 수 있습니다.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3"
+      },
+      "dark": {
+        "primary": "#3291ff"
+      },
+      "blue": {
+        "primary": "#0052cc"
+      },
+      "green": {
+        "primary": "#00875a"
+      }
+    }
+  }
+}
+```
+
+기본 테마는 `default`입니다(없으면 `light`, 그것도 없으면 첫 번째 변형). 다른 테마는 테마 API로 활성화할 수 있습니다. 변형에는 바꾸려는 색상만 나열하면 됩니다. 나머지 색상은 기본 테마의 값을 그대로 유지하며, 한 변형에만 정의된 색상은 해당 변형에서만 정의됩니다.
+
+각 변형은 페이지의 네이티브 색 구성표(폼 컨트롤, 스크롤바, 기본 텍스트 색상)도 설정합니다. `dark`는 어둡게, 그 밖의 모든 변형은 밝게 렌더링되며, 다른 변형의 색 구성표는 `colorScheme`에 지정합니다.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": { "primary": "#0070f3" },
+      "midnight": { "primary": "#3291ff" }
+    },
+    "colorScheme": { "midnight": "dark" }
+  }
+}
+```
+
+토큰 이름은 문자, 숫자 또는 `_`로 시작하고, 이어서 문자, 숫자, `-`, `_`, `.`를 사용할 수 있습니다(`primary`, `text-primary`, `gray.100`). 점은 CSS 변수에서 대시로 바뀌므로 `gray.100`은 `var(--gray-100)`이 됩니다. 허용되지 않는 문자가 포함된 이름이나, 한 변형 안에서 같은 변수가 되는 두 토큰(`a-b`와 `a.b`)이 있으면 브라우저가 무시할 CSS를 출력하는 대신 빌드에서 이를 보고합니다. 색상, `length`, `shadow` 토큰은 CSS 변수의 네임스페이스 하나를 공유하므로, 색상 `card`와 그림자 `card`(둘 다 `--card`)도 빌드 오류가 됩니다. 둘 중 하나의 이름을 바꾸세요.
+
+## 의미 기반 색상 이름
+
+색상을 겉모습이 아니라 용도에 따라 구성하세요.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "primaryHover": "#0060df",
+        "primaryActive": "#0050c0",
+
+        "text": "#000",
+        "textMuted": "#666",
+        "textInverse": "#fff",
+
+        "background": "#fff",
+        "backgroundSubtle": "#fafafa",
+        "backgroundMuted": "#f5f5f5",
+
+        "border": "#eaeaea",
+        "borderFocus": "#0070f3",
+
+        "success": "#0070f3",
+        "warning": "#f5a623",
+        "error": "#e00",
+        "info": "#0070f3"
+      }
+    }
+  }
+}
+```
+
+## 투명도가 있는 색상 사용
+
+투명한 변형이 필요하면 RGBA를 사용하거나 별도의 토큰을 정의하세요.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "primaryAlpha10": "rgba(0, 112, 243, 0.1)",
+        "primaryAlpha20": "rgba(0, 112, 243, 0.2)",
+        "overlay": "rgba(0, 0, 0, 0.5)"
+      }
+    }
+  }
+}
+```
+
+## 타입 안전성
+
+테마 색상은 완전히 타입 안전합니다. TypeScript가 사용 가능한 색상 토큰을 자동 완성합니다.
+
+```tsx
+// 자동 완성 목록: $primary, $secondary, $text 등
+<Box bg="$" />
+```
+
+잘못된 색상 토큰은 TypeScript 오류로 표시되므로 코드베이스 전체에서 일관성을 유지할 수 있습니다.
