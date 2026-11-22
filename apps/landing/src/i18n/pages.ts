@@ -11,12 +11,49 @@ interface TranslatedPage {
 
 // Keep translated content beside its English source; share the original layout.
 export const translatedPages: Record<string, TranslatedPage | undefined> = {
+  '/docs/core-concepts/nm-base': {
+    load: () => import('@/app/(detail)/docs/core-concepts/nm-base/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/core-concepts/no-dependencies': {
+    load: () =>
+      import('@/app/(detail)/docs/core-concepts/no-dependencies/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/core-concepts/optimize-css': {
+    load: () =>
+      import('@/app/(detail)/docs/core-concepts/optimize-css/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/core-concepts/style-storage': {
+    load: () =>
+      import('@/app/(detail)/docs/core-concepts/style-storage/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/core-concepts/type-inference-system': {
+    load: () =>
+      import('@/app/(detail)/docs/core-concepts/type-inference-system/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/core-concepts/zero-runtime': {
+    load: () =>
+      import('@/app/(detail)/docs/core-concepts/zero-runtime/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
   '/docs/devup/figma-plugin': {
     load: () => import('@/app/(detail)/docs/devup/figma-plugin/page.ko.mdx'),
     Layout: DocsLayout,
   },
+  '/docs/features': {
+    load: () => import('@/app/(detail)/docs/features/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
   '/docs/installation': {
     load: () => import('@/app/(detail)/docs/installation/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/limitations': {
+    load: () => import('@/app/(detail)/docs/limitations/page.ko.mdx'),
     Layout: DocsLayout,
   },
   '/docs/migration/styled-components': {

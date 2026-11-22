@@ -1,0 +1,73 @@
+export const metadata = {
+  title: '제로 런타임',
+  alternates: {
+    canonical: '/ko/docs/core-concepts/zero-runtime',
+    languages: {
+      en: '/docs/core-concepts/zero-runtime',
+      ko: '/ko/docs/core-concepts/zero-runtime',
+      'x-default': '/docs/core-concepts/zero-runtime',
+    },
+  },
+}
+
+# 제로 런타임
+
+Devup UI는 런타임이 필요 없는 CSS-in-JS 전처리기입니다. 스타일 계산을 빌드 시점으로 옮겨 브라우저 런타임 오버헤드를 없앱니다. 저희는 모든 문법적 경우를 고려하는 전처리기를 만들고 있습니다.
+
+## 전체 처리 과정
+
+### 1. **소스 코드 입력**
+
+JSX/TSX/JS/TS로 작성한 애플리케이션 코드가 입력으로 주어집니다.
+
+예를 들어 다음 `<Button>` 컴포넌트를 생각해 보겠습니다.
+
+```tsx
+<Button
+  _hover={{ bg: 'red' }}
+  bg="blue"
+  className="btn"
+  color="white"
+  fontSize={['10px', null, null, '16px']}
+>
+  Click me!
+</Button>
+```
+
+### 2. **AST 변환(Rust + oxc)**
+
+**oxc**(Rust 기반 JavaScript 도구 모음)를 사용해 코드를 AST(추상 구문 트리)로 변환합니다.
+
+- **Lexer**: 소스 코드를 토큰으로 나눕니다
+- **Parser**: 토큰을 AST로 구조화합니다
+
+이 단계는 이후 **스타일 저장소**가 수행하는 최적화를 위해 필요합니다.
+
+### **3. 스타일 캐싱 로직(핵심 로직)**
+
+Rust + WebAssembly로 작성한 핵심 로직이 스타일 저장소를 조회해 스타일을 최적화합니다: **스타일 저장소 확인**
+
+- **기존 스타일인가요?** → 기존 클래스 이름을 재사용합니다(캐시된 결과)
+- **새 스타일인가요?** → 새 클래스를 생성해 등록합니다
+
+### **4. 코드 생성 경로**
+
+3단계의 캐싱 결과를 바탕으로 두 가지 출력이 병렬로 만들어집니다.
+
+- **새 AST**
+  - TypeScript로 새 AST를 생성합니다
+  - 해석된 스타일 클래스 이름을 주입합니다
+
+- **CSS 가상 파일 업데이트**
+  - 새로 생성된 스타일 클래스를 CSS 가상 파일에 추가합니다
+  - 기존 스타일은 다시 생성하지 않습니다
+
+### **5. 최종 출력**
+
+번들러(Vite, Rsbuild, Next.js, Webpack)가 최적화된 코드를 내보냅니다.
+
+```html
+<button className="btn a b c d e">Click me!</button>
+```
+
+인라인 스타일 props는 **원자적 CSS 클래스**로 컴파일되어 제로 런타임을 달성합니다.

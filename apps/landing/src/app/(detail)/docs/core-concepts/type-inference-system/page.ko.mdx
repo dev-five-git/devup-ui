@@ -1,0 +1,48 @@
+export const metadata = {
+  title: '타입 추론 시스템',
+  alternates: {
+    canonical: '/ko/docs/core-concepts/type-inference-system',
+    languages: {
+      en: '/docs/core-concepts/type-inference-system',
+      ko: '/ko/docs/core-concepts/type-inference-system',
+      'x-default': '/docs/core-concepts/type-inference-system',
+    },
+  },
+}
+
+# 타입 추론 시스템
+
+Devup UI는 CSS 속성의 TypeScript 타입을 자동으로 추론하여, 타입을 직접 정의하지 않아도 타입 안전성과 매끄러운 개발자 경험을 보장합니다.
+기존 CSS-in-JS 라이브러리와 달리 Devup UI는 **CSS 표준에서 직접 타입을 도출합니다**.
+
+## 동작 원리
+
+Devup UI는 **csstype** 패키지를 사용해 CSS 속성의 타입을 자동으로 생성합니다. 타입을 직접 정의하는 대신, csstype의 표준 CSS 정의를 읽어 그대로 사용합니다.
+
+### 1. CSS 표준 읽기
+
+Devup UI는 공식 CSS 표준이 담긴 **csstype** 패키지에서 모든 CSS 속성 정의를 읽습니다. 여기에는 일반 속성(`width`, `color` 등)과 축약형 속성(`margin`, `padding` 등)이 모두 포함됩니다.
+
+### 2. 선택자 자동 변환
+
+`:hover`나 `:focus` 같은 CSS 상태를 사용하면 Devup UI가 이를 사용할 수 있는 props로 자동 변환합니다. 예를 들어 `:hover`는 `_hover`가 되므로 `<Box _hover={{ bg: 'red' }} />`처럼 작성할 수 있습니다.
+
+`csstype`이 새로운 CSS 표준으로 업데이트되면, 라이브러리를 업데이트하지 않아도 Devup UI가 그 변경 사항을 자동으로 반영합니다.
+
+### 3. 실수를 조기에 발견
+
+코드를 작성하는 동안 TypeScript가 CSS 속성을 검사합니다. 잘못된 속성이나 값을 사용하면 나중에 발견하는 대신 즉시 오류가 표시됩니다.
+
+## 장점
+
+Devup UI의 타입 추론 시스템은 다음과 같은 주요 이점을 제공합니다.
+
+- **자동 업데이트** – csstype 패키지가 업데이트되면 새로운 CSS 속성을 즉시 지원합니다. devup-ui 라이브러리를 업데이트할 필요 없이 패키지만 업데이트하면 됩니다.
+- **타입 안전성** – 모든 속성과 값이 CSS 표준에 따라 엄격하게 타입이 지정되므로, 잘못되거나 철자가 틀린 선언을 컴파일 시점에 막을 수 있습니다.
+- **표준 준수** – 타입이 항상 공식 CSS 명세와 일치하므로 모든 CSS 표준에서 정확성과 일관성이 보장됩니다.
+
+이 타입 추론 시스템은 자동으로 동작하고 신뢰할 수 있으며 미래에도 대비되어 있어, 개발자가 수동 타입 관리 대신 디자인과 로직에 집중할 수 있게 해 줍니다.
+
+빌드 플러그인은 설정한 prop 별칭에 대한 모듈 augmentation도 생성합니다.
+설정 방법과 생성된 타입 구성은 [사용자 정의 축약형](/docs/api/custom-shorthands)을
+참고하세요.

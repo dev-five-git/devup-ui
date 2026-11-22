@@ -1,0 +1,302 @@
+export const metadata = {
+  title: '기능',
+  alternates: {
+    canonical: '/ko/docs/features',
+    languages: {
+      en: '/docs/features',
+      ko: '/ko/docs/features',
+      'x-default': '/docs/features',
+    },
+  },
+}
+
+# 기능
+
+Devup UI는 styled-components와 Emotion에서 익숙한 CSS-in-JS 패턴을 빌드 시점에 컴파일하므로 런타임 오버헤드가 전혀 없습니다.
+
+## 지원 문법 범위
+
+빌드가 알 수 있는 모든 것은 정적 CSS로 컴파일됩니다. 요소에 전달된 런타임 값은 CSS 변수가 되며, 그 밖의 경우는 파일, 줄, 코드를 명시하는 빌드 오류가 됩니다. 전체 목록은 [지원 문법과 제한 사항](/docs/limitations)을 참고하세요.
+
+## 동작 방식
+
+Devup UI는 빌드 시점에 컴포넌트를 변환합니다. 클래스 이름은 CSS 출력을 최소화하기 위해 간결한 base-37 인코딩으로 생성됩니다.
+
+```tsx
+// 작성한 코드:
+const example = <Box bg="red" p={4} />
+
+// Devup UI가 생성하는 코드:
+const generated = <div className="a b" />
+
+// CSS 출력:
+// .a { background-color: red; }
+// .b { padding: 16px; }  /* 4 * 4 = 16px */
+```
+
+> 참고: 숫자 값은 4를 곱해 픽셀로 변환됩니다. `p={4}`는 `padding: 16px`가 됩니다.
+
+클래스 이름 순서: `a`, `b`, ... `z`, `_`, `aa`, `ab`, ... `az`, `a0`, ... `a9`, `a_`, `ba`, ...
+
+## 반응형 디자인
+
+배열 문법으로 반응형을 완벽하게 지원합니다. 각 인덱스는 하나의 브레이크포인트에 대응합니다.
+
+```tsx
+// 작성한 코드:
+const example = <Box bg={['red', 'blue', 'green']} />
+
+// Devup UI가 생성하는 코드:
+const generated = <div className="a b c" />
+
+// 각 브레이크포인트에 대한 미디어 쿼리가 포함된 CSS 출력
+```
+
+## 동적 값
+
+변수는 자동으로 CSS 사용자 정의 속성으로 변환됩니다.
+
+```tsx
+// 작성한 코드:
+const example = <Box bg={colorVariable} />
+
+// Devup UI가 생성하는 코드:
+const generated = <div className="a" style={{ '--a': colorVariable }} />
+
+// CSS 출력:
+// .a { background-color: var(--a); }
+```
+
+다른 모듈에서 import한 값도 그 모듈이 `const`로 선언했다면 정적으로 유지됩니다. 문자열이나 숫자 리터럴, 객체 리터럴의 멤버(`as const` 포함), 다른 상수의 별칭, re-export, default export가 이에 해당합니다.
+
+```tsx
+// tokens.ts
+export const PRIMARY = 'red'
+export const colors = { brand: '#123456' } as const
+```
+
+```tsx
+// App.tsx
+import { colors, PRIMARY } from './tokens'
+const example = <Box bg={colors.brand} color={PRIMARY} />
+
+// Devup UI가 생성하는 코드:
+const generated = <div className="a b" />
+```
+
+파일 최상위에 선언한 `const`도 마찬가지이며, 이러한 상수에 대한 템플릿이나 산술 연산은 하나의 값으로 접힙니다(`` `${SIZE * 2}px` ``).
+
+import는 번들러와 같은 방식으로 해석됩니다. 상대 경로, `tsconfig`의 `paths`, 패키지(`exports`, `module`, `main`)를 따르며, 모듈이 바뀌면 그 모듈을 읽는 파일이 다시 빌드됩니다. CommonJS 모듈도 export를 한 번만 할당한다면(`exports.PRIMARY = 'red'`, `module.exports = { ... }`) 마찬가지로 처리됩니다. 바뀔 수 있거나 계산되는 값, 즉 `let`, 두 번 할당된 속성, 함수 호출은 CSS 변수로 남습니다.
+
+## 조건부 표현식
+
+삼항 연산자와 논리 표현식은 정적으로 분석됩니다.
+
+```tsx
+// 작성한 코드:
+const example = <Box bg={isActive ? 'blue' : dynamicColor} />
+
+// Devup UI가 생성하는 코드:
+const generated = (
+  <div className={isActive ? 'a' : 'b'} style={{ '--b': dynamicColor }} />
+)
+```
+
+## 복합 표현식
+
+반응형 배열과 조건부를 함께 사용해도 Devup UI가 모두 처리합니다.
+
+```tsx
+// 작성한 코드:
+const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+
+// Devup UI가 생성하는 코드:
+const generated = (
+  <div
+    className={`a b ${isActive ? 'c' : 'd'}`}
+    style={{ '--d': dynamicColor }}
+  />
+)
+```
+
+## 의사 선택자
+
+의사 선택자에는 밑줄 접두사를 사용합니다: `_hover`, `_focus`, `_active`, `_disabled` 등.
+
+```tsx
+// 작성한 코드:
+const example = (
+  <Box
+    _active={{ bg: 'red' }}
+    _focus={{ bg: 'green' }}
+    _hover={{ bg: 'blue' }}
+    bg="white"
+  />
+)
+
+// Devup UI가 생성하는 코드:
+const generated = <div className="a b c d" />
+
+// CSS 출력:
+// .a { background-color: white; }
+// .b:hover { background-color: blue; }
+// .c:focus { background-color: green; }
+// .d:active { background-color: red; }
+```
+
+## 반응형 + 의사 선택자
+
+반응형 배열과 의사 선택자를 함께 사용해 강력한 반응형 인터랙션을 구현할 수 있습니다.
+
+```tsx
+// 작성한 코드:
+const example = <Box _hover={{ bg: ['red', 'blue'] }} />
+
+// 동일한 문법:
+const example2 = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+```
+
+## 타입 안전 테마
+
+`devup.json`에 테마를 정의하면 TypeScript를 완벽하게 지원합니다.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "text": "#000"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "text": "#fff"
+      }
+    },
+    "typography": {
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
+      }
+    }
+  }
+}
+```
+
+```tsx
+// 자동 완성을 지원하는 타입 안전 테마 토큰
+const textExample = <Text color="$primary" />
+const boxExample = <Box typography="heading" />
+```
+
+테마 전환은 CSS 변수로 이루어지므로 JavaScript를 전혀 실행할 필요가 없습니다.
+
+## styled() API
+
+styled-components와 Emotion 사용자에게 익숙한 API입니다.
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+const Card = styled('div', {
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  _hover: {
+    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
+  },
+})
+
+const Button = styled('button', {
+  bg: 'blue',
+  color: 'white',
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
+  borderRadius: '4px',
+  cursor: 'pointer',
+  _hover: { bg: 'darkblue' },
+  _active: { bg: 'navy' },
+})
+```
+
+`styled()`는 어떤 base든 렌더링합니다. 태그(`styled.div`, `styled('div')`), Devup UI 컴포넌트(`styled(Box)`), 컴포넌트나 컴포넌트를 가리키는 멤버(`styled(Link)`, `styled(motion.div)`), 그 밖의 어떤 값(`styled(forwardRef(...))`, `styled(tag)`)이든 가능하며, base는 컴포넌트가 선언된 위치에서 한 번 읽힙니다. 렌더링될 수 없는 base(`null`, 숫자, 불리언, `undefined`)와 빌드가 컴파일할 수 없는 `styled`는 빌드 오류입니다.
+
+## css() API
+
+재사용 가능한 스타일 객체를 만듭니다.
+
+```tsx
+import { css } from '@devup-ui/react'
+
+const cardStyles = css({
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+})
+
+const example = <Box className={cardStyles} />
+```
+
+`css()`, `globalCss()`, `keyframes()`에는 CSS 변수를 설정할 요소가 없으므로, 그 값은 빌드 시점에 알 수 있어야 합니다. 즉 리터럴, 테마 토큰, 상수여야 합니다. 상수는 객체, 배열, TypeScript enum일 수 있으며 파일에 선언하거나 import할 수 있습니다. `css(baseStyles)`, `{ ...baseStyles, color: 'red' }`, `_hover: hoverStyles`, `space[2]`, `Size.M`, `<Box {...baseStyles} _hover={hoverStyles} />`는 모두 그 자리에 직접 작성한 것처럼 읽히며, JavaScript에서처럼 나중 속성이 앞선 속성을 대체합니다. 이들에 대한 `Math` 호출(`Math.max(SIZE, 20)`, `Math.round(x)`, `Math.PI`)도 산술 연산처럼 접힙니다.
+
+빌드는 코드도 실행하지만, 결과가 확실한 코드만 실행합니다. 이 파일이 선언한 것(`const`, 함수, enum)이 리터럴과 상수로부터 정확한 내장 기능(`String`, `Number`, `JSON`, `Object`, `Array`, `'a'.toUpperCase()`나 `[1, 2].map(double)` 같은 문자열·배열 메서드, 그리고 정확한 `Math` 함수 `abs`, `ceil`, `floor`, `round`, `trunc`, `sign`, `max`, `min`, `sqrt`, `fround`, `imul`, `clz32`와 그 상수)으로 계산하는 경우입니다. `const double = (n) => n * 2; css({ w: double(SIZE) })`는 정적 클래스가 됩니다. import는 그 모듈이 선언한 값(리터럴, 또는 리터럴로 이루어진 객체나 배열)으로만 읽히며 다른 모듈의 코드는 실행되지 않으므로, import한 `darken`을 사용하는 `darken(0.1, PRIMARY)`는 계산되지 않습니다. 그보다 불확실한 것은 실행되지 않습니다. 그 밖의 전역 객체(`window`, `Date`, `Intl`, `IntersectionObserver`...), `Math.random`과 근사값을 내는 `Math` 함수(`sin`, `pow`, `exp`...), `**`, 기수를 지정한 `toString`, 로캘·유니코드 메서드(`toLocaleString`, `localeCompare`, `normalize`), `this`, `new`, 클래스, 정규 표현식, `try`, getter, `async` 코드와 제너레이터, JSX, 런타임에 결정되는 메서드(`obj[key]()`), 모듈 수준 바인딩에 값을 쓰는 함수가 이에 해당합니다. 요소나 `styled()` 컴포넌트는 다른 런타임 값과 마찬가지로 이런 값을 CSS 변수로 유지합니다. 반면 `css()`, `globalCss()`, `keyframes()`에는 이를 둘 요소가 없으므로 해당 값을 명시하는 빌드 오류가 됩니다. 값을 스타일 prop으로 옮기거나 상수로 만드세요. 이런 코드로만 계산할 수 있는 스타일 객체 전체(`makeStyles`가 `window`를 읽거나 import한 함수를 호출하는 경우의 `css(makeStyles())`나 `styled.div(makeStyles())`)도 빌드 오류입니다. `makeStyles`가 리터럴과 상수로만 계산한다면 빌드가 이를 실행하고 두 경우 모두 정적 클래스로 컴파일됩니다.
+
+객체, 배열, enum 상수는 빌드가 볼 수 있는 어떤 코드도 그것을 변경하지 않는 동안에만 작성한 그대로 읽힙니다. 여기서 빌드가 보는 코드는 그 상수를 사용하는 파일, 선언한 모듈, re-export하는 모듈이며 CommonJS 모듈도 포함됩니다. 멤버 할당, `delete`, `++`, `push`나 `sort` 같은 메서드, `Object.assign`, `for...of` 루프나 `forEach`/`map` 콜백 안에서의 요소 변경, `this`를 사용하는 자신의 메서드 호출, 빌드가 모르는 함수(또는 변경되는 객체)에 넘기는 것은 그 상수를 런타임에만 알 수 있는 값으로 만듭니다. 이 경우 요소는 그 멤버를 CSS 변수로 읽으며, `css()`, `styled()`, spread가 그것을 통째로 받으면(직접이든 namespace import나 그것을 담은 객체를 통해서든) 변경되거나 넘겨진 위치를 명시하는 빌드 오류가 됩니다. 읽기만 하는 것은 아무것도 바꾸지 않습니다. 담고 있는 문자열이나 숫자를 넘기는 것(`darken(colors.primary)`), 아무것도 변경하지 않는 `const`, `export default`, `module.exports`에 보관하는 것, `Object.freeze`, 원시값에 대한 `Object.keys`나 `Array.from`, 그리고 요소 props가 그렇습니다. React 컴포넌트는 props를 변경해서는 안 되므로 `<ThemeProvider theme={theme}>`는 이를 읽기만 합니다. 단 `ref={obj}`는 React가 값을 할당하는 예외입니다. 빌드가 보지 못하는 모듈은 여전히 import한 객체를 변경할 수 있으므로, 스타일이 읽는 객체는 런타임에 변경하지 말고 바뀌는 값에는 테마 토큰이나 props를 사용하세요.
+
+`css()`나 `styled()`가 합성하는 바인딩도 같은 방식으로 읽힙니다. `const base = makeStyles()`에서 `css(base)`, `css(...parts)`, `styled.div(base)`는 모듈이 계산한 규칙을 적용하며, 바인딩에 담긴 클래스(`const base = css({ ... })`, 스타일시트에서 import한 클래스)는 계속 클래스로 합성됩니다. 요소도 이런 객체를 받을 수 있으며(`<Box {...cardStyles} />`, `<Box _hover={hoverStyles} />`), `styled` 객체 안의 spread, 선택자, computed key도 마찬가지입니다. 요소가 런타임에 갖는 값은 CSS 변수로 남습니다. 소스 맵은 그 자리에서 계산된 값이 아니라 작성한 코드를 가리킵니다.
+
+빌드가 알 수 있는 조건은 해당 분기를 선택합니다(`const DARK = true; css({ color: DARK ? 'white' : 'black' })`). `globalCss()`, `keyframes()`, `<Global>`에는 전환할 클래스가 없으므로 런타임에만 알 수 있는 조건은 빌드 오류입니다. 반면 `css()`와 스타일 props는 클래스를 전환합니다.
+
+런타임에만 알 수 있는 값(prop, state, 매개변수)은 그 값을 명시하는 빌드 오류가 되며, 객체가 와야 할 자리에서 빌드가 읽을 수 없는 스타일도 마찬가지입니다. 알 수 없는 객체의 spread, 객체가 아닌 값을 받은 `_hover` 같은 선택자, computed key가 이에 해당합니다. 런타임 값에는 스타일 prop을 사용하세요(`<Box as={Component} w={width} />`). 스타일 prop에는 `await`와 `new`를 포함한 어떤 표현식이든 쓸 수 있으며, 작성한 그대로 실행됩니다. 알 수 없는 객체의 JSX spread(`<Box {...props} />`)는 여전히 런타임에 그 props를 전달합니다.
+
+빌드 오류는 해당 코드를 가리키며, 문제가 여러 개인 파일은 소스 순서대로 한 번에 모두 보고합니다.
+
+```
+src/App.tsx:6:18: `css()` cannot use `width` at build time: its values must be literals, theme tokens or constants, or be computed from them
+src/App.tsx:9:27: `globalCss()` cannot use `color` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+## globalCss() API
+
+빌드 시점에 추출되는 전역 스타일을 정의합니다.
+
+```tsx
+import { globalCss } from '@devup-ui/react'
+
+globalCss({
+  body: { margin: 0, fontFamily: 'Pretendard' },
+  '*': { boxSizing: 'border-box' },
+})
+```
+
+테마 토큰은 다른 스타일에서와 똑같이 동작합니다(`body: { color: '$text' }`). `imports`는 URL이나 `{ url, query }` 객체를 받아 `@import` 규칙으로 출력합니다. `'@layer name'` 키는 그 안의 규칙을 해당 캐스케이드 레이어에 넣으며, 레이어는 중첩할 수 있습니다(`'@layer base': { '@layer reset': { ... } }`는 `base.reset`입니다). `'@keyframes name'` 키는 애니메이션이 참조할 수 있도록 작성한 그대로의 이름으로 keyframes를 선언합니다.
+
+```tsx
+globalCss({
+  imports: ['reset.css', { url: 'print.css', query: 'print' }],
+  '@layer utilities': { '.hidden': { display: 'none' } },
+  '@keyframes fade-in': { from: { opacity: 0 }, to: { opacity: 1 } },
+})
+```
+
+## keyframes() API
+
+CSS 애니메이션을 정의합니다.
+
+```tsx
+import { keyframes } from '@devup-ui/react'
+
+const spin = keyframes({
+  from: { transform: 'rotate(0deg)' },
+  to: { transform: 'rotate(360deg)' },
+})
+
+const example = <Box animation={`${spin} 1s linear infinite`} />
+```
+
+`keyframes()`나 `css()`의 결과를 담은 `const`는 빌드가 아는 값이므로 다른 스타일 함수도 이를 읽을 수 있습니다: `css({ animationName: spin })`, `` globalCss`body { animation: ${spin} 1s; }` ``, `css({ selectors: { ['.' + card + ':hover &']: { m: 1 } } })`. 패키지 전체를 import한 경우도 같습니다(`import * as Devup from '@devup-ui/react'`와 `Devup.keyframes(...)`, `Devup.styled.div(...)`, `<Devup.Box />`). 다른 모듈에서 import한 이름은 이런 방식으로 읽히지 않습니다. 다른 파일이 생성하는 클래스는 그 파일이 빌드된 뒤에야 알 수 있기 때문입니다. 애니메이션을 사용하는 파일에 선언하거나 스타일 prop에서 읽으세요.
+
+빌드는 컴파일한 import를 제거하므로, 그 바인딩은 호출되거나 렌더링되는 위치에만 존재합니다. 최상위 별칭(`const myCss = css`, `const Row = Flex`)은 원본처럼 컴파일된 뒤 제거됩니다. 그 밖의 읽기(export, 배열에 넣기, 스타일 없는 `styled('div')`, 함수 안의 별칭)는 런타임에 예외를 던질 코드를 남기는 대신 빌드 오류가 됩니다.
