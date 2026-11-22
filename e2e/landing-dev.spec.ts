@@ -40,7 +40,8 @@ const routes = [
   ['/ko/docs/overview', '/ko/docs/overview'],
   ['/team', '/team'],
   ['/components/button', '/components/button'],
-  ['/ko/docs/features', '/docs/features'],
+  ['/ko/docs/features', '/ko/docs/features'],
+  ['/ko/components/button', '/components/button'],
 ] as const
 
 /**
@@ -146,7 +147,7 @@ for (const locale of ['en', 'ko'] as const) {
       .getByRole('link', { name: 'Features', exact: true })
       .first()
       .click()
-    await expect(page).toHaveURL(/(?<!ko)\/docs\/features$/u)
+    await expect(page).toHaveURL(`http://localhost:3098${prefix}/docs/features`)
     await expect(page.locator('main')).toBeVisible()
     await page.goBack()
     await expect(page).toHaveURL(`http://localhost:3098${prefix}/docs/overview`)
