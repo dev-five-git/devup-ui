@@ -143,7 +143,10 @@ for (const locale of ['en', 'ko'] as const) {
     await page.goto(`${prefix}/docs/overview`, { waitUntil: 'networkidle' })
 
     await page
-      .getByRole('link', { name: 'Features', exact: true })
+      .getByRole('link', {
+        name: locale === 'ko' ? '기능' : 'Features',
+        exact: true,
+      })
       .first()
       .click()
     await expect(page).toHaveURL(/(?<!ko)\/docs\/features$/u)
