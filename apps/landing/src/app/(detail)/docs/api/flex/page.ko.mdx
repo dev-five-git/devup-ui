@@ -1,0 +1,46 @@
+export const metadata = {
+  title: 'Flex',
+  alternates: {
+    canonical: '/ko/docs/api/flex',
+    languages: {
+      en: '/docs/api/flex',
+      ko: '/ko/docs/api/flex',
+      'x-default': '/docs/api/flex',
+    },
+  },
+}
+
+# Flex
+
+`Flex` 컴포넌트는 flexbox로 자식 요소를 배치하는 레이아웃 컴포넌트입니다.
+
+기본적으로 `display: flex` 스타일이 적용되어 있습니다.
+
+## 사용 방법
+
+{/* conformance */}
+
+```tsx
+import { Flex } from '@devup-ui/react'
+
+function App() {
+  return <Flex />
+}
+```
+
+위에서 정의한 Flex 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return <div className="a" />
+}
+```
+
+```css
+/* The component's own defaults sit in a lower cascade layer, so props override them */
+@layer b {
+  .a {
+    display: flex;
+  }
+}
+```

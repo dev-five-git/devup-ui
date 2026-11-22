@@ -1,0 +1,249 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
+export const metadata = {
+  title: '그룹 선택자',
+  alternates: {
+    canonical: '/ko/docs/api/group-selector',
+    languages: {
+      en: '/docs/api/group-selector',
+      ko: '/ko/docs/api/group-selector',
+      'x-default': '/docs/api/group-selector',
+    },
+  },
+}
+
+# 그룹 선택자
+
+그룹 선택자를 사용하면 자식 요소가 부모 요소의 상호작용에 반응할 수 있습니다. 상호작용하는 카드, 목록 항목 등 여러 요소로 구성된 컴포넌트를 만들 때 유용합니다.
+
+## 기본 사용법
+
+부모 요소에 `data-group` 속성을 추가한 다음, 자식 요소에 `_groupHover`, `_groupFocus`, `_groupActive`를 사용합니다.
+
+```tsx
+<Box bg="$background" borderRadius="8px" data-group p={4}>
+  <Text _groupHover={{ color: '$primary' }}>
+    This text changes color when parent is hovered
+  </Text>
+  <Box _groupHover={{ bg: '$primaryAlpha10' }} p={2}>
+    This box changes background on parent hover
+  </Box>
+</Box>
+```
+
+> **`role="group"`에서 마이그레이션**: 이전 버전에서는 그룹 부모를 표시할 때
+> `role="group"`을 사용했습니다. 현재는 두 형식을 모두 지원하지만, `role="group"`은
+> 스타일링용 훅이 아니라 실제 의미상의 그룹(예: `<fieldset>` 대체)에만 사용해야 하는
+> ARIA 의미를 갖습니다. 앞으로는 `data-group`을 사용하는 것이 좋습니다.
+> `role="group"` 형식은 v2에서 제거됩니다.
+> [CHANGELOG](https://github.com/dev-five-git/devup-ui/blob/main/CHANGELOG.md)를 참고하세요.
+
+## 사용 가능한 그룹 선택자
+
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>선택자</TableHeaderCell>
+      <TableHeaderCell>적용 조건</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>
+        <code>_groupHover</code>
+      </TableCell>
+      <TableCell>
+        <code>data-group</code>이 있는 부모에 마우스를 올렸을 때
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>_groupFocus</code>
+      </TableCell>
+      <TableCell>
+        <code>data-group</code>이 있는 부모가 포커스를 받았을 때
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>_groupActive</code>
+      </TableCell>
+      <TableCell>
+        <code>data-group</code>이 있는 부모가 활성화(눌림) 상태일 때
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>_groupFocusWithin</code>
+      </TableCell>
+      <TableCell>그룹 안의 요소 중 하나가 포커스를 받았을 때</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+위 표는 자주 쓰는 선택자만 나열한 것이며 전체 목록이 아닙니다.
+[선택자](/docs/api/selector) 페이지의 모든 의사 클래스 prop에는 그룹 형태가 있습니다.
+`_group` 뒤에 같은 이름을 PascalCase로 붙인 형태로, `_groupChecked`, `_groupDisabled`,
+`_groupFocusVisible` 등이 있습니다. 의사 클래스는 `data-group` 부모에 적용되고,
+스타일은 그 안의 요소에 적용됩니다. 그룹 props는 `selectors` 안의 키로도
+사용할 수 있습니다(`groupHover`).
+
+## 상호작용 카드 예제
+
+```tsx
+<Box
+  _hover={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+  bg="white"
+  borderRadius="8px"
+  boxShadow="0 1px 3px rgba(0,0,0,0.1)"
+  cursor="pointer"
+  data-group
+  p={4}
+>
+  <Box
+    bg="$backgroundMuted"
+    borderRadius="4px"
+    h="200px"
+    overflow="hidden"
+    w="100%"
+  >
+    <Image
+      _groupHover={{ transform: 'scale(1.05)' }}
+      src="/image.jpg"
+      transition="transform 0.2s"
+    />
+  </Box>
+
+  <Text _groupHover={{ color: '$primary' }} fontWeight={600} mt={3}>
+    Card Title
+  </Text>
+
+  <Text color="$textMuted" fontSize="14px">
+    Card description goes here
+  </Text>
+
+  <Box
+    _groupHover={{ opacity: 1 }}
+    mt={3}
+    opacity={0}
+    transition="opacity 0.2s"
+  >
+    <Button>View Details</Button>
+  </Box>
+</Box>
+```
+
+## 목록 항목 예제
+
+```tsx
+<Box as="ul" listStyle="none" m={0} p={0}>
+  {items.map((item) => (
+    <Box
+      key={item.id}
+      _hover={{ bg: '$backgroundMuted' }}
+      as="li"
+      borderBottom="1px solid $border"
+      data-group
+      p={3}
+    >
+      <Flex align="center" justify="space-between">
+        <Text _groupHover={{ color: '$primary' }}>{item.title}</Text>
+        <Box _groupHover={{ opacity: 1 }} opacity={0}>
+          <Button size="sm">Edit</Button>
+        </Box>
+      </Flex>
+    </Box>
+  ))}
+</Box>
+```
+
+## 내비게이션 메뉴 예제
+
+```tsx
+<Box as="nav">
+  <Box _hover={{ bg: '$backgroundMuted' }} borderRadius="4px" data-group p={2}>
+    <Flex align="center" gap={2}>
+      <Box
+        _groupHover={{ bg: '$primary' }}
+        bg="$textMuted"
+        borderRadius="50%"
+        h="8px"
+        w="8px"
+      />
+      <Text _groupHover={{ color: '$primary' }}>Menu Item</Text>
+      <Box _groupHover={{ opacity: 1 }} ml="auto" opacity={0}>
+        →
+      </Box>
+    </Flex>
+  </Box>
+</Box>
+```
+
+## 반응형 스타일과 함께 사용하기
+
+그룹 선택자는 반응형 배열과 함께 사용할 수 있습니다.
+
+```tsx
+<Box data-group p={[2, null, 4]}>
+  <Text
+    _groupHover={{
+      color: ['$primary', null, '$secondary'],
+      fontSize: ['16px', null, '18px'],
+    }}
+  >
+    Responsive group hover
+  </Text>
+</Box>
+```
+
+## 중첩된 그룹
+
+그룹이 중첩되어 있으면 선택자는 `data-group`이 있는 가장 가까운 부모를 기준으로 적용됩니다.
+
+```tsx
+<Box bg="white" data-group p={4}>
+  <Text _groupHover={{ color: 'blue' }}>Responds to outer group</Text>
+
+  <Box bg="$backgroundMuted" data-group mt={2} p={2}>
+    <Text _groupHover={{ color: 'red' }}>Responds to inner group</Text>
+  </Box>
+</Box>
+```
+
+## CSS 출력
+
+{/* conformance */}
+
+```tsx
+<Box data-group>
+  <Box _groupHover={{ bg: 'red' }} />
+</Box>
+```
+
+다음 CSS가 생성됩니다.
+
+```css
+:is([role='group'], [data-group]):hover .a {
+  background: red;
+}
+```
+
+`:is()` 래퍼는 새 `data-group` 속성과 기존 `role="group"` 속성을 하나의 규칙으로
+모두 일치시키므로, 마이그레이션 기간에도 기존 마크업이 계속 동작합니다.
+
+## 모범 사례
+
+1. **스타일링 훅에는 `data-group` 사용**: `role="group"`은 실제로 ARIA 그룹을
+   구성하는 요소에만 사용하고, 접근성 의미가 없는 시각적 그룹화에는 data 속성을
+   사용합니다.
+2. **상호작용을 쉽게 발견할 수 있게 유지**: 중요한 콘텐츠를 그룹 hover 뒤에 숨기지 않습니다.
+3. **터치 기기 고려**: 그룹 hover는 터치 환경에서 동작하지 않으므로 대체 상호작용을 제공합니다.
+4. **전환 효과 사용**: 상태가 부드럽게 바뀌도록 `transition` prop을 추가합니다.
+5. **접근성**: 상호작용 요소를 키보드로 사용할 수 있게 합니다.
