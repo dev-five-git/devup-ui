@@ -50,7 +50,7 @@ pub(super) fn evaluate(source: &str, probe: &str) -> Evaluation {
 }
 
 pub(super) fn execute(compiled: &str, probe: &str) -> Evaluation {
-    let script = plain_script(compiled);
+    let script = crate::runtime_units::linked(compiled) + &plain_script(compiled);
     let joined = run(&format!(
         "const trace = []; const h = (type, props, ...children) => ({{ type, props: props && {{ ...props }}, children }}); const jsx = (type, props) => ({{ type, props: props && {{ ...props }} }}); const createElement = h; const React = {{ createElement: h }}; const ReactNS = React; {script}\nreturn JSON.stringify([{probe}, trace]);"
     ));

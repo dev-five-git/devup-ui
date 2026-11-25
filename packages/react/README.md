@@ -121,7 +121,7 @@ const after = <div className="a" />
 Variables become CSS variables.
 
 ```tsx
-const before = <Box bg={colorVariable} />
+const before = <Box color={colorVariable} />
 
 const after = (
   <div
@@ -136,7 +136,7 @@ const after = (
 Conditions and responsive arrays compile too.
 
 ```tsx
-const before = <Box bg={['red', 'blue', a > b ? 'yellow' : variable]} />
+const before = <Box color={['red', 'blue', a > b ? 'yellow' : variable]} />
 
 const after = (
   <div

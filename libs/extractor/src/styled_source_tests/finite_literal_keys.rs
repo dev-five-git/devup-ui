@@ -99,7 +99,7 @@ fn native_selection_when_literal_lookup_cannot_use_legacy_key_conversion(
     program
         .body
         .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
+    let code = crate::runtime_units::linked(&output.code) + &Codegen::new().build(&program).code;
     // When: execute the emitted renderer and resolve its actual selected CSS declarations.
     let script = format!(
         "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const rendered=Card.render({{}},null);const names=rendered.props.className.split(' ');const selected={declarations}.filter(([name])=>names.includes(name)).map(([,value])=>value).sort();const inline=Object.values(rendered.props.style||{{}}).filter(value=>value!=null).sort();JSON.stringify([before,selected,inline,trace]);"

@@ -95,7 +95,9 @@ it('emits identical classes, variables and bundled bytes when source callbacks r
         expect(code).not.toMatch(/\bBox\b/)
         expect(code).toContain('<div ')
         const classes = code.match(/className="([^"]+)"/)
-        const variable = code.match(/"(--[a-z0-9_-]+)": value/)
+        const variable = code.match(
+          /"(--[a-z0-9_-]+)": (?:__devupScale\(value\)|value)/,
+        )
         assert(classes?.[1] && variable?.[1])
         for (const name of classes[1].split(' '))
           expect(styles).toMatch(new RegExp(`\\.${name}\\s*\\{`))
