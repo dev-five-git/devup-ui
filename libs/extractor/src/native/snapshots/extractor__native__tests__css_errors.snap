@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:3:18: `css()` cannot compile here on React Native: its styles differ by theme, breakpoint or orientation, which only a function component or a hook can read. Fix: call `css()` in the component that uses it
+test.tsx:4:22: `css()` cannot compile here on React Native: the build reads only the parts written in the call. Fix: pass each part to `css()` itself
+test.tsx:5:22: `css()` cannot use `a part` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
+test.tsx:5:30: `css()` cannot use `a part` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
+test.tsx:5:55: `css()` cannot use `?` on React Native: a condition in `css()` chooses between objects of styles. Fix: write each branch as an object, or as `null`
+test.tsx:6:24: `css()` cannot use `_hover` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state
+test.tsx:6:42: `css()` cannot use `[key]` on React Native: the build reads only keys written in a block. Fix: write the key itself
+test.tsx:7:18: `css` can only be called on React Native: the build compiles each call into styles. Fix: call it where the styles are used
+test.tsx:8:32: `css()` cannot use `className` on React Native: a block holds only style props. Fix: pass it to the element itself
+test.tsx:8:57: `css()` cannot use `?` on React Native: a condition in `css()` chooses between objects of styles. Fix: write each branch as an object, or as `null`
+test.tsx:9:18: `css()` cannot compile here on React Native: CSS text on React Native holds only declarations: React Native has no selectors, nesting or at-rules. Fix: write the declarations alone, and the styles of other states as props such as `_active`
+test.tsx:10:18: `css()` cannot use `color` on React Native: a declaration of CSS text is a property and a value. Fix: write it as `property: value`
+test.tsx:10:18: `css()` cannot use `padding ${…}px` on React Native: a declaration of CSS text is a property and a value. Fix: write it as `property: value`
+test.tsx:10:18: `css()` cannot use `padding` on React Native: the build reads an interpolation in CSS text only as a whole value. Fix: compute the whole value in the interpolation, such as `${`${size}px`}`
+test.tsx:10:18: `css()` cannot use `webkitMask` on React Native: React Native has no such style. Fix: remove it, or write a style React Native has
+test.tsx:12:15: `<Box>` cannot use `className` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
+test.tsx:12:31: `css()` cannot use `_active` on React Native: a press style applies while an element is pressed, which `css()` cannot tell. Fix: give `_active` to the element
+test.tsx:12:91: `<Box>` cannot use `className` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props

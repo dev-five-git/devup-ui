@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-binding/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "`codeExtractNative` compiles `css()` for React Native (part of #411): a call compiles to the style it describes, the value React Native's `style` takes, and `className` on a Devup UI element passes it on before the element's style props. `css()` takes objects of style props with responsive values, theme tokens and blocks, conditions choosing between objects, what another `css()` gives, and CSS text whose interpolations are whole values. A `css()` whose styles differ by theme, breakpoint or orientation must be called in a function component or a hook. A `style` prop holding Devup UI elements or `css()` calls now compiles them too. Web output is unchanged.",
+  "date": "2026-11-21T00:00:00.000Z"
+}

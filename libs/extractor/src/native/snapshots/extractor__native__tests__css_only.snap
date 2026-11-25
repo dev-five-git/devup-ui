@@ -1,0 +1,36 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useLandscape as __useLandscape } from "@devup-ui/react/native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { margin: 8 },
+	b: { padding: 4 },
+	c: { padding: 8 },
+	d: { margin: 4 },
+	e: { padding: 12 }
+});
+export const s = [__s.a, cond ? __s.b : __s.c];
+export const t = [
+	true,
+	on ? null : __s.b,
+	on && __s.d,
+	other.css({ p: 1 })
+];
+export const useU = () => {
+	const __l = __useLandscape();
+	return [
+		t,
+		__s.b,
+		__l && __s.d,
+		__s.a,
+		on ? null : [__s.c, __l && __s.e],
+		other`x`
+	];
+};
+export const useV = () => {
+	const __l = __useLandscape();
+	return [__s.c, __l && __s.d];
+};
