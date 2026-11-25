@@ -117,23 +117,44 @@ The build imports these from `@devup-ui/react/native`, a store read with
 `useSyncExternalStore` that computes no style; web builds never import it.
 `setTheme` does not save the choice across launches.
 
+## Responsive values
+
+Responsive arrays, and `length`, `shadow` and `typography` tokens with a value
+at each breakpoint, use the `breakpoints` of devup.json (the web's
+`[0, 480, 768, 992, 1280, 1600]` by default), measured against the window
+width in density-independent pixels. As on the web, each value applies from
+its breakpoint on and `null` keeps the one before:
+
+```tsx
+<Box p={[1, null, 3]} bg="$surface" />
+// <View style={[[__s.a, __s.b][__t], __b < 2 ? __s.c : __s.d]} />
+```
+
+The build precomputes one style object for each run of breakpoints that
+share their styles, only for the styles that differ; a value that differs by
+theme and breakpoint picks by both. The runtime listens to the window once
+and renders a component again only when the window crosses into another
+breakpoint. `_portrait` and `_landscape` apply their styles while the window
+is in that orientation.
+
+A value read at runtime in an array (`p={[x, 2]}`) applies from its
+breakpoint on as it is.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at
-runtime, theme tokens, conditions between them and the platform and theme
-blocks. These are build errors, reported by Metro at the file, line and
-column:
+runtime, theme tokens, responsive values, conditions between them and the
+platform, theme and orientation blocks. These are build errors, reported by
+Metro at the file, line and column:
 
-- responsive arrays (`p={[1, 2]}`), and tokens or typography with a value at
-  each breakpoint
 - interaction states (`_hover`, `_active`, `_pressed`, `_focus`, ...)
 - `css()`, `styled()`, `globalCss()`, `keyframes()` and `Grid`
 - any prop React Native has no style for
-- with `runtime: false`, a value that differs by theme, `_theme*` with more
-  than one theme, and `useTheme`, `getTheme` and `setTheme`
+- with `runtime: false`, a value that differs by theme or breakpoint,
+  `_theme*` with more than one theme, `_portrait`, `_landscape`, and
+  `useTheme`, `getTheme` and `setTheme`
 
-The runtime that brings responsive values and `_pressed` comes in a later
-version.
+The runtime that brings `_pressed` comes in a later version.
 
 Metro reads devup.json when it starts, so restart Metro after changing it
 (`--reset-cache` is not needed).

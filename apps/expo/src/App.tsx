@@ -24,7 +24,8 @@ export function App() {
       flexDirection="column"
       gap={4}
       justifyContent="center"
-      p={6}
+      px="$gutter"
+      py={[6, null, 10]}
     >
       <Image
         borderRadius="16px"
@@ -36,7 +37,14 @@ export function App() {
         Devup UI on React Native
       </Text>
       <Badge label={`${theme ?? 'light'} theme`} />
-      <Box bg="$card" borderRadius="$radius" boxShadow="$raised" p={4} w="100%">
+      <Box
+        bg="$card"
+        borderRadius="$radius"
+        boxShadow="$raised"
+        maxW={[null, null, '480px']}
+        p={[4, null, 6]}
+        w="100%"
+      >
         <Text color="$muted" fontSize="14px" mb={2}>
           Your name
         </Text>
@@ -53,28 +61,34 @@ export function App() {
           {name ? `Hello, ${name}` : 'Type your name'}
         </Text>
       </Box>
-      <Button
-        bg="#5a44ff"
-        borderRadius="8px"
-        onPress={() => setCount(count + 1)}
-        px={5}
-        py={3}
+      <Flex
+        _landscape={{ flexDirection: 'row' }}
+        flexDirection="column"
+        gap={3}
       >
-        <Text color="#fff" fontWeight="600">
-          Pressed {count} times
-        </Text>
-      </Button>
-      <Button
-        border="1px solid $border"
-        borderRadius="8px"
-        onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        px={5}
-        py={3}
-      >
-        <Text color="$text">
-          Switch to {theme === 'dark' ? 'light' : 'dark'}
-        </Text>
-      </Button>
+        <Button
+          bg="#5a44ff"
+          borderRadius="8px"
+          onPress={() => setCount(count + 1)}
+          px={5}
+          py={3}
+        >
+          <Text color="#fff" fontWeight="600">
+            Pressed {count} times
+          </Text>
+        </Button>
+        <Button
+          border="1px solid $border"
+          borderRadius="8px"
+          onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          px={5}
+          py={3}
+        >
+          <Text color="$text">
+            Switch to {theme === 'dark' ? 'light' : 'dark'}
+          </Text>
+        </Button>
+      </Flex>
     </Flex>
   )
 }

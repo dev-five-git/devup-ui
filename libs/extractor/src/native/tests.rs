@@ -5,10 +5,16 @@ use super::element::units_declaration;
 use super::errors::{Problem, RuntimeFeature};
 use super::props::Declaration;
 use super::sheet::{Sheet, key_name};
-use super::style::{Choice, in_theme, style_code, themed};
+use super::style::{Choice, State, Vars, cascade, in_theme, style_code, varied, when};
 use super::values::{Literal, NativeValue, css_text, number_or_text, quoted_list};
 use super::{NativePlatform, NativeTarget, NativeTheme, TokenLevels, TypographyProperties};
 use crate::{ExtractOption, ExtractTarget, extract, extract_without_source_map};
+
+const VARS: Vars<'static> = Vars {
+    theme: "t",
+    breakpoint: "b",
+    landscape: "l",
+};
 
 const IMPORT: &str =
     "import { Box, Button, Center, Flex, Image, Input, Text, VStack } from '@devup-ui/react'\n";
@@ -429,7 +435,7 @@ fn style_code_orders_and_merges_choices() {
         ],
         vec!["given".to_string()],
         &mut sheet,
-        "t",
+        &VARS,
     )
     .map(|style| style.code);
     assert_eq!(
@@ -447,7 +453,7 @@ fn style_code_orders_and_merges_choices() {
             vec![Choice::Empty],
             vec!["given".to_string()],
             &mut sheet,
-            "t"
+            &VARS
         )
         .is_none()
     );
@@ -606,6 +612,7 @@ fn theme(names: &[&str], dark: Option<usize>, tokens: &[(&str, &[Option<&str>])]
         .into_iter()
         .map(|(name, levels)| (name.to_string(), levels))
         .collect(),
+        ..NativeTheme::default()
     }
 }
 
@@ -862,10 +869,10 @@ fn names_selector_themes(#[case] prop: &str, #[case] expected: &str) {
 #[test]
 fn themed_choices_collapse_when_every_theme_agrees() {
     let red = declarations(&[("opacity", 1.0)]);
-    assert_eq!(themed(vec![]), Choice::Empty);
-    assert_eq!(themed(vec![vec![], vec![]]), Choice::Empty);
+    assert_eq!(varied(vec![vec![]]), Choice::Empty);
+    assert_eq!(varied(vec![vec![vec![], vec![]]]), Choice::Empty);
     assert_eq!(
-        themed(vec![red.clone(), red.clone()]),
+        varied(vec![vec![red.clone(), red.clone()]]),
         Choice::Static(red.clone())
     );
     assert_eq!(
@@ -875,6 +882,265 @@ fn themed_choices_collapse_when_every_theme_agrees() {
     assert_eq!(in_theme(1, 2, Choice::Empty), Choice::Empty);
     assert_eq!(
         in_theme(1, 2, Choice::Static(red.clone())),
-        Choice::Themed(vec![vec![], red])
+        Choice::Varied(vec![vec![vec![], red]])
+    );
+}
+
+const RESPONSIVE_ELEMENTS: &str = r#"export function Layout({ on, x }) {
+  return (
+    <VStack p={[1, null, 3]} m={2}>
+      <Box p={[1, 2, 3, 4, 5, 6, 7, 8]} />
+      <Box p={[null, 2]} w={[undefined, false, , "50%"]} />
+      <Box p={[1, 1, 2]} bg="red" />
+      <Box m={["1px 2px", "3px"]} p={["1px 2px", null, "3px 4px"]} />
+      <Box p={[x, 2]} />
+      <Box p={[on ? 1 : 2, null, 3]} m={[(on && 1), x]} />
+      <Box p={on ? [1, 2] : 3} m={on && [1, null, 2]} />
+      <Box p={[4]} m={[2, 2]} />
+      <Box _ios={{ p: [1, 2] }} _android={{ p: [3, 4] }} />
+      <Box p={[1, 2]} m={[3, null, 4]} gap={[1, 2]} />
+      <Box px={[1, 2]} py={3} />
+      <Box p={[1, 2, 3]} p={4} />
+      <Box p={4} p={[1, 2]} />
+      <Box p={on ? [x, 2] : 3} p={1} />
+    </VStack>
+  )
+}"#;
+
+const ORIENTATION_ELEMENTS: &str = r"export function Screen({ on }) {
+  return (
+    <Flex _portrait={{ flexDir: 'column', p: [1, 2] }} _landscape={{ p: on ? 3 : 4, _ios: { m: 1 } }}>
+      <Box _landscape={{ _landscape: { p: 1 } }} p={2} />
+    </Flex>
+  )
+}";
+
+#[rstest]
+#[case::responsive("responsive_arrays", RESPONSIVE_ELEMENTS)]
+#[case::orientation("orientation_blocks", ORIENTATION_ELEMENTS)]
+#[case::hooks_in_arrow(
+    "responsive_hooks_in_arrow",
+    "export const A = () => <Box p={[1, 2]} bg=\"$primary\" _landscape={{ m: 1 }} />;\nexport const B = () => <Box _portrait={{ m: 1 }} />;\nexport const c = <Box p={[1, 2]} _landscape={{ m: 1 }} />;\nexport const d = <Box bg=\"$primary\" p={[1, 2]} />"
+)]
+#[case::name_collisions(
+    "responsive_name_collisions",
+    "const __b = 1, __l = 2, __useBreakpoint = 3, __useLandscape = 4;\nexport const A = () => <Box p={[1, 2]} _landscape={{ m: 1 }} />"
+)]
+fn compiles_responsive(#[case] name: &str, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), true, code));
+}
+
+/// Token values at each breakpoint
+fn levels(values: &[Option<&str>]) -> TokenLevels {
+    values
+        .iter()
+        .map(|value| value.map(str::to_string))
+        .collect()
+}
+
+/// Two themes whose tokens and typographies differ by breakpoint
+fn responsive_themes() -> NativeTheme {
+    let mut theme = two_themes();
+    theme.tokens.insert(
+        "space".to_string(),
+        vec![
+            Some(levels(&[Some("4px"), None, Some("8px")])),
+            Some(levels(&[Some("6px"), None, Some("12px")])),
+        ],
+    );
+    theme.tokens.insert(
+        "edge".to_string(),
+        vec![
+            Some(levels(&[
+                Some("1px solid $primary"),
+                Some("2px solid $primary")
+            ]));
+            2
+        ],
+    );
+    theme.tokens.insert(
+        "late".to_string(),
+        vec![Some(levels(&[None, Some("2px")])); 2],
+    );
+    theme.typography.insert(
+        "display".to_string(),
+        vec![
+            Some(typography_entry(&[
+                ("font-family", "Inter"),
+                ("font-size", "$captionSize"),
+                ("line-height", "1.5"),
+            ])),
+            None,
+            Some(typography_entry(&[("font-size", "40px")])),
+        ],
+    );
+    theme
+}
+
+const THEMED_RESPONSIVE_ELEMENTS: &str = r#"export function Card({ on }) {
+  return (
+    <Box bg={["$primary", "$text"]} p="$space" m="$gutter" borderColor="$primary">
+      <Text typography="heading" color="$text" />
+      <Text typography="display" />
+      <Text typography={["body", null, "heading"]} />
+      <Box _themeDark={{ p: [1, 2], bg: "$primary" }} />
+      <Box p={["$space", null, 1]} m="$late" />
+      <Box bg={on ? ["$primary", null, "red"] : "$text"} />
+      <Box border="$edge" />
+      <Box _landscape={{ bg: "$primary", p: "$space" }} />
+      <Box bg="$primary" bg={[null, "$text"]} />
+    </Box>
+  )
+}"#;
+
+#[rstest]
+#[case::two_themes("responsive_themes", responsive_themes(), THEMED_RESPONSIVE_ELEMENTS)]
+#[case::custom_breakpoints(
+    "responsive_custom_breakpoints",
+    NativeTheme {
+        breakpoints: vec![0, 600],
+        ..responsive_themes()
+    },
+    "export const A = () => <Box p={[1, 2, 3]} m=\"$space\" />;\nexport const b = <Box p={[1, 2]} />"
+)]
+#[case::no_breakpoints(
+    "responsive_no_breakpoints",
+    NativeTheme {
+        breakpoints: vec![],
+        ..responsive_themes()
+    },
+    "export const A = () => <Box p={[1, 2, 3]} m=\"$space\" />"
+)]
+fn compiles_responsive_themes(#[case] name: &str, #[case] theme: NativeTheme, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(theme, true, code));
+}
+
+#[rstest]
+#[case::arrays(
+    "runtime_off_arrays",
+    "<Box p={[1, 2]} />;\n<Box p={[x, 2]} />;\n<Box p={[1]} m={[2, 2]} w={[null, 1]} />"
+)]
+#[case::tokens(
+    "runtime_off_responsive_tokens",
+    "<Box p=\"$gutter\" />;\n<Text typography=\"heading\" />"
+)]
+#[case::orientation(
+    "runtime_off_orientation",
+    "<Box _landscape={{ p: 1 }} _portrait={{ p: 2 }} />"
+)]
+fn runtime_off_rejects_responsive_values(#[case] name: &str, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(one_theme(), false, code));
+}
+
+#[rstest]
+#[case::spread("responsive_spread", "<Box p={[1, ...rest]} />")]
+#[case::nested("responsive_nested", "<Box p={[x, [1, 2]]} />")]
+#[case::orientation_value(
+    "orientation_value",
+    "<Box _landscape={1} _portrait={{ p: [1, { a: 1 }] }} />"
+)]
+fn responsive_errors(#[case] name: &str, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), true, code));
+}
+
+#[rstest]
+#[case("margin", "marginTop", true)]
+#[case("margin", "margin", false)]
+#[case("margin", "padding", false)]
+#[case("padding", "paddingVertical", true)]
+#[case("inset", "insetBlock", true)]
+#[case("inset", "top", true)]
+#[case("inset", "inset", false)]
+#[case("inset", "width", false)]
+#[case("marginVertical", "marginTop", true)]
+#[case("marginVertical", "marginLeft", false)]
+#[case("paddingVertical", "paddingBottom", true)]
+#[case("marginHorizontal", "marginStart", true)]
+#[case("marginHorizontal", "marginTop", false)]
+#[case("paddingHorizontal", "paddingRight", true)]
+#[case("gap", "rowGap", true)]
+#[case("gap", "gap", false)]
+#[case("borderWidth", "borderTopWidth", true)]
+#[case("borderWidth", "borderWidth", false)]
+#[case("borderColor", "borderLeftColor", true)]
+#[case("borderRadius", "borderTopLeftRadius", true)]
+#[case("borderRadius", "outlineRadius", false)]
+#[case("width", "minWidth", false)]
+fn cascade_replaces_covered_longhands(
+    #[case] shorthand: &str,
+    #[case] longhand: &str,
+    #[case] replaced: bool,
+) {
+    // Given: a narrower breakpoint declaring `longhand`
+    let mut declared = declarations(&[(longhand, 1.0), ("opacity", 1.0)]);
+    // When: a wider one declares `shorthand`
+    cascade(&mut declared, declarations(&[(shorthand, 2.0)]));
+    // Then
+    let kept = declared.iter().any(|(key, value)| {
+        key == longhand && (longhand == shorthand || *value == NativeValue::Number(1.0))
+    });
+    assert_eq!(!kept, replaced, "{declared:?}");
+    assert!(declared.iter().any(|(key, _)| key == "opacity"));
+}
+
+#[test]
+fn varied_choices_pick_by_breakpoint_and_theme() {
+    let a = declarations(&[("padding", 1.0)]);
+    let b = declarations(&[("padding", 2.0)]);
+    let c = declarations(&[("padding", 3.0)]);
+    let mut sheet = Sheet::new("s".to_string());
+    let mut code = |choice: Choice| {
+        style_code(vec![choice], vec![], &mut sheet, &VARS)
+            .map_or_else(Default::default, |style| (style.code, style.reads))
+    };
+    // Three runs of breakpoints, the first without styles
+    let (three, _) = code(Choice::Varied(vec![
+        vec![vec![]],
+        vec![a.clone()],
+        vec![a.clone()],
+        vec![b.clone()],
+    ]));
+    assert_eq!(three, "b < 1 ? null : b < 3 ? s.a : s.b");
+    // Breakpoints and themes both
+    let (both, reads) = code(Choice::Varied(vec![
+        vec![a.clone(), b.clone()],
+        vec![c.clone(), c.clone()],
+    ]));
+    assert_eq!(both, "b < 1 ? [s.a, s.b][t] : s.c");
+    assert!(reads.theme && reads.breakpoint && !reads.landscape);
+    // In a condition, and applied while a state holds
+    let (condition, reads) = code(Choice::Condition {
+        test: "on".to_string(),
+        consequent: Box::new(Choice::Varied(vec![vec![a.clone()], vec![b.clone()]])),
+        alternate: Box::new(when(State::Landscape(false), Choice::Static(c))),
+    });
+    assert_eq!(condition, "on ? (b < 1 ? s.a : s.b) : (!l && s.c)");
+    assert!(!reads.theme && reads.breakpoint && reads.landscape);
+    let (nested, _) = code(Choice::Condition {
+        test: "on".to_string(),
+        consequent: Box::new(Choice::Varied(vec![
+            vec![declarations(&[("padding", 1.0), ("margin", 1.0)])],
+            vec![declarations(&[("padding", 2.0), ("margin", 1.0)])],
+        ])),
+        alternate: Box::new(Choice::All(vec![
+            Choice::Static(a.clone()),
+            when(State::AtLeast(2), Choice::Static(b)),
+        ])),
+    });
+    assert_eq!(
+        nested,
+        "on ? ([s.d, b < 1 ? s.a : s.b]) : [s.a, b >= 2 && s.b]"
+    );
+    assert_eq!(when(State::Theme(1), Choice::Empty), Choice::Empty);
+    assert_eq!(
+        in_theme(
+            1,
+            2,
+            when(State::Landscape(true), Choice::Static(a.clone()))
+        ),
+        when(
+            State::Theme(1),
+            when(State::Landscape(true), Choice::Static(a))
+        )
     );
 }

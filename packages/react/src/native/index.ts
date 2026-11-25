@@ -4,15 +4,16 @@ import {
   type ReactElement,
   useSyncExternalStore,
 } from 'react'
-import { Appearance } from 'react-native'
+import { Appearance, Dimensions } from 'react-native'
 
 import type { DevupTheme } from '../types/theme'
 
 /**
  * The React Native runtime of Devup UI. The build compiles every style to
- * `StyleSheet` objects, one a theme when a value differs by theme; this
- * module only tells which theme shows. It reads no CSS, resolves no token
- * and computes no style. Web builds never import it.
+ * `StyleSheet` objects, one a theme or a breakpoint when a value differs by
+ * them; this module only tells which theme shows, which breakpoint the
+ * window is at and whether it is in landscape. It reads no CSS, resolves no
+ * token and computes no style. Web builds never import it.
  */
 
 type ThemeName = keyof DevupTheme extends undefined ? string : keyof DevupTheme
@@ -23,6 +24,10 @@ let names: readonly string[] = []
 let dark = -1
 /** The theme `setTheme` chose, which wins over the system appearance */
 let chosen: string | null = null
+/** The window widths the breakpoints start at, as devup.json gives them */
+let breakpoints: readonly number[] = [0, 480, 768, 992, 1280, 1600]
+/** The breakpoint and orientation listeners last heard of, as one number */
+let layout = -1
 let following = false
 const listeners = new Set<() => void>()
 
@@ -30,10 +35,26 @@ function notify(): void {
   for (const listener of listeners) listener()
 }
 
+/** The breakpoint the window is at and whether it is in landscape, as one number */
+function readLayout(): number {
+  return getBreakpoint() * 2 + Number(getLandscape())
+}
+
+/** Tells the listeners when the window crosses a breakpoint or turns */
+function resize(): void {
+  const next = readLayout()
+  if (next !== layout) {
+    layout = next
+    notify()
+  }
+}
+
 function subscribe(listener: () => void): () => void {
   if (!following) {
     following = true
+    layout = readLayout()
     Appearance.addChangeListener(notify)
+    Dimensions.addEventListener('change', resize)
   }
   listeners.add(listener)
   return () => {
@@ -50,6 +71,15 @@ function subscribe(listener: () => void): () => void {
 export function defineThemes(themes: readonly string[], darkIndex = -1): void {
   names = themes
   dark = darkIndex
+}
+
+/**
+ * Tells the runtime the breakpoints of devup.json when they are not the
+ * web's default. The build calls it in each file that reads the breakpoint.
+ * @internal
+ */
+export function defineBreakpoints(widths: readonly number[]): void {
+  breakpoints = widths
 }
 
 /**
@@ -89,9 +119,46 @@ export function useThemeIndex(): number {
 }
 
 /**
- * Renders `$c` with the style `$s` gives for the theme the app shows. The
- * build renders an element through it where no function component can read
- * the theme for it.
+ * The breakpoint the window is at: the index of the last breakpoint whose
+ * width the window reaches, as the web's `min-width` media queries choose,
+ * and `0` below them all
+ */
+export function getBreakpoint(): number {
+  const { width } = Dimensions.get('window')
+  let level = 0
+  for (let index = 1; index < breakpoints.length; index++) {
+    if (width >= breakpoints[index]) level = index
+  }
+  return level
+}
+
+/**
+ * The breakpoint the window is at, rendering again only when the window
+ * crosses into another breakpoint
+ */
+export function useBreakpoint(): number {
+  return useSyncExternalStore(subscribe, getBreakpoint, getBreakpoint)
+}
+
+/** Whether the window is wider than it is tall */
+function getLandscape(): boolean {
+  const { width, height } = Dimensions.get('window')
+  return width > height
+}
+
+/**
+ * Whether the window is in landscape, rendering again when it turns
+ * @internal
+ */
+export function useLandscape(): boolean {
+  return useSyncExternalStore(subscribe, getLandscape, getLandscape)
+}
+
+/**
+ * Renders `$c` with the style `$s` gives for the theme the app shows, the
+ * breakpoint the window is at and whether it is in landscape. The build
+ * renders an element through it where no function component can read them
+ * for it.
  * @internal
  */
 export function Themed({
@@ -100,7 +167,10 @@ export function Themed({
   ...props
 }: {
   $c: ElementType
-  $s: (theme: number) => unknown
+  $s: (theme: number, breakpoint: number, landscape: boolean) => unknown
 } & Record<string, unknown>): ReactElement {
-  return createElement($c, { ...props, style: $s(useThemeIndex()) })
+  return createElement($c, {
+    ...props,
+    style: $s(useThemeIndex(), useBreakpoint(), useLandscape()),
+  })
 }
