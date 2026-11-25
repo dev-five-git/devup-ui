@@ -894,6 +894,67 @@ jobs:
         working-directory: apps/react-18
         run: bun run test:e2e
 
+  # Whether this change touches React Native: the extractor's native output,
+  # the engines, the Metro plugin and its utilities, the Expo app or this
+  # workflow. The Expo job below runs only then.
+  native-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Compare with the base
+        id: diff
+        shell: bash
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No base commit to compare with; running the Expo job."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD)"
+          echo "$files"
+          if grep -qE '^(libs/extractor/src/native/|libs/binding/|bindings/devup-ui-(binding|wasm)/|packages/(metro-plugin|plugin-utils)/|apps/expo/|\.github/workflows/publish\.yml$)' <<< "$files"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The Expo example app (apps/expo) bundled for iOS and Android through
+  # @devup-ui/metro-plugin, as a release build does. Devup UI compiles away,
+  # so no bundle may keep a module of @devup-ui/react or its runtime
+  # placeholder.
+  expo:
+    needs: [build, native-changes]
+    if: needs.native-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - *record-runner-image
+      - *setup-bun
+      - *restore-bun-cache
+      - *setup-node
+      - run: bun install --frozen-lockfile
+      - *download-build
+      - *unpack-build
+      - name: Export the iOS and Android bundles
+        working-directory: apps/expo
+        env:
+          EXPO_NO_TELEMETRY: '1'
+        run: bun run export
+      - name: Check the bundles
+        working-directory: apps/expo
+        run: bun run check
+
   # @devup-ui/vite-plugin must keep the CSS every server page needs when the
   # build is vinext/RSC. The fixture shares one Devup UI header between server
   # list pages and a client page, and the tests read the styles the browser

@@ -1,0 +1,56 @@
+{
+  "name": "@devup-ui/metro-plugin",
+  "description": "Devup UI for React Native: compiles Devup UI to React Native styles in Metro (experimental)",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "react",
+    "react-native",
+    "expo",
+    "metro"
+  ],
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "eslint",
+    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external --define import.meta.url=module.filename && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/transformer.ts --production --env=disable --outfile dist/transformer.cjs --format cjs --packages external --define import.meta.url=module.filename"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./transformer": "./dist/transformer.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@devup-ui/binding": "workspace:^",
+    "@devup-ui/plugin-utils": "workspace:^",
+    "@devup-ui/wasm": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
