@@ -24,6 +24,10 @@ pub struct ExtractDynamicStyle {
     important: bool,
 
     pub(crate) layer: Option<String>,
+
+    /// Whether the value is the one the author wrote, whose number takes the
+    /// unit a literal of the property is given
+    runtime_units: crate::runtime_units::Marked,
 }
 
 impl Debug for ExtractDynamicStyle {
@@ -118,7 +122,22 @@ impl ExtractDynamicStyle {
             style_order: None,
             important,
             layer: None,
+            runtime_units: crate::runtime_units::Marked(false),
         }
+    }
+
+    /// The style with a number its value holds at runtime converted as a
+    /// literal of the property is
+    #[must_use]
+    pub(crate) fn with_runtime_units(mut self, runtime_units: bool) -> Self {
+        self.runtime_units = crate::runtime_units::Marked(
+            runtime_units && crate::runtime_units::may_be_number(&self.identifier),
+        );
+        self
+    }
+
+    pub(crate) const fn runtime_units(&self) -> bool {
+        self.runtime_units.0
     }
 
     pub const fn property(&self) -> &str {
@@ -188,6 +207,11 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
             }),
             variable_name,
             identifier: self.identifier.clone(),
+            unit: self
+                .runtime_units
+                .0
+                .then(|| crate::runtime_units::runtime_unit(&self.property))
+                .flatten(),
         }
     }
 }

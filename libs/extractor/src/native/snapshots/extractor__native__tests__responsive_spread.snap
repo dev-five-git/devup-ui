@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `p` on React Native: the build reads only the values written in a responsive array. Fix: write each value in the array

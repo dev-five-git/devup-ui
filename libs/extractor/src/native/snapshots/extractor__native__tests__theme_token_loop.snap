@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `bg` on React Native: the tokens in `$loopA` name each other without end. Fix: give one of the tokens a value in devup.json

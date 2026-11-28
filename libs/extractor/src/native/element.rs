@@ -3,25 +3,30 @@
 //! component its import is now bound to.
 
 use oxc_ast::ast::{
-    Expression, IdentifierReference, JSXAttribute, JSXAttributeItem, JSXAttributeName,
-    JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression, LogicalOperator,
-    ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
+    ArrayExpression, ArrayExpressionElement, ArrowFunctionExpression, ExportDefaultDeclaration,
+    Expression, Function, FunctionBody, IdentifierReference, JSXAttribute, JSXAttributeItem,
+    JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression,
+    LogicalOperator, ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
+    VariableDeclarator,
 };
 use std::cell::Cell;
+use std::fmt::Write;
 
 use oxc_ast_visit::{Visit, walk};
 use oxc_semantic::Scoping;
 use oxc_span::{GetSpan, Span};
+use oxc_syntax::scope::ScopeFlags;
 use oxc_syntax::symbol::SymbolId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::errors::{Problem, RuntimeFeature};
 use super::imports::{self, native_component};
-use super::props::{declarations, dynamic_keys};
+use super::props::{Declaration, Tokens, declarations, dynamic_keys, literal_levels};
 use super::sheet::Sheet;
-use super::style::{Choice, style_code};
-use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
-use super::{NativePlatform, NativeTarget, REACT_NATIVE, Replacement};
+use super::style::{Choice, Reads, State, Vars, cascade, in_theme, style_code, varied, when};
+use super::theme::{DEFAULT_BREAKPOINTS, selector_theme};
+use super::values::{Literal, NativeValue};
+use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
 
@@ -31,12 +36,131 @@ pub(super) struct Compiled {
     pub errors: Vec<(u32, String)>,
 }
 
+/// The names the file gives what it imports from the runtime, and whether
+/// it uses each
+struct Runtime {
+    /// The variable holding the index of the theme the app shows
+    index: String,
+    /// The variable holding the breakpoint the window is at
+    breakpoint: String,
+    /// The variable holding whether the window is in landscape
+    landscape: String,
+    /// The hooks reading each, by what they read
+    hooks: [String; 3],
+    /// What the hooks the file calls read
+    hooks_used: Reads,
+    /// The component that reads them itself, for an element outside a
+    /// function component
+    wrapper: String,
+    wrapper_used: bool,
+    /// What the elements rendered through it read
+    wrapper_reads: Reads,
+    /// The function telling the runtime the theme names
+    define: String,
+    /// The function telling the runtime the breakpoints
+    define_breakpoints: String,
+}
+
+/// The runtime hooks, in the order they are called, by the name they are
+/// exported under: they read the theme, the breakpoint and the orientation
+const HOOKS: [&str; 3] = ["useThemeIndex", "useBreakpoint", "useLandscape"];
+
+impl Runtime {
+    fn new(code: &str) -> Self {
+        Self {
+            index: fresh_name("__t", code),
+            breakpoint: fresh_name("__b", code),
+            landscape: fresh_name("__l", code),
+            hooks: HOOKS.map(|hook| fresh_name(&format!("__{hook}"), code)),
+            hooks_used: Reads::default(),
+            wrapper: fresh_name("__Themed", code),
+            wrapper_used: false,
+            wrapper_reads: Reads::default(),
+            define: fresh_name("__defineThemes", code),
+            define_breakpoints: fresh_name("__defineBreakpoints", code),
+        }
+    }
+
+    /// The variables holding what the runtime tells
+    fn vars(&self) -> Vars<'_> {
+        Vars {
+            theme: &self.index,
+            breakpoint: &self.breakpoint,
+            landscape: &self.landscape,
+        }
+    }
+
+    /// The variables of `reads`, in the order of the hooks
+    fn variables(&self, reads: Reads) -> impl Iterator<Item = (usize, &str)> {
+        [&self.index, &self.breakpoint, &self.landscape]
+            .into_iter()
+            .enumerate()
+            .filter(move |(at, _)| reads.flags()[*at])
+            .map(|(at, name)| (at, name.as_str()))
+    }
+
+    /// The import of the runtime and the calls telling it the theme names
+    /// and the breakpoints, when the file uses it
+    fn prelude(&self, target: &NativeTarget, theme_api: bool) -> Option<String> {
+        if !(self.hooks_used.any() || self.wrapper_used || theme_api) {
+            return None;
+        }
+        let reads = self.hooks_used.union(self.wrapper_reads);
+        let mut specifiers: Vec<String> = self
+            .variables(self.hooks_used)
+            .map(|(at, _)| format!("{} as {}", HOOKS[at], self.hooks[at]))
+            .collect();
+        if self.wrapper_used {
+            specifiers.push(format!("Themed as {}", self.wrapper));
+        }
+        let theme = &target.theme;
+        let mut calls = String::new();
+        if reads.theme || theme_api {
+            specifiers.push(format!("defineThemes as {}", self.define));
+            let names = serde_json::Value::from(theme.names.clone()).to_string();
+            let dark = theme
+                .dark
+                .map_or_else(String::new, |dark| format!(", {dark}"));
+            let _ = writeln!(calls, "{}({names}{dark});", self.define);
+        }
+        if reads.breakpoint && theme.breakpoints != DEFAULT_BREAKPOINTS {
+            specifiers.push(format!("defineBreakpoints as {}", self.define_breakpoints));
+            let breakpoints = serde_json::Value::from(theme.breakpoints.clone()).to_string();
+            let _ = writeln!(calls, "{}({breakpoints});", self.define_breakpoints);
+        }
+        Some(format!(
+            "import {{ {} }} from \"{RUNTIME}\";\n{calls}",
+            specifiers.join(", ")
+        ))
+    }
+}
+
+/// A function the elements are in
+struct Frame {
+    /// Whether it is a function component or a hook, where the hook reading
+    /// the theme can be called first
+    component: bool,
+    /// What the elements in it read from the runtime
+    reads: Reads,
+    /// Where the hook is called
+    hook_at: HookAt,
+}
+
+/// Where the hook reading the theme is called in a function
+#[derive(Clone, Copy)]
+enum HookAt {
+    /// First in a body of statements, at this offset
+    Body(usize),
+    /// Before the expression an arrow function returns, between these offsets
+    Expression(usize, usize),
+}
+
 /// Compile the Devup UI elements of `program`
 pub(super) fn compile(
     program: &Program<'_>,
     code: &str,
     package: &str,
-    target: NativeTarget,
+    target: &NativeTarget,
     scoping: &Scoping,
 ) -> Compiled {
     let imports = imports::read(program, code, package, target);
@@ -48,6 +172,10 @@ pub(super) fn compile(
         sheet: Sheet::new(fresh_name("__s", code)),
         units: fresh_name("__u", code),
         units_used: Cell::new(false),
+        runtime: Runtime::new(code),
+        theme_scope: None,
+        frames: Vec::new(),
+        component_functions: FxHashSet::default(),
         replacements: imports.replacements,
         errors: imports.errors,
     };
@@ -58,20 +186,22 @@ pub(super) fn compile(
         sheet,
         units,
         units_used,
+        runtime,
         mut replacements,
         errors,
         ..
     } = visitor;
-    let mut prelude = String::new();
+    let mut prelude = runtime
+        .prelude(target, imports.theme_api)
+        .unwrap_or_default();
     if !sheet.is_empty() {
         prelude.push_str(&sheet_prelude(&sheet, code));
     }
     if units_used.get() {
-        prelude.push_str(&units_declaration(&units));
+        prelude.push_str(&units_import(package, &units));
     }
-    if !prelude.is_empty()
-        && let Some(at) = imports.sheet_at
-    {
+    if !prelude.is_empty() {
+        let at = imports.sheet_at.unwrap_or(code.len());
         replacements.push((at, at, prelude));
     }
     Compiled {
@@ -91,6 +221,11 @@ enum Prop {
     Declares,
     /// `_ios`, `_android` or `_web`: styles for one platform
     Platform(NativePlatform),
+    /// `_themeDark` and the like: styles for the theme named
+    Theme(String),
+    /// `_landscape` (`true`) or `_portrait` (`false`): styles for the
+    /// orientation of the window
+    Orientation(bool),
     /// What needs the React Native runtime
     Runtime(RuntimeFeature),
     /// What React Native has no equivalent of
@@ -108,20 +243,20 @@ fn classify(name: &str) -> Prop {
         "_android" => Prop::Platform(NativePlatform::Android),
         "_web" => Prop::Platform(NativePlatform::Web),
         "_pressed" | "_active" => Prop::Runtime(RuntimeFeature::Pressed),
-        "_portrait" | "_landscape" => Prop::Runtime(RuntimeFeature::Responsive),
+        "_portrait" => Prop::Orientation(false),
+        "_landscape" => Prop::Orientation(true),
         "className" => Prop::Unsupported(Problem::new(
             "React Native has no class names",
             "write the styles as props, or pass them in `style`",
         )),
-        "typography" => Prop::Unsupported(Problem::new(
-            "theme typography is not read on React Native yet",
-            "write `fontSize`, `fontWeight`, `lineHeight` and `letterSpacing` themselves",
-        )),
+        "typography" => Prop::Declares,
         "styleOrder" | "styleVars" => Prop::Unsupported(Problem::new(
             "React Native has no stylesheet order and no CSS variables",
             "remove it; on React Native the later style in `style` wins",
         )),
-        name if name.starts_with("_theme") => Prop::Runtime(RuntimeFeature::Theme),
+        name if name.starts_with("_theme") && name.len() > "_theme".len() => {
+            Prop::Theme(selector_theme(name))
+        }
         name if name.starts_with('_') || name == "selectors" => Prop::Unsupported(Problem::new(
             "React Native has no selectors, pseudo-elements or media queries",
             "remove it, or write the style the element takes in every state",
@@ -158,7 +293,7 @@ fn holds_no_text(native: &str) -> bool {
 
 struct Elements<'s> {
     code: &'s str,
-    target: NativeTarget,
+    target: &'s NativeTarget,
     scoping: &'s Scoping,
     components: &'s FxHashMap<SymbolId, (ExportVariableKind, String)>,
     sheet: Sheet,
@@ -166,6 +301,14 @@ struct Elements<'s> {
     units: String,
     /// Whether a value read at runtime is converted
     units_used: Cell<bool>,
+    runtime: Runtime,
+    /// The theme of the `_theme*` block being read, whose tokens resolve in
+    /// that theme alone
+    theme_scope: Option<usize>,
+    /// The functions the visited code is in, innermost last
+    frames: Vec<Frame>,
+    /// Where each function a component or a hook is bound to starts
+    component_functions: FxHashSet<u32>,
     replacements: Vec<Replacement>,
     errors: Vec<(u32, String)>,
 }
@@ -204,6 +347,98 @@ impl<'a> Visit<'a> for Elements<'_> {
     }
 
     fn visit_ts_type(&mut self, _: &TSType<'a>) {}
+
+    fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
+        if let (Some(name), Some(init)) = (declarator.id.get_identifier_name(), &declarator.init)
+            && is_component_name(&name)
+        {
+            self.component_functions.extend(function_start(init));
+        }
+        walk::walk_variable_declarator(self, declarator);
+    }
+
+    fn visit_export_default_declaration(&mut self, declaration: &ExportDefaultDeclaration<'a>) {
+        let start = declaration.declaration.as_expression().map_or_else(
+            || Some(declaration.declaration.span().start),
+            function_start,
+        );
+        self.component_functions.extend(start);
+        walk::walk_export_default_declaration(self, declaration);
+    }
+
+    fn visit_function(&mut self, function: &Function<'a>, flags: ScopeFlags) {
+        let component = function
+            .id
+            .as_ref()
+            .is_some_and(|id| is_component_name(&id.name))
+            || self.component_functions.contains(&function.span.start);
+        let body = function.body.as_deref().map(body_start);
+        self.in_frame(component, body, |visitor| {
+            walk::walk_function(visitor, function, flags);
+        });
+    }
+
+    fn visit_arrow_function_expression(&mut self, arrow: &ArrowFunctionExpression<'a>) {
+        let component = self.component_functions.contains(&arrow.span.start);
+        let hook_at = arrow.get_expression().map_or_else(
+            || arrow.get_function_body().map(body_start),
+            |expression| {
+                let span = expression.span();
+                Some(HookAt::Expression(span.start as usize, span.end as usize))
+            },
+        );
+        self.in_frame(component, hook_at, |visitor| {
+            walk::walk_arrow_function_expression(visitor, arrow);
+        });
+    }
+}
+
+/// Where the hook is called first in `body`: after its directives
+fn body_start(body: &FunctionBody<'_>) -> HookAt {
+    HookAt::Body(
+        body.directives
+            .last()
+            .map_or(body.span.start + 1, |directive| directive.span.end) as usize,
+    )
+}
+
+/// Whether a function bound to `name` is a function component or a hook,
+/// which may call a hook first: a capitalized name, or `use` and a capital
+fn is_component_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_uppercase() => true,
+        Some('u') => name
+            .strip_prefix("use")
+            .is_some_and(|rest| rest.chars().next().is_none_or(|c| c.is_ascii_uppercase())),
+        _ => false,
+    }
+}
+
+/// Where the function `expression` gives starts, through `memo()` and
+/// `forwardRef()`, if it gives one
+fn function_start(expression: &Expression<'_>) -> Option<u32> {
+    match expression.get_inner_expression() {
+        Expression::ArrowFunctionExpression(arrow) => Some(arrow.span.start),
+        Expression::FunctionExpression(function) => Some(function.span.start),
+        Expression::CallExpression(call) if is_component_wrapper(&call.callee) => call
+            .arguments
+            .first()
+            .and_then(|argument| argument.as_expression())
+            .and_then(function_start),
+        _ => None,
+    }
+}
+
+/// Whether `callee` wraps a component in a component: `memo` or `forwardRef`,
+/// imported or read from `React`
+fn is_component_wrapper(callee: &Expression<'_>) -> bool {
+    let name = match callee.get_inner_expression() {
+        Expression::Identifier(identifier) => identifier.name.as_str(),
+        Expression::StaticMemberExpression(member) => member.property.name.as_str(),
+        _ => return false,
+    };
+    matches!(name, "memo" | "forwardRef")
 }
 
 impl<'a> Elements<'_> {
@@ -227,6 +462,116 @@ impl<'a> Elements<'_> {
 
     fn error(&mut self, offset: u32, message: String) {
         self.errors.push((offset, message));
+    }
+
+    /// Visit a function, through `visit`, as the innermost frame when it has
+    /// a body, then call the hook reading the theme first in it when an
+    /// element in it reads the theme
+    fn in_frame(
+        &mut self,
+        component: bool,
+        hook_at: Option<HookAt>,
+        visit: impl FnOnce(&mut Self),
+    ) {
+        let Some(hook_at) = hook_at else {
+            visit(self);
+            return;
+        };
+        self.frames.push(Frame {
+            component,
+            reads: Reads::default(),
+            hook_at,
+        });
+        visit(self);
+        if let Some(frame) = self.frames.pop()
+            && frame.reads.any()
+        {
+            self.call_hooks(frame.hook_at, frame.reads);
+        }
+    }
+
+    /// Call the hooks reading what `reads` names at `at`
+    fn call_hooks(&mut self, at: HookAt, reads: Reads) {
+        self.runtime.hooks_used = self.runtime.hooks_used.union(reads);
+        let calls: Vec<String> = self
+            .runtime
+            .variables(reads)
+            .map(|(hook, variable)| format!("const {variable} = {}();", self.runtime.hooks[hook]))
+            .collect();
+        let call = calls.join(" ");
+        match at {
+            HookAt::Body(at) => self.replacements.push((at, at, format!("\n{call}"))),
+            HookAt::Expression(start, end) => {
+                self.replacements
+                    .push((start, start, format!("{{ {call} return ")));
+                self.replacements.push((end, end, "; }".to_string()));
+            }
+        }
+    }
+
+    /// Whether the element being compiled is in a function component or a
+    /// hook, which then calls the hooks reading what `reads` names first
+    fn read_in_component(&mut self, reads: Reads) -> bool {
+        match self.frames.iter_mut().rev().find(|frame| frame.component) {
+            Some(frame) => {
+                frame.reads = frame.reads.union(reads);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The styles a style prop declares with literals, each from the
+    /// breakpoint it is paired with on: one style object, or one a
+    /// breakpoint and a theme where the styles differ by them
+    fn static_choice(&self, name: &str, items: &[(usize, Literal)]) -> Result<Choice, Problem> {
+        let theme = &self.target.theme;
+        let themes = match self.theme_scope {
+            Some(index) => index..index + 1,
+            None if items.iter().any(|(_, literal)| names_tokens(name, literal)) => {
+                0..theme.count()
+            }
+            None => 0..1,
+        };
+        let levels = items
+            .iter()
+            .map(|(from, literal)| (from + 1).max(literal_levels(name, literal, theme)))
+            .fold(1, usize::max)
+            .min(theme.levels());
+        let mut grid = Vec::with_capacity(levels);
+        for level in 0..levels {
+            let mut row = Vec::with_capacity(themes.len());
+            for index in themes.clone() {
+                row.push(cell(
+                    name,
+                    items,
+                    &Tokens {
+                        theme,
+                        index,
+                        level,
+                    },
+                )?);
+            }
+            grid.push(row);
+        }
+        let choice = varied(grid);
+        self.check_runtime(&choice)?;
+        Ok(choice)
+    }
+
+    /// Fail for a choice the runtime makes when it is turned off
+    fn check_runtime(&self, choice: &Choice) -> Result<(), Problem> {
+        let reads = choice.reads();
+        let feature = if self.target.runtime {
+            None
+        } else if reads.breakpoint {
+            Some(RuntimeFeature::Responsive)
+        } else if reads.theme {
+            Some(RuntimeFeature::Theme)
+        } else {
+            None
+        };
+        feature.map_or(Ok(()), |feature| Err(feature.problem(self.target)))
     }
 
     /// Compile one Devup UI element
@@ -260,7 +605,7 @@ impl<'a> Elements<'_> {
             }
         }
         let retagged = tag.is_some();
-        self.finish(element, styles, tag, previous_end);
+        self.finish(element, styles, (tag, local), previous_end);
         self.children(element, kind, local, retagged);
     }
 
@@ -298,7 +643,7 @@ impl<'a> Elements<'_> {
             }
             Prop::Platform(platform) => {
                 styles.removed.push(span);
-                let choices = self.platform(
+                let choices = self.block(
                     attribute_expression(attribute),
                     name,
                     attribute.span.start,
@@ -307,6 +652,26 @@ impl<'a> Elements<'_> {
                 if platform == self.target.platform {
                     styles.choices.extend(choices);
                 }
+            }
+            Prop::Theme(theme) => {
+                styles.removed.push(span);
+                let choices = self.theme_block(
+                    attribute_expression(attribute),
+                    (name, &theme),
+                    attribute.span.start,
+                    local,
+                );
+                styles.choices.extend(choices);
+            }
+            Prop::Orientation(landscape) => {
+                styles.removed.push(span);
+                let choices = self.orientation_block(
+                    attribute_expression(attribute),
+                    (name, landscape),
+                    attribute.span.start,
+                    local,
+                );
+                styles.choices.extend(choices);
             }
             Prop::Runtime(feature) => self.error(
                 attribute.span.start,
@@ -395,8 +760,9 @@ impl<'a> Elements<'_> {
         }
     }
 
-    /// The styles of a platform block, such as `_ios={{ boxShadow: '...' }}`
-    fn platform(
+    /// The styles of a block, such as `_ios={{ boxShadow: '...' }}` or
+    /// `_themeDark={{ bg: 'black' }}`
+    fn block(
         &mut self,
         value: Option<&Expression<'a>>,
         name: &str,
@@ -411,12 +777,77 @@ impl<'a> Elements<'_> {
         self.error(
             offset,
             Problem::new(
-                "a platform block takes an object of styles",
+                format!("`{name}` takes an object of styles"),
                 format!("write the styles in an object, such as `{name}={{{{ p: 2 }}}}`"),
             )
             .on(local, name),
         );
         Vec::new()
+    }
+
+    /// The styles of a theme block, such as `_themeDark={{ bg: 'black' }}`,
+    /// `name` being the prop and `theme` the theme it names: they apply only
+    /// while that theme shows
+    fn theme_block(
+        &mut self,
+        value: Option<&Expression<'a>>,
+        (name, theme): (&str, &str),
+        offset: u32,
+        local: &str,
+    ) -> Vec<Choice> {
+        let Some(index) = self.target.theme.index_of(theme) else {
+            self.error(
+                offset,
+                Problem::new(
+                    format!("devup.json defines no `{theme}` theme"),
+                    "add the theme to devup.json, or remove the block",
+                )
+                .on(local, name),
+            );
+            return Vec::new();
+        };
+        let count = self.target.theme.count();
+        if count > 1 && !self.target.runtime {
+            self.error(
+                offset,
+                RuntimeFeature::Theme.problem(self.target).on(local, name),
+            );
+            return Vec::new();
+        }
+        if self.theme_scope.is_some_and(|scope| scope != index) {
+            return Vec::new();
+        }
+        let outer = self.theme_scope.replace(index);
+        let choices = self.block(value, name, offset, local);
+        self.theme_scope = outer;
+        choices
+            .into_iter()
+            .map(|choice| in_theme(index, count, choice))
+            .collect()
+    }
+
+    /// The styles of `_landscape` or `_portrait`, `name` being the prop: they
+    /// apply only while the window is in that orientation
+    fn orientation_block(
+        &mut self,
+        value: Option<&Expression<'a>>,
+        (name, landscape): (&str, bool),
+        offset: u32,
+        local: &str,
+    ) -> Vec<Choice> {
+        if !self.target.runtime {
+            self.error(
+                offset,
+                RuntimeFeature::Orientation
+                    .problem(self.target)
+                    .on(local, name),
+            );
+            return Vec::new();
+        }
+        self.block(value, name, offset, local)
+            .into_iter()
+            .map(|choice| when(State::Landscape(landscape), choice))
+            .collect()
     }
 
     /// The styles of an object of style props
@@ -427,7 +858,7 @@ impl<'a> Elements<'_> {
                 self.error(
                     property.span().start,
                     Problem::new(
-                        "the build reads only the styles written in a platform block",
+                        "the build reads only the styles written in a block",
                         "write each style in the block",
                     )
                     .on(local, "..."),
@@ -444,7 +875,7 @@ impl<'a> Elements<'_> {
                 self.error(
                     property.span.start,
                     Problem::new(
-                        "the build reads only keys written in a platform block",
+                        "the build reads only keys written in a block",
                         "write the key itself",
                     )
                     .on(local, &format!("[{key}]")),
@@ -456,7 +887,7 @@ impl<'a> Elements<'_> {
         choices
     }
 
-    /// The styles one key of a platform block declares
+    /// The styles one key of a block declares
     fn object_property(
         &mut self,
         key: &str,
@@ -470,10 +901,16 @@ impl<'a> Elements<'_> {
                 Err(problem) => self.error(offset, problem.on(local, key)),
             },
             Prop::Platform(platform) => {
-                let choices = self.platform(Some(value), key, offset, local);
+                let choices = self.block(Some(value), key, offset, local);
                 if platform == self.target.platform {
                     return choices;
                 }
+            }
+            Prop::Theme(theme) => {
+                return self.theme_block(Some(value), (key, &theme), offset, local);
+            }
+            Prop::Orientation(landscape) => {
+                return self.orientation_block(Some(value), (key, landscape), offset, local);
             }
             Prop::Runtime(feature) => {
                 self.error(offset, feature.problem(self.target).on(local, key));
@@ -482,7 +919,7 @@ impl<'a> Elements<'_> {
             Prop::As | Prop::Style | Prop::Pass => self.error(
                 offset,
                 Problem::new(
-                    "a platform block holds only style props",
+                    "a block holds only style props",
                     "pass it to the element itself",
                 )
                 .on(local, key),
@@ -500,7 +937,7 @@ impl<'a> Elements<'_> {
         match value {
             Some(JSXAttributeValue::StringLiteral(literal)) => literal.value.as_str().map_or_else(
                 || self.dynamic_choice(name, literal.span.source_text(self.code)),
-                |text| static_choice(name, &Literal::Text(text.to_string())),
+                |text| self.static_choice(name, &[(0, Literal::Text(text.to_string()))]),
             ),
             Some(JSXAttributeValue::ExpressionContainer(container)) => container
                 .expression
@@ -522,7 +959,7 @@ impl<'a> Elements<'_> {
         expression: &Expression<'a>,
     ) -> Result<Choice, Problem> {
         if let Some(literal) = literal(expression) {
-            return static_choice(name, &literal);
+            return self.static_choice(name, &[(0, literal)]);
         }
         match expression.without_parentheses() {
             Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Ok(Choice::Empty),
@@ -541,13 +978,69 @@ impl<'a> Elements<'_> {
                     alternate: Box::new(Choice::Empty),
                 })
             }
-            Expression::ArrayExpression(_) => Err(RuntimeFeature::Responsive.problem(self.target)),
+            Expression::ArrayExpression(array) => self.responsive_choice(name, array),
             Expression::ObjectExpression(_) => Err(Problem::new(
                 "a style prop takes one value, not an object",
                 "give one value, or use a platform block such as `_ios`",
             )),
             expression => self.dynamic_choice(name, &self.source(expression)),
         }
+    }
+
+    /// The styles a responsive array declares: each value from the
+    /// breakpoint at its index on, as on the web, where `null` and
+    /// `undefined` keep the value before. Literals compile to one style
+    /// object a breakpoint; any other value applies from its breakpoint on
+    fn responsive_choice(
+        &self,
+        name: &str,
+        array: &ArrayExpression<'a>,
+    ) -> Result<Choice, Problem> {
+        let last = self.target.theme.levels() - 1;
+        let mut items = Vec::new();
+        for (index, element) in array.elements.iter().enumerate() {
+            match element.as_expression() {
+                Some(expression) if !is_empty_value(expression) => {
+                    items.push((index.min(last), expression));
+                }
+                None if matches!(element, ArrayExpressionElement::SpreadElement(_)) => {
+                    return Err(Problem::new(
+                        "the build reads only the values written in a responsive array",
+                        "write each value in the array",
+                    ));
+                }
+                _ => {}
+            }
+        }
+        let literals: Option<Vec<(usize, Literal)>> = items
+            .iter()
+            .map(|(level, expression)| literal(expression).map(|literal| (*level, literal)))
+            .collect();
+        if let Some(literals) = literals {
+            return self.static_choice(name, &literals);
+        }
+        if !self.target.runtime {
+            return Err(RuntimeFeature::Responsive.problem(self.target));
+        }
+        let mut choices = Vec::with_capacity(items.len());
+        for (level, expression) in items {
+            if matches!(
+                expression.without_parentheses(),
+                Expression::ArrayExpression(_)
+            ) {
+                return Err(Problem::new(
+                    "a responsive array holds one value a breakpoint",
+                    "write each value itself, not an array",
+                ));
+            }
+            let choice = self.expression_choice(name, expression)?;
+            choices.push(if level == 0 {
+                choice
+            } else {
+                when(State::AtLeast(level), choice)
+            });
+        }
+        Ok(Choice::All(choices))
     }
 
     /// The styles a style prop declares with the value `code` the element
@@ -615,12 +1108,9 @@ impl<'a> Elements<'_> {
         &mut self,
         element: &JSXElement<'a>,
         styles: Styles,
-        tag: Option<String>,
+        (tag, local): (Option<String>, &str),
         attributes_end: u32,
     ) {
-        if let Some(tag) = &tag {
-            self.rename(element, tag);
-        }
         let Styles {
             choices,
             given,
@@ -628,9 +1118,43 @@ impl<'a> Elements<'_> {
             style,
             opaque_spread,
         } = styles;
-        let Some(code) = style_code(choices, given, &mut self.sheet) else {
+        let style_code = style_code(choices, given, &mut self.sheet, &self.runtime.vars());
+        let reads = style_code
+            .as_ref()
+            .map_or_else(Reads::default, |style| style.reads);
+        let wrapped = reads.any() && !self.read_in_component(reads);
+        if wrapped {
+            self.runtime.wrapper_used = true;
+            self.runtime.wrapper_reads = self.runtime.wrapper_reads.union(reads);
+            let wrapper = self.runtime.wrapper.clone();
+            self.rename(element, &wrapper);
+        } else if let Some(tag) = &tag {
+            self.rename(element, tag);
+        }
+        let Some(style_code) = style_code else {
             self.remove(&removed);
             return;
+        };
+        let code = if wrapped {
+            // The wrapper gives the theme, the breakpoint and the orientation,
+            // in this order: the style takes them up to the last it reads
+            let read = self.runtime.variables(reads).last().map_or(0, |(at, _)| at);
+            let parameters = [
+                &self.runtime.index,
+                &self.runtime.breakpoint,
+                &self.runtime.landscape,
+            ][..=read]
+                .iter()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                " $c={{{}}} $s={{({parameters}) => ({})}}",
+                tag.as_deref().unwrap_or(local),
+                style_code.code
+            )
+        } else {
+            format!(" style={{{}}}", style_code.code)
         };
         if let Some(spread) = opaque_spread {
             self.error(
@@ -640,11 +1164,8 @@ impl<'a> Elements<'_> {
         }
         removed.extend(style);
         self.remove(&removed);
-        self.replacements.push((
-            attributes_end as usize,
-            attributes_end as usize,
-            format!(" style={{{code}}}"),
-        ));
+        self.replacements
+            .push((attributes_end as usize, attributes_end as usize, code));
     }
 
     /// Render the component `as` gives
@@ -753,12 +1274,40 @@ fn literal(expression: &Expression<'_>) -> Option<Literal> {
     }
 }
 
-/// The styles a style prop declares with a literal
-fn static_choice(name: &str, literal: &Literal) -> Result<Choice, Problem> {
-    declarations(name, literal).map(Choice::Static)
+/// The styles the literals of `items` declare for the style prop `name` at
+/// the breakpoint and in the theme of `tokens`: each literal from its
+/// breakpoint on, a later one declared after the one before
+fn cell(
+    name: &str,
+    items: &[(usize, Literal)],
+    tokens: &Tokens<'_>,
+) -> Result<Vec<Declaration>, Problem> {
+    let mut declared = Vec::new();
+    for (_, literal) in items.iter().filter(|(from, _)| *from <= tokens.level) {
+        cascade(
+            &mut declared,
+            declarations(name, literal, tokens)?.unwrap_or_default(),
+        );
+    }
+    Ok(declared)
 }
 
-/// The styles a style prop declares with a value read at runtime
+/// Whether `expression` declares nothing, as `null`, `undefined` and
+/// booleans do
+fn is_empty_value(expression: &Expression<'_>) -> bool {
+    match expression.without_parentheses() {
+        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => true,
+        Expression::Identifier(identifier) => identifier.name == "undefined",
+        _ => false,
+    }
+}
+
+/// Whether the styles of `literal` for the style prop `name` may differ by
+/// theme: a typography, or a value naming a `$token`
+fn names_tokens(name: &str, literal: &Literal) -> bool {
+    name == "typography" || matches!(literal, Literal::Text(text) if text.contains('$'))
+}
+
 /// The import of `StyleSheet` and the declaration of `sheet`
 fn sheet_prelude(sheet: &Sheet, code: &str) -> String {
     let style_sheet = fresh_name("StyleSheet", code);
@@ -775,14 +1324,12 @@ fn sheet_prelude(sheet: &Sheet, code: &str) -> String {
     )
 }
 
-/// The declaration of the function converting a value read at runtime as the
-/// build converts a literal: a number or a number in a string is multiplied by
-/// the scale `s`, a pixel length is its number, a `rem` or `em` length is
-/// in pixels, and any other value stays as it is
-pub(super) fn units_declaration(name: &str) -> String {
-    format!(
-        r#"const {name} = (v, s) => {{ if (typeof v === "number") return v * s; const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v); return m ? Number(m[1]) * (m[2] ? (m[2] === "px" ? 1 : {ROOT_FONT_SIZE}) : s) : v; }};"#
-    ) + "\n"
+/// The import of the conversion of values read at runtime as `name`: the
+/// package's `__devupNativeScale` multiplies a number or a number in a string
+/// by the scale, reads a pixel length as its number and a `rem` or `em`
+/// length in pixels, and keeps any other value
+fn units_import(package: &str, name: &str) -> String {
+    crate::runtime_units::import_code(package, crate::runtime_units::NATIVE_EXPORT, name, false)
 }
 
 /// The span of a child writing text, if it writes any

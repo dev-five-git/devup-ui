@@ -59,7 +59,8 @@ fn factory_script(source: &str, runtime: &str) -> String {
         }
     }
     let generated = oxc_codegen::Codegen::new().build(&program).code;
-    aliases
+    crate::runtime_units::linked(source)
+        + &aliases
         + &generated
             .lines()
             .filter(|line| !line.starts_with("import "))

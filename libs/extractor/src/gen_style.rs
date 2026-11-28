@@ -1,5 +1,6 @@
 use crate::ExtractStyleProp;
 use crate::extract_style::style_property::StyleProperty;
+use crate::runtime_units::Unit;
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::{
     ComputedMemberExpression, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, Str,
@@ -26,6 +27,24 @@ fn extend_reversed_styles<'a>(
             .flat_map(|style| gen_style(ast_builder, style, filename))
             .rev(),
     );
+}
+
+/// The code `identifier` a CSS variable is set to, converting a number it
+/// holds to `unit`
+fn runtime_value<'a>(
+    ast_builder: &AstBuilder<'a>,
+    identifier: &str,
+    unit: Option<Unit>,
+) -> Expression<'a> {
+    crate::runtime_units::wrap(
+        ast_builder,
+        unit,
+        Expression::new_identifier(
+            SPAN,
+            Str::from_in(identifier, ast_builder.allocator()),
+            ast_builder,
+        ),
+    )
 }
 
 pub fn gen_styles<'a>(
@@ -107,6 +126,7 @@ fn gen_style<'a>(
         if let Some(StyleProperty::Variable {
             variable_name,
             identifier,
+            unit,
             ..
         }) = st.extract(filename)
         {
@@ -119,11 +139,7 @@ fn gen_style<'a>(
                     None,
                     ast_builder,
                 )),
-                Expression::new_identifier(
-                    SPAN,
-                    Str::from_in(&identifier, ast_builder.allocator()),
-                    ast_builder,
-                ),
+                runtime_value(ast_builder, &identifier, unit),
                 false,
                 false,
                 false,
@@ -237,19 +253,20 @@ fn gen_style<'a>(
             }
         }
     } else if let ExtractStyleProp::MemberExpression { map, expression } = style {
-        let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
+        let mut tmp_map = BTreeMap::<String, Vec<(String, String, Option<Unit>)>>::new();
         for (key, value) in map {
             for style in value.extract() {
                 if let Some(StyleProperty::Variable {
                     variable_name,
                     identifier,
+                    unit,
                     ..
                 }) = style.extract(filename)
                 {
                     tmp_map
                         .entry(variable_name)
                         .or_default()
-                        .push((key.clone(), identifier));
+                        .push((key.clone(), identifier, unit));
                 }
             }
         }
@@ -257,18 +274,14 @@ fn gen_style<'a>(
         for (key, value) in tmp_map {
             let v = if value.len() == 1 {
                 // do not create object expression when property is single
-                Expression::new_identifier(
-                    SPAN,
-                    Str::from_in(&value[0].1, ast_builder.allocator()),
-                    ast_builder,
-                )
+                runtime_value(ast_builder, &value[0].1, value[0].2)
             } else {
                 Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
                     SPAN,
                     Expression::new_object_expression(
                         SPAN,
                         oxc_allocator::Vec::from_iter_in(
-                            value.into_iter().map(|(k, v)| {
+                            value.into_iter().map(|(k, v, unit)| {
                                 ObjectPropertyKind::new_object_property(
                                     SPAN,
                                     PropertyKind::Init,
@@ -277,11 +290,7 @@ fn gen_style<'a>(
                                         Str::from_in(&k, ast_builder.allocator()),
                                         ast_builder,
                                     ),
-                                    Expression::new_identifier(
-                                        SPAN,
-                                        Str::from_in(&v, ast_builder.allocator()),
-                                        ast_builder,
-                                    ),
+                                    runtime_value(ast_builder, &v, unit),
                                     false,
                                     false,
                                     false,

@@ -1,0 +1,31 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, useBreakpoint as __useBreakpoint, useLandscape as __useLandscape, Themed as __Themed, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { backgroundColor: "#5a44ff" },
+	b: { backgroundColor: "#8c7bff" },
+	c: { padding: 4 },
+	d: { padding: 8 },
+	e: { margin: 4 }
+});
+export const A = () => {
+	const __t = __useThemeIndex();
+	const __b = __useBreakpoint();
+	const __l = __useLandscape();
+	return <Box style={[
+		[__s.a, __s.b][__t],
+		__b < 1 ? __s.c : __s.d,
+		__l && __s.e
+	]} />;
+};
+export const B = () => {
+	const __l = __useLandscape();
+	return <Box style={!__l && __s.e} />;
+};
+export const c = <__Themed $c={Box} $s={(__t, __b, __l) => [__b < 1 ? __s.c : __s.d, __l && __s.e]} />;
+export const d = <__Themed $c={Box} $s={(__t, __b) => [[__s.a, __s.b][__t], __b < 1 ? __s.c : __s.d]} />;

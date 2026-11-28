@@ -238,7 +238,7 @@ impl<'a> DevupVisitor<'a> {
                             && !property.method
                             && property.kind == oxc_ast::ast::PropertyKind::Init
                             && matches!(
-                                property.value,
+                                crate::runtime_units::converted(&property.value),
                                 Expression::Identifier(_)
                                     | Expression::StringLiteral(_)
                                     | Expression::NumericLiteral(_)
