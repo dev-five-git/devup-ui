@@ -136,14 +136,14 @@ fn contextual_callback_preserves_dynamic_lengths_and_theme_bindings_when_enabled
             _ => None,
         })
         .unwrap_or_else(|| panic!("missing dynamic padding"));
-    // Then: numeric lengths stay pixels, and theme paths remain static variables.
+    // Then: numeric lengths take the spacing scale a written 8 takes, and theme paths remain static variables.
     assert_eq!(
         crate::styled_source_tests::captured_render::execute(
             ("context-mixin.tsx", None),
             &output,
             "const element=render({target:Choice,props:{on:true,padding:8}});JSON.stringify(Object.values(element.props.style));"
         ),
-        serde_json::json!(["8px"])
+        serde_json::json!(["32px"])
     );
     assert_eq!(padding.layer(), Some("base"));
     assert!(

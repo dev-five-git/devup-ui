@@ -16,6 +16,7 @@ const entries = {
   'compat/index': 'dist/compat/index.d.ts',
   'utils/stylex': 'dist/utils/stylex.d.ts',
   'native/index': 'dist/native/index.d.ts',
+  scale: 'dist/scale.d.ts',
 }
 const shared = '_shared'
 

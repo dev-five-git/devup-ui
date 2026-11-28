@@ -6,6 +6,8 @@ pub enum StyleProperty {
         class_name: String,
         variable_name: String,
         identifier: String,
+        /// The unit a number the value holds at runtime is converted to
+        unit: Option<crate::runtime_units::Unit>,
     },
 }
 impl Display for StyleProperty {
@@ -32,6 +34,7 @@ mod tests {
             class_name: "cls".to_string(),
             variable_name: "--var-name".to_string(),
             identifier: "id".to_string(),
+            unit: None,
         };
         assert_eq!(prop.to_string(), "var(--var-name)".to_string());
     }

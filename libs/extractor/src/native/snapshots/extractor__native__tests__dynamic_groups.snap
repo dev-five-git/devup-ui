@@ -3,11 +3,7 @@ source: libs/extractor/src/native/tests.rs
 expression: compile(code)
 ---
 import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
-const __u = (v, s) => {
-	if (typeof v === "number") return v * s;
-	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
-	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
-};
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
 <Box style={[
 	{ width: __u(w, 4) },
 	{ height: __u(h, 4) },

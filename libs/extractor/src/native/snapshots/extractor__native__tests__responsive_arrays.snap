@@ -67,11 +67,7 @@ const __s = StyleSheet.create({
 		paddingRight: 8
 	}
 });
-const __u = (v, s) => {
-	if (typeof v === "number") return v * s;
-	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
-	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
-};
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
 export function Layout({ on, x }) {
 	const __b = __useBreakpoint();
 	return <VStack style={[__s.a, __b < 2 ? __s.b : __s.c]}>
