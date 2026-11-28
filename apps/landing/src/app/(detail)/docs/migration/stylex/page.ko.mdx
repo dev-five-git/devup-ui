@@ -1,0 +1,274 @@
+export const metadata = {
+  title: '마이그레이션',
+  alternates: {
+    canonical: '/ko/docs/migration/stylex',
+    languages: {
+      en: '/docs/migration/stylex',
+      ko: '/ko/docs/migration/stylex',
+      'x-default': '/docs/migration/stylex',
+    },
+  },
+}
+
+# StyleX
+
+`@stylexjs/stylex`는 alias 설정이 필요 없습니다. 추출기가 default import, 네임스페이스 import, named import 중 어떤 방식이든 패키지를 직접 인식합니다.
+
+## 스타일과 props
+
+`create()`는 네임스페이스에서 클래스 이름으로 매핑되는 객체가 되고, `props()`는 spread할 속성이 됩니다:
+
+```tsx
+import stylex from '@stylexjs/stylex'
+
+const styles = stylex.create({
+  base: { display: 'inline-block' },
+})
+const colors = stylex.create({ red: { color: 'red' }, blue: { color: 'blue' } })
+
+const el = <div {...stylex.props(styles.base, colors[color])} />
+```
+
+```tsx
+const styles = { base: 'a' }
+const colors = { red: 'b', blue: 'c' }
+
+const el = <div {...{ className: `a ${colors[color] || ''}` }} />
+```
+
+`colors[color]` 같은 computed 접근은 `create()` 호출이 변환된 객체를 기준으로 해석되므로, 생성된 모든 atom에 계속 접근할 수 있습니다. `stylex.attrs()`도 동일하게 동작하지만 `className` 대신 `class`를 출력합니다.
+
+숫자에는 StyleX가 붙이는 단위가 붙습니다. `fontSize: 16`은 `16px`, `transitionDuration: 300`은 `300ms`가 되며, `lineHeight` 같은 단위 없는 속성은 작성한 그대로 유지됩니다. 동적 스타일에 전달한 숫자도 런타임에 같은 단위가 붙습니다.
+
+허용되는 인자 형태:
+
+```tsx
+stylex.props(styles.base) // 멤버 접근
+stylex.props(styles['base']) // 리터럴 키
+stylex.props(colors[color]) // 런타임 키
+stylex.props([styles.a, styles.b]) // StyleXArray, 중첩 가능
+stylex.props(on && styles.active) // 조건부
+stylex.props(styles?.base) // optional chaining
+```
+
+## 축약 속성과 `styleResolution`
+
+StyleX의 babel 플러그인은 `styleResolution` 옵션으로 축약 속성과 그것이 포함하는 개별 속성(longhand) 중 무엇을 적용할지 결정합니다. Devup UI 플러그인에도 같은 옵션을 전달하세요:
+
+```ts
+// vite.config.ts (모든 플러그인이 같은 옵션을 받습니다)
+DevupUI({ stylex: { styleResolution: 'application-order' } })
+```
+
+| `styleResolution`                 | 적용되는 쪽                                                          |
+| --------------------------------- | -------------------------------------------------------------------- |
+| `'property-specificity'` (기본값) | 적용 순서와 관계없이 개별 속성이 축약 속성보다 우선함                |
+| `'application-order'`             | 축약 속성 여부와 관계없이 마지막에 적용된 속성                       |
+| `'legacy-expand-shorthands'`      | 축약 속성이 남지 않음: 빌드 시점에 각 축약 속성을 개별 속성으로 나눔 |
+
+어떤 정책이든 하나의 `props()`나 `attrs()` 호출 안에서는 같은 속성과 조건에 대해 나중 스타일이 앞선 스타일을 대체합니다. `stylex.props(colors.red, colors.blue)`는 blue 클래스만 유지합니다.
+
+```tsx
+const styles = stylex.create({
+  top: { paddingTop: '1px' },
+  pad: { padding: '2px' },
+})
+
+const el = <div {...stylex.props(styles.top, styles.pad)} />
+```
+
+- `'property-specificity'`는 두 클래스를 모두 유지하고 스타일시트에서 `padding-top`을 `padding` 뒤에 작성하므로 `padding-top: 1px`가 적용됩니다.
+- `'application-order'`는 StyleX처럼 `padding`이 포함하는 개별 속성에 대해 `null` 초기화를 추가하므로, 나중에 오는 `padding`이 `padding-top`을 제거합니다. 순서가 반대이면 둘 다 유지되고 `padding-top`이 적용됩니다.
+- `'legacy-expand-shorthands'`는 `padding: '1px 2px'`를 `padding-top`, `padding-inline-end`, `padding-bottom`, `padding-inline-start`로 바꾸며, 이들은 다른 개별 속성과 마찬가지로 키별로 병합됩니다.
+
+기본값이 아닌 두 정책은 별칭(`marginStart`는 `margin-inline-start`, `blockSize`는 `height`)을 포함한 StyleX 자체의 축약 속성 테이블을 읽으며, 정적 `create()` 네임스페이스에만 적용됩니다. 여기서 축약 속성은 `firstThatWorks()` 폴백을 받을 수 없고, `application-order`는 StyleX처럼 `all`을 거부합니다. 둘 다 해당 키를 알려 주는 빌드 오류입니다. 동적(화살표 함수) 네임스페이스는 축약 속성을 작성한 그대로 유지하며, `float`/`clear`도 `inline-start` 같은 논리 값을 작성한 그대로 유지합니다. 이들에 대한 StyleX의 polyfill은 자체 런타임 변수에 의존하기 때문입니다. 알 수 없는 `styleResolution`은 플러그인을 생성할 때 설정 오류가 됩니다. Devup UI 자체 API(`css()`, `styled`, `Box` props)는 이 옵션을 무시합니다. 여기서는 개별 속성 뒤에 작성한 축약 속성이 적용됩니다.
+
+## 변수와 테마
+
+```tsx
+const colors = stylex.defineVars({ primary: 'blue', secondary: 'grey' })
+const dark = stylex.createTheme(colors, { primary: 'navy' })
+const styles = stylex.create({ box: { color: colors.primary } })
+
+const el = <div {...stylex.props(dark, styles.box)} />
+```
+
+```css
+:root {
+  --a: blue;
+  --b: grey;
+}
+.c {
+  --a: navy;
+}
+.d {
+  color: var(--a);
+}
+```
+
+```tsx
+const colors = { primary: 'var(--a)', secondary: 'var(--b)' }
+const dark = 'c'
+const styles = { box: 'd' }
+const el = <div {...{ className: 'c d' }} />
+```
+
+`createThemeContract()`는 `:root` 블록을 출력하지 않고 같은 참조를 만들며, `defineConsts()`는 그 값을 읽는 `create()` 호출에 값을 인라인합니다.
+
+변수나 테마 값은 선택적인 `types.*()` 래퍼와 함께 at-rule에 따라 달라질 수 있습니다. 각 조건 집합은 무조건 값 뒤에 하나의 블록이 되며, 중첩 조건은 그것이 세분화하는 조건 뒤에 오므로 더 구체적인 값이 적용됩니다:
+
+```tsx
+const DARK = '@media (prefers-color-scheme: dark)'
+
+const colors = stylex.defineVars({
+  text: { default: 'black', [DARK]: 'white' },
+  accent: stylex.types.color({ default: 'blue', [DARK]: 'lightblue' }),
+})
+const dracula = stylex.createTheme(colors, {
+  text: { default: 'purple', [DARK]: 'pink' },
+})
+```
+
+```css
+@property --b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: blue;
+}
+:root {
+  --a: black;
+  --b: blue;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --a: white;
+    --b: lightblue;
+  }
+}
+.c {
+  --a: purple;
+}
+@media (prefers-color-scheme: dark) {
+  .c {
+    --a: pink;
+  }
+}
+```
+
+조건은 `default`, `@media`, `@supports`, `@container` 키이며, `null`은 해당 조건에서 변수를 설정하지 않은 상태로 둡니다. 정적이지 않은 값은 그 값을 알려 주는 빌드 오류입니다. 변수는 스타일이 적용되는 요소가 아니라 `:root`나 테마 클래스에 설정되므로, 의사 클래스 키는 정적이지 않은 것으로 간주됩니다.
+
+`types.*()` 래퍼는 `default`를 초기값으로 하여 변수를 `@property`로 등록하므로, 해당 타입으로 애니메이션되고 보간됩니다. `default`가 없는 타입 지정 변수, 소수를 받은 `types.integer()`, 알 수 없는 `types.*` 헬퍼는 빌드 오류입니다. `'--global'`처럼 이미 커스텀 속성 이름인 키는 그 이름을 유지하며, `colors['--global']`로 읽을 수 있습니다.
+
+StyleX가 요구하는 대로, 변수는 보통 `.stylex.ts` 파일에 두고 사용하는 곳에서 import합니다. import는 번들러가 해석하는 방식대로 해석되며, import하는 파일은 정의하는 파일이 생성하는 것과 같은 커스텀 속성, 테마 클래스, 상수를 읽습니다:
+
+```tsx
+// tokens.stylex.ts
+export const colors = stylex.defineVars({ primary: 'blue' })
+export const spacing = stylex.defineConsts({ gap: '8px' })
+```
+
+```tsx
+// Button.tsx
+import { colors, spacing } from './tokens.stylex'
+
+const dark = stylex.createTheme(colors, { primary: 'navy' })
+const styles = stylex.create({
+  box: { color: colors.primary, marginTop: spacing.gap },
+})
+```
+
+`create()` 안의 값 중 이 파일 자체의 함수가 상수와 결과가 정확한 내장 기능으로 계산하는 값(`double(SIZE)` 등)은 빌드 시점에 계산됩니다. 다른 모듈의 코드는 실행되지 않으며, 결과가 확실하지 않은 코드(`Date`, `Math.random`, `Math.sin`, 로케일 메서드, `new`, `this`...)도 실행되지 않습니다. prop이나 state처럼 런타임에만 알 수 있는 값은 그 값을 알려 주는 빌드 오류이며, `create()`, `defineVars()`, `defineConsts()`, `createTheme()`, `keyframes()`, `positionTry()`, `viewTransitionClass()`가 읽을 수 없는 것(spread, 상수가 아닌 computed key, 객체가 아닌 인자)도 마찬가지입니다. computed 조건 키는 `defineConsts()` 쿼리를 가리키는 `[constants.wide]`처럼 상수를 읽을 수 있습니다. 런타임 값은 동적 스타일(`(color) => ({ color })`)로 전달하세요. 동적 스타일은 대신 CSS 변수가 됩니다. 동적 스타일은 `(size) => ({ width: { default: 100, ':hover': size } })`처럼 조건별로 매개변수를 설정할 수도 있으며, 각 조건은 자체 변수를 사용합니다.
+
+`stylex.props()`는 부모가 전달하는 `style` prop, spread, 다른 모듈의 네임스페이스처럼 다른 곳에서 컴파일된 스타일을 받아 런타임에 클래스 이름을 합칩니다. 이 파일의 네임스페이스는 빌드 시점에 해석됩니다.
+
+## at-rule
+
+```tsx
+const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' })
+const transition = stylex.viewTransitionClass({
+  old: { animationDuration: '300ms' },
+  new: { animationDuration: '150ms' },
+})
+const styles = stylex.create({
+  popover: { positionTryFallbacks: fallback, anchorName: '--trigger' },
+  card: { viewTransitionClass: transition },
+})
+```
+
+```css
+@position-try --a {
+  top: 0;
+  inset-block-end: auto;
+}
+::view-transition-old(*.b) {
+  animation-duration: 300ms;
+}
+::view-transition-new(*.b) {
+  animation-duration: 150ms;
+}
+```
+
+이 바인딩은 `create()` 안에서 자신의 이름으로 읽히며, anchor, timeline, `@position-try` 규칙의 이름을 지정하는 속성의 dashed ident(`anchorName: '--trigger'`)는 `var(--trigger)`가 되지 않고 이름으로 유지됩니다. `viewTransitionClass()`는 `group`, `imagePair`, `old`, `new` 그룹을 받으며, 그 밖의 키는 빌드 오류입니다.
+
+## 값 헬퍼
+
+`firstThatWorks()`는 폴백을 CSS 순서대로 출력하고, `types.*()`는 `create()` 안에서 내부 값으로 풀립니다(`defineVars()`에서는 `@property`도 등록합니다). 값은 일반 리터럴, 조건 객체(`{ default, ':hover', '@media ...' }`), 또는 호출 위치에서 바인딩되는 CSS 변수가 되는 화살표 함수일 수 있습니다.
+
+`include()`는 현재 StyleX API에 포함되지 않습니다. StyleX는 이를 deprecated 처리했고 현재 `@stylexjs/stylex` 릴리스는 더 이상 이를 export하지 않으며, 대신 여러 네임스페이스를 `props()`에 전달해 합성합니다. `@devup-ui/react/compat/stylex` 선언만 여전히 이 타입을 제공합니다. Devup UI는 `create()` 안의 레거시 `...stylex.include(base.root)` spread를 Devup UI 확장 기능으로 계속 컴파일하므로, 이전 StyleX용으로 작성한 코드도 계속 빌드됩니다. 인자는 같은 파일에서 앞서 `create()` 호출이 정의한 네임스페이스여야 하며, 그 밖의 값은 빌드 오류입니다. spread는 작성된 위치에서 포함된 네임스페이스의 키를 병합합니다. `include()` 뒤에 작성한 키는 포함된 키를 덮어쓰므로 `{ ...stylex.include(base.root), color: 'blue' }`는 `color`에 대해 blue 클래스만 유지하며, 나중 `include()`도 마찬가지로 앞선 키를 덮어씁니다. 이는 네임스페이스를 `props()`에 전달하는 경우를 포함해 빌드 시점에 해석됩니다. 동적(화살표 함수) 네임스페이스는 병합할 키가 없으므로, 그 클래스는 네임스페이스 자체의 클래스 앞에 추가되기만 합니다. 두 네임스페이스를 모두 `props()`에 전달하면(`stylex.props(base.root, styles.fancy)`) StyleX와 Devup UI에서 같은 방식으로 합성됩니다.
+
+## 관계 조건과 marker
+
+`when.ancestor()`, `when.descendant()`, `when.anySibling()`, `when.siblingBefore()`, `when.siblingAfter()`는 주변의 marker가 지정된 요소의 상태에 따라 요소의 스타일을 지정합니다. 이들은 빌드 시점에 StyleX가 작성하는 것과 같은 `:where(...)` 조건 키로 컴파일되므로, StyleX 코드는 실행되지 않습니다:
+
+```tsx
+// markers.stylex.ts
+export const cardMarker = stylex.defineMarker()
+```
+
+```tsx
+import { cardMarker } from './markers.stylex'
+
+const styles = stylex.create({
+  title: {
+    color: {
+      default: 'black',
+      [stylex.when.ancestor(':hover')]: 'blue',
+      [stylex.when.siblingBefore(':focus', cardMarker)]: 'red',
+    },
+  },
+})
+
+const el = (
+  <div {...stylex.props(stylex.defaultMarker())}>
+    <h2 {...stylex.props(styles.title)} />
+  </div>
+)
+```
+
+```css
+.a {
+  color: black;
+}
+.b.b:where(.x-default-marker:hover *) {
+  color: blue;
+}
+.c.c:where(.d:focus ~ *) {
+  color: red;
+}
+```
+
+| 조건                       | 선택자                           |
+| -------------------------- | -------------------------------- |
+| `when.ancestor(p, m)`      | `:where(.m p *)`                 |
+| `when.descendant(p, m)`    | `:where(:has(.m p))`             |
+| `when.anySibling(p, m)`    | `:where(.m p ~ *, :has(~ .m p))` |
+| `when.siblingBefore(p, m)` | `:where(.m p ~ *)`               |
+| `when.siblingAfter(p, m)`  | `:where(:has(~ .m p))`           |
+
+`p`는 문자열로 작성한 의사 클래스나 속성 선택자(`':hover'`, `'[data-open]'`)입니다. 의사 요소나 `:` 또는 `[`로 시작하지 않는 값은 StyleX의 메시지를 담은 빌드 오류입니다. marker `m`의 기본값은 `x-default-marker` 클래스인 `stylex.defaultMarker()`입니다. `stylex.defineMarker()`는 파일과 export 이름을 따라 자체 marker 이름을 지으므로, 이를 import하는 모듈도 같은 클래스를 읽습니다. StyleX와 마찬가지로 named export에 바인딩해야 하며, 그 밖의 경우는 빌드 오류입니다. 또한 StyleX는 `.stylex` 파일에서만 marker 이름을 짓지만, Devup UI는 어떤 파일에서든 이름을 짓습니다. 요소에 marker를 지정하려면 marker를 `props()`나 `attrs()`에 전달하세요.
+
+클래스는 StyleX처럼 두 번 작성되므로 조건은 의사 클래스의 명시도를 유지하며, 조건은 StyleX의 순서(`ancestor`, `descendant`, `anySibling`, `siblingBefore`, `siblingAfter`)대로 의사 클래스보다 앞에 정렬됩니다. at-rule 안에서 Devup UI는 StyleX처럼 at-rule마다 클래스를 한 번 더 반복하지 않습니다. 대신 모든 StyleX 조건에서와 마찬가지로 at-rule을 그것이 세분화하는 규칙 뒤에 작성합니다.
+
+## 지원하지 않는 API
+
+Devup UI는 `create`, `props`, `attrs`, `keyframes`, `defineVars`, `createTheme`, `createThemeContract`, `defineConsts`, `positionTry`, `viewTransitionClass`, `firstThatWorks`, `types`, `when`, `defineMarker`, `defaultMarker`와 위에서 설명한 레거시 `include`를 컴파일합니다. `@stylexjs/stylex`의 그 밖의 export(`env`, ...)는 런타임에 예외를 던지는 StyleX 호출로 남게 되므로, 이를 import하거나 패키지에서 읽으면 그 이름을 알려 주는 빌드 오류가 됩니다.

@@ -1,0 +1,39 @@
+export const metadata = {
+  title: 'Devup Figma 플러그인',
+  alternates: {
+    canonical: '/ko/docs/figma-and-theme-integration/devup-figma-plugin',
+    languages: {
+      en: '/docs/figma-and-theme-integration/devup-figma-plugin',
+      ko: '/ko/docs/figma-and-theme-integration/devup-figma-plugin',
+      'x-default': '/docs/figma-and-theme-integration/devup-figma-plugin',
+    },
+  },
+}
+
+# Devup Figma 플러그인
+
+Devup UI는 디자인과 개발 워크플로를 매끄럽게 연결해 주는 강력한 Figma 플러그인을 제공합니다. 이 플러그인은 Figma 레이어를 Devup UI 코드 스니펫으로 변환하고 디자인 토큰을 내보냅니다.
+
+### **Figma Community에서 설치**
+
+1. Figma를 엽니다.
+2. **Plugins** → **Browse all plugins**로 이동합니다.
+3. "Devup UI"를 검색합니다.
+4. Devup UI 플러그인에서 **Open in Figma**를 클릭하거나 [Figma Community 페이지](https://www.figma.com/community/plugin/1412341601954480694)로 직접 이동합니다.
+
+## 주요 기능
+
+### **레이어를 컴포넌트로 변환**
+
+Figma 레이어를 Devup UI 컴포넌트로 변환합니다.
+
+```tsx
+// Figma 레이어에서 생성된 코드
+<Box bg="$primary" borderRadius="8px" color="$text" p="16px">
+  Button Text
+</Box>
+```
+
+### **디자인 토큰 내보내기**
+
+Figma의 디자인 토큰을 `devup.json`으로 내보냅니다.

@@ -1,0 +1,343 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
+export const metadata = {
+  title: '타이포그래피',
+  alternates: {
+    canonical: '/ko/docs/devup/typography',
+    languages: {
+      en: '/docs/devup/typography',
+      ko: '/ko/docs/devup/typography',
+      'x-default': '/docs/devup/typography',
+    },
+  },
+}
+
+# 타이포그래피
+
+Devup UI는 정적 스타일, 반응형 타이포그래피, 테마 통합을 지원하는 강력한 타이포그래피 시스템을 제공합니다.
+
+## 기본 타이포그래피
+
+`devup.json`에 타이포그래피 스타일을 정의합니다.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "h1": {
+        "fontFamily": "Pretendard",
+        "fontSize": "48px",
+        "fontWeight": 800,
+        "lineHeight": 1.2,
+        "letterSpacing": "-0.02em"
+      },
+      "h2": {
+        "fontFamily": "Pretendard",
+        "fontSize": "36px",
+        "fontWeight": 700,
+        "lineHeight": 1.3,
+        "letterSpacing": "-0.02em"
+      },
+      "body": {
+        "fontFamily": "Pretendard",
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      },
+      "caption": {
+        "fontFamily": "Pretendard",
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": 1.4
+      }
+    }
+  }
+}
+```
+
+`typography` prop으로 타이포그래피를 적용합니다.
+
+```tsx
+const h1Example = <Text typography="h1">Heading 1</Text>
+const h2Example = <Text typography="h2">Heading 2</Text>
+const bodyExample = <Text typography="body">Body text</Text>
+const captionExample = <Text typography="caption">Caption text</Text>
+```
+
+## 타이포그래피 속성
+
+각 타이포그래피 스타일에는 다음 속성을 포함할 수 있습니다.
+
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>속성</TableHeaderCell>
+      <TableHeaderCell>설명</TableHeaderCell>
+      <TableHeaderCell>예시</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>
+        <code>fontFamily</code>
+      </TableCell>
+      <TableCell>글꼴 패밀리 이름</TableCell>
+      <TableCell>
+        <code>&quot;Pretendard&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>fontSize</code>
+      </TableCell>
+      <TableCell>글꼴 크기</TableCell>
+      <TableCell>
+        <code>&quot;16px&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>fontWeight</code>
+      </TableCell>
+      <TableCell>글꼴 굵기(숫자 또는 문자열)</TableCell>
+      <TableCell>
+        <code>700</code> 또는 <code>&quot;bold&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>fontStyle</code>
+      </TableCell>
+      <TableCell>글꼴 스타일</TableCell>
+      <TableCell>
+        <code>&quot;normal&quot;</code> 또는 <code>&quot;italic&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>lineHeight</code>
+      </TableCell>
+      <TableCell>줄 높이(숫자 또는 문자열)</TableCell>
+      <TableCell>
+        <code>1.5</code> 또는 <code>&quot;150%&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>letterSpacing</code>
+      </TableCell>
+      <TableCell>자간</TableCell>
+      <TableCell>
+        <code>&quot;-0.02em&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>textTransform</code>
+      </TableCell>
+      <TableCell>텍스트 변환</TableCell>
+      <TableCell>
+        <code>&quot;uppercase&quot;</code>
+      </TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+## 반응형 타이포그래피
+
+배열을 사용해 반응형 타이포그래피를 정의합니다. 각 인덱스는 하나의 브레이크포인트에 대응합니다.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "h1": [
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "32px",
+          "fontWeight": 800,
+          "lineHeight": 1.2
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "48px",
+          "fontWeight": 800,
+          "lineHeight": 1.2
+        }
+      ]
+    }
+  }
+}
+```
+
+브레이크포인트는 다음과 같습니다.
+
+- 인덱스 0: `0px`(모바일)
+- 인덱스 1: `480px`
+- 인덱스 2: `768px`
+- 인덱스 3: `992px`
+- 인덱스 4: `1280px`(데스크톱)
+- 인덱스 5: `1600px`
+
+`null`을 사용하면 해당 브레이크포인트를 건너뛰고 이전 값을 그대로 이어받습니다.
+
+## 전체 타이포그래피 스케일
+
+권장하는 타이포그래피 스케일은 다음과 같습니다.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "h1": [
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "32px",
+          "fontWeight": 800,
+          "lineHeight": 1.2,
+          "letterSpacing": "-0.03em"
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "48px",
+          "fontWeight": 800,
+          "lineHeight": 1.2,
+          "letterSpacing": "-0.03em"
+        }
+      ],
+      "h2": [
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "28px",
+          "fontWeight": 700,
+          "lineHeight": 1.3
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "36px",
+          "fontWeight": 700,
+          "lineHeight": 1.3
+        }
+      ],
+      "h3": [
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "24px",
+          "fontWeight": 600,
+          "lineHeight": 1.3
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "28px",
+          "fontWeight": 600,
+          "lineHeight": 1.3
+        }
+      ],
+      "body": {
+        "fontFamily": "Pretendard",
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      },
+      "bodyBold": {
+        "fontFamily": "Pretendard",
+        "fontSize": "16px",
+        "fontWeight": 700,
+        "lineHeight": 1.5
+      },
+      "caption": {
+        "fontFamily": "Pretendard",
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": 1.4
+      },
+      "small": {
+        "fontFamily": "Pretendard",
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "lineHeight": 1.4
+      },
+      "buttonL": {
+        "fontFamily": "Pretendard",
+        "fontSize": "18px",
+        "fontWeight": 600,
+        "lineHeight": 1.3
+      },
+      "buttonM": {
+        "fontFamily": "Pretendard",
+        "fontSize": "16px",
+        "fontWeight": 600,
+        "lineHeight": 1.3
+      },
+      "buttonS": {
+        "fontFamily": "Pretendard",
+        "fontSize": "14px",
+        "fontWeight": 600,
+        "lineHeight": 1.3
+      }
+    }
+  }
+}
+```
+
+## 컴포넌트에서 타이포그래피 사용
+
+```tsx
+// Text 컴포넌트에서 사용
+const titleExample = <Text typography="h1">Main Title</Text>
+const bodyExample = <Text typography="body">Paragraph text goes here.</Text>
+
+// Box 컴포넌트에서 사용
+const boxExample = <Box typography="caption">Caption in a box</Box>
+```
+
+```tsx
+// styled로 만든 컴포넌트에서 사용
+const Title = styled('h1', {
+  typography: 'h1',
+  color: '$text',
+})
+```
+
+## 다른 스타일과 함께 사용
+
+타이포그래피는 다른 스타일 props와 함께 사용할 수 있습니다. `typography` 옆에 작성한 속성은 지정한 브레이크포인트부터 그 이후의 모든 브레이크포인트에서 프리셋보다 우선합니다. 따라서 `<Text typography="h1" fontSize="14px" />`는 `h1`의 크기가 커지는 구간에서도 `14px`를 유지합니다. 조건부로만 지정한 속성(`fontSize={small ? '12px' : undefined}`)도 마찬가지입니다. 프리셋 선언은 직접 작성한 선언보다 아래 캐스케이드 레이어에 놓이므로, 직접 작성한 값이 적용될 때는 언제나 그 값이 우선합니다.
+
+```tsx
+const example = (
+  <Text color="$primary" mb={4} textAlign="center" typography="h1">
+    Centered Title
+  </Text>
+)
+```
+
+## 타입 안전성
+
+타이포그래피 토큰은 완전한 타입 안전성을 갖습니다.
+
+```tsx
+// TypeScript 자동 완성 목록: h1, h2, body 등
+const example = <Text typography="" />
+
+// 잘못된 토큰은 TypeScript 오류를 표시합니다
+const invalidExample = <Text typography="invalid" /> // 오류!
+```

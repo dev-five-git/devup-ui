@@ -1,0 +1,280 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
+export const metadata = {
+  title: '브레이크포인트',
+  alternates: {
+    canonical: '/ko/docs/devup/breakpoints',
+    languages: {
+      en: '/docs/devup/breakpoints',
+      ko: '/ko/docs/devup/breakpoints',
+      'x-default': '/docs/devup/breakpoints',
+    },
+  },
+}
+
+# 브레이크포인트
+
+Devup UI는 6개의 브레이크포인트로 구성된 모바일 우선 반응형 디자인 시스템을 사용합니다. 배열을 사용하면 뷰포트 너비에 따라 서로 다른 스타일을 적용할 수 있습니다.
+
+## 브레이크포인트 범위
+
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>인덱스</TableHeaderCell>
+      <TableHeaderCell>브레이크포인트</TableHeaderCell>
+      <TableHeaderCell>범위</TableHeaderCell>
+      <TableHeaderCell>기기</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>0</TableCell>
+      <TableCell>
+        <code>xs</code>
+      </TableCell>
+      <TableCell>0px - 479px</TableCell>
+      <TableCell>모바일(세로)</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>1</TableCell>
+      <TableCell>
+        <code>sm</code>
+      </TableCell>
+      <TableCell>480px - 767px</TableCell>
+      <TableCell>모바일(가로)</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>2</TableCell>
+      <TableCell>
+        <code>md</code>
+      </TableCell>
+      <TableCell>768px - 991px</TableCell>
+      <TableCell>태블릿</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>3</TableCell>
+      <TableCell>
+        <code>lg</code>
+      </TableCell>
+      <TableCell>992px - 1279px</TableCell>
+      <TableCell>소형 데스크톱</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>4</TableCell>
+      <TableCell>
+        <code>xl</code>
+      </TableCell>
+      <TableCell>1280px - 1599px</TableCell>
+      <TableCell>데스크톱</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>5</TableCell>
+      <TableCell>
+        <code>2xl</code>
+      </TableCell>
+      <TableCell>1600px+</TableCell>
+      <TableCell>대형 데스크톱</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
+
+## 기본 사용법
+
+모든 스타일 prop에 배열을 전달할 수 있습니다. 각 인덱스는 하나의 브레이크포인트에 대응합니다.
+
+```tsx
+<Box bg={['red', 'blue', 'green', 'yellow', 'purple', 'orange']} />
+```
+
+결과는 다음과 같습니다.
+
+- **0-479px**: 빨간색 배경
+- **480-767px**: 파란색 배경
+- **768-991px**: 초록색 배경
+- **992-1279px**: 노란색 배경
+- **1280-1599px**: 보라색 배경
+- **1600px+**: 주황색 배경
+
+## `null`로 브레이크포인트 건너뛰기
+
+`null`을 사용하면 해당 브레이크포인트를 건너뛰고 이전 값을 유지합니다.
+
+{/* conformance */}
+
+```tsx
+<Box bg={['red', null, 'green', null, 'purple']} />
+```
+
+결과는 다음과 같습니다.
+
+- **0-767px**: 빨간색(인덱스 0, 이후 null은 이전 값을 상속)
+- **768-1279px**: 초록색(인덱스 2, 이후 null은 이전 값을 상속)
+- **1280px+**: 보라색
+
+값이 정의된 브레이크포인트마다 별도의 클래스가 생성되고, 건너뛴 브레이크포인트에는 아무것도 출력되지 않습니다.
+
+```css
+.a {
+  background: red;
+}
+@media (min-width: 768px) {
+  .b {
+    background: green;
+  }
+}
+@media (min-width: 1280px) {
+  .c {
+    background: purple;
+  }
+}
+```
+
+## 더 짧은 배열
+
+요소가 6개보다 적은 배열은 길이만큼의 브레이크포인트에만 스타일을 적용합니다.
+
+```tsx
+// 모바일과 데스크톱만 정의
+const example = <Box fontSize={['14px', null, null, null, '18px']} />
+
+// 축약형: 모바일과 태블릿만 정의
+const example2 = <Box p={[2, 4]} />
+```
+
+## 반응형 레이아웃 예제
+
+```tsx
+<Flex direction={['column', null, 'row']} gap={[2, null, 4]}>
+  <Box p={[2, null, 4]} w={['100%', null, '50%']}>
+    Left content
+  </Box>
+  <Box p={[2, null, 4]} w={['100%', null, '50%']}>
+    Right content
+  </Box>
+</Flex>
+```
+
+- **모바일(0-767px)**: 세로로 쌓이고, 전체 너비를 차지하며, 패딩과 간격이 작습니다.
+- **태블릿 이상(768px+)**: 나란히 배치되고, 각각 50% 너비를 차지하며, 패딩과 간격이 커집니다.
+
+## 반응형 타이포그래피
+
+타이포그래피와 함께 사용하여 반응형 텍스트를 만들 수 있습니다.
+
+```tsx
+<Text
+  fontSize={['24px', null, null, null, '48px']}
+  lineHeight={[1.3, null, null, null, 1.2]}
+>
+  Responsive Heading
+</Text>
+```
+
+또는 `devup.json`에 정의한 반응형 타이포그래피를 사용할 수 있습니다.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "h1": [
+        { "fontSize": "32px", "fontWeight": 800 },
+        null,
+        null,
+        null,
+        { "fontSize": "48px", "fontWeight": 800 }
+      ]
+    }
+  }
+}
+```
+
+```tsx
+<Text typography="h1">Responsive Heading</Text>
+```
+
+## 의사 선택자와 함께 사용하기
+
+반응형 배열을 의사 선택자와 함께 사용할 수 있습니다.
+
+{/* conformance */}
+
+```tsx
+// Different hover colors per breakpoint
+const example = <Box _hover={{ bg: ['blue', null, 'purple'] }} />
+
+// Alternative syntax
+const example2 = <Box _hover={[{ bg: 'blue' }, null, { bg: 'purple' }]} />
+```
+
+두 형식 모두 같은 클래스를 생성합니다.
+
+```css
+.a:hover {
+  background: blue;
+}
+@media (min-width: 768px) {
+  .b:hover {
+    background: purple;
+  }
+}
+```
+
+## 자주 쓰는 패턴
+
+### 요소 표시/숨기기
+
+```tsx
+// 모바일에서는 숨기고 데스크톱에서는 표시
+const example = (
+  <Box display={['none', null, null, null, 'block']}>Desktop only content</Box>
+)
+
+// 모바일에서는 표시하고 데스크톱에서는 숨김
+const example2 = (
+  <Box display={['block', null, null, null, 'none']}>Mobile only content</Box>
+)
+```
+
+### 반응형 그리드
+
+```tsx
+<Grid
+  gap={[2, null, 4]}
+  templateColumns={['1fr', null, 'repeat(2, 1fr)', null, 'repeat(4, 1fr)']}
+>
+  <Box>Item 1</Box>
+  <Box>Item 2</Box>
+  <Box>Item 3</Box>
+  <Box>Item 4</Box>
+</Grid>
+```
+
+- **모바일**: 1열
+- **태블릿**: 2열
+- **데스크톱**: 4열
+
+### 반응형 간격
+
+```tsx
+<Box m={[2, null, 4]} p={[2, null, 4, null, 6]}>
+  Content with responsive padding and margin
+</Box>
+```
+
+참고로 숫자 값에는 4를 곱합니다. 따라서 `p={[2, null, 4]}`는 모바일에서 `padding: 8px`, 태블릿 이상에서 `padding: 16px`가 됩니다.
+
+## 권장 사항
+
+1. **모바일 우선**: 인덱스 0의 모바일 스타일부터 작성합니다.
+2. **null을 적절히 활용**: 변경이 필요 없는 브레이크포인트는 건너뜁니다.
+3. **단순하게 유지**: 모든 prop에 6개의 값이 필요하지는 않습니다.
+4. **충분히 테스트**: 개발 중에 모든 브레이크포인트를 확인합니다.
+5. **성능 고려**: 반응형 값은 더 많은 CSS를 생성하므로 신중하게 사용합니다.

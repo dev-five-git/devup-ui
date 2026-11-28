@@ -1,0 +1,356 @@
+export const metadata = {
+  title: 'devup.json',
+  alternates: {
+    canonical: '/ko/docs/devup/devup-json',
+    languages: {
+      en: '/docs/devup/devup-json',
+      ko: '/ko/docs/devup/devup-json',
+      'x-default': '/docs/devup/devup-json',
+    },
+  },
+}
+
+# devup.json
+
+`devup.json` 파일은 Devup UI 테마의 설정 파일입니다. 프로젝트 루트에 이 파일을 만들어 색상, 타이포그래피, 길이, 그림자 및 기타 디자인 토큰을 정의합니다.
+
+사용자 정의 prop 축약형은 디자인 토큰이 아니라 추출 동작에 해당하므로
+이 파일에 넣지 않습니다. 대신 빌드 플러그인에서 설정하세요.
+[사용자 정의 축약형](/docs/api/custom-shorthands)을 참고하세요.
+
+## 기본 구조
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {},
+      "dark": {}
+    },
+    "typography": {},
+    "length": {
+      "default": {}
+    },
+    "shadow": {
+      "default": {}
+    }
+  }
+}
+```
+
+## 전체 예제
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "primaryHover": "#0060df",
+        "secondary": "#7928ca",
+        "success": "#0070f3",
+        "warning": "#f5a623",
+        "error": "#e00",
+        "text": "#000",
+        "textMuted": "#666",
+        "background": "#fff",
+        "backgroundMuted": "#fafafa",
+        "border": "#eaeaea"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "primaryHover": "#2080ef",
+        "secondary": "#8a63d2",
+        "success": "#3291ff",
+        "warning": "#f7b955",
+        "error": "#f33",
+        "text": "#fff",
+        "textMuted": "#888",
+        "background": "#000",
+        "backgroundMuted": "#111",
+        "border": "#333"
+      }
+    },
+    "typography": {
+      "h1": [
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "32px",
+          "fontWeight": 800,
+          "lineHeight": 1.2
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "48px",
+          "fontWeight": 800,
+          "lineHeight": 1.2
+        }
+      ],
+      "body": {
+        "fontFamily": "Pretendard",
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      },
+      "caption": {
+        "fontFamily": "Pretendard",
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": 1.4
+      }
+    }
+  }
+}
+```
+
+## 색상 설정
+
+테마 변형별로 색상 토큰을 정의합니다.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "text": "#000"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "text": "#fff"
+      }
+    }
+  }
+}
+```
+
+- 첫 번째 키(`default`)는 처음 로드할 때 적용되는 기본 테마입니다.
+- 각 변형에는 같은 색상 토큰 이름이 있어야 합니다.
+- 색상은 `$` 접두사를 붙여 사용합니다: `$primary`, `$text`
+
+자세한 내용은 [색상](/docs/devup/colors)을 참고하세요.
+
+## 타이포그래피 설정
+
+타이포그래피 스타일을 객체 또는 반응형 배열로 정의합니다.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
+      },
+      "responsiveHeading": [
+        { "fontSize": "20px", "fontWeight": 700 },
+        null,
+        null,
+        null,
+        { "fontSize": "32px", "fontWeight": 700 }
+      ]
+    }
+  }
+}
+```
+
+타이포그래피 속성:
+
+- `fontFamily` - 글꼴 패밀리 이름
+- `fontSize` - 글꼴 크기(예: `"16px"`)
+- `fontWeight` - 굵기(`700` 같은 숫자 또는 `"bold"` 같은 문자열)
+- `fontStyle` - 스타일(예: `"italic"`)
+- `lineHeight` - 줄 높이(`1.5` 같은 숫자 또는 `"150%"` 같은 문자열)
+- `letterSpacing` - 자간(예: `"-0.02em"`)
+
+자세한 내용은 [타이포그래피](/docs/devup/typography)를 참고하세요.
+
+## 길이 설정
+
+간격, 크기 및 기타 CSS 길이 속성에 사용할 반응형 길이 토큰을 정의합니다.
+
+```json
+{
+  "theme": {
+    "length": {
+      "default": {
+        "containerX": ["16px", null, "32px", null, "64px"],
+        "gutter": ["8px", null, "16px"]
+      }
+    }
+  }
+}
+```
+
+길이 토큰은 타이포그래피와 마찬가지로 반응형 배열을 사용합니다. `null`을 사용하면 브레이크포인트를 건너뛰고 이전 값을 상속합니다.
+
+자세한 내용은 [길이](/docs/devup/length)를 참고하세요.
+
+## 그림자 설정
+
+box-shadow 값에 사용할 반응형 그림자 토큰을 정의합니다.
+
+```json
+{
+  "theme": {
+    "shadow": {
+      "default": {
+        "card": [
+          "0 1px 2px rgba(0,0,0,0.1)",
+          null,
+          null,
+          "0 4px 8px rgba(0,0,0,0.1)"
+        ],
+        "sm": "0 1px 2px rgba(0,0,0,0.05)"
+      }
+    }
+  }
+}
+```
+
+그림자 토큰도 반응형 배열을 지원합니다. 배열이 아닌 값은 모든 브레이크포인트에 적용되는 하나의 그림자를 정의합니다.
+
+자세한 내용은 [그림자](/docs/devup/shadow)를 참고하세요.
+
+## 컴포넌트에서 사용하기
+
+### 색상
+
+```tsx
+<Box bg="$primary" borderColor="$border" color="$text" />
+```
+
+### 타이포그래피
+
+```tsx
+const headingExample = <Text typography="h1">Heading</Text>
+const bodyExample = <Text typography="body">Body text</Text>
+```
+
+### 길이
+
+```tsx
+<Box gap="$gutter" px="$containerX" />
+```
+
+### 그림자
+
+```tsx
+<Box boxShadow="$card" />
+```
+
+## 파일 위치
+
+`devup.json` 파일은 프로젝트 루트에 두어야 합니다.
+
+```
+your-project/
+├── devup.json      <-- here
+├── package.json
+├── src/
+│   └── ...
+└── ...
+```
+
+## 다른 파일 확장하기
+
+`extends`에는 기반으로 삼을 다른 `devup.json` 파일을 나열합니다. 예를 들어
+모노레포의 여러 패키지가 공유하는 테마를 확장할 수 있습니다.
+
+```json
+{
+  "extends": ["../../shared/devup.json"],
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3"
+      }
+    }
+  }
+}
+```
+
+- 경로는 패키지 이름이 아니라, 해당 경로를 나열한 파일을 기준으로 한 상대
+  파일 경로입니다. 확장된 파일이 다시 다른 파일을 확장할 수도 있습니다.
+- 파일은 순서대로 병합됩니다. 첫 번째 항목이 기반이 되고, 이후 항목이 차례로
+  이를 덮어쓰며, 파일 자신이 마지막에 적용됩니다.
+- 객체는 키 단위로 병합되므로, 예제는 공유 파일에 정의된 모든 색상을 유지하고
+  `primary`만 교체합니다. 반응형 값이나 `breakpoints` 같은 배열은 통째로
+  교체됩니다.
+- 존재하지 않는 파일 경로는 아무것도 추가하지 않습니다. 빌드는 이를 확장한
+  파일과 누락된 경로를 명시하여 경고하며, 해당 파일이 생성되면 이를
+  반영합니다.
+- 파일들이 서로를 순환적으로 확장하면 그 연결 고리를 명시한 오류가 발생합니다.
+
+Vite, webpack, Rsbuild, Next.js 플러그인의 개발 서버는 연결된 파일 중 하나라도
+변경되면 테마를 다시 로드합니다.
+
+## 플러그인 설정
+
+기본적으로 플러그인은 프로젝트 루트에서 `devup.json`을 찾습니다. 프로젝트 루트는 Vite의 `root`,
+webpack의 `context`, Rsbuild의 루트, Next.js 프로젝트 디렉터리(webpack
+빌드 기준이며, Turbopack 빌드는 작업 디렉터리를 사용합니다) 또는
+`Bun.build`의 `root`입니다. 상대 경로로 지정한 `devupFile`, `distDir`,
+`cssDir`은 모노레포 도구(turbo, nx 등)가 빌드를 시작한 디렉터리가 아니라
+이 루트를 기준으로 해석됩니다. `devupFile`을 설정하지 않았고 작업 디렉터리에만
+`devup.json`이 있으면 해당 파일을 그대로 사용하되, 파일을 프로젝트 루트로
+옮기거나 `devupFile`을 설정하라는 경고를 한 번 표시합니다.
+
+경로를 직접 지정할 수도 있습니다.
+
+### Vite
+
+```ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      devupFile: 'config/devup.json', // 사용자 지정 경로
+    }),
+  ],
+})
+```
+
+### Next.js
+
+```js
+const { DevupUI } = require('@devup-ui/next-plugin')
+
+module.exports = DevupUI(
+  {
+    // Next.js 설정
+  },
+  {
+    devupFile: 'config/devup.json', // 사용자 지정 경로
+  },
+)
+```
+
+## 타입 생성
+
+프로젝트를 빌드하면 Devup UI가 `devup.json`으로부터 TypeScript 타입을 자동으로 생성합니다. 이를 통해 다음이 가능해집니다.
+
+- 색상, 타이포그래피, 길이, 그림자 토큰 자동 완성
+- 잘못된 토큰에 대한 타입 오류
+- 코드베이스 전체에서 일관된 사용
+
+타입은 `<distDir>/theme.d.ts`에 생성됩니다. `distDir`은 `devup.json` 필드가 아닌
+빌드 플러그인 옵션이며 기본값은 `df`이므로, 기본 경로는 `df/theme.d.ts`입니다
+(Bun 플러그인은 항상 `df`를 사용합니다). `tsconfig.json`에서 `include`를 제한하고 있다면 `df/*.d.ts`
+(또는 사용자 지정 `distDir`에 맞는 경로)를 추가하세요.
+
+## 핫 리로드
+
+개발 중에 `devup.json`을 변경하면 핫 리로드가 실행됩니다. 다음과 같은 작업을 할 수 있습니다.
+
+1. 새 색상 토큰 추가
+2. 기존 값 수정
+3. 타이포그래피, 길이, 그림자 스타일 추가
+
+개발 서버를 다시 시작하지 않아도 변경 사항이 즉시 반영됩니다.
