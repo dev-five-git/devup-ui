@@ -1,5 +1,7 @@
 import { expect, type Page, test as base } from '@playwright/test'
 
+import { getUntranslatedRoutes } from './exported-routes'
+
 const test = base.extend<{ browserErrors: string[] }>({
   browserErrors: [
     async ({ page }, use, testInfo) => {
@@ -36,12 +38,15 @@ test.beforeEach(async ({ page }) => {
 const routes = [
   ['/', '/'],
   ['/docs/overview', '/docs/overview'],
-  ['/ko', '/'],
   ['/ko/docs/overview', '/ko/docs/overview'],
+  ['/ko/docs/features', '/ko/docs/features'],
   ['/team', '/team'],
   ['/components/button', '/components/button'],
-  ['/ko/docs/features', '/ko/docs/features'],
-  ['/ko/components/button', '/components/button'],
+  // Any page still untranslated covers the English fallback; none once every
+  // page has a Korean translation.
+  ...getUntranslatedRoutes()
+    .slice(0, 1)
+    .map((route) => [route, route.slice('/ko'.length) || '/'] as const),
 ] as const
 
 /**
