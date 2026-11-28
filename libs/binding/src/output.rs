@@ -6,7 +6,8 @@ use extractor::{
 
 use crate::css_cache::invalidate_css;
 use crate::lazy_css::{LazyCss, settle};
-use crate::with_style_sheet_untracked;
+use crate::native_theme::native_theme;
+use crate::{with_style_sheet, with_style_sheet_untracked};
 
 /// Whether extraction generates a source map.
 #[derive(Clone, Copy)]
@@ -143,7 +144,8 @@ pub fn code_extract(
 }
 
 /// Compile a `(filename, code)` source for React Native on `platform`
-/// (`ios`, `android` or `web`): its code and source map, with no CSS
+/// (`ios`, `android` or `web`): its code and source map, with no CSS. Theme
+/// tokens resolve in the registered theme
 pub fn code_extract_native(
     source: (&str, &str),
     package: &str,
@@ -156,7 +158,11 @@ pub fn code_extract_native(
     })?;
     let option = ExtractOption {
         package: package.to_string(),
-        target: ExtractTarget::Native(NativeTarget { platform, runtime }),
+        target: ExtractTarget::Native(NativeTarget {
+            platform,
+            runtime,
+            theme: std::sync::Arc::new(with_style_sheet(|sheet| native_theme(&sheet.theme))),
+        }),
         ..ExtractOption::default()
     };
     let output = extract(filename, code, option).map_err(|error| error.to_string())?;

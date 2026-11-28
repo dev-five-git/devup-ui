@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { backgroundColor: "#111" },
+	b: { backgroundColor: "#eee" },
+	c: { backgroundColor: "#5a44ff" },
+	d: { backgroundColor: "#8c7bff" }
+});
+export function Outer() {
+	const __t = __useThemeIndex();
+	const Inner = () => {
+		const __t = __useThemeIndex();
+		return <Box style={[__s.a, __s.b][__t]} />;
+	};
+	return <Box style={[__s.c, __s.d][__t]}><Inner /></Box>;
+}

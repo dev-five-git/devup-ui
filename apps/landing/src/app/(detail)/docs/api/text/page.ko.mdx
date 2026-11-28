@@ -1,0 +1,85 @@
+export const metadata = {
+  title: 'Text',
+  alternates: {
+    canonical: '/ko/docs/api/text',
+    languages: {
+      en: '/docs/api/text',
+      ko: '/ko/docs/api/text',
+      'x-default': '/docs/api/text',
+    },
+  },
+}
+
+# Text
+
+`Text` 컴포넌트는 `span`처럼 텍스트를 만드는 데 사용할 수 있는 레이아웃 기본 요소입니다.
+
+스타일이 적용된 `span`일 뿐입니다.
+
+## 사용 방법
+
+{/* conformance */}
+
+```tsx
+import { Text } from '@devup-ui/react'
+
+function App() {
+  return (
+    <Text color="red" fontSize="24px">
+      This is Text component.
+    </Text>
+  )
+}
+```
+
+위에서 정의한 Text 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return <span className="a b">This is Text component.</span>
+}
+```
+
+```css
+.a {
+  color: red;
+}
+.b {
+  font-size: 24px;
+}
+```
+
+### 다른 요소로 렌더링하기
+
+`as` prop을 사용하면 요소의 타입을 바꿀 수 있습니다.
+
+{/* conformance */}
+
+```tsx
+import { Text } from '@devup-ui/react'
+
+function App() {
+  return (
+    <Text as="p" color="red" fontSize="24px">
+      This is Text component.
+    </Text>
+  )
+}
+```
+
+위에서 정의한 Text 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return <p className="a b">This is Text component.</p>
+}
+```
+
+```css
+.a {
+  color: red;
+}
+.b {
+  font-size: 24px;
+}
+```

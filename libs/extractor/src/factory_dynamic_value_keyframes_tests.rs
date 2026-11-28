@@ -41,7 +41,8 @@ fn held_animation_names_link_keyframes_when_factory_prepares_dynamic_values(
         .body
         .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
     let script = format!(
-        "const o=(target,props)=>({{target,props}}); {} JSON.stringify(Object.values(render().props.style));",
+        "const o=(target,props)=>({{target,props}}); {}{} JSON.stringify(Object.values(render().props.style));",
+        crate::runtime_units::linked(&output.code),
         Codegen::new().build(&program).code
     );
     let observed = Context::default()

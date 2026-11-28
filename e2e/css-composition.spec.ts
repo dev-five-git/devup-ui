@@ -17,6 +17,7 @@ import {
   setModuleResolver,
   setPrefix,
 } from '../bindings/devup-ui-wasm/pkg/index.js'
+import { __devupScale } from '../packages/react/src/scale'
 
 const api = "import { css } from '@devup-ui/react';"
 const leafRules = `{
@@ -517,3 +518,61 @@ for (const singleCss of [true, false]) {
     }
   })
 }
+
+// A number only known at runtime takes the unit its literal takes: the
+// compiled element, run in the browser, pads by 8px for `p={m}` with m = 2.
+test('runtime numbers on an element take the units their literals take', async ({
+  page,
+}) => {
+  const emitted = withWasmState(() => {
+    const output = compile(
+      '/src/units.tsx',
+      `import { Box } from '@devup-ui/react'
+import { jsx } from 'react/jsx-runtime'
+export const props = (m) => jsx(Box, { p: m, opacity: m / 4, transitionDuration: m })`,
+      true,
+    )
+    return { code: output.code, css: getCss(undefined, false) }
+  })
+  // The output imports the conversion from the package; the page declares it
+  expect(emitted.code).toContain(
+    'import { __devupScale } from "@devup-ui/react/scale";',
+  )
+  const script = [String(__devupScale), ...emitted.code.split('\n')]
+    .filter((line) => !line.startsWith('import '))
+    .join('\n')
+    .replace('export const props', 'const props')
+  await page.setContent(`<style>${emitted.css}</style>`)
+  for (const [input, padding, opacity, duration] of [
+    [2, '8px', '0.5', '0.002s'],
+    ['2', '8px', '0.5', '0.002s'],
+    ['1rem', '16px', '1', '0s'],
+  ] as const) {
+    await page.evaluate(
+      ([code, value]) => {
+        const element = new Function(
+          'jsx',
+          `${code}\nreturn props(${JSON.stringify(value)})`,
+        )((_: unknown, props: unknown) => props) as {
+          className: string
+          style: Record<string, unknown>
+        }
+        document.getElementById('units')?.remove()
+        const div = document.createElement('div')
+        div.id = 'units'
+        div.className = element.className
+        for (const [name, entry] of Object.entries(element.style)) {
+          div.style.setProperty(name, String(entry))
+        }
+        document.body.append(div)
+      },
+      [script, input] as const,
+    )
+    await expect(page.locator('#units')).toHaveCSS('padding', padding)
+    await expect(page.locator('#units')).toHaveCSS('opacity', opacity)
+    await expect(page.locator('#units')).toHaveCSS(
+      'transition-duration',
+      duration,
+    )
+  }
+})

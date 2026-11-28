@@ -139,7 +139,8 @@ pub(super) fn dynamic_from(style: &ExtractStaticStyle, identifier: &str) -> CssT
         style.level(),
         identifier,
         style.selector().cloned(),
-    );
+    )
+    .with_runtime_units(true);
     dynamic.layer.clone_from(&style.layer);
     CssToStyleResult::Dynamic(dynamic)
 }

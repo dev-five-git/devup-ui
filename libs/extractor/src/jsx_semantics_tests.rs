@@ -25,6 +25,7 @@ mod pass_through;
 mod pass_through_edges;
 mod pass_through_known;
 mod repeated;
+mod runtime_units;
 mod scoped_captures;
 mod simple_selections;
 mod slots;

@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex_, Themed as __Themed_, defineThemes as __defineThemes_ } from "@devup-ui/react/native";
+__defineThemes_(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { backgroundColor: "#5a44ff" },
+	b: { backgroundColor: "#8c7bff" }
+});
+const __t = 1, __useThemeIndex = 2, __Themed = 3, __defineThemes = 4;
+export const A = () => {
+	const __t_ = __useThemeIndex_();
+	return <Box style={[__s.a, __s.b][__t_]} />;
+};
+export const b = <__Themed_ $c={Box} $s={(__t_) => [__s.a, __s.b][__t_]} />;

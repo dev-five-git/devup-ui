@@ -73,7 +73,13 @@ function require(name){if(name==='react')return {forwardRef};if(name==='react/js
 function render(element){return typeof element.target==='string'?element:typeof element.target==='function'?render((0,element.target)(element.props)):render(element.target.render(element.props,element.props.ref));}
 function slots(element){return Object.keys(element.props).filter(key=>key.startsWith('__devupCss'));}
 ")).unwrap_or_else(|error| panic!("runtime fixture: {error:?}"));
+    let scale = format!(
+        "{}export {{ __devupScale, __devupNativeScale }};",
+        crate::runtime_units::module_script()
+    );
     for (name, code) in [
+        ("@devup-ui/core/scale", scale.as_str()),
+        ("@devup-ui/react/scale", scale.as_str()),
         ("react", "export const forwardRef=globalThis.forwardRef;"),
         (
             "react/jsx-runtime",

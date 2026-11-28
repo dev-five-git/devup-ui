@@ -50,6 +50,8 @@ export default defineConfig({
       entry: {
         index: 'src/index.ts',
         'compat/index': 'src/compat/index.ts',
+        'native/index': 'src/native/index.ts',
+        scale: 'src/scale.ts',
       },
     },
     outDir: 'dist',
