@@ -39,6 +39,7 @@ const routes = [
   ['/', '/'],
   ['/docs/overview', '/docs/overview'],
   ['/ko/docs/overview', '/ko/docs/overview'],
+  ['/ko/docs/features', '/ko/docs/features'],
   ['/team', '/team'],
   ['/components/button', '/components/button'],
   // Any page still untranslated covers the English fallback; none once every
@@ -156,7 +157,7 @@ for (const locale of ['en', 'ko'] as const) {
       })
       .first()
       .click()
-    await expect(page).toHaveURL(/(?<!ko)\/docs\/features$/u)
+    await expect(page).toHaveURL(`http://localhost:3098${prefix}/docs/features`)
     await expect(page.locator('main')).toBeVisible()
     await page.goBack()
     await expect(page).toHaveURL(`http://localhost:3098${prefix}/docs/overview`)
