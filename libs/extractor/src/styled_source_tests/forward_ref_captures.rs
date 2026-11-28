@@ -35,7 +35,7 @@ fn ordered_reads_when_guarded_captures_have_distinct_keys(
     program
         .body
         .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
+    let code = crate::runtime_units::linked(&output) + &Codegen::new().build(&program).code;
 
     // When: the actual emitted callback renders twice after its source values change.
     let script = format!(
@@ -149,12 +149,12 @@ fn callback_contract_when_many_dependent_guarded_captures_render(
     program
         .body
         .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
+    let code = crate::runtime_units::linked(&output) + &Codegen::new().build(&program).code;
     let prelude = match filename {
         "test.ts" => format!(
             "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});"
         ),
-        "test.cts" => "function require(name){if(name==='react')return {forwardRef:render=>({render})};if(name==='react/jsx-runtime')return {jsx:(target,props)=>({target,props})};throw new Error(name);}".to_string(),
+        "test.cts" => "function require(name){if(name==='react')return {forwardRef:render=>({render})};if(name==='react/jsx-runtime')return {jsx:(target,props)=>({target,props})};if(name.endsWith('/scale'))return __devupScaleModule;throw new Error(name);}".to_string(),
         _ => panic!("unexpected capture fixture dialect"),
     };
 
@@ -248,7 +248,7 @@ fn layers_preserve_authored_order_when_inherited_captures_render()
     program
         .body
         .retain(|statement| !matches!(statement, Statement::ImportDeclaration(_)));
-    let code = Codegen::new().build(&program).code;
+    let code = crate::runtime_units::linked(&output.code) + &Codegen::new().build(&program).code;
     let script = format!(
         "const __devupForwardRef=render=>({{render}});const {helper}=(target,props)=>({{target,props}});{code}\nconst before=trace.slice();const first=Card.render({{}},null);baseColor='navy';ownColor='pink';const second=Card.render({{}},null);JSON.stringify([before,Object.values(first.props.style).sort(),Object.values(second.props.style).sort(),trace,__devupRecord0]);"
     );

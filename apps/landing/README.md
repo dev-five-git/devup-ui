@@ -56,16 +56,15 @@ the existing components layout.
 For home, showcase and components overview, add page.ko.tsx beside page.tsx and
 register its pathname in src/i18n/pages.ts (home uses /). Translate the component
 overview's Description.mdx as Description.ko.mdx beside it. Reuse the interactive
-components. Introduce matching keys in src/i18n/messages/en.json and ko.json,
-and load catalogs in src/i18n/request.ts, merging English defaults with Korean
-overrides per namespace. In SiteLayout, pass getMessages({locale}) to
-NextIntlClientProvider. Client components use useTranslations; server components
-use getTranslations({locale}) from next-intl/server with an explicit locale.
-These catalogs are introduced by the first TSX/shared-UI translation contribution;
-the current provider has no translated UI messages. Keep state identifiers and
+components. Shared UI copy lives in src/i18n/messages/en.json and ko.json, one
+namespace per component; add matching keys to both. src/i18n/request.ts merges
+the English defaults with the Korean overrides per namespace, and SiteLayout
+passes getMessages({locale}) to NextIntlClientProvider. Client components use
+useTranslations; server components use getTranslations({locale}) from
+next-intl/server with an explicit locale. Keep state identifiers and
 component/API names unchanged.
 
-Shared navigation, search labels and footer belong to their own issue. Search
+The shared header, sidebars, table of contents and search use these catalogs. Search
 indexes are built by script.js: Korean MDX replaces its English entry, and other
 entries stay English. Use Link and usePathname from @/i18n/navigation for internal
 navigation; use next/link for static assets such as /storybook/index.html.

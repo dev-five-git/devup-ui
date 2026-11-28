@@ -1,0 +1,35 @@
+export const metadata = {
+  title: 'Image',
+  alternates: {
+    canonical: '/ko/docs/api/image',
+    languages: {
+      en: '/docs/api/image',
+      ko: '/ko/docs/api/image',
+      'x-default': '/docs/api/image',
+    },
+  },
+}
+
+# Image
+
+`Image` 컴포넌트는 이미지를 렌더링하는 데 사용할 수 있는 레이아웃 기본 요소입니다.
+
+스타일이 적용된 `img`일 뿐입니다.
+
+## 사용 방법
+
+```tsx
+import { Image } from '@devup-ui/react'
+
+function App() {
+  return <Image src="https://via.placeholder.com/150" />
+}
+```
+
+위에서 정의한 Image 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return <img src="https://via.placeholder.com/150" />
+}
+```

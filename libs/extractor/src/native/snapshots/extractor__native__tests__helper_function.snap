@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { Themed as __Themed, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { color: "#111" },
+	b: { color: "#eee" },
+	c: { padding: 4 },
+	d: { backgroundColor: "#111" },
+	e: { backgroundColor: "#eee" }
+});
+function renderItem({ item }) {
+	return <__Themed $c={Text} $s={(__t) => [__s.a, __s.b][__t]}>{item}</__Themed>;
+}
+const lower = function() {
+	return <__Themed $c={Box} $s={(__t) => [null, __s.c][__t]} />;
+};
+const { Destructured } = { Destructured: () => <__Themed $c={Box} $s={(__t) => [__s.d, __s.e][__t]} /> };

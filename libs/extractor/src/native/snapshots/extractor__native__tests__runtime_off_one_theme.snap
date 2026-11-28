@@ -1,0 +1,23 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(theme, false, RUNTIME_OFF_ELEMENTS)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		backgroundColor: "#000",
+		width: 8,
+		color: "red",
+		padding: 4
+	},
+	b: {
+		fontFamily: "Inter",
+		fontSize: 16,
+		fontWeight: "500",
+		lineHeight: 24,
+		letterSpacing: -.32
+	}
+});
+<Box style={__s.a} />;
+<Text style={__s.b} />;

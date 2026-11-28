@@ -1,0 +1,116 @@
+export const metadata = {
+  title: 'VStack',
+  alternates: {
+    canonical: '/ko/docs/api/v-stack',
+    languages: {
+      en: '/docs/api/v-stack',
+      ko: '/ko/docs/api/v-stack',
+      'x-default': '/docs/api/v-stack',
+    },
+  },
+}
+
+# VStack
+
+`VStack` 컴포넌트는 flexbox로 자식 요소를 세로로 배치하는 레이아웃 컴포넌트입니다.
+
+`display: flex` 스타일과 함께 `flex-direction: column`이 적용되어 있습니다.
+
+## 사용 방법
+
+{/* conformance */}
+
+```tsx
+import { Box, VStack } from '@devup-ui/react'
+
+function App() {
+  return (
+    <VStack>
+      <Box bg="blue" h={25} w={25} />
+      <Box bg="blue" display="flex" h={25} w={25} />
+      <Box bg="blue" h={25} w={25} />
+    </VStack>
+  )
+}
+```
+
+위에서 정의한 VStack 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return (
+    <div className="e f">
+      <div className="a b c"></div>
+      <div className="a d b c"></div>
+      <div className="a b c"></div>
+    </div>
+  )
+}
+```
+
+```css
+.a {
+  background: blue;
+}
+.b {
+  height: 100px;
+}
+.c {
+  width: 100px;
+}
+.d {
+  display: flex;
+}
+/* The component's own defaults sit in a lower cascade layer, so props override them */
+@layer b {
+  .e {
+    display: flex;
+  }
+  .f {
+    flex-direction: column;
+  }
+}
+```
+
+스타일 속성에 단위 없이 숫자를 전달하면 자동으로 4배로 변환됩니다.
+즉, 1은 4px, 2는 8px와 같은 식입니다.
+
+단, 다음 속성은 예외이며 **4를 곱하지 않습니다**.
+
+- `opacity`
+- `flex`
+- `z-index`
+- `line-clamp`
+- `font-weight`
+- `line-height`
+- `scale`
+- `aspect-ratio`
+- `flex-grow`
+- `flex-shrink`
+- `order`
+- `grid-column`, `grid-column-start`, `grid-column-end`
+- `grid-row`, `grid-row-start`, `grid-row-end`
+- `animation-iteration-count`
+- `tab-size`, `-moz-tab-size`, `-webkit-line-clamp`
+- `grid-area`
+- `column-count`, `columns`, `orphans`, `widows`, `zoom`
+- `border-image`, `border-image-outset`, `border-image-slice`, `border-image-width`
+- `mask-border`, `mask-border-outset`, `mask-border-slice`, `mask-border-width`
+- `initial-letter`, `max-lines`, `shape-image-threshold`
+- `fill-opacity`, `flood-opacity`, `stop-opacity`, `stroke-opacity`, `stroke-width`, `stroke-dashoffset`, `stroke-miterlimit`
+
+<br />
+
+클래스 이름과 스타일 속성은 다음 순서로 결정됩니다.
+
+1. 자식 컴포넌트의 클래스 이름을 생성합니다.
+   - 각 자식에서 오는 클래스 이름과 스타일 속성(컴포넌트 기본값, 유틸리티 클래스, props 포함)을 계산합니다.
+
+2. 중복된 컴포넌트 속성을 제거합니다.
+   - `key:value` 쌍과 `style-order`가 모두 일치할 때만 중복을 제거합니다.
+
+3. key:value는 일치하지만 `style-order`가 다르면 속성은 제거되지 않으며, 나중에 오는 스타일 또는 우선순위가 더 높은 스타일이 적용됩니다.
+   - 예: `Center`가 내부적으로 구현한 `display: flex`와 사용자가 직접 전달한 `display: flex`는 style-order가 서로 다르므로 제거되지 않고, 우선순위에 따라 최종 스타일이 적용됩니다.
+
+4. 병합된 결과를 바탕으로 부모 컴포넌트의 className을 생성합니다.
+   - 자식 className을 생성하고 (위 규칙에 따라) 중복을 제거한 뒤, 부모 className과 최종 스타일 출력을 계산하고 병합합니다.

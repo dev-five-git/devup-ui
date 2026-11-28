@@ -65,10 +65,20 @@
     "./compat/vanilla-extract-css-utils": {
       "types": "./dist/compat/vanilla-extract-css-utils.d.ts"
     },
+    "./scale": {
+      "types": "./dist/scale.d.ts",
+      "import": "./dist/scale.js",
+      "require": "./dist/scale.cjs"
+    },
     "./stylex": {
       "types": "./dist/utils/stylex.d.ts",
       "import": "./dist/utils/stylex.js",
       "require": "./dist/utils/stylex.cjs"
+    },
+    "./native": {
+      "types": "./dist/native/index.d.ts",
+      "import": "./dist/native/index.js",
+      "require": "./dist/native/index.cjs"
     }
   },
   "files": [
@@ -88,10 +98,17 @@
     "@typescript/typescript6": "^6.0.2",
     "@types/react": "^19.3.0",
     "@types/node": "^26.6.6",
-    "react": "^19.3.1"
+    "react": "^19.3.1",
+    "react-native": "0.88.1"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
+    "react-native": "*",
     "csstype-extra": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    }
   }
 }

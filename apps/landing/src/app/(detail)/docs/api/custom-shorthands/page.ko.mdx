@@ -1,0 +1,191 @@
+export const metadata = {
+  title: '사용자 정의 축약형',
+  description:
+    '생성된 TypeScript 자동 완성과 함께 빌드 시점 Devup UI prop 별칭을 구성합니다.',
+  alternates: {
+    canonical: '/ko/docs/api/custom-shorthands',
+    languages: {
+      en: '/docs/api/custom-shorthands',
+      ko: '/ko/docs/api/custom-shorthands',
+      'x-default': '/docs/api/custom-shorthands',
+    },
+  },
+  openGraph: {
+    title: 'Devup UI - 사용자 정의 축약형',
+    description:
+      '생성된 TypeScript 자동 완성과 함께 빌드 시점 Devup UI prop 별칭을 구성합니다.',
+    url: '/docs/api/custom-shorthands',
+    siteName: 'Devup UI',
+    images: ['/og-image.png'],
+  },
+}
+
+# 사용자 정의 축약형
+
+사용자 정의 축약형은 하나의 값을 여러 CSS 속성에 적용하는 빌드 시점 prop 별칭을
+정의합니다. 축약형은 디자인 토큰이 아니라 플러그인 옵션이므로 `devup.json`이 아닌
+번들러 설정에 정의합니다.
+
+```ts
+DevupUI({
+  shorthands: {
+    insetX: ['left', 'right'],
+    scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+  },
+})
+```
+
+```tsx
+const pinned = <Box insetX={0} />
+const responsive = <Box insetX={[0, null, 'auto']} />
+const interactive = <Box _hover={{ insetX: 4 }} />
+const nested = <Box selectors={{ '& > *': { insetX: 2 } }} />
+```
+
+`insetX={4}`이면 `left`와 `right`가 모두 같은 변환 값을 받습니다. 모든 대상
+속성은 기존 Devup UI 값 규칙을 그대로 따릅니다.
+
+## 플러그인 설정
+
+### Vite
+
+```ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+      },
+    }),
+  ],
+})
+```
+
+### Next.js
+
+```ts
+import { DevupUI } from '@devup-ui/next-plugin'
+
+const nextConfig = {}
+
+export default DevupUI(nextConfig, {
+  shorthands: {
+    insetX: ['left', 'right'],
+  },
+})
+```
+
+두 번째 인자는 Webpack 경로와 Turbopack 경로에서 공통으로 사용됩니다.
+
+### Webpack
+
+```ts
+import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
+
+export default {
+  plugins: [
+    new DevupUIWebpackPlugin({
+      shorthands: {
+        insetX: ['left', 'right'],
+      },
+    }),
+  ],
+}
+```
+
+### Rsbuild
+
+```ts
+import { DevupUI } from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
+
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+      },
+    }),
+  ],
+})
+```
+
+### Bun
+
+옵션이 필요하면 로컬 preload 모듈을 사용합니다.
+
+```toml
+# bunfig.toml
+[test]
+preload = ["./devup-ui.preload.ts"]
+```
+
+```ts
+// devup-ui.preload.ts
+import { register } from '@devup-ui/bun-plugin/register'
+
+await register({
+  shorthands: {
+    insetX: ['left', 'right'],
+  },
+})
+```
+
+## 속성 이름
+
+대상 속성은 camelCase와 CSS kebab-case 중 어느 형식으로든 작성할 수 있습니다.
+
+```ts
+DevupUI({
+  shorthands: {
+    scrollMarginX: ['scrollMarginLeft', 'scroll-margin-right'],
+  },
+})
+```
+
+대상에는 Devup UI의 내장 축약형도 사용할 수 있습니다. 예를 들어 `py`는
+`padding-top`과 `padding-bottom`으로 모두 확장됩니다.
+
+```ts
+DevupUI({
+  shorthands: {
+    sectionSpacing: ['py', 'gap'],
+  },
+})
+```
+
+## 타입 자동 완성
+
+플러그인이 시작되면 구성된 prop 이름을 `<distDir>/theme.d.ts`(기본값은
+`df/theme.d.ts`)에 기록합니다. 이 선언은 `DevupProps`를 확장하므로 다음 위치에서
+자동 완성과 타입 검사가 동작합니다.
+
+- `<Box insetX={0} />` 같은 컴포넌트 props
+- `insetX={[0, null, 'auto']}` 같은 반응형 배열
+- `_hover={{ insetX: 4 }}` 같은 의사 선택자
+- `selectors={{ '& > *': { insetX: 2 } }}` 같은 사용자 정의 선택자
+
+`tsconfig.json`의 `include`가 소스 디렉터리로 제한되어 있다면 생성된 선언 파일도
+포함합니다.
+
+```json
+{
+  "include": ["src", "df/*.d.ts"]
+}
+```
+
+`shorthands`를 변경한 뒤에는 빌드 도구를 다시 시작합니다. 번들러 설정 변경은
+`devup.json` 핫 리로드 경로를 사용하지 않기 때문입니다.
+
+## 디자인 토큰과 축약형 비교
+
+색상, 타이포그래피, 길이, 그림자처럼 디자인 시스템에 속하는 값에는 `devup.json`을
+사용합니다. prop 어휘와 추출 동작에는 플러그인 `shorthands`를 사용합니다.
+
+```tsx
+// $contentX는 디자인 토큰 값이고, insetX는 사용자 정의 prop 별칭입니다.
+const content = <Box insetX="$contentX" />
+```

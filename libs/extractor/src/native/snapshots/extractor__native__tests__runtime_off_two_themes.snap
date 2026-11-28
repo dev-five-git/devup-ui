@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(theme, false, RUNTIME_OFF_ELEMENTS)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `bg` on React Native: a theme variant is chosen by the theme the app shows, which needs the React Native runtime that `runtime: false` turns off. Fix: give the value for one theme, or turn the runtime on
+test.tsx:2:50: `<Box>` cannot use `_themeDark` on React Native: a theme variant is chosen by the theme the app shows, which needs the React Native runtime that `runtime: false` turns off. Fix: give the value for one theme, or turn the runtime on

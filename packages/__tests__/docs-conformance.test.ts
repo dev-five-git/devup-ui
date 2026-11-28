@@ -28,14 +28,23 @@ const docsRoot = join(
 
 /** Pages whose examples are opted in; a page losing its markers fails. */
 const CHECKED_PAGES = [
+  'api/box/page.ko.mdx',
   'api/box/page.mdx',
+  'api/center/page.ko.mdx',
   'api/center/page.mdx',
+  'api/css/page.ko.mdx',
   'api/css/page.mdx',
+  'api/flex/page.ko.mdx',
   'api/flex/page.mdx',
+  'api/grid/page.ko.mdx',
   'api/grid/page.mdx',
+  'api/group-selector/page.ko.mdx',
   'api/group-selector/page.mdx',
+  'api/input/page.ko.mdx',
   'api/input/page.mdx',
+  'api/text/page.ko.mdx',
   'api/text/page.mdx',
+  'api/v-stack/page.ko.mdx',
   'api/v-stack/page.mdx',
   'devup/breakpoints/page.ko.mdx',
   'devup/breakpoints/page.mdx',

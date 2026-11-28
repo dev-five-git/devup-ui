@@ -1,4 +1,6 @@
 import { Box, Center, css, Flex } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 import { Suspense } from 'react'
 
 import { Link } from '@/i18n/navigation'
@@ -32,7 +34,8 @@ function HeaderIconWrap({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function Header() {
+export async function Header({ locale }: { locale: Locale }) {
+  const t = await getTranslations({ locale, namespace: 'Header' })
   const top = (
     <Flex alignItems="center">
       <LanguageSwitcher />
@@ -110,7 +113,7 @@ export function Header() {
       </Flex>
       <Flex
         alignItems="center"
-        aria-label="Primary navigation"
+        aria-label={t('primaryNavigation')}
         as="nav"
         display={['none', null, null, 'flex']}
         gap={[null, null, '4px', '10px']}
@@ -122,7 +125,7 @@ export function Header() {
             })}
             href="/docs/overview"
           >
-            <Menu keyword="docs">Docs</Menu>
+            <Menu keyword="docs">{t('docs')}</Menu>
           </Link>
         </Flex>
         <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
@@ -132,7 +135,7 @@ export function Header() {
             })}
             href="/components/overview"
           >
-            <Menu keyword="components">Components</Menu>
+            <Menu keyword="components">{t('components')}</Menu>
           </Link>
         </Flex>
         <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
@@ -142,7 +145,7 @@ export function Header() {
             })}
             href="/showcase"
           >
-            <Menu keyword="showcase">Showcase</Menu>
+            <Menu keyword="showcase">{t('showcase')}</Menu>
           </Link>
         </Flex>
         <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
@@ -152,7 +155,7 @@ export function Header() {
             })}
             href="/team"
           >
-            <Menu keyword="team">Team</Menu>
+            <Menu keyword="team">{t('team')}</Menu>
           </Link>
         </Flex>
         <Flex alignItems="center" px={[null, null, '0', '8px', '24px']}>
@@ -199,7 +202,7 @@ export function Header() {
       >
         <Suspense>
           <MobMenuButton>
-            <MobMenu />
+            <MobMenu locale={locale} />
           </MobMenuButton>
         </Suspense>
       </Flex>

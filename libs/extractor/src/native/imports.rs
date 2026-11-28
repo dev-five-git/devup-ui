@@ -12,8 +12,8 @@ use oxc_span::GetSpan;
 use oxc_syntax::symbol::SymbolId;
 use rustc_hash::FxHashMap;
 
-use super::errors::{Problem, RuntimeFeature};
-use super::{NativeTarget, REACT_NATIVE, Replacement};
+use super::errors::{Problem, theme_api};
+use super::{NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 
 /// The Devup UI components a file imports, and how its imports change
@@ -23,6 +23,8 @@ pub(super) struct Imports {
     pub components: FxHashMap<SymbolId, (ExportVariableKind, String)>,
     pub replacements: Vec<Replacement>,
     pub errors: Vec<(u32, String)>,
+    /// Whether the file imports the theme API of the runtime
+    pub theme_api: bool,
     /// Where the stylesheet is declared: before the first statement that is
     /// not an import
     pub sheet_at: Option<usize>,
@@ -43,9 +45,25 @@ pub(super) const fn native_component(kind: &ExportVariableKind) -> &'static str 
     }
 }
 
+/// The theme API, which the runtime of React Native implements
+fn is_theme_api(name: &str) -> bool {
+    matches!(name, "useTheme" | "getTheme" | "setTheme")
+}
+
+/// Where an imported name of the package goes on React Native
+enum Destination {
+    /// A React Native component, under this specifier
+    Native(String),
+    /// The runtime, under this specifier
+    Runtime(String),
+    /// The package, as it is: a name only types read
+    Kept,
+}
+
 /// Why an export of the package cannot be imported on React Native, or `None`
-/// for one that can (a component, or a name only types read)
-fn unsupported(name: &str, target: NativeTarget) -> Option<Problem> {
+/// for one that can (a component, the theme API with the runtime, or a name
+/// only types read)
+fn unsupported(name: &str, target: &NativeTarget) -> Option<Problem> {
     match name {
         "Grid" => Some(Problem::new(
             "React Native has no grid layout",
@@ -55,7 +73,7 @@ fn unsupported(name: &str, target: NativeTarget) -> Option<Problem> {
             format!("`{name}` is not compiled for React Native yet"),
             "write the styles as props of a Devup UI component",
         )),
-        "useTheme" | "getTheme" | "setTheme" => Some(RuntimeFeature::Theme.problem(target)),
+        name if is_theme_api(name) => (!target.runtime).then(|| theme_api(name)),
         "ThemeScript" | "initTheme" | "globalCss" => Some(Problem::new(
             "React Native has no document and no global stylesheet",
             "remove it from the React Native build",
@@ -77,7 +95,7 @@ pub(super) fn read(
     program: &Program<'_>,
     code: &str,
     package: &str,
-    target: NativeTarget,
+    target: &NativeTarget,
 ) -> Imports {
     let mut imports = Imports::default();
     for statement in &program.body {
@@ -103,16 +121,18 @@ impl Imports {
         declaration: &ImportDeclaration<'_>,
         code: &str,
         package: &str,
-        target: NativeTarget,
+        target: &NativeTarget,
     ) {
         let mut natives = Vec::new();
+        let mut runtime = Vec::new();
         let mut kept = Vec::new();
         for specifier in declaration.specifiers.iter().flatten() {
             match specifier {
                 ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                     match self.specifier(specifier, package, target) {
-                        Some(native) => natives.push(native),
-                        None => kept.push(specifier_code(specifier, code)),
+                        Destination::Native(native) => natives.push(native),
+                        Destination::Runtime(name) => runtime.push(name),
+                        Destination::Kept => kept.push(specifier_code(specifier, code)),
                     }
                 }
                 specifier => self.errors.push((
@@ -125,52 +145,62 @@ impl Imports {
                 )),
             }
         }
-        if natives.is_empty() {
+        if natives.is_empty() && runtime.is_empty() {
             return;
         }
-        let mut text = format!(
-            "import {{ {} }} from \"{REACT_NATIVE}\";",
-            natives.join(", ")
-        );
-        if !kept.is_empty() {
-            text = format!(
-                "{text}\nimport {{ {} }} from {};",
-                kept.join(", "),
-                declaration.source.span.source_text(code)
-            );
-        }
+        self.theme_api |= !runtime.is_empty();
+        let source = declaration.source.span.source_text(code).to_string();
+        let text: Vec<String> = [
+            (natives, format!("\"{REACT_NATIVE}\"")),
+            (runtime, format!("\"{RUNTIME}\"")),
+            (kept, source),
+        ]
+        .into_iter()
+        .filter(|(names, _)| !names.is_empty())
+        .map(|(names, source)| format!("import {{ {} }} from {source};", names.join(", ")))
+        .collect();
         let span = declaration.span;
         self.replacements
-            .push((span.start as usize, span.end as usize, text));
+            .push((span.start as usize, span.end as usize, text.join("\n")));
     }
 
-    /// The React Native import a specifier becomes, or `None` to keep it
+    /// Where a specifier goes on React Native
     fn specifier(
         &mut self,
         specifier: &ImportSpecifier<'_>,
         package: &str,
-        target: NativeTarget,
-    ) -> Option<String> {
+        target: &NativeTarget,
+    ) -> Destination {
         if specifier.import_kind.is_type() {
-            return None;
+            return Destination::Kept;
         }
         let name = imported_name(&specifier.imported);
         if let Some(problem) = unsupported(&name, target) {
             self.errors
                 .push((specifier.span.start, problem.import(&name, package)));
-            return None;
+            return Destination::Kept;
         }
-        let kind = ExportVariableKind::try_from(name).ok()?;
         let local = specifier.local.name.to_string();
+        if is_theme_api(&name) {
+            return Destination::Runtime(renamed(&name, local));
+        }
+        let Ok(kind) = ExportVariableKind::try_from(name) else {
+            return Destination::Kept;
+        };
         let native = native_component(&kind);
         if let Some(symbol) = specifier.local.symbol_id.get() {
             self.components.insert(symbol, (kind, local.clone()));
         }
-        Some(if native == local {
-            local
-        } else {
-            format!("{native} as {local}")
-        })
+        Destination::Native(renamed(native, local))
+    }
+}
+
+/// The specifier importing `name` under `local`
+fn renamed(name: &str, local: String) -> String {
+    if name == local {
+        local
+    } else {
+        format!("{name} as {local}")
     }
 }
 

@@ -5,10 +5,10 @@ use serde_json::json;
 pub fn opaque(scope: &str, value: &str) -> RenderRecords {
     let expected = match scope {
         "const scaled = n => n * 4; const size = runtimeSize;"
-        | "const scaled = n => { externalEffect(); return n * 4; }; const size = 2;" => 8,
+        | "const scaled = n => { externalEffect(); return n * 4; }; const size = 2;" => "32px",
         "const scaled = n => n * 4; let size = 2; size = 3;"
-        | "const box = { size: 2 }; box.size = 3; const scaled = n => n * 4;" => 12,
-        "const scaled = n => n * 4; const size = Math.random();" => 2,
+        | "const box = { size: 2 }; box.size = 3; const scaled = n => n * 4;" => "48px",
+        "const scaled = n => n * 4; const size = Math.random();" => "8px",
         _ => panic!("original opaque fixture"),
     };
     let mut records = Vec::new();

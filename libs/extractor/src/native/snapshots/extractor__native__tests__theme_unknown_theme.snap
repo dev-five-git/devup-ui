@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `_themeSepia` on React Native: devup.json defines no `sepia` theme. Fix: add the theme to devup.json, or remove the block
+test.tsx:2:29: `<Box>` cannot use `_themeDark` on React Native: `_themeDark` takes an object of styles. Fix: write the styles in an object, such as `_themeDark={{ p: 2 }}`

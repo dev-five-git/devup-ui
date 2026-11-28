@@ -185,9 +185,9 @@ fn bound_import_keeps_original_value_when_lowercase_name_requires_eager_binding(
 }
 
 #[rstest]
-#[case::ordinary(("styled(Base)({opacity:p=>(trace.push('guard'),enabled)?({a:0.5,b:{nested:'raw'}})[state.key]:undefined,...(enabled?{lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:p=>(trace.push('spacing'),2),margin:p=>(trace.push('pixels'),2)})", "2"))]
-#[case::whole(("styled(Base)(p=>({...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)}))", "2px"))]
-#[case::template(("styled(Base)`${p=>({...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)})}`", "2px"))]
+#[case::ordinary(("styled(Base)({opacity:p=>(trace.push('guard'),enabled)?({a:0.5,b:{nested:'raw'}})[state.key]:undefined,...(enabled?{lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:p=>(trace.push('spacing'),2),margin:p=>(trace.push('pixels'),2)})", "8px"))]
+#[case::whole(("styled(Base)(p=>({...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)}))", "8px"))]
+#[case::template(("styled(Base)`${p=>({...((trace.push('guard'),enabled)?{opacity:({a:0.5,b:{nested:'raw'}})[state.key],lineHeight:[({a:1.5,b:1.7})[state.key],null,2.5],_hover:({a:{color:['red',null,'orange']},b:{color:['blue',null,'purple']}})[state.key]}:{}),p:(trace.push('spacing'),2),margin:(trace.push('pixels'),2)})}`", "8px"))]
 #[serial]
 fn scalar_and_rule_lookups_when_staged_keep_native_selection_and_property_units(
     #[case] fixture: (&str, &str),

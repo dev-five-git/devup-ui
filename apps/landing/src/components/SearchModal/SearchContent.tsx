@@ -1,6 +1,6 @@
 'use client'
 import { Box, Center, css, Flex, Text, VStack } from '@devup-ui/react'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Fragment, useEffect, useState } from 'react'
 
 import { Link } from '@/i18n/navigation'
@@ -47,6 +47,7 @@ function getHighlightedParts(text: string, query: string) {
 export function SearchContent() {
   const query = useQueryParam('query')
   const locale = useLocale()
+  const t = useTranslations('Search')
   const [data, setData] = useState<SearchResult[]>()
   useEffect(() => {
     if (!query) return
@@ -131,13 +132,13 @@ export function SearchContent() {
             textAlign="center"
             typography="caption"
           >
-            No recent searches
+            {t('noResults')}
           </Text>
         </Center>
       )}
     </>
   ) : (
-    <h3>Loading...</h3>
+    <h3>{t('loading')}</h3>
   )
 
   return (
