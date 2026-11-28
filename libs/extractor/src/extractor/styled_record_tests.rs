@@ -612,6 +612,7 @@ fn evaluate_native_render(code: &str, observation: &str) -> String {
         };
         script.replace_range(start..end, &replacement);
     }
+    script.insert_str(0, &crate::runtime_units::linked(code));
     script.push_str(observation);
     let mut context = Context::default();
     let result = match context.eval(Source::from_bytes(script.as_bytes())) {

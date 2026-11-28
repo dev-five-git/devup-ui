@@ -229,7 +229,8 @@ impl Typography {
     }
 
     /// The CSS declarations of this preset, in output order
-    fn properties(&self) -> [(&'static str, Option<&str>); 7] {
+    #[must_use]
+    pub fn properties(&self) -> [(&'static str, Option<&str>); 7] {
         [
             ("font-family", self.font_family.as_deref()),
             ("font-size", self.font_size.as_deref()),
@@ -524,7 +525,9 @@ fn token_levels(
         .collect()
 }
 
-fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
+/// The variant of `themes` the page shows without a `data-theme`: `default`,
+/// else `light`, else the first by name
+pub fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
     if themes.contains_key("default") {
         Some("default")
     } else if themes.contains_key("light") {
@@ -819,7 +822,10 @@ impl Theme {
         default_variant_key(&self.colors).map(str::to_string)
     }
 
-    fn color_scheme_of(&self, variant: &str) -> ColorScheme {
+    /// The color scheme `variant` renders with: the one `colorScheme` names,
+    /// else dark for `dark` and light for any other
+    #[must_use]
+    pub fn color_scheme_of(&self, variant: &str) -> ColorScheme {
         self.color_scheme
             .get(variant)
             .copied()

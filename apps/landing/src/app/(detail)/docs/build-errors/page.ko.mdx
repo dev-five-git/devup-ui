@@ -1,0 +1,4125 @@
+export const metadata = {
+  title: '빌드 오류',
+  alternates: {
+    canonical: '/ko/docs/build-errors',
+    languages: {
+      en: '/docs/build-errors',
+      ko: '/ko/docs/build-errors',
+      'x-default': '/docs/build-errors',
+    },
+  },
+}
+
+# 빌드 오류
+
+Devup UI는 스타일링 런타임을 배포하는 대신 스타일을 CSS로 빌드합니다. 이 레퍼런스는 검토한 추출기와 플러그인 소스가 출력하는 진단 메시지를 실패하는 입력 및 허용되는 수정 예시와 함께 분류해 정리합니다. 더 넓은 지원 범위와 합성 규칙은 [지원 문법과 제한 사항](/docs/limitations)을 참고하세요.
+
+위치가 표시된 스타일 진단 메시지는 다음과 같은 형태입니다.
+
+```text
+<file>:<line>:<column>: <API> cannot use `<code>` at build time: <requirement>
+```
+
+자리 표시자는 소스에 따라 달라집니다. 아래의 요구 사항 문구는 바꿔 쓴 것이 아니라 실제로 출력되는 문구입니다. 진단 메시지는 `Cannot compose`, `Cannot place`, 제거된 런타임 바인딩, 잘못된 형태를 보고하기도 합니다. 스타일 진단 메시지는 원본 소스 위치를 가리킵니다. 내부 로더/설정 메시지는 별도로 정리되어 있습니다.
+
+각 예시는 별개의 컴파일러 입력입니다. `width`, `rules`, `value`, `getStyles` 같은 이름은 코드에서 선언하지 않는 한 런타임에만 제공되는 값을 뜻합니다. 알려진 요소 선언 안의 동적 값은 CSS 변수가 될 수 있지만, 알 수 없는 규칙 키나 내용을 알 수 없는 스타일 객체 전체는 그럴 수 없습니다.
+
+여러 작성 방식이 공유하는 메시지 유형은 해당 API들에서 그대로 재사용됩니다. 제시된 수정 전/후 예시는 소스별 WASM 빌드에서 검증했습니다. 클래스 이름과 생성되는 변수 이름은 안정적인 공개 식별자가 아닙니다.
+
+## 스타일 props
+
+### 알 수 없는 선택자 스타일 객체
+
+**API:** 스타일 props. **메시지 형식:**
+
+```text
+`<Box>` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+```
+
+**발생 조건:**
+
+{/* probe: selector-object before */}
+
+```tsx-error
+import { Box } from '@devup-ui/react';
+export const App = ({ rules }) => <Box _hover={rules} />;
+```
+
+**원인:** 선택자에는 알려진 속성 집합이 필요합니다. 내용을 알 수 없는 런타임 객체에서는 빌드가 추출할 선언을 얻을 수 없습니다.
+
+**해결:** 객체 구조를 명시적으로 작성하세요. 개별 값은 동적으로 남아 CSS 변수가 될 수 있습니다.
+
+{/* probe: selector-object after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const App = ({ color }) => <Box _hover={{ color }} />
+```
+
+### 잘못된 선택자 이름
+
+**API:** 스타일 props. **메시지 형식:**
+
+```text
+`<Box>` cannot use `<code>` at build time: a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`
+```
+
+**발생 조건:**
+
+{/* probe: selector-name before */}
+
+```tsx-error
+import { Box } from '@devup-ui/react';
+export const App = () => <Box _notASelector={{ color: 'red' }} />;
+```
+
+**원인:** 알 수 없는 의사 선택자 이름은 빌드가 출력할 수 있는 CSS 선택자가 아닙니다.
+
+**해결:** 지원되는 의사 선택자나, &:hover처럼 &를 포함한 완전한 선택자를 사용하세요.
+
+{/* probe: selector-name after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const App = () => <Box _hover={{ color: 'red' }} />
+```
+
+### 클래스 문자열은 선택자 CSS 텍스트가 아님
+
+**API:** 스타일 props. **메시지 형식:**
+
+```text
+`<Box>` cannot use `<code>` at build time: a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`
+```
+
+**발생 조건:**
+
+{/* probe: selector-css-text before */}
+
+```tsx-error
+import { Box } from '@devup-ui/react';
+export const App = () => <Box _hover="external-class" />;
+```
+
+**원인:** 선택자는 외부 클래스 이름이 아니라 선언을 받습니다.
+
+**해결:** 스타일 객체나 color: red 같은 유효한 CSS 선언 텍스트를 전달하세요.
+
+{/* probe: selector-css-text after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const App = () => <Box _hover={{ color: 'red' }} />
+```
+
+## css / globalCss / keyframes
+
+### css()의 런타임 값
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`css()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: static-css before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css({ width });
+```
+
+**원인:** 이 API는 스타일시트 규칙을 출력하므로 런타임 CSS 변수를 설정할 요소가 없습니다.
+
+**해결:** 리터럴, 테마 토큰, 상수 또는 상수로부터의 결정적 계산을 사용하세요. 런타임 값이라면 선언을 스타일 prop으로 옮기세요. 예: &lt;Box w=\{width\} /&gt;.
+
+{/* probe: static-css after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css({ width: '20px' })
+```
+
+### 알 수 없는 전역 규칙 객체
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`globalCss()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: global-object before */}
+
+```tsx-error
+import { globalCss } from '@devup-ui/react';
+globalCss(rules);
+```
+
+**원인:** 전역 스타일시트에는 선택자와 규칙을 잇는 구조가 알려져 있어야 합니다.
+
+**해결:** 리터럴 객체나, 빌드가 평가할 수 있는 상수 객체/계산을 전달하세요.
+
+{/* probe: global-object after */}
+
+```tsx
+import { globalCss } from '@devup-ui/react'
+globalCss({ body: { color: 'red' } })
+```
+
+### 알 수 없는 keyframe spread
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`keyframes()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: keyframes-spread before */}
+
+```tsx-error
+import { keyframes } from '@devup-ui/react';
+export const fade = keyframes({ ...frames });
+```
+
+**원인:** 빌드는 모든 프레임의 이름과 선언을 알아야 합니다.
+
+**해결:** 프레임을 명시적으로 작성하거나 상수 객체에서 가져오세요.
+
+{/* probe: keyframes-spread after */}
+
+```tsx
+import { keyframes } from '@devup-ui/react'
+export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+```
+
+### 컴파일할 수 없는 합성 인자
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+Cannot compose `<styles>` at build time: each style must be a rule object, a class, or a condition choosing between them
+```
+
+**발생 조건:**
+
+{/* probe: css-compose before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css(getStyles());
+```
+
+**원인:** 빌드는 알 수 없는 함수 결과의 키를 알아낼 수 없습니다.
+
+**해결:** 알려진 규칙 객체, 클래스, 또는 그 형태 중 하나를 고르는 조건을 합성하세요. 결정적이고 빌드가 읽을 수 있는 헬퍼는 허용됩니다.
+
+{/* probe: css-compose after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css({ color: 'red' })
+```
+
+### 선택자나 속성 이름 안의 런타임 interpolation
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+Cannot place `<expression>` at build time: an interpolation in a selector or a property name must be a literal or a constant
+```
+
+**발생 조건:**
+
+{/* probe: template-selector before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css`& ${selector} { color: red; }`;
+```
+
+**원인:** 빌드는 동적 표현식을 선택자나 속성 이름 문법 안에 넣을 수 없습니다.
+
+**해결:** 리터럴 텍스트나 빌드가 읽을 수 있는 상수를 사용하세요. styled 템플릿에도 똑같이 적용됩니다.
+
+{/* probe: template-selector after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css`
+  & > p {
+    color: red;
+  }
+`
+```
+
+### 다른 코드가 변경하는 스타일 객체
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`css()` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+`<binding>` is changed here, so the build cannot read it as a constant
+```
+
+**발생 조건:**
+
+{/* probe: changed-object before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+const rules = { color: 'red' };
+rules.color = color;
+export const card = css(rules);
+```
+
+**원인:** const 바인딩이라고 해서 변경되는 객체가 고정된 스타일시트 값이 되지는 않습니다. 오류에는 변경 위치를 가리키는 메모가 포함될 수 있습니다.
+
+**해결:** 스타일 객체를 변경하지 마세요. 동적 값은 요소에 두거나, 정적 값으로 새 상수 객체를 만드세요.
+
+{/* probe: changed-object after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+const rules = { color: 'red' }
+export const card = css(rules)
+```
+
+### Global의 런타임 styles 객체
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`<Global>` cannot use `<code>` at build time: its values must be literals, theme tokens or constants
+```
+
+**발생 조건:**
+
+{/* probe: global-element-object before */}
+
+```tsx-error
+import { Global } from '@emotion/react';
+export const App = () => <Global styles={rules} />;
+```
+
+**원인:** Global은 내용을 알 수 없는 런타임 객체에서 선택자나 선언을 알아낼 수 없습니다.
+
+**해결:** 알려진 규칙 객체를 작성하거나 모듈 최상위 상수에서 가져오세요.
+
+{/* probe: global-element-object after */}
+
+```tsx
+import { Global } from '@emotion/react'
+export const App = () => <Global styles={{ body: { color: 'red' } }} />
+```
+
+### css()의 잘못된 선택자
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`css()` cannot use `<code>` at build time: a selector takes styles, an object such as `{ color: 'red' }` or CSS text such as `color: red`
+```
+
+**발생 조건:**
+
+{/* probe: selector-css-api before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const card = css({ _focus: 'red' });
+```
+
+**원인:** 선택자 값에는 임의의 문자열이 아니라 선언이 들어 있어야 합니다.
+
+**해결:** 스타일 객체나 유효한 CSS 선언 텍스트를 사용하세요. css, styled, globalCss 안에서도 같은 선택자 검사가 적용됩니다.
+
+{/* probe: selector-css-api after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const card = css({ _focus: { color: 'red' } })
+```
+
+### 잘못된 전역 선택자 이름
+
+**API:** css / globalCss / keyframes. **메시지 형식:**
+
+```text
+`globalCss()` cannot use `<code>` at build time: a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`
+```
+
+**발생 조건:**
+
+{/* probe: selector-global-api before */}
+
+```tsx-error
+import { globalCss } from '@devup-ui/react';
+globalCss({ _nope: { color: 'red' } });
+```
+
+**원인:** 알 수 없는 의사 이름은 쓸모 있는 전역 선택자로 출력할 수 없습니다.
+
+**해결:** 유효한 전역 선택자를 사용하거나, 적절한 규칙 객체 안에서 지원되는 의사 선택자를 사용하세요.
+
+{/* probe: selector-global-api after */}
+
+```tsx
+import { globalCss } from '@devup-ui/react'
+globalCss({ body: { color: 'red' } })
+```
+
+## styled
+
+### 잘못된 styled factory 형태
+
+**API:** styled. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: it renders a tag, a component or a value naming one, with rule objects or CSS text
+```
+
+**발생 조건:**
+
+{/* probe: styled-factory before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled(123)({ color: 'red' });
+```
+
+**원인:** styled factory는 어떤 태그나 컴포넌트를 렌더링하는지, 어떤 인자가 규칙인지 알아야 합니다.
+
+**해결:** 먼저 태그/컴포넌트를 전달하고, 그다음 규칙 객체나 CSS 텍스트를 전달하세요.
+
+{/* probe: styled-factory after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled('div')({ color: 'red' })
+```
+
+### 런타임 규칙 객체 전체
+
+**API:** styled. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+```
+
+**발생 조건:**
+
+{/* probe: styled-object before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div({ _hover: rules });
+```
+
+**원인:** 런타임 규칙 객체 전체는 알려진 속성의 런타임 값과 달리 키를 알 수 없습니다.
+
+**해결:** 규칙 구조를 명시적으로 유지하세요. 런타임 값에는 &lt;Box \_hover=\{\{ color \}\} /&gt; 같은 스타일 prop을 사용하세요.
+
+{/* probe: styled-object after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div({ _hover: { color: 'red' } })
+```
+
+### 컴파일할 수 없는 styled 합성
+
+**API:** styled. **메시지 형식:**
+
+```text
+Cannot compose `<styles>` at build time: each style must be a rule object, a class, or a condition choosing between them
+```
+
+**발생 조건:**
+
+{/* probe: styled-compose before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div({ color: 'red' }, getStyles());
+```
+
+**원인:** 알 수 없는 함수 결과는 스타일시트 선언으로 나눌 수 없습니다.
+
+**해결:** 알려진 객체/클래스나 그중 하나를 고르는 조건을 합성하고, 런타임 차이는 props로 표현하세요.
+
+{/* probe: styled-compose after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div({ color: 'red' }, { padding: '4px' })
+```
+
+### 지원되지 않는 shouldForwardProp 조건 함수
+
+**API:** styled. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: `shouldForwardProp` must be a function of the prop name that compares it with strings, `[...].includes(prop)`, `prop.startsWith(...)` or `isPropValid(prop)`, joined by `!`, `&&` and `||`
+```
+
+**발생 조건:**
+
+{/* probe: styled-forward before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div.withConfig({ shouldForwardProp: name => check(name) })({ color: 'red' });
+```
+
+**원인:** 빌드가 필터를 평가하므로, 임의의 런타임 조건 함수로는 어떤 props를 요소에 전달할지 결정할 수 없습니다.
+
+**해결:** 문자열과 비교하거나 includes, startsWith, isPropValid를 사용하고, 이를 !, &&, ||로 결합하세요.
+
+{/* probe: styled-forward after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div.withConfig({
+  shouldForwardProp: (name) => name !== 'tone',
+})({ color: 'red' })
+```
+
+### 요소 인자를 호출하는 shouldForwardProp
+
+**API:** styled. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so calling it fails at runtime. Fix: call `isPropValid(prop)` from `@emotion/is-prop-valid`, or compare the prop with strings
+```
+
+**발생 조건:**
+
+```tsx-error
+import styled from 'styled-components';
+export const Card = styled.div.withConfig({ shouldForwardProp: (prop, valid) => valid(prop) })`color: red;`;
+```
+
+**원인:** styled-components v6는 `shouldForwardProp(prop, elementToBeCreated)`를 호출합니다. 두 번째 인자는 렌더링할 태그나 컴포넌트이므로, 태그인 경우 이를 호출하면 오류가 발생합니다.
+
+**해결:** `@emotion/is-prop-valid`의 `isPropValid`를 호출하거나, prop을 문자열과 비교하세요.
+
+```tsx
+import isPropValid from '@emotion/is-prop-valid'
+import styled from 'styled-components'
+export const Card = styled.div.withConfig({
+  shouldForwardProp: (prop) => isPropValid(prop),
+})`
+  color: red;
+`
+```
+
+### 읽을 수 없는 styled 식별 옵션
+
+**API:** styled. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: `target`, `componentId` and a `displayName` beside a `componentId` decide the classes the component renders; write them as literals
+`styled()` cannot use `<code>` at build time: styled-components throws on a `componentId` that is not a string; write it as a string
+`styled()` cannot use `<code>` at build time: styled-components throws on a truthy `displayName` that is not a string beside a `componentId`; write it as a string
+```
+
+**발생 조건:**
+
+```tsx-error
+import styled from 'styled-components'
+export const Card = styled.div.withConfig({ componentId: makeId() })`
+  color: red;
+`
+```
+
+**원인:** Emotion의 `target`과 styled-components의 `componentId`(둘 다 설정되면 앞에 `displayName`이 붙음)는 요소의 클래스가 되므로, 빌드가 그 텍스트를 알아야 합니다. Emotion이 허용하는 리터럴은 클래스를 추가하지 않는 `''`를 포함해 모두 컴파일됩니다. styled-components는 문자열이 아닌 `componentId`, 그리고 그 옆에 놓인 문자열이 아닌 truthy `displayName`에 대해 오류를 던집니다.
+
+**해결:** 옵션을 리터럴로 작성하세요. `componentId`와 `displayName`은 문자열로 작성합니다.
+
+```tsx
+import styled from 'styled-components'
+export const Card = styled.div.withConfig({ componentId: 'card' })`
+  color: red;
+`
+```
+
+### 지원되지 않는 withComponent 대상
+
+**API:** styled. **메시지 형식:**
+
+```text
+`withComponent()` cannot use `<code>` at build time: it takes one tag name, as `'aside'`, or a component written as a name or `a.b`, as the styled component compiles to a plain function with no `withComponent` at runtime. Fix: pass the tag or component directly, or render the styled component with `as`
+`withComponent()` cannot use `<code>` at build time: it takes one tag or component, as options beside it would give the component classes and props the build cannot see. Fix: pass the tag or component alone, or create the component with `styled(tag, options)`
+```
+
+**발생 조건:**
+
+```tsx-error
+import styled from '@emotion/styled'
+const Card = styled('div', { target: 'card' })`
+  color: red;
+`
+export const Link = Card.withComponent('a', { target: 'link' })
+```
+
+**원인:** 빌드는 `withComponent`를 새 대상에 같은 클래스를 렌더링하는 컴포넌트로 컴파일합니다. Devup UI나 styled-components의 `styled`로 만든 컴포넌트는 런타임에 `withComponent`가 없으므로, 대상은 태그 이름이거나 이름 또는 `a.b`로 작성한 컴포넌트여야 합니다. Emotion의 `styled`로 만든 컴포넌트는 런타임에 어떤 대상이든 하나를 받습니다. 새 `target`이나 `shouldForwardProp`처럼 대상 옆에 전달한 옵션은 빌드가 볼 수 없는 클래스와 props를 바꾸게 됩니다.
+
+**해결:** 태그나 컴포넌트만 전달하세요. 다른 옵션이 필요하면 `styled(tag, options)`로 컴포넌트를 만드세요.
+
+```tsx
+import styled from '@emotion/styled'
+const Card = styled('div', { target: 'card' })`
+  color: red;
+`
+export const Link = styled('a', { target: 'link' })`
+  color: red;
+`
+```
+
+### styled()의 잘못된 선택자
+
+**API:** styled. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: a selector key names a pseudo-class or pseudo-element, as `_hover` or `hover`, or is a selector, as `&:hover`, `& > p` or `.parent &`
+```
+
+**발생 조건:**
+
+{/* probe: selector-styled-api before */}
+
+```tsx-error
+import { styled } from '@devup-ui/react';
+export const Card = styled.div({ selectors: { nope: { color: 'red' } } });
+```
+
+**원인:** 컴파일러는 알 수 없는 축약형 선택자 이름을 출력할 수 없습니다.
+
+**해결:** 지원되는 의사 이름이나 &를 포함한 완전한 선택자를 사용하세요.
+
+{/* probe: selector-styled-api after */}
+
+```tsx
+import { styled } from '@devup-ui/react'
+export const Card = styled.div({ selectors: { '&:hover': { color: 'red' } } })
+```
+
+## Emotion css prop과 ClassNames
+
+### 지원되지 않는 css prop 값
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it must be a style object, CSS text, a class `css()` gives, or a function of the theme giving one, or an array or condition of them
+```
+
+**발생 조건:**
+
+{/* probe: css-prop-value before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = () => <div css={getStyles()} />;
+```
+
+**원인:** css prop에는 내용을 알 수 없는 런타임 계산이 아니라 알려진 규칙 구조, CSS 텍스트, 클래스가 필요합니다.
+
+**해결:** 스타일 객체, CSS 텍스트, css()가 반환하는 클래스, 이를 반환하는 테마 함수, 또는 이들의 배열/조건을 사용하세요.
+
+{/* probe: css-prop-value after */}
+
+```tsx
+export const App = () => <div css={{ color: 'red' }} />
+```
+
+### 바인딩 뒤에 숨은 지역 스타일 객체
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: a style object it composes must be written in it, or declared with `const` at the top level of the module, where the build reads it
+```
+
+**발생 조건:**
+
+{/* probe: css-prop-local before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export function App() { let rules = { color: 'red' }; return <div css={rules} />; }
+```
+
+**원인:** 빌드는 함수 안이나 모듈 최상위의 `const` 바인딩에서 스타일 객체를 읽습니다. `let` 바인딩은 재할당될 수 있으므로, 빌드는 그 값을 클래스 문자열과 구분할 수 없습니다.
+
+**해결:** 객체를 css 안에 직접 작성하거나 const로 선언하세요.
+
+{/* probe: css-prop-local after */}
+
+```tsx
+const rules = { color: 'red' }
+export function App() {
+  return <div css={rules} />
+}
+```
+
+### 내부를 알 수 없는 styled 컴포넌트를 덮어쓰는 css prop
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css` on `<Card>` overrides styles `Card` sets, which the build orders only for a styled component rendering a tag with no attrs or props read, given no spread, `as` or `forwardedAs`: move these styles into `styled(Card)(...)`
+```
+
+**발생 조건:**
+
+{/* probe: css-prop-override before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+import styled from '@emotion/styled';
+const Card = styled.div.attrs({ title: 'card' })({ color: 'red' });
+export const App = () => <Card css={{ color: 'blue' }} />;
+```
+
+**원인:** 순서는 attrs, props 읽기, spread, as, forwardedAs가 없는 정적 styled 태그에서만 알 수 있습니다.
+
+**해결:** 덮어쓰는 스타일을 styled(Card)(...)로 옮기세요. 겹치지 않는 css prop에는 이 순서가 필요하지 않습니다.
+
+{/* probe: css-prop-override after */}
+
+```tsx
+import '@emotion/react'
+
+import styled from '@emotion/styled'
+const Card = styled.div.attrs({ title: 'card' })({ color: 'red' })
+const BlueCard = styled(Card)({ color: 'blue' })
+export const App = () => <BlueCard />
+```
+
+### 다른 코드도 읽는 스타일 선택을 읽는 css prop
+
+**API:** Emotion css prop. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it chooses among styles the build compiles only when `css` props alone read a `const` holding them: read it only as `css`, or write the choice in the prop
+```
+
+**발생 조건:**
+
+```tsx-error
+import { css } from '@emotion/react';
+export function App({ on }) { const rules = on ? { color: 'red' } : { color: 'blue' }; console.log(rules); return <div css={rules} />; }
+```
+
+**원인:** `? :`, `&&`, `||`, `??`로 스타일 객체 중 하나를 고르는 `const`는 선언된 위치에서 컴파일됩니다. 각 객체는 Emotion이 부여할 클래스가 되고, 선택은 여전히 런타임에 실행됩니다. 이는 `css` props만 그 값을 읽을 때에만 안전합니다. 다른 코드는 객체 대신 클래스 이름을 보게 되기 때문입니다. `let`에도 똑같이 적용됩니다.
+
+**해결:** 바인딩을 `css`로만 읽거나, 선택을 prop 안에 작성하세요.
+
+```tsx
+export function App({ on }) {
+  const rules = on ? { color: 'red' } : { color: 'blue' }
+  return <div css={rules} />
+}
+```
+
+### 스타일을 반환하는 함수의 결과를 읽는 css prop
+
+**API:** Emotion css prop. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it holds what a call gives, and the function returns a style object, which the build does not run the call to read: write the styles in the prop or in a `const` it reads, or return a class `css()` gives
+```
+
+**발생 조건:**
+
+```tsx-error
+import { css } from '@emotion/react';
+function make() { return { color: 'red' }; }
+export function App() { const rules = make(); return <div css={rules} />; }
+```
+
+**원인:** 빌드는 호출을 실행하지 않습니다. 객체나 배열 리터럴을 반환하는 모듈의 함수는 스타일을 반환하며, `css` prop은 이를 클래스로 전달할 수 없습니다. 매개변수나 import처럼 빌드가 내부를 볼 수 없는 호출은 여전히 클래스로 전달됩니다.
+
+**해결:** 스타일을 prop 안이나 prop이 읽는 `const`에 작성하거나, 함수가 `css()`의 클래스를 반환하도록 하세요.
+
+```tsx
+import { css } from '@emotion/react'
+const make = () => css({ color: 'red' })
+export function App() {
+  const rules = make()
+  return <div css={rules} />
+}
+```
+
+### 컴파일할 수 없는 ClassNames 자식
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: it takes only a child function of `{ css, cx, theme }` giving what it renders at once
+```
+
+**발생 조건:**
+
+{/* probe: class-child before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{render}</ClassNames>;
+```
+
+**원인:** ClassNames는 결과를 바로 반환하는 단일 자식 함수를 컴파일하는 방식으로 제거됩니다. 임의의 자식, 속성, async 콜백, 문 블록은 그런 방식으로 제거할 수 없습니다.
+
+**해결:** \{ css, cx, theme \}만 받고 렌더링할 내용을 바로 반환하는 자식 함수 하나를 사용하고, ClassNames의 속성은 제거하세요.
+
+{/* probe: class-child after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>
+    {({ css }) => <div className={css({ color: 'red' })} />}
+  </ClassNames>
+)
+```
+
+### 호출 밖으로 빠져나가는 ClassNames 헬퍼
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: the `css` and `cx` its child function takes can only be called, as the build compiles each call
+```
+
+**발생 조건:**
+
+{/* probe: class-read before */}
+
+```tsx-error
+import { css, ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{({ css }) => <div ref={css} />}</ClassNames>;
+```
+
+**원인:** 자식 헬퍼는 빌드가 그 직접 호출을 컴파일하는 동안에만 존재합니다.
+
+**해결:** 헬퍼를 전달, 저장, 반환하지 말고 자식 안에서 css/cx를 직접 호출하세요.
+
+{/* probe: class-read after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>
+    {({ css }) => <div className={css({ color: 'red' })} />}
+  </ClassNames>
+)
+```
+
+### 알 수 없는 호출을 합성하는 ClassNames
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: `css` and `cx` compose only style objects, CSS text, classes, calls of them, or arrays or conditions of these
+```
+
+**발생 조건:**
+
+{/* probe: class-part before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{({ cx }) => <div className={cx(getClass())} />}</ClassNames>;
+```
+
+**원인:** ClassNames의 합성 판독기는 임의의 호출을 클래스나 스타일 객체로 분류할 수 없습니다.
+
+**해결:** 클래스를 자식 밖에서 계산해 그 바인딩을 전달하거나, 알려진 객체/텍스트/클래스와 css/cx 직접 호출을 전달하세요.
+
+{/* probe: class-part after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>{({ cx }) => <div className={cx(className)} />}</ClassNames>
+)
+```
+
+### 데이터 맵이 아닌 ClassNames 클래스 맵
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: an object `cx` takes must give each class a condition, as `{ name: condition }`
+```
+
+**발생 조건:**
+
+{/* probe: class-map before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = ({ classes }) => <ClassNames>{({ cx }) => <div className={cx({ ...classes })} />}</ClassNames>;
+```
+
+**원인:** ClassNames 클래스 맵은 모든 클래스와 그 조건을 드러내야 합니다. 내용을 알 수 없는 spread/getter/메서드는 그 항목을 숨깁니다.
+
+**해결:** 일반적인 \{ name: condition \} 항목을 사용하세요. computed 클래스 키는 명시적으로 작성하면 허용됩니다.
+
+{/* probe: class-map after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = ({ active }) => (
+  <ClassNames>{({ cx }) => <div className={cx({ active })} />}</ClassNames>
+)
+```
+
+### 값도 mixin도 아닌 CSS interpolation
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: an interpolation in CSS text must be a value, or a mixin standing where a declaration would
+```
+
+**발생 조건:**
+
+{/* probe: mixin-placement before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = ({ selector }) => <div css={`& ${selector} { color: red; }`} />;
+```
+
+**원인:** 선택자/속성 문법 안의 표현식은 선언 값도, 분리 가능한 mixin도 될 수 없습니다.
+
+**해결:** 선택자와 속성 이름은 리터럴이나 상수로 유지하고, 동적 값은 속성의 콜론 뒤에 두세요.
+
+{/* probe: mixin-placement after */}
+
+```tsx
+export const App = () => (
+  <div
+    css={`
+      & > p {
+        color: red;
+      }
+    `}
+  />
+)
+```
+
+### 중첩 규칙 안의 mixin
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: a mixin must stand outside nested rules, where the parts it composes with can be split
+```
+
+**발생 조건:**
+
+{/* probe: nested-mixin before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = ({ rules }) => <div css={css`&:hover { ${rules}; }`} />;
+```
+
+**원인:** 컴파일러는 중첩 규칙 밖에 있을 때만 mixin을 합성 부분으로 나눕니다.
+
+**해결:** 중첩 규칙 구조를 명시적으로 작성하거나, 알려진 mixin을 최상위 선언 위치로 옮기세요.
+
+{/* probe: nested-mixin after */}
+
+```tsx
+export const App = ({ color }) => <div css={{ '&:hover': { color } }} />
+```
+
+### 태그드 템플릿 대신 cx 호출하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`cx()` cannot use `<code>` at build time: call it with class names, as in `cx('a', 'b')`
+```
+
+**발생 조건:**
+
+{/* probe: cx-template before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.cx`a b`;
+```
+
+**원인:** cx는 태그드 CSS나 클래스 템플릿이 아니라 클래스 이름 인자를 받습니다.
+
+**해결:** 명시적인 클래스 문자열 인자로 cx를 호출하세요.
+
+{/* probe: cx-template after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.cx('a', 'b')
+```
+
+### 태그드 템플릿 대신 merge 호출하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`merge()` cannot use `<code>` at build time: call it with class names, as in `cx('a', 'b')`
+```
+
+**발생 조건:**
+
+{/* probe: merge-template before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.merge`a b`;
+```
+
+**원인:** merge는 태그드 템플릿이 아니라 클래스 문자열 하나를 받습니다.
+
+**해결:** 템플릿 내용을 일반 문자열 인자 하나로 전달하세요.
+
+{/* probe: merge-template after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.merge('a b')
+```
+
+### 클래스 맵의 setter를 조건 속성으로 바꾸기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`cx()` cannot use `<code>` at build time: a class map entry must be written `name: condition`, not as a getter, setter or method
+```
+
+**발생 조건:**
+
+{/* probe: map-setter before */}
+
+```tsx-error
+import {cx} from '@emotion/css';
+export const a = () => cx({set b(v){}});
+```
+
+**원인:** cx 클래스 맵은 클래스 이름별 조건을 기술합니다. 접근자와 메서드는 조건 항목이 아닙니다.
+
+**해결:** setter 대신 b: on처럼 조건을 명시적으로 작성하세요.
+
+{/* probe: map-setter after */}
+
+```tsx
+import { cx } from '@emotion/css'
+export const a = (on) => cx({ b: on })
+```
+
+### 해석되지 않은 cx 인자를 spread하지 않기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`cx()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: cx-spread before */}
+
+```tsx-error
+import {cx} from '@emotion/css';
+export const a = list => cx(...list);
+```
+
+**원인:** 빌드는 해석되지 않은 런타임 spread의 항목을 열거할 수 없습니다.
+
+**해결:** 예시처럼 클래스 두 개로 고정된 형태라면 각 클래스 인자를 선언하고 명시적으로 전달하세요. 임의의 런타임 목록은 런타임에 클래스 문자열로 이어 붙여야 합니다.
+
+{/* probe: cx-spread after */}
+
+```tsx
+import { cx } from '@emotion/css'
+export const a = (first, second) => cx(first, second)
+```
+
+### merge 호출 전에 런타임 목록 이어 붙이기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`merge()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: merge-spread before */}
+
+```tsx-error
+import {merge} from '@emotion/css';
+export const a = list => merge(...list);
+```
+
+**원인:** 빌드는 해석되지 않은 런타임 spread의 항목을 열거할 수 없습니다.
+
+**해결:** 목록을 클래스 문자열 하나로 이어 붙인 뒤, 그 문자열 하나를 merge에 전달하세요.
+
+{/* probe: merge-spread after */}
+
+```tsx
+import { merge } from '@emotion/css'
+export const a = (list) => merge(list.join(' '))
+```
+
+### 클래스가 없어도 merge에 인자를 정확히 하나 전달하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`merge()` cannot use `<code>` at build time: it takes one class string
+```
+
+**발생 조건:**
+
+{/* probe: merge-zero before */}
+
+```tsx-error
+import {merge} from '@emotion/css';
+export const a = merge();
+```
+
+**원인:** merge는 클래스 문자열 인자 하나를 받도록 약속되어 있습니다.
+
+**해결:** 의도적으로 빈 결과를 얻으려면 빈 문자열을 전달하세요.
+
+{/* probe: merge-zero after */}
+
+```tsx
+import { merge } from '@emotion/css'
+export const a = merge('')
+```
+
+### css 규칙에 빌드 시점 값 사용하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: css-runtime-value before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.css({color:unknown});
+```
+
+**원인:** 이 컴파일 시점 API에는 동적 CSS 변수를 둘 렌더링된 요소가 없습니다.
+
+**해결:** 해석되지 않은 값을 리터럴, 테마 토큰, 상수로 바꾸세요.
+
+{/* probe: css-runtime-value after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css({ color: 'red' })
+```
+
+### keyframe 규칙에 빌드 시점 값 사용하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`keyframes()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: keyframes-runtime-value before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.keyframes({from:{opacity:unknown}});
+```
+
+**원인:** 이 컴파일 시점 API에는 동적 CSS 변수를 둘 렌더링된 요소가 없습니다.
+
+**해결:** keyframe에 리터럴 opacity 값을 사용하세요.
+
+{/* probe: keyframes-runtime-value after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.keyframes({ from: { opacity: 0 } })
+```
+
+### 주입하는 전역 규칙에 빌드 시점 값 사용하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`globalCss()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: global-runtime-value before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.injectGlobal({body:{color:unknown}});
+```
+
+**원인:** 이 컴파일 시점 API에는 동적 CSS 변수를 둘 렌더링된 요소가 없습니다.
+
+**해결:** 전역 color 값으로 리터럴을 사용하세요.
+
+{/* probe: global-runtime-value after */}
+
+```tsx
+import * as E from '@emotion/css'
+E.injectGlobal({ body: { color: 'red' } })
+```
+
+### 변경된 규칙 객체를 css에 전달하지 않기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+`css()` cannot use `<code>` at build time: its styles must be an object literal or a constant object, or be computed from constants
+`<binding>` is changed here, so the build cannot read it as a constant
+```
+
+**발생 조건:**
+
+{/* probe: css-mutated-object before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const rules = {color:'red'};
+rules.color = 'blue';
+export const a = E.css(rules);
+```
+
+**원인:** 실행 중인 코드가 변경하는 규칙 객체는 빌드 시점 상수가 아닙니다.
+
+**해결:** css 호출 전에 변경 없이 최종 규칙 객체를 만드세요.
+
+{/* probe: css-mutated-object after */}
+
+```tsx
+import * as E from '@emotion/css'
+const rules = { color: 'blue' }
+export const a = E.css(rules)
+```
+
+### 런타임 스타일을 spread하지 말고 알려진 규칙 객체 합성하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+Cannot compose `<styles>` at build time: each style must be a rule object, a class, or a condition choosing between them
+```
+
+**발생 조건:**
+
+{/* probe: css-composition before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = styles => E.css(...styles);
+```
+
+**원인:** 합성되는 각 스타일은 빌드 시점에 읽을 수 있는 규칙이나 클래스 형태여야 합니다.
+
+**해결:** 알려진 합성이라면 각 규칙 객체를 명시적으로 작성하세요.
+
+{/* probe: css-composition after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css({ color: 'red' }, { padding: 8 })
+```
+
+### 템플릿 선택자 interpolation을 상수로 유지하기
+
+**API:** Emotion css prop과 ClassNames. **메시지 형식:**
+
+```text
+Cannot place `<expression>` at build time: an interpolation in a selector or a property name must be a literal or a constant
+```
+
+**발생 조건:**
+
+{/* probe: css-selector-interpolation before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const a = E.css`.${unknown}{color:red}`;
+```
+
+**원인:** 런타임 선택자 interpolation으로는 출력할 CSS 규칙을 결정할 수 없습니다.
+
+**해결:** 선택자를 리터럴 텍스트로 작성하거나, 빌드 시점 상수를 interpolation하세요.
+
+{/* probe: css-selector-interpolation after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css`.selected{color:red}`
+```
+
+## 테마 읽기
+
+### styled에서 테마 전체나 계산된 테마 읽기
+
+**API:** 테마 읽기. **메시지 형식:**
+
+```text
+`styled()` cannot use `<code>` at build time: a theme read must be a path of names or literal keys, such as `p => p.theme.colors.brand` or `({ theme }) => theme.space[2]`, which reads the CSS variable `ThemeProvider` declares; compute other values outside the style
+```
+
+**발생 조건:**
+
+{/* probe: styled-theme-old before */}
+
+```tsx-error
+import styled from 'styled-components';
+export const Card = styled.div`color: ${props => props.theme};`;
+```
+
+**원인:** 호환 테마는 스타일 함수가 사용할 수 있는 런타임 테마 객체가 아니라 CSS 변수로 표현됩니다.
+
+**해결:** props.theme.colors.brand나 theme.space[2]처럼 속성 이름이나 리터럴 키로 이루어진 경로를 읽으세요. 그 밖의 값은 스타일 밖에서 계산하세요.
+
+{/* probe: styled-theme-old after */}
+
+```tsx
+import styled from 'styled-components'
+export const Card = styled.div`
+  color: ${(props) => props.theme.colors.brand};
+`
+```
+
+### 규칙을 바로 반환하지 않는 테마 함수
+
+**API:** 테마 읽기. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: a function of the theme must give its rules at once, as `theme => ({ ... })`
+```
+
+**발생 조건:**
+
+{/* probe: theme-function before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = () => <div css={theme => { const rules = { color: theme.color }; return rules; }} />;
+```
+
+**원인:** 빌드는 함수 결과를 다시 작성하므로, 바로 반환되는 표현식 하나나 단일 return 문이 필요합니다.
+
+**해결:** theme =&gt; (\{ ... \})나 return이 하나뿐인 async가 아닌 함수를 사용하세요. 그 밖의 계산은 밖에 두세요.
+
+{/* probe: theme-function after */}
+
+```tsx
+export const App = () => <div css={(theme) => ({ color: theme.color })} />
+```
+
+### 선언 값 밖에서의 테마 읽기
+
+**API:** 테마 읽기. **메시지 형식:**
+
+```text
+`css` on `<div>` cannot use `<code>` at build time: it may read the theme only as `theme.a.b` in a value, which becomes the CSS variable `var(--a-b)` the `ThemeProvider` sets
+```
+
+**발생 조건:**
+
+{/* probe: theme-read before */}
+
+```tsx-error
+import { css } from '@emotion/react';
+export const App = () => <div css={theme => ({ color: theme.pick() })} />;
+```
+
+**원인:** 선언 값 안의 정적 경로만 ThemeProvider의 CSS 변수에 대응됩니다.
+
+**해결:** theme.a.b나 리터럴 인덱스/키를 읽으세요. 객체 전체를 읽거나, 호출하거나, 런타임 키를 쓰거나, 테마 값을 선택자 이름으로 쓰지 마세요.
+
+{/* probe: theme-read after */}
+
+```tsx
+export const App = () => (
+  <div css={(theme) => ({ color: theme.colors.brand })} />
+)
+```
+
+### CSS 밖에서의 ClassNames 테마 읽기
+
+**API:** 테마 읽기. **메시지 형식:**
+
+```text
+`<ClassNames>` cannot use `<code>` at build time: it may read the theme only as `theme.a.b` in a value, which becomes the CSS variable `var(--a-b)` the `ThemeProvider` sets
+```
+
+**발생 조건:**
+
+{/* probe: class-theme-read before */}
+
+```tsx-error
+import { ClassNames } from '@emotion/react';
+export const App = () => <ClassNames>{({ theme }) => <div title={theme.name} />}</ClassNames>;
+```
+
+**원인:** ClassNames의 theme 바인딩은 일반 HTML 속성이 아니라 스타일 값으로 쓸 때만 CSS 변수가 됩니다.
+
+**해결:** css() 안에서 정적 테마 경로를 사용하거나, 스타일이 아닌 데이터는 ClassNames 밖의 실제 런타임 바인딩에서 전달하세요.
+
+{/* probe: class-theme-read after */}
+
+```tsx
+import { ClassNames } from '@emotion/react'
+export const App = () => (
+  <ClassNames>
+    {({ css, theme }) => <div className={css({ color: theme.colors.brand })} />}
+  </ClassNames>
+)
+```
+
+## import와 barrel
+
+### barrel을 거쳐 import한 API를 런타임 값으로 읽는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`<binding>` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered
+```
+
+**발생 조건:**
+
+{/* probe: runtime-barrel-api before */}
+
+```tsx-error
+import { css } from './ui';
+export const a = [css];
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export { css } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** barrel을 따라간다고 해서 빌드 시점 API가 런타임 값이 되지는 않습니다.
+
+**해결:** 해석된 API를 호출하세요. barrel import 자체는 지원됩니다.
+
+{/* probe: runtime-barrel-api after */}
+
+```tsx
+import { css } from './ui'
+export const a = css({ color: 'red' })
+```
+
+### 루트 default import 대신 namespace 사용
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: the root module has no default export; use named or namespace imports
+```
+
+**발생 조건:**
+
+{/* probe: default-import before */}
+
+```tsx-error
+import E from '@emotion/css';
+```
+
+**원인:** @emotion/css 루트 모듈에는 default export가 없습니다.
+
+**해결:** namespace를 import하고 그 css 멤버를 직접 호출하세요.
+
+{/* probe: default-import after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.css({ color: 'red' })
+```
+
+### default라는 이름의 export를 import하지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: the root module has no default export
+```
+
+**발생 조건:**
+
+{/* probe: named-default before */}
+
+```tsx-error
+import {default as E} from '@emotion/css';
+```
+
+**원인:** 루트에는 default라는 이름의 export도 없습니다.
+
+**해결:** 이름 있는 css API를 import하고 그 컴파일 결과를 export하세요.
+
+{/* probe: named-default after */}
+
+```tsx
+import { css } from '@emotion/css'
+export const a = css({ color: 'red' })
+```
+
+### Emotion의 모든 export를 그대로 전달하지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a namespace containing styling functions cannot be re-exported
+```
+
+**발생 조건:**
+
+{/* probe: star-reexport before */}
+
+```tsx-error
+export * from '@emotion/css';
+```
+
+**원인:** 스타일링 함수는 컴파일 과정에서 제거되므로 런타임 export로 제공할 수 없습니다.
+
+**해결:** flush, cache처럼 런타임 멤버만 명시적으로 re-export하세요.
+
+{/* probe: star-reexport after */}
+
+```tsx
+export { cache, flush } from '@emotion/css'
+```
+
+### css 함수 대신 컴파일된 클래스를 export
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: styling functions cannot be re-exported
+```
+
+**발생 조건:**
+
+{/* probe: style-reexport before */}
+
+```tsx-error
+export {css} from '@emotion/css';
+```
+
+**원인:** 스타일링 함수는 컴파일 과정에서 제거되므로 런타임 export로 제공할 수 없습니다.
+
+**해결:** css를 로컬에서 import해 호출하고, 그 결과인 클래스 문자열을 export하세요.
+
+{/* probe: style-reexport after */}
+
+```tsx
+import { css } from '@emotion/css'
+export const red = css({ color: 'red' })
+```
+
+### require import-equals namespace를 export하지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a namespace containing styling functions cannot be exported
+```
+
+**발생 조건:**
+
+{/* probe: export-import-equals before */}
+
+```tsx-error
+export import E = require('@emotion/css');
+```
+
+**원인:** 이 namespace에는 범용 런타임 객체가 아니라 빌드 시점 스타일링 함수가 들어 있습니다.
+
+**해결:** namespace export를 런타임 전용 멤버만 명시한 ES re-export로 바꾸세요.
+
+{/* probe: export-import-equals after */}
+
+```tsx
+export { cache, flush } from '@emotion/css'
+```
+
+### namespace alias는 로컬에 두기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace and styling function bindings cannot be exported
+```
+
+**발생 조건:**
+
+{/* probe: export-namespace-alias before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export const N = E;
+```
+
+**원인:** 이 namespace에는 범용 런타임 객체가 아니라 빌드 시점 스타일링 함수가 들어 있습니다.
+
+**해결:** namespace alias는 로컬에 선언하고, 컴파일된 클래스만 export하세요.
+
+{/* probe: export-namespace-alias after */}
+
+```tsx
+import * as E from '@emotion/css'
+const N = E
+export const red = N.css({ color: 'red' })
+```
+
+### import한 namespace 바인딩을 export하지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a namespace may only be read through statically known members or const aliases
+```
+
+**발생 조건:**
+
+{/* probe: export-namespace before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+export {E};
+```
+
+**원인:** 이 namespace에는 범용 런타임 객체가 아니라 빌드 시점 스타일링 함수가 들어 있습니다.
+
+**해결:** 정적 멤버를 호출하고 그 컴파일 결과를 export하세요.
+
+{/* probe: export-namespace after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### 스타일링 함수는 optional 호출 없이 호출하기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: styling functions must be called directly, not mutated, exported or passed as values
+```
+
+**발생 조건:**
+
+{/* probe: optional-call before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.css?.({});
+```
+
+**원인:** optional 호출은 빌드 시점에 처리할 수 있는 직접 호출이 아닙니다.
+
+**해결:** optional 호출을 제거하고 API를 직접 호출하세요.
+
+{/* probe: optional-call after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### namespace alias에는 const 사용
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace and styling aliases must be simple const bindings
+`@emotion/css()` cannot use `<code>` at build time: a namespace may only be read through statically known members or const aliases
+```
+
+**발생 조건:**
+
+{/* probe: let-namespace before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+let N = E;
+```
+
+**원인:** 빌드는 단순한 const namespace alias나 스타일링 alias만 따라가서 제거합니다.
+
+**해결:** let을 const로 바꾸고 알려진 멤버에 접근하세요.
+
+{/* probe: let-namespace after */}
+
+```tsx
+import * as E from '@emotion/css'
+const N = E
+export const red = N.css({ color: 'red' })
+```
+
+### 스타일링 alias에는 const 사용
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace and styling aliases must be simple const bindings
+`@emotion/css()` cannot use `<code>` at build time: styling functions must be called directly, not mutated, exported or passed as values
+```
+
+**발생 조건:**
+
+{/* probe: let-style before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+let c = E.css;
+```
+
+**원인:** 빌드는 단순한 const namespace alias나 스타일링 alias만 따라가서 제거합니다.
+
+**해결:** 스타일링 멤버를 const로 바인딩하고 직접 호출하세요.
+
+{/* probe: let-style after */}
+
+```tsx
+import * as E from '@emotion/css'
+const c = E.css
+export const red = c({ color: 'red' })
+```
+
+### rest 대신 namespace 멤버를 이름으로 지정
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace rest destructuring can expose styling functions
+```
+
+**발생 조건:**
+
+{/* probe: rest-destructure before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const {...rest} = E;
+```
+
+**원인:** namespace rest는 스타일링 함수를 런타임 코드에 노출할 수 있습니다.
+
+**해결:** 필요한 런타임 전용 멤버만 명시적으로 나열하세요.
+
+{/* probe: rest-destructure after */}
+
+```tsx
+import * as E from '@emotion/css'
+const { flush, cache } = E
+flush()
+console.info(cache)
+```
+
+### 구조 분해 키에는 상수 문자열 사용
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: destructuring keys must be constant strings
+```
+
+**발생 조건:**
+
+{/* probe: computed-destructure before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const {[key]: c} = E;
+```
+
+**원인:** normalizer는 구조 분해 속성이 어떤 API를 가리키는지 알아낼 수 있어야 합니다.
+
+**해결:** 구조 분해보다 앞에서 문자열 키를 const로 선언하세요.
+
+{/* probe: computed-destructure after */}
+
+```tsx
+import * as E from '@emotion/css'
+const key = 'css'
+const { [key]: c } = E
+export const red = c({ color: 'red' })
+```
+
+### 구조 분해한 스타일링 함수에 기본값을 주지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: use a plain binding without defaults or nested patterns
+```
+
+**발생 조건:**
+
+{/* probe: default-destructure before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const {css = other} = E;
+```
+
+**원인:** 폴백이 있으면 제거된 매크로 바인딩에 런타임 의미가 생깁니다.
+
+**해결:** 기본값 없는 단순 바인딩을 사용하고 직접 호출하세요.
+
+{/* probe: default-destructure after */}
+
+```tsx
+import * as E from '@emotion/css'
+const { css } = E
+export const red = css({ color: 'red' })
+```
+
+### 인식되는 Emotion namespace 멤버만 읽기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: use a supported styling API or a runtime-only Emotion export
+```
+
+**발생 조건:**
+
+{/* probe: unknown-member before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.unknown({});
+```
+
+**원인:** 빌드는 css, cx, merge, keyframes, injectGlobal과 런타임 멤버 cache, flush, hydrate, sheet, getRegisteredStyles를 인식합니다.
+
+**해결:** css처럼 지원되는 스타일링 멤버를 사용하세요.
+
+{/* probe: unknown-member after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### namespace alias는 의존 순서대로 초기화
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: an alias must be initialized before any read that can run first; declare it above the earliest code that can reach this read
+```
+
+**발생 조건:**
+
+{/* probe: early-namespace before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+const N = A;
+const A = E;
+```
+
+**원인:** alias를 제거하면서 temporal dead zone에서 일어날 수 있는 읽기를 감춰서는 안 됩니다.
+
+**해결:** 원본 namespace alias를 그로부터 파생된 alias보다 먼저 선언하세요.
+
+{/* probe: early-namespace after */}
+
+```tsx
+import * as E from '@emotion/css'
+const A = E
+const N = A
+export const red = N.css({ color: 'red' })
+```
+
+### 정적으로 알 수 있는 namespace API 키 사용
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: namespace member keys must be constant strings
+```
+
+**발생 조건:**
+
+{/* probe: computed-member before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E[key]({color:'red'});
+```
+
+**원인:** 런타임 키로는 어떤 스타일링 import를 생성해야 할지 결정할 수 없습니다.
+
+**해결:** 읽기보다 먼저 초기화된 const 문자열 키를 사용하세요.
+
+{/* probe: computed-member after */}
+
+```tsx
+import * as E from '@emotion/css'
+const key = 'css'
+export const red = E[key]({ color: 'red' })
+```
+
+### namespace 스타일링 읽기에 optional chaining을 쓰지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: optional namespace reads cannot be compiled
+```
+
+**발생 조건:**
+
+{/* probe: optional-member before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E?.css({});
+```
+
+**원인:** optional namespace 스타일링 읽기는 무조건 생성되는 import로 낮출 수 없습니다.
+
+**해결:** 일반적인 정적 멤버 호출을 사용하세요.
+
+{/* probe: optional-member after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### module.require로 스타일링 API를 불러오지 않기
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: styling APIs read through require(), import-equals or dynamic import cannot be compiled; use `import * as ns from '@emotion/css'`
+```
+
+**발생 조건:**
+
+{/* probe: module-require before */}
+
+```tsx-error
+const E = module.require('@emotion/css');
+E.cx('a');
+```
+
+**원인:** 런타임 로더는 빌드 시점 스타일 추출에 필요한 정적 ES import를 제공하지 않습니다.
+
+**해결:** cx를 호출하기 전에 정적 namespace import를 사용하세요.
+
+{/* probe: module-require after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const a = E.cx('a')
+```
+
+### 런타임 전용으로 쓸 때는 dynamic import를 바로 await
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`@emotion/css()` cannot use `<code>` at build time: a dynamic import hands out a runtime namespace; `await` it directly for runtime-only members, or use `import * as ns from '@emotion/css'`
+```
+
+**발생 조건:**
+
+{/* probe: unawaited-runtime before */}
+
+```tsx-error
+const p = import('@emotion/css');
+```
+
+**원인:** import promise를 저장해 두면, 눈에 보이는 스타일링 멤버 읽기가 없더라도 거부됩니다.
+
+**해결:** import를 바로 await하고 런타임 전용 멤버만 읽으세요.
+
+{/* probe: unawaited-runtime after */}
+
+```tsx
+const E = await import('@emotion/css')
+E.flush()
+```
+
+### 파싱되지 않는 소스
+
+**API:** 빌드가 컴파일하는 모든 파일. **메시지 형식:**
+
+```text
+Cannot parse source: <parser message>. Fix: correct the syntax at this location
+```
+
+**발생 조건:**
+
+{/* probe: parse-error before */}
+
+```tsx-error
+import * as E from '@emotion/css';
+E.__emotion_user(); const broken;
+```
+
+**원인:** 빌드는 파싱에 성공한 파일만 읽습니다. 문법 오류는 같은 파일의 어떤 스타일 진단보다도 먼저, 해당 위치와 함께 보고됩니다.
+
+**해결:** 보고된 위치의 문법을 고친 뒤, 이어서 빌드가 보고하는 스타일 진단을 고치세요.
+
+프로덕션 `next build`는 먼저 프로젝트의 모든 소스 파일을 추출하며, 어떤 라우트도 import하지 않는 파일도 포함됩니다. 이 단계에서 추출하지 못한 파일은 빌드를 실패시키지 않습니다. 플러그인이 파일과 오류를 담은 경고 `[devup-ui] Turbopack prewarm of <file> failed: <message>. ...`(webpack에서는 `[devup-ui] webpack stylesheet warm-up of <file> failed: <message>. ...`)를 출력하고 그 파일을 건너뜁니다. Next.js가 그 파일을 컴파일하면 빌드는 여전히 위 오류로 실패합니다.
+
+{/* probe: parse-error after */}
+
+```tsx
+import * as E from '@emotion/css'
+export const red = E.css({ color: 'red' })
+```
+
+### namespace를 배열로 구조 분해하는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`Devup` cannot use `<code>` at build time: read its members by name, as `Devup.css`, `Devup['css']` or `const { css } = Devup`, or import them by name
+```
+
+**발생 조건:**
+
+{/* probe: array-destructure before */}
+
+```tsx-error
+import * as Devup from '@devup-ui/react';
+const [a] = Devup;
+```
+
+**원인:** namespace 재작성은 정확한 멤버 접근이나 섞이지 않은 단순 객체 구조 분해를 필요로 하며, 이런 형태는 재작성할 수 없습니다.
+
+**해결:** namespace를 배열로 구조 분해하지 말고, 필요한 API를 이름으로 읽으세요.
+
+{/* probe: array-destructure after */}
+
+```tsx
+import * as Devup from '@devup-ui/react'
+export const a = Devup.css({ color: 'red' })
+```
+
+### 함수 안에서 추적되는 const API alias에 값을 쓰는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`c` cannot use `<code>` at build time: read its members by name, as `c.css`, `c['css']` or `const { css } = c`, or import them by name
+```
+
+**발생 조건:**
+
+{/* probe: mutated-const-alias before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export function f() { const c = css; c = () => 1; return c({ color: "red" }); }
+```
+
+**원인:** 추적되는 alias는 재작성 과정에서 선언이 제거되므로, 그 뒤에 다시 할당할 수 없습니다.
+
+**해결:** 로컬 런타임 alias를 만들지 말고 import한 css를 직접 호출하세요.
+
+{/* probe: mutated-const-alias after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export function f() {
+  return css({ color: 'red' })
+}
+```
+
+### const namespace alias를 통해 멤버에 값을 쓰는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`D` cannot use `<code>` at build time: read its members by name, as `D.css`, `D['css']` or `const { css } = D`, or import them by name
+```
+
+**발생 조건:**
+
+{/* probe: namespace-alias-write before */}
+
+```tsx-error
+import * as Devup from '@devup-ui/react';
+const D = Devup;
+D.css = () => 1;
+```
+
+**원인:** const namespace alias는 추적되므로, 멤버에 값을 쓰면 읽을 수 없는 namespace와 같은 진단이 보고됩니다.
+
+**해결:** namespace alias를 변경하지 말고 정확한 멤버만 읽으세요.
+
+{/* probe: namespace-alias-write after */}
+
+```tsx
+import * as Devup from '@devup-ui/react'
+const D = Devup
+export const a = D.css({ color: 'red' })
+```
+
+### 선언이 실행되기 전에 css 결과를 읽는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`css()` cannot use `<code>` at build time: it is read before `const k = css(…)` runs, so move that declaration above where it is first read
+```
+
+**발생 조건:**
+
+{/* probe: early-css-result before */}
+
+```tsx-error
+import { css } from '@devup-ui/react';
+export const a = k;
+const k = css({ color: 'red' });
+```
+
+**원인:** 최상위에서 즉시 실행되는 읽기가 const 초기화보다 앞에 있습니다. 리터럴 스타일 상수를 함수 안에서 지연해 읽는 경우에만 끌어올릴 수 있습니다.
+
+**해결:** 초기화를 처음 즉시 읽는 위치보다 위로 옮기세요.
+
+{/* probe: early-css-result after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+const k = css({ color: 'red' })
+export const a = k
+```
+
+### 선언이 실행되기 전에 keyframes 결과를 읽는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`keyframes()` cannot use `<code>` at build time: it is read before `const k = keyframes(…)` runs, so move that declaration above where it is first read
+```
+
+**발생 조건:**
+
+{/* probe: early-keyframes-result before */}
+
+```tsx-error
+import { keyframes } from '@devup-ui/react';
+export const a = k;
+const k = keyframes({ from: { opacity: 0 } });
+```
+
+**원인:** 최상위에서 즉시 실행되는 읽기가 const 초기화보다 앞에 있습니다. 리터럴 스타일 상수를 함수 안에서 지연해 읽는 경우에만 끌어올릴 수 있습니다.
+
+**해결:** 초기화를 처음 즉시 읽는 위치보다 위로 옮기세요.
+
+{/* probe: early-keyframes-result after */}
+
+```tsx
+import { keyframes } from '@devup-ui/react'
+const k = keyframes({ from: { opacity: 0 } })
+export const a = k
+```
+
+### Devup UI에 닿는 barrel의 해석되지 않는 star re-export
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`Foo` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: unreadable-star-barrel before */}
+
+```tsx-error
+import { Foo } from './ui';
+export const a = <Foo />;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export * from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** barrel이 패키지를 언급하지만, 누락된 re-export는 resolver가 읽을 수 없습니다.
+
+**해결:** 필요한 빌드 시점 멤버를 패키지에서 직접 import하거나, re-export를 해석 가능하게 만드세요.
+
+{/* probe: unreadable-star-barrel after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### 해석되지 않는 default re-export는 값으로 쓰인 곳마다 보고됨
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`Page` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+`Page` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: unreadable-default-barrel before */}
+
+```tsx-error
+import Page from './ui';
+export const a = [Page, Page];
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export { default } from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** 불투명한 default import를 값으로 참조한 곳마다 각자의 소스 위치가 있습니다.
+
+**해결:** 불투명한 default import를 알려진 패키지 named import로 바꾸세요.
+
+{/* probe: unreadable-default-barrel after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### barrel namespace의 해석되지 않는 멤버
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`UI.nothing` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: unreadable-barrel-member before */}
+
+```tsx-error
+import * as UI from './ui';
+export const a = UI.nothing;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export * from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** namespace 멤버가 읽을 수 없는 star re-export를 거쳐 이어집니다.
+
+**해결:** 해석되지 않는 barrel 멤버 대신 알려진 패키지 export를 직접 읽으세요.
+
+{/* probe: unreadable-barrel-member after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### 해석되지 않는 barrel 멤버를 구조 분해하는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`{ nothing } = UI` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./missing` cannot be read); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: unreadable-barrel-destructure before */}
+
+```tsx-error
+import * as UI from './ui';
+const { nothing } = UI;
+export const a = nothing;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export * from './missing';\nexport { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** 구조 분해하려면 컴파일되는 각 멤버를 패키지 원본까지 해석할 수 있어야 합니다.
+
+**해결:** 알려진 멤버를 패키지에서 import하거나 barrel 체인을 고치세요.
+
+{/* probe: unreadable-barrel-destructure after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### Devup UI를 re-export하는 모듈을 namespace로 re-export하는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`inner` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./inner` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: nested-barrel-namespace before */}
+
+```tsx-error
+import { inner } from './ui';
+export const a = <inner.Box />;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export * as inner from './inner';\n",
+  "inner.ts": "export { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** 내용물이 패키지를 re-export하는 모듈 namespace는 하나의 정확한 패키지 namespace가 아닙니다.
+
+**해결:** 모듈 namespace를 거치지 말고 컴포넌트를 패키지에서 import하세요.
+
+{/* probe: nested-barrel-namespace after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### 바깥 namespace를 통해 중첩 모듈 namespace를 읽는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`UI.inner` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./inner` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: nested-barrel-member before */}
+
+```tsx-error
+import * as UI from './ui';
+export const a = UI.inner;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export * as inner from './inner';\n",
+  "inner.ts": "export { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** 바깥 namespace 멤버가 패키지를 re-export하는 모듈 namespace를 가리킵니다.
+
+**해결:** 정확한 패키지 멤버를 직접 import하세요.
+
+{/* probe: nested-barrel-member after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### 중첩 모듈 namespace를 구조 분해하는 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`{ inner } = UI` cannot use `<code>` at build time: the build cannot follow its re-export of Devup UI (`./inner` is a namespace of modules re-exporting `@devup-ui/react`); import it from the package instead
+```
+
+**발생 조건:**
+
+{/* probe: nested-barrel-destructure before */}
+
+```tsx-error
+import * as UI from './ui';
+const { inner } = UI;
+export const a = inner;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export * as inner from './inner';\n",
+  "inner.ts": "export { Box } from '@devup-ui/react';\n"
+}
+```
+
+**원인:** 구조 분해한 멤버가 지원되는 정확한 패키지 원본이 아니라 모듈들의 namespace입니다.
+
+**해결:** 정확한 패키지 컴포넌트를 직접 import하세요.
+
+{/* probe: nested-barrel-destructure after */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+export const a = <Box bg="red" />
+```
+
+### 컴파일되는 멤버와 로컬에 선언된 barrel 멤버가 섞인 경우
+
+**API:** import와 barrel. **메시지 형식:**
+
+```text
+`UI` cannot use `<code>` at build time: read its members by name, as `UI.css`, `UI['css']` or `const { css } = UI`, or import them by name
+```
+
+**발생 조건:**
+
+{/* probe: mixed-barrel-destructure before */}
+
+```tsx-error
+import * as UI from './ui';
+const { Box, own } = UI;
+export const a = <Box>{own}</Box>;
+```
+
+**보조 모듈 fixture:** 위 import는 다음 추가 소스 모듈에서 해석됩니다. before/after 키가 있으면 각각 실패하는 resolver 입력과 수정된 resolver 입력을 나타냅니다.
+
+```json
+{
+  "ui.ts": "export { Box } from '@devup-ui/react';\nexport const own = 1;\n"
+}
+```
+
+**원인:** 컴파일되는 import와 남겨 둘 barrel 값을 함께 담은 구조 분해 선언은 통째로 제거할 수 없습니다.
+
+**해결:** 로컬/런타임 멤버는 별도의 구조 분해로 두고, 컴파일되는 멤버는 이름으로 읽으세요.
+
+{/* probe: mixed-barrel-destructure after */}
+
+```tsx
+import * as UI from './ui'
+const { own } = UI
+export const a = <UI.Box>{own}</UI.Box>
+```
+
+## 런타임 전용 옵션
+
+alias가 적용되면 `StyleSheetManager`와 `CacheProvider`는 아무 동작도 하지 않습니다. 따라서 이들이 만들어 낼 CSS나 props를 바꾸는 옵션은 조용히 버려지는 대신 위치가 표시된 오류가 됩니다. `target`, `nonce`, `key`, `prepend`처럼 런타임 삽입만 제어하는 옵션은 계속 허용됩니다.
+
+### 런타임에 버려지는 StyleSheetManager 옵션
+
+**API:** styled-components. **메시지 형식:**
+
+```text
+`stylisPlugins` of `StyleSheetManager` from `styled-components` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { 'styled-components': false }` and build with styled-components
+```
+
+`shouldForwardProp`(`filters at runtime the props every styled component passes on`)와 `namespace`(`prefixes every selector at runtime`)도 같은 형태로 보고되며, manager에 JSX spread를 쓴 경우(`takes spread props, so whether they set ... cannot be known at build time`)도 마찬가지입니다.
+
+**발생 조건:**
+
+{/* probe: style-sheet-manager before */}
+
+```tsx-error
+import { StyleSheetManager } from 'styled-components';
+export const App = ({ children }) => (
+  <StyleSheetManager stylisPlugins={[rtlPlugin]} shouldForwardProp={isPropValid}>{children}</StyleSheetManager>
+);
+```
+
+**원인:** Devup UI는 모든 규칙을 빌드 시점에 작성하고 stylis 처리 단계가 없으므로, manager의 플러그인과 prop 필터는 아무 효과 없이 조용히 무시됩니다.
+
+**해결:** 플러그인이 만들어 낼 CSS를 직접 작성하고(예: RTL 플러그인 대신 논리 속성 사용), 각 styled 컴포넌트에 `.withConfig()`로 자체 `shouldForwardProp`을 지정하세요.
+
+{/* probe: style-sheet-manager after */}
+
+```tsx
+import { styled } from 'styled-components'
+export const Card = styled.div.withConfig({
+  shouldForwardProp: (name) => name !== 'tone',
+})({ marginInlineStart: 8 })
+```
+
+### createCache stylisPlugins
+
+**API:** Emotion. **메시지 형식:**
+
+```text
+`stylisPlugins` of `createCache()` from `@emotion/cache` runs stylis plugins over the CSS at runtime, which Devup UI does not compile, so the plugins would never reach the stylesheet. Fix: write the CSS the plugins would produce into the styles, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion
+```
+
+`@emotion/react`나 `@emotion/styled`에 alias가 적용된 동안 보고됩니다. 이들의 `CacheProvider`가 cache를 받기 때문입니다.
+
+**발생 조건:**
+
+{/* probe: create-cache before */}
+
+```tsx-error
+import createCache from '@emotion/cache';
+import { CacheProvider } from '@emotion/react';
+const cache = createCache({ key: 'rtl', stylisPlugins: [rtlPlugin] });
+export const App = ({ children }) => <CacheProvider value={cache}>{children}</CacheProvider>;
+```
+
+**원인:** `CacheProvider`는 아무 동작도 하지 않으므로 플러그인이 실행되지 않습니다.
+
+**해결:** 플러그인이 만들어 낼 CSS를 직접 작성하세요. `stylisPlugins`가 없는 cache는 허용됩니다.
+
+{/* probe: create-cache after */}
+
+```tsx
+import createCache from '@emotion/cache'
+import { CacheProvider } from '@emotion/react'
+const cache = createCache({ key: 'app' })
+export const App = ({ children }) => (
+  <CacheProvider value={cache}>{children}</CacheProvider>
+)
+```
+
+### 읽을 수 없는 createCache 옵션
+
+**API:** Emotion. **메시지 형식:**
+
+```text
+<what>, so whether the options of `createCache()` set `stylisPlugins`, which Devup UI does not compile, cannot be known at build time. Fix: `import createCache from '@emotion/cache'` and call it with an object literal of options, or set `importAliases: { '@emotion/react': false, '@emotion/styled': false }` and build with Emotion
+```
+
+`<what>`은 다음 중 하나입니다.
+
+- `` `createCache()` from `@emotion/cache` takes options that are not an object literal ``
+- `` `createCache()` from `@emotion/cache` takes spread options ``
+- `` `createCache()` from `@emotion/cache` takes an option of a computed key ``
+- `` `createCache` from `@emotion/cache` is used other than by calling it ``
+- `` `@emotion/cache` is loaded other than by an import of its default export ``(namespace import나 named import, `require()`, `import()`, re-export)
+
+**발생 조건:**
+
+{/* probe: create-cache-options before */}
+
+```tsx-error
+import createCache from '@emotion/cache';
+export const cache = createCache(options);
+```
+
+**원인:** 옵션 중 어느 것도 `stylisPlugins`가 아님을 알려면 빌드가 옵션의 모든 키를 볼 수 있어야 합니다.
+
+**해결:** 옵션을 객체 리터럴로 전달하세요.
+
+{/* probe: create-cache-options after */}
+
+```tsx
+import createCache from '@emotion/cache'
+export const cache = createCache({ key: 'app' })
+```
+
+## vanilla-extract
+
+### recipes 값 import
+
+**API:** vanilla-extract. **메시지 형식:**
+
+```text
+`@vanilla-extract/recipes` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin
+```
+
+**발생 조건:**
+
+{/* probe: recipes before */}
+
+```tsx-error
+import { recipe } from '@vanilla-extract/recipes';
+export const button = recipe({ base: { color: 'red' }, variants: { size: { small: { padding: 4 }, large: { padding: 8 } } } });
+```
+
+**원인:** companion 브랜치에서는 vanilla CSS alias가 활성화된 동안 타입이 아닌 recipes import가 스타일시트 실행 전에 거부됩니다. 작성된 메시지에는 원본 filename:line:column이 포함됩니다. 이는 범위가 지정된 스냅샷에서 조용히 통과시키던 동작을 대체합니다.
+
+**해결:** companion이 생성하던 스타일을 css()로 바꾸세요. 이 예시는 선택된 variant 하나만 다루며, recipe의 런타임 동작은 다루지 않습니다.
+
+{/* probe: recipes after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const button = css({ color: 'red', padding: '4px' })
+```
+
+### sprinkles 값 import
+
+**API:** vanilla-extract. **메시지 형식:**
+
+```text
+`@vanilla-extract/sprinkles` generates CSS that Devup UI does not compile, so with the `@vanilla-extract/css` alias its rules would never reach the stylesheet. Fix: write the styles with `css()`, or set `importAliases: { '@vanilla-extract/css': false }` and build with the vanilla-extract plugin
+```
+
+**발생 조건:**
+
+{/* probe: sprinkles before */}
+
+```tsx-error
+import { defineProperties, createSprinkles } from '@vanilla-extract/sprinkles';
+const properties = defineProperties({ properties: { color: ['red', 'blue'] } });
+export const sprinkles = createSprinkles(properties);
+export const red = sprinkles({ color: 'red' });
+```
+
+**원인:** companion 브랜치에서는 vanilla CSS alias가 활성화된 동안 타입이 아닌 sprinkles import가 스타일시트 실행 전에 거부됩니다. 작성된 메시지에는 원본 filename:line:column이 포함됩니다. 이는 범위가 지정된 스냅샷에서 조용히 통과시키던 동작을 대체합니다.
+
+**해결:** 선택된 스타일을 css()로 바꾸세요. sprinkles 런타임 API 전체를 대체하는 방법은 아닙니다.
+
+{/* probe: sprinkles after */}
+
+```tsx
+import { css } from '@devup-ui/react'
+export const red = css({ color: 'red' })
+```
+
+## StyleX
+
+정적 네임스페이스에는 빌드 시점에 알 수 있는 선언이 필요합니다. 동적 네임스페이스는 매개변수를 그대로 CSS 변수로 노출하므로, 파생 값은 미리 계산한 뒤 해당 네임스페이스에 전달하세요. `props()`와 `attrs()`는 추출된 클래스를 합성합니다. 헬퍼는 지원되는 컨텍스트 안에서만 해석됩니다.
+
+### create(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-create-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-create-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### defineVars(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineVars-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.defineVars([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-defineVars-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### defineConsts(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineConsts-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.defineConsts([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-defineConsts-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### createThemeContract(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createThemeContract()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createThemeContract-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.createThemeContract([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-createThemeContract-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.createThemeContract({ color: null })
+  return result
+}
+```
+
+### positionTry(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-positionTry-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.positionTry([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-positionTry-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ top: 0 })
+  return result
+}
+```
+
+### viewTransitionClass(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-viewTransitionClass-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.viewTransitionClass([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-viewTransitionClass-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
+  return result
+}
+```
+
+### keyframes(): 배열 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.keyframes()` cannot use `<code>` at build time: it takes one object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-keyframes-argument-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.keyframes([]);
+  return result;
+}
+```
+
+**원인:** 범위가 지정된 추출기는 인자 목록이 정확히 객체 리터럴 형태일 때만 이 API를 변환합니다. 런타임 입력은 추출된 선언이나 네임스페이스 맵이 될 수 없습니다.
+
+**해결:** 런타임 값이나 인자 spread 대신, 필요한 개수의 인자로 객체 리터럴을 직접 전달하세요.
+
+{/* probe: stylex-keyframes-argument-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+  return result
+}
+```
+
+### createTheme(): spread 인자 형태
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: it takes a `defineVars()` group, of this file or imported, and an object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createTheme-argument-spread-argument before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(args) {
+  const result = stylex.createTheme(...args);
+  return result;
+}
+```
+
+**원인:** createTheme에는 visitor가 알고 있는 defineVars/createThemeContract 그룹에 바인딩된 식별자와, 그 뒤에 오는 오버라이드 객체 리터럴이 필요합니다. 임의의 객체나 런타임 참조는 등록된 계약이 아닙니다.
+
+**해결:** 먼저 계약을 정의해 하나의 식별자에 바인딩하고, 그 식별자를 오버라이드 객체 하나와 함께 전달하세요.
+
+{/* probe: stylex-createTheme-argument-spread-argument after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### 배열 구조 분해로는 create() 네임스페이스를 바인딩할 수 없음
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot be destructured at build time: assign it to one variable, as `const styles = stylex.create({ ... })`
+```
+
+**발생 조건:**
+
+{/* probe: stylex-create-destructure-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export const [base] = stylex.create({ base: { color: 'red' } });
+```
+
+**원인:** 추출기는 네임스페이스 맵을 하나의 변수 바인딩과 연결합니다. create 결과를 구조 분해하면 그 맵이 props/attrs와 include에 쓰이도록 등록되지 않습니다.
+
+**해결:** 선언을 구조 분해하는 대신 create()를 styles에 할당하고 styles.base를 읽으세요.
+
+{/* probe: stylex-create-destructure-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export const styles = stylex.create({ base: { color: 'red' } })
+```
+
+### create(): 스칼라 네임스페이스
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a namespace is an object of styles or an arrow function returning one
+```
+
+**발생 조건:**
+
+{/* probe: stylex-namespace-scalar before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: 'red' });
+  return result;
+}
+```
+
+**원인:** create()의 각 항목은 개별 CSS 값이 아니라 네임스페이스입니다. 지원되는 네임스페이스 형태는 스타일 객체, 객체를 반환하는 화살표 함수, null(빈 네임스페이스)입니다.
+
+**해결:** CSS 선언을 네임스페이스 객체 안에 넣거나, 지원되는 동적 화살표 함수를 사용하세요.
+
+{/* probe: stylex-namespace-scalar after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### 동적 화살표 함수: 스칼라 반환
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a dynamic style is an arrow function with plain parameters returning an object literal
+```
+
+**발생 조건:**
+
+{/* probe: stylex-dynamic-scalar-return before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: (color) => color });
+  return result;
+}
+```
+
+**원인:** 동적 네임스페이스 추출은 단순 식별자 매개변수와, 본문이 객체 리터럴인 화살표 표현식을 읽습니다. 함수 본문이나 구조 분해 패턴은 실행하지 않습니다.
+
+**해결:** (value) =&gt; (\{ color: value \})처럼 단순 식별자 매개변수와 표현식 본문을 사용하세요.
+
+{/* probe: stylex-dynamic-scalar-return after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: (color) => ({ color }) })
+  return result
+}
+```
+
+### 동적 네임스페이스 값: 런타임 값
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a dynamic style's value is one of its parameters or a static value; compute it before passing it
+```
+
+**발생 조건:**
+
+{/* probe: stylex-dynamic-value-runtime before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(value) {
+  const result = stylex.create({ base: (width) => ({ width: value }) });
+  return result;
+}
+```
+
+**원인:** 동적 네임스페이스의 값은 매개변수 중 하나를 직접 가리키거나 정적 값이어야 합니다. 그 화살표 함수 안의 산술 연산, 멤버 읽기, 조건, 헬퍼 호출은 동적 CSS 표현식으로 평가되지 않습니다.
+
+**해결:** 원하는 값은 호출하는 곳에서 계산하고, 스타일 속성이 직접 참조하는 단순 매개변수로 전달하세요.
+
+{/* probe: stylex-dynamic-value-runtime after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: (width) => ({ width }) })
+  return result
+}
+```
+
+### 정적 스타일 값: 식별자
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-static-value-identifier before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(value) {
+  const result = stylex.create({ base: { color: value } });
+  return result;
+}
+```
+
+**원인:** 정적 네임스페이스에는 런타임 CSS 변수 할당이 없습니다. 리프 값은 빌드 시점에 해석되어야 하며, 리터럴, 평가기가 접을 수 있는 상수/계산, 등록된 keyframe 이름, defineVars/defineConsts 멤버 참조가 여기에 해당합니다.
+
+**해결:** 리터럴이나 해석 가능한 상수를 사용하세요. 실제로 런타임에 정해지는 입력이라면 동적 네임스페이스 매개변수를 사용하세요.
+
+{/* probe: stylex-static-value-identifier after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### 조건 키: 일반 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a condition is `default`, a pseudo-class, a pseudo-element or an `@media`, `@supports` or `@container` rule
+```
+
+**발생 조건:**
+
+{/* probe: stylex-condition-ordinary before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: { color: { 'hover': 'red' } } });
+  return result;
+}
+```
+
+**원인:** 값 위치의 객체는 임의의 중첩 값이 아니라 조건으로 해석됩니다. 그 키는 default, 콜론으로 시작하는 의사 클래스/요소, 또는 @media/@supports/@container 규칙이어야 합니다.
+
+**해결:** 잘못된 조건을 default나 지원되는 의사 선택자/at-rule 조건으로 바꾸세요.
+
+{/* probe: stylex-condition-ordinary after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({
+    base: { color: { default: 'red', ':hover': 'blue' } },
+  })
+  return result
+}
+```
+
+### 의사 선택자: 의사 요소에 배열 사용
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: a pseudo-class or pseudo-element key takes an object of styles
+```
+
+**발생 조건:**
+
+{/* probe: stylex-pseudo-element-array before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: { '::before': [] } });
+  return result;
+}
+```
+
+**원인:** 네임스페이스 최상위에서 콜론으로 시작하는 키는 의사 선택자를 나타내며, 그 값은 CSS 선언 객체여야 합니다. 스칼라 값은 대신 속성 수준의 조건 아래에 두어야 합니다.
+
+**해결:** \{ ":hover": \{ color: "red" \} \} 또는 \{ color: \{ ":hover": "red" \} \} 형태를 사용하세요.
+
+{/* probe: stylex-pseudo-element-array after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { '::before': { color: 'red' } } })
+  return result
+}
+```
+
+### create(): 네임스페이스 맵의 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-create-spread-namespace-map before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.create({ ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-create-spread-namespace-map after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### create(): 네임스페이스 맵의 계산된 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.create()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-create-key-namespace-map before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.create({ [key]: {} });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-create-key-namespace-map after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({ base: { color: 'red' } })
+  return result
+}
+```
+
+### defineVars(): 객체 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineVars-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.defineVars({ ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-defineVars-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### defineVars(): 계산된 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineVars-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.defineVars({ [key]: 'red' });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-defineVars-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### defineConsts(): 객체 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineConsts-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.defineConsts({ ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-defineConsts-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### defineConsts(): 계산된 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineConsts-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.defineConsts({ [key]: 'red' });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-defineConsts-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### createThemeContract(): 객체 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createThemeContract()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createThemeContract-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.createThemeContract({ ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-createThemeContract-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.createThemeContract({ color: 'red' })
+  return result
+}
+```
+
+### createThemeContract(): 계산된 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createThemeContract()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createThemeContract-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.createThemeContract({ [key]: 'red' });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-createThemeContract-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.createThemeContract({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): 객체 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-positionTry-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.positionTry({ ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-positionTry-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): 계산된 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-positionTry-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.positionTry({ [key]: 'red' });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-positionTry-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### viewTransitionClass(): 객체 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-viewTransitionClass-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.viewTransitionClass({ ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-viewTransitionClass-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
+  return result
+}
+```
+
+### viewTransitionClass(): 계산된 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-viewTransitionClass-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(key) {
+  const result = stylex.viewTransitionClass({ [key]: 'red' });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-viewTransitionClass-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
+  return result
+}
+```
+
+### createTheme(): 오버라이드 객체의 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: write every entry out, as its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createTheme-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(extra) {
+  const result = stylex.createTheme(vars, { ...extra });
+  return result;
+}
+```
+
+**원인:** 이 StyleX 객체 계층은 해석되지 않은 객체 spread를 받지 않습니다. 빌드에 각 키가 필요하기 때문입니다. 네임스페이스 수준의 유일한 예외는 같은 파일에서 앞서 정의한 create 네임스페이스를 가리키는, 인식 가능한 ...include(styles.base) 참조입니다.
+
+**해결:** 항목을 명시적으로 작성하세요. 네임스페이스를 합성하려면 같은 파일에서 앞서 정의한 네임스페이스로 include()를 spread하세요.
+
+{/* probe: stylex-createTheme-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### createTheme(): 계산된 오버라이드 키
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: its keys must be known
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createTheme-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(key) {
+  const result = stylex.createTheme(vars, { [key]: 'blue' });
+  return result;
+}
+```
+
+**원인:** 객체 키 리더는 정적 식별자와 리터럴 키를 받습니다. 런타임 입력으로 계산한 키에는 정적으로 추출할 수 있는 CSS 속성, 네임스페이스, 조건, 변수 이름이 없습니다.
+
+**해결:** 명시적인 리터럴 키(또는 평가기가 실제로 해석하는 상수 표현식)를 사용하세요.
+
+{/* probe: stylex-createTheme-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### include(): 잘못된 형태의 단독 참조
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.include()` cannot use `<code>` at build time: it takes a namespace such as `styles.base`
+```
+
+**발생 조건:**
+
+{/* probe: stylex-include-malformed-bare before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'red' } });
+export function example() {
+  const result = stylex.create({ derived: { ...stylex.include(styles) } });
+  return result;
+}
+```
+
+**원인:** 인식되는 include spread는 styles.base처럼 식별자의 정적 멤버 하나를 읽습니다. 단독 식별자, 중첩된 멤버 경로, 계산된 멤버, 누락된 인자는 이 형태가 아닙니다.
+
+**해결:** 같은 파일에 create() 맵을 선언하고, 정적 네임스페이스 안에서 stylex.include(styles.base)를 spread하세요.
+
+{/* probe: stylex-include-malformed-bare after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const styles = stylex.create({ base: { color: 'red' } })
+export function example() {
+  const result = stylex.create({ derived: { ...stylex.include(styles.base) } })
+  return result
+}
+```
+
+### include(): 앞에서 정의되지 않은 네임스페이스
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.include()` cannot use `<code>` at build time: it takes a namespace `stylex.create()` defines earlier in this file
+```
+
+**발생 조건:**
+
+{/* probe: stylex-include-same-call before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'red' } });
+export const more = stylex.create({ derived: { ...stylex.include(styles.missing) } });
+```
+
+**원인:** styles.base라는 문법만으로는 충분하지 않습니다. 보이는 바인딩과 멤버가 이 파일의 앞선 create()에서 등록되어 있어야 합니다. 알 수 없는 참조, import한 참조, 매개변수, 존재하지 않는 네임스페이스 참조는 여기서 합성할 수 없습니다. 자신이 정의하고 있는 네임스페이스를 include하는 `create()`는 초기화되기 전의 `const`를 읽게 되며, 그 내용으로 보고됩니다.
+
+**해결:** 이 파일의 앞쪽에서 네임스페이스를 정의하고, 그 바인딩에 실제로 있는 멤버를 참조하세요.
+
+{/* probe: stylex-include-same-call after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const styles = stylex.create({ base: { color: 'red' } })
+export function example() {
+  const result = stylex.create({ derived: { ...stylex.include(styles.base) } })
+  return result
+}
+```
+
+### defineVars(): 런타임 변수 값
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineVars()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineVars-value-runtime before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(value) {
+  const result = stylex.defineVars({ color: value });
+  return result;
+}
+```
+
+**원인:** defineVars/createTheme의 변수 값은 리터럴 리프이거나 중첩된 default/@media/@supports/@container 조건 객체이며, types.\*()로 감쌀 수 있습니다. Null은 아무것도 할당하지 않습니다. 런타임 리프, 배열, 의사 선택자 조건은 변수 값이 될 수 없습니다.
+
+**해결:** 리터럴 변수 값을 사용하거나, 리프가 정적인 지원되는 default/at-rule 조건 객체를 사용하세요.
+
+{/* probe: stylex-defineVars-value-runtime after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineVars({ color: 'red' })
+  return result
+}
+```
+
+### createTheme(): 런타임 변수 값
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createTheme-value-runtime before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example(value) {
+  const result = stylex.createTheme(vars, { color: value });
+  return result;
+}
+```
+
+**원인:** defineVars/createTheme의 변수 값은 리터럴 리프이거나 중첩된 default/@media/@supports/@container 조건 객체이며, types.\*()로 감쌀 수 있습니다. Null은 아무것도 할당하지 않습니다. 런타임 리프, 배열, 의사 선택자 조건은 변수 값이 될 수 없습니다.
+
+**해결:** 리터럴 변수 값을 사용하거나, 리프가 정적인 지원되는 default/at-rule 조건 객체를 사용하세요.
+
+{/* probe: stylex-createTheme-value-runtime after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### 테마 계약에 있는 키만 오버라이드하기
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.createTheme()` cannot use `<code>` at build time: `vars` has no such variable
+```
+
+**발생 조건:**
+
+{/* probe: stylex-createTheme-unknown-key before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+const vars = stylex.defineVars({ color: 'red' });
+export function example() {
+  const result = stylex.createTheme(vars, { missing: 'blue' });
+  return result;
+}
+```
+
+**원인:** createTheme은 오버라이드 키를 계약이 등록한 커스텀 속성에 매핑합니다. 계약에 없는 키에는 할당할 CSS 변수가 없습니다.
+
+**해결:** 계약에 있는 키를 사용하거나, 의도한 키를 먼저 계약 선언에 추가하세요.
+
+{/* probe: stylex-createTheme-unknown-key after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+const vars = stylex.defineVars({ color: 'red' })
+export function example() {
+  const result = stylex.createTheme(vars, { color: 'blue' })
+  return result
+}
+```
+
+### defineConsts(): null 값은 리터럴이 아님
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.defineConsts()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-defineConsts-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.defineConsts({ color: null });
+  return result;
+}
+```
+
+**원인:** defineConsts는 리터럴 리더를 직접 사용합니다. 조건 객체를 읽지도, StyleX 헬퍼 호출을 풀어내지도 않으며, null은 이 리더가 내보내는 리터럴 값이 아닙니다.
+
+**해결:** 값을 red 같은 리터럴로 바꾸세요.
+
+{/* probe: stylex-defineConsts-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.defineConsts({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): null 선언 값
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-positionTry-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.positionTry({ color: null });
+  return result;
+}
+```
+
+**원인:** 이름이 붙는 이 선언 블록 API는 리터럴 CSS 값만 받으며, 런타임 리프, null, 배열, 값 위치의 조건 객체는 받지 않습니다. 선언 리더는 동적 변수 없이 속성 이름과 숫자 단위를 정규화합니다.
+
+**해결:** 선언에 정적인 리터럴 CSS 값을 지정하세요.
+
+{/* probe: stylex-positionTry-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### positionTry(): types를 지원되는 API 컨텍스트 밖에서 사용
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.positionTry()` cannot use `<code>` at build time: its values must be literals; `firstThatWorks()`, `include()` and `types` are read only inside `stylex.create()` and `stylex.defineVars()`
+```
+
+**발생 조건:**
+
+{/* probe: stylex-positionTry-helper-types before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.positionTry({ color: stylex.types.color('red') });
+  return result;
+}
+```
+
+**원인:** 선언 리더는 실제 StyleX 헬퍼 호출을 인식하지만 여기서는 읽지 않습니다. 전용 오류 메시지는 값이 리터럴이어야 하며 헬퍼는 create()/defineVars()에서만 읽힌다고 설명합니다. 그 안에서도 헬퍼마다 지원되는 하위 컨텍스트가 따로 있습니다.
+
+**해결:** 여기서는 헬퍼를 리터럴로 바꾸세요. firstThatWorks는 정적 create 속성에서, include는 정적 네임스페이스 spread로, types는 지원되는 값 래퍼로 사용하세요.
+
+{/* probe: stylex-positionTry-helper-types after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.positionTry({ color: 'red' })
+  return result
+}
+```
+
+### viewTransitionClass(): null 선언 값
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-viewTransitionClass-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { color: null } });
+  return result;
+}
+```
+
+**원인:** 이름이 붙는 이 선언 블록 API는 리터럴 CSS 값만 받으며, 런타임 리프, null, 배열, 값 위치의 조건 객체는 받지 않습니다. 선언 리더는 동적 변수 없이 속성 이름과 숫자 단위를 정규화합니다.
+
+**해결:** 선언에 정적인 리터럴 CSS 값을 지정하세요.
+
+{/* probe: stylex-viewTransitionClass-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
+  return result
+}
+```
+
+### viewTransitionClass(): types를 지원되는 API 컨텍스트 밖에서 사용
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.viewTransitionClass()` cannot use `<code>` at build time: its values must be literals; `firstThatWorks()`, `include()` and `types` are read only inside `stylex.create()` and `stylex.defineVars()`
+```
+
+**발생 조건:**
+
+{/* probe: stylex-viewTransitionClass-helper-types before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { color: stylex.types.color('red') } });
+  return result;
+}
+```
+
+**원인:** 선언 리더는 실제 StyleX 헬퍼 호출을 인식하지만 여기서는 읽지 않습니다. 전용 오류 메시지는 값이 리터럴이어야 하며 헬퍼는 create()/defineVars()에서만 읽힌다고 설명합니다. 그 안에서도 헬퍼마다 지원되는 하위 컨텍스트가 따로 있습니다.
+
+**해결:** 여기서는 헬퍼를 리터럴로 바꾸세요. firstThatWorks는 정적 create 속성에서, include는 정적 네임스페이스 spread로, types는 지원되는 값 래퍼로 사용하세요.
+
+{/* probe: stylex-viewTransitionClass-helper-types after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.viewTransitionClass({ old: { opacity: 0 } })
+  return result
+}
+```
+
+### firstThatWorks(): null 폴백 값
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.firstThatWorks()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-firstThatWorks-value-null before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example() {
+  const result = stylex.create({ base: { color: stylex.firstThatWorks('red', null) } });
+  return result;
+}
+```
+
+**원인:** firstThatWorks는 정적 create() 속성 안에서 읽히며, 각 폴백 인자는 저마다 정적 리프로 해석되어야 합니다. spread, null, 조건 객체는 하나의 폴백 리프가 아닙니다.
+
+**해결:** 정적 폴백 값을 하나씩 전달하세요. 필요하다면 조건 객체는 폴백 헬퍼 바깥에 두세요.
+
+{/* probe: stylex-firstThatWorks-value-null after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.create({
+    base: { color: stylex.firstThatWorks('red', 'blue') },
+  })
+  return result
+}
+```
+
+### keyframes(): 프레임 spread
+
+**API:** StyleX. **메시지 형식:**
+
+```text
+`stylex.keyframes()` cannot use `<code>` at build time: its values must be literals, theme tokens or constants, or be computed from them
+```
+
+**발생 조건:**
+
+{/* probe: stylex-keyframes-frame-spread before */}
+
+```tsx-error
+import * as stylex from '@stylexjs/stylex';
+export function example(extra) {
+  const result = stylex.keyframes({ ...extra });
+  return result;
+}
+```
+
+**원인:** keyframes에는 런타임 값이나 조건부 클래스를 붙일 요소가 없습니다. 프레임 키와 선언은 고정된 정적 CSS 선언 집합으로 해석되어야 하며, 읽을 수 없는 키/spread와 런타임 분기는 keyframes 값 요구 사항 오류로 보고됩니다.
+
+**해결:** 리터럴이거나 접을 수 있는 값으로 프레임과 CSS 선언을 명시적으로 작성하세요. 런타임에 고르는 부분은 keyframes 정의 바깥으로 옮기세요.
+
+{/* probe: stylex-keyframes-frame-spread after */}
+
+```tsx
+import * as stylex from '@stylexjs/stylex'
+export function example() {
+  const result = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+  return result
+}
+```
+
+## 플러그인과 설정
+
+아래 메시지는 추출기가 아니라 빌드 플러그인에서 나옵니다. 플러그인은 위의 모든 추출기 진단도 해당 파일의 오류로 전달합니다. 네이티브 파일 시스템 오류나 전송 실패는 플랫폼과 근본 오류에 따라 달라집니다.
+
+### devup.json을 불러올 수 없음
+
+**메시지 형식:**
+
+```text
+<file> is not valid JSON: <parser message>. Fix its syntax; Devup UI does not load the theme until it parses.
+<file> must hold a JSON object such as { "theme": {} }, not <null | an array | a string | ...>.
+devup.json `extends` form a cycle: <file> -> <file> -> <file>. Remove the `extends` entry that points back to an earlier file.
+```
+
+**원인:** 테마는 `devup.json`과 그 `extends`에 나열된 모든 파일에서 읽습니다. 대신 빈 테마로 빌드하면 선언되지 않은 테마 변수를 읽는 클래스가 배포됩니다.
+
+**해결:** 메시지가 가리키는 파일을 수정하세요. `extends`에 나열된 파일이 존재하지 않는 것은 오류가 아니며, 아무것도 추가하지 않을 뿐입니다.
+
+### 빌드가 출력할 수 없는 테마 토큰
+
+**메시지 형식:**
+
+```text
+theme.colors.<variant>: color token '<name>' is not a valid token name: start with a letter, a digit or '_', then use letters, digits, '-', '_' and '.'
+theme.colors.<variant>: color tokens '<a>' and '<b>' both become the CSS variable --<variable>: rename one
+theme: color token '<name>' and shadow token '<name>' both become the CSS variable --<variable>: rename one
+```
+
+`length`와 `shadow` 토큰도 같은 방식으로, `theme.length.<variant>: length token ...`과 `theme.shadow.<variant>: shadow token ...` 형태로 보고됩니다.
+
+**원인:** 토큰은 CSS 변수가 되므로(`gray.100`은 `--gray-100`), 허용된 문자 밖의 이름은 브라우저가 버리는 CSS를 만들고, 같은 변수가 되는 두 토큰(`a-b`와 `a.b`, 또는 둘 다 `card`라는 이름의 색상 토큰과 `shadow` 토큰)은 하나의 변수를 두 번 설정하게 됩니다.
+
+**해결:** 둘 중 한 토큰의 이름을 바꾸세요. 이름 규칙은 [색상](/docs/devup/colors)을 참고하세요.
+
+### 프로덕션 빌드와 개발 서버
+
+`devup.json`이나 테마 오류가 있으면 프로덕션 빌드(`vite build`, `watch` 없는 webpack 빌드, `rsbuild build`, `next build`, `Bun.build`)는 위 메시지와 함께 실패합니다. 개발 서버는 계속 실행되므로 서버가 파일을 감시하는 동안 수정할 수 있습니다. Vite는 오류를 출력하고 오류 오버레이에 표시하며, webpack, Rsbuild, webpack을 사용하는 Next.js는 테마가 다시 로드될 때까지 이를 컴파일 오류(`[devup-ui] <message>`)로 보고합니다. 그때까지 테마는 비어 있습니다.
+
+프로젝트 루트에 `devup.json`이 없고 `devupFile`도 설정하지 않았지만 작업 디렉터리에 해당 파일이 있으면, 플러그인은 그 파일을 읽고 경고를 한 번 출력합니다.
+
+```text
+[devup-ui] Found devup.json relative to the working directory (<cwd file>), not the project root (<root>). ...
+```
+
+`devup.json`을 프로젝트 루트로 옮기거나 `devupFile`을 설정하세요. 자세한 내용은 [devup.json](/docs/devup/devup-json)을 참고하세요.
+
+### Next.js 코디네이터 실패
+
+Turbopack을 사용할 때 Next.js 플러그인은 빌드를 위해 직접 시작한 코디네이터 프로세스에서 파일을 컴파일하며, 로더가 각 파일을 그곳으로 보냅니다. 코디네이터는 따로 설정하지 않습니다. 아래 메시지는 코디네이터가 실행 중이 아니거나, 응답하지 않거나, 작업을 끝내지 못했다는 뜻입니다.
+
+```text
+Coordinator port file not found: <port file>. The devup-ui coordinator for this build is not running (or exited). ...
+Coordinator unreachable at 127.0.0.1:<port> (<owner>, port file <port file>): <cause>. ...
+```
+
+코디네이터가 종료되었거나, 다른 `next dev`나 `next build`가 이를 대체한 경우입니다. 개발 서버나 빌드를 다시 시작하고, 하나의 `distDir`에서 `next dev`와 `next build`를 동시에 실행하지 마세요. 함께 실행해야 한다면 각각 별도의 `distDir`을 지정하세요.
+
+```text
+Coordinator CSS error: <status>: [devup-ui] coordinator: <bucket or base sheet> is incomplete (<reason>); refusing to serve partial CSS. Files not extracted: <files>.
+```
+
+프로덕션 빌드가 끝내 추출되지 않은 파일을 기다렸으므로, 해당 규칙이 빠진 스타일시트를 배포하는 대신 실패합니다. 이는 플러그인이 예상한 파일과 Next.js가 컴파일한 파일이 다르다는 뜻이므로, 파일 목록과 함께 제보해 주세요.
+
+`Coordinator error`와 `Coordinator response missing code`는 코디네이터가 결과나 오류 메시지 없이 파일에 응답했다는 뜻입니다. 빌드를 다시 시작하고, 계속 발생하면 제보해 주세요.
+
+### 빌드 플러그인 누락
+
+`Cannot run on the runtime`은 추출기 빌드 진단이 아니라 플레이스홀더 예외입니다. 컴파일 시점 컴포넌트나 헬퍼가 변환되지 않은 채 실행되었다는 뜻입니다. 알맞은 Devup UI 빌드 플러그인을 설정하고, 해당 파일이 추출 대상에 포함되는지 확인하세요. 스타일링 런타임을 추가하는 방식으로 해결하지 마세요.
+
+### 제거된 바인딩의 런타임 읽기를 ESLint로 잡기
+
+`devup/no-runtime-read` 규칙은 지원되는 호출/렌더링 밖에서 읽힌 컴파일 시점 바인딩을 빌드 전에 보고합니다. 린트 메시지는 마침표로 끝나지만 추출기 메시지는 그렇지 않습니다. 두 경우 모두 같은 직접 호출로 고칩니다.
+
+```text
+`<binding>` is read at runtime, where it does not exist: the build compiles it only where it is called or rendered.
+```
+
+```tsx-error
+import { css } from '@devup-ui/react'
+consume(css)
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+const card = css({ color: 'red' })
+```
+
+그 밖의 ESLint 진단, alias 유지 경고, StyleX 축약형 경고는 추출기 빌드 오류가 아닙니다. 빌드가 인식하지 못하는 Tailwind 클래스는 그대로 유지되며, 새로운 빌드 오류 유형을 만들지 않습니다.
+
+## 검증 출처
+
+이 페이지의 각 실패 예제와 해결 예제는 함께 쓰는 모듈과 함께 `main` `e9e5801cc` 시점의 추출기로 컴파일했습니다. 모든 실패 예제는 표시된 메시지를 보고하고, 모든 해결 예제는 컴파일됩니다. 플러그인 메시지는 같은 커밋의 플러그인 소스와 대조해 확인했습니다.

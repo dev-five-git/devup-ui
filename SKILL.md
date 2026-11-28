@@ -429,6 +429,7 @@ Theme types are auto-generated via module augmentation of `DevupTheme` and `Devu
 import { useTheme, setTheme, getTheme, initTheme, ThemeScript } from "@devup-ui/react";
 
 setTheme("dark");             // Switch theme (sets data-theme + localStorage)
+setTheme(null);               // Forget the choice, follow the system preference again
 const theme = getTheme();     // Get current theme name
 const theme = useTheme();     // React hook (reactive)
 initTheme();                  // Initialize on startup (auto-detect system preference)

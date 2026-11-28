@@ -1,0 +1,43 @@
+export const metadata = {
+  title: 'Input',
+  alternates: {
+    canonical: '/ko/docs/api/input',
+    languages: {
+      en: '/docs/api/input',
+      ko: '/ko/docs/api/input',
+      'x-default': '/docs/api/input',
+    },
+  },
+}
+
+# Input
+
+`input` 컴포넌트는 사용자 입력을 받는 데 사용할 수 있는 레이아웃 기본 요소입니다.
+
+스타일이 적용된 `input`일 뿐입니다.
+
+## 사용 방법
+
+{/* conformance */}
+
+```tsx
+import { Input } from '@devup-ui/react'
+
+function App() {
+  return <Input border="3px solid black" />
+}
+```
+
+위에서 정의한 Input 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return <input className="a" />
+}
+```
+
+```css
+.a {
+  border: 3px solid black;
+}
+```

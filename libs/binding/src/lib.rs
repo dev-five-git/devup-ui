@@ -2,6 +2,7 @@
 
 mod css_cache;
 mod lazy_css;
+mod native_theme;
 mod output;
 mod reservation;
 mod resolver_state;
@@ -15,6 +16,7 @@ pub use css::{get_prefix, set_custom_shorthands as register_shorthands_internal,
 pub use css_cache::{SheetCell, SheetGuard};
 pub use extractor::{has_devup_ui, has_devup_ui_with};
 pub use lazy_css::LazyCss;
+pub use native_theme::native_theme;
 pub use output::{
     CssOptions, ExtractionMode, Output, SourceMapMode, code_extract, code_extract_native,
 };

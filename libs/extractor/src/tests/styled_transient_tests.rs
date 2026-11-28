@@ -64,7 +64,12 @@ pub(super) fn executable_component(code: String) -> String {
     let code = code
         .strip_prefix("import { forwardRef as __devupForwardRef } from \"react\";\n")
         .expect("generated styled component must import forwardRef");
-    let mut code = format!("const __devupForwardRef = render => ({{ render }});\n{code}");
+    let scale = crate::runtime_units::linked(code);
+    let code: String = code
+        .lines()
+        .filter(|line| !line.ends_with("/scale\";"))
+        .fold(String::new(), |code, line| code + line + "\n");
+    let mut code = format!("{scale}const __devupForwardRef = render => ({{ render }});\n{code}");
     assert!(
         !code.contains("import "),
         "unexpected generated import: {code}"

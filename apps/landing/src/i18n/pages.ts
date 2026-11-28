@@ -12,12 +12,65 @@ interface TranslatedPage {
 
 // Keep translated content beside its English source; share the original layout.
 export const translatedPages: Record<string, TranslatedPage | undefined> = {
-  // Home and showcase render inside the shared site layout alone.
-  '/': {
-    load: () => import('@/app/(detail)/page.ko'),
+  '/docs/api/box': {
+    load: () => import('@/app/(detail)/docs/api/box/page.ko.mdx'),
+    Layout: DocsLayout,
   },
-  '/showcase': {
-    load: () => import('@/app/(detail)/showcase/page.ko'),
+  '/docs/api/button': {
+    load: () => import('@/app/(detail)/docs/api/button/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/center': {
+    load: () => import('@/app/(detail)/docs/api/center/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/css': {
+    load: () => import('@/app/(detail)/docs/api/css/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/custom-shorthands': {
+    load: () => import('@/app/(detail)/docs/api/custom-shorthands/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/flex': {
+    load: () => import('@/app/(detail)/docs/api/flex/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/grid': {
+    load: () => import('@/app/(detail)/docs/api/grid/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/group-selector': {
+    load: () => import('@/app/(detail)/docs/api/group-selector/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/image': {
+    load: () => import('@/app/(detail)/docs/api/image/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/input': {
+    load: () => import('@/app/(detail)/docs/api/input/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/selector': {
+    load: () => import('@/app/(detail)/docs/api/selector/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/style-props': {
+    load: () => import('@/app/(detail)/docs/api/style-props/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/text': {
+    load: () => import('@/app/(detail)/docs/api/text/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/api/v-stack': {
+    load: () => import('@/app/(detail)/docs/api/v-stack/page.ko.mdx'),
+    Layout: DocsLayout,
+  },
+  '/docs/build-errors': {
+    load: () => import('@/app/(detail)/docs/build-errors/page.ko.mdx'),
+    Layout: DocsLayout,
   },
   // Component references share the components layout.
   '/components/overview': {

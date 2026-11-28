@@ -35,13 +35,14 @@ function fakeSystem(dark: boolean) {
 }
 
 /** A storage whose method throws as a browser that blocks storage does; gives back the storage it replaced */
-function blockStorage(method: 'getItem' | 'setItem') {
+function blockStorage(method: 'getItem' | 'setItem' | 'removeItem') {
   const original = Object.getOwnPropertyDescriptor(window, 'localStorage')!
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
     value: {
       getItem: () => null,
       setItem: () => {},
+      removeItem: () => {},
       [method]: () => {
         throw new DOMException('blocked', 'SecurityError')
       },
@@ -83,6 +84,7 @@ describe('theme helpers on the server', () => {
     try {
       expect(getTheme()).toBeNull()
       expect(() => setTheme('dark' as never)).not.toThrow()
+      expect(() => setTheme(null)).not.toThrow()
       const stop = initTheme(true)
       expect(() => stop()).not.toThrow()
       expect(() => initTheme(false, 'dark' as never)()).not.toThrow()
@@ -110,6 +112,84 @@ describe('setTheme', () => {
     }
 
     expect(getTheme()).toBe('dark' as never)
+  })
+})
+
+describe('setTheme(null) forgets the choice', () => {
+  it('goes back to the system and keeps following it', () => {
+    const system = fakeSystem(true)
+    initTheme(true)
+    setTheme('light' as never)
+    system.change(false)
+    expect(getTheme()).toBe('light' as never)
+
+    setTheme(null)
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(getTheme()).toBe('default' as never)
+    system.change(true)
+    expect(getTheme()).toBe('dark' as never)
+  })
+
+  it('goes back to the default theme where the system is not followed', () => {
+    fakeSystem(true)
+    initTheme(false)
+    setTheme('light' as never)
+
+    setTheme(null)
+    expect(getTheme()).toBe('default' as never)
+  })
+
+  it('takes the system preference once where nothing follows it', () => {
+    const system = fakeSystem(true)
+    setTheme('light' as never)
+
+    setTheme(null)
+    expect(getTheme()).toBe('dark' as never)
+    expect(localStorage.getItem(KEY)).toBeNull()
+    system.change(false)
+    expect(getTheme()).toBe('dark' as never)
+
+    setTheme(null)
+    expect(getTheme()).toBe('default' as never)
+  })
+
+  it('takes the default theme where there is no matchMedia', () => {
+    // @ts-expect-error an environment without media queries
+    window.matchMedia = undefined
+    setTheme('light' as never)
+
+    setTheme(null)
+    expect(getTheme()).toBe('default' as never)
+  })
+
+  it('still resets the page when the storage cannot be written', () => {
+    fakeSystem(true)
+    const restore = blockStorage('removeItem')
+    try {
+      setTheme('light' as never)
+      expect(() => setTheme(null)).not.toThrow()
+    } finally {
+      restore()
+    }
+
+    expect(getTheme()).toBe('dark' as never)
+  })
+
+  it('still resets the page where storage events cannot be made', () => {
+    fakeSystem(false)
+    initTheme(true)
+    setTheme('dark' as never)
+    const original = globalThis.StorageEvent
+    globalThis.StorageEvent = function () {
+      throw new TypeError('no storage events')
+    } as unknown as typeof StorageEvent
+    try {
+      setTheme(null)
+    } finally {
+      globalThis.StorageEvent = original
+    }
+
+    expect(getTheme()).toBe('default' as never)
   })
 })
 
