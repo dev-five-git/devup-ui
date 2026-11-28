@@ -9,6 +9,8 @@ on:
       - main
       - feat/napi-binding
       - feat/react-native-themes
+      # Stacked Korean translation PRs; remove once they merge.
+      - refactor/landing-ko-pages-auto
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main

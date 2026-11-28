@@ -13,6 +13,7 @@ export default [
       'test-results',
       'release-results.json',
       'release-package-build.json',
+      'apps/landing/src/i18n/pages.generated.ts',
     ],
   },
   // eslint-plugin-devup
