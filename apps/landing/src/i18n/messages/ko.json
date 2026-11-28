@@ -46,6 +46,41 @@
     "team": "팀",
     "toggleTheme": "색상 테마 전환"
   },
+  "Home": {
+    "benchmarksCaption": "Next.js {next} 콜드 빌드, {samples}회 측정 중앙값 (GitHub Actions <runLink>실행 {id}</runLink>, 커밋 <commitLink>{commit}</commitLink>)",
+    "benchmarksTitle": "벤치마크 비교",
+    "buildSize": "빌드 크기",
+    "buildTime": "빌드 시간",
+    "communityDescription": "Discord에 참여해 CSS-in-JS로 프런트엔드의 미래를 함께 만들어 가세요!",
+    "communityTitle": "커뮤니티에 참여하세요",
+    "devupBuildTime": "Next.js 빌드 시간 (single CSS)",
+    "features": {
+      "figmaPlugin": {
+        "description": "더 안전하고 빠른 개발을 돕는 Figma 플러그인입니다.",
+        "title": "Figma 플러그인"
+      },
+      "topPerformance": {
+        "description": "CSS-in-JS 솔루션 가운데 가장 빠른 빌드 속도와 가장 작은 번들 크기를 제공합니다.",
+        "title": "최고의 성능"
+      },
+      "typeSafety": {
+        "description": "타입 기반 지원으로 개발자 경험을 높입니다.",
+        "title": "타입 안전성"
+      },
+      "zeroRuntime": {
+        "description": "성능 저하의 근본 원인을 없애는 미래지향적인 설계입니다.",
+        "title": "제로 런타임"
+      }
+    },
+    "featuresDescription": "Devup UI는 성능에 최적화된 CSS-in-JS 시스템과 테마 타입 지원, <br></br>더 빠르고 안전한 개발을 위한 강력한 기능을 제공합니다.",
+    "featuresTitle": "주요 기능",
+    "getStarted": "시작하기",
+    "goFigmaCommunity": "Figma 커뮤니티로 이동",
+    "joinDiscord": "Discord 참여하기",
+    "openKakaoTalk": "카카오톡 오픈채팅 열기",
+    "preprocessor": "CSS-in-JS 전처리기",
+    "tagline": "CSS-in-JS의 미래를 만듭니다<br></br>가능한 모든 시나리오를 가장 빠르게 분석하고, 최적의 성능으로 스타일을 적용합니다."
+  },
   "RightIndex": {
     "contents": "목차",
     "editThisPage": "이 페이지 편집"
@@ -53,5 +88,13 @@
   "Search": {
     "loading": "불러오는 중...",
     "noResults": "검색 결과가 없습니다"
+  },
+  "Showcase": {
+    "segments": {
+      "All": "전체",
+      "Mobile": "모바일",
+      "Website": "웹사이트"
+    },
+    "visitSite": "사이트 방문"
   }
 }

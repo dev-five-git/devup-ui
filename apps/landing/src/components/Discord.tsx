@@ -1,7 +1,10 @@
 import { css, Flex, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
-export function Discord() {
+export async function Discord({ locale = 'en' }: { locale?: Locale }) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <VStack
       alignItems="center"
@@ -23,11 +26,10 @@ export function Discord() {
       >
         <VStack gap="16px" px={5} textAlign={['center', null, 'left']}>
           <Text as="h2" color="$title" m="0" typography="h4">
-            Join our community
+            {t('communityTitle')}
           </Text>
           <Text color="$text" typography="textL">
-            Join our Discord and help build the future of frontend with
-            CSS-in-JS!
+            {t('communityDescription')}
           </Text>
         </VStack>
         <Flex flexDirection={['column', null, 'row']} gap="10px">
@@ -55,7 +57,7 @@ export function Discord() {
             >
               <Flex alignItems="center" gap="10px">
                 <Text color="#FFF" typography="buttonLbold">
-                  Open KakaoTalk
+                  {t('openKakaoTalk')}
                 </Text>
                 <Image boxSize="24px" src="/outlink.svg" />
               </Flex>
@@ -83,7 +85,7 @@ export function Discord() {
             >
               <Flex alignItems="center" gap="10px">
                 <Text color="#FFF" typography="buttonLbold">
-                  Join our Discord
+                  {t('joinDiscord')}
                 </Text>
                 <Image boxSize="24px" src="/outlink.svg" />
               </Flex>

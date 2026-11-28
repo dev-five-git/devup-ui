@@ -100,8 +100,9 @@ test('Korean routes render translated or English content without JavaScript', as
     page.getByRole('heading', { name: '빌드 오류', exact: true }),
   ).toBeVisible()
   await page.goto('/ko')
-  await expect(page).toHaveURL('http://localhost:3099/')
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page).toHaveURL('http://localhost:3099/ko')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
+  await expect(page.getByText('시작하기', { exact: true })).toBeVisible()
   await page.goto('/ko/components/button')
   await expect(page).toHaveURL(/(?<!ko)\/components\/button$/u)
   await expect(
@@ -138,4 +139,46 @@ test('language navigation fits tablet screens', async ({ page }) => {
     )
     expect(width).toBeLessThanOrEqual(1024)
   }
+})
+
+test('Korean home and showcase translate their copy and keep English unchanged', async ({
+  page,
+}) => {
+  await page.route('**/api.github.com/repos/dev-five-git/devup-ui', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ stargazers_count: 1234 }),
+    }),
+  )
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto('/')
+  await expect(
+    page.getByRole('heading', { name: 'Comparison Benchmarks' }),
+  ).toBeVisible()
+  await page.goto('/ko')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'https://devup-ui.com/ko',
+  )
+  await expect(
+    page.getByRole('heading', { name: '벤치마크 비교' }),
+  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: '주요 기능' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '커뮤니티에 참여하세요' }),
+  ).toBeVisible()
+  await page.getByRole('link', { name: '시작하기' }).click()
+  await expect(page).toHaveURL(/\/ko\/docs\/overview$/u)
+
+  await page.goto('/ko/showcase')
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'https://devup-ui.com/ko/showcase',
+  )
+  await expect(page.getByRole('heading', { name: '쇼케이스' })).toBeVisible()
+  await page.getByRole('button', { name: '모바일' }).click()
+  await expect(page.getByText('NH Allone Bank')).toBeVisible()
+  await expect(page.getByText('Braillify')).toHaveCount(0)
 })

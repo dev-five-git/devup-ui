@@ -1,5 +1,7 @@
 import { css, Flex, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
 interface OtherCardProps {
   title: string
@@ -7,14 +9,17 @@ interface OtherCardProps {
   buildTime: string
   buildSize: string
   url: string
+  locale?: Locale
 }
-export function OtherCard({
+export async function OtherCard({
   title,
   version,
   buildTime,
   buildSize,
   url,
+  locale = 'en',
 }: OtherCardProps) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <Flex
       aspectRatio={[null, null, null, null, '1']}
@@ -48,7 +53,7 @@ export function OtherCard({
       <VStack alignItems="flex-end" gap="20px">
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$captionBold" typography="textSbold">
-            Build Time
+            {t('buildTime')}
           </Text>
           <Text color="$caption" typography="h5">
             {buildTime}
@@ -56,7 +61,7 @@ export function OtherCard({
         </VStack>
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$captionBold" typography="textSbold">
-            Build Size
+            {t('buildSize')}
           </Text>
           <Text color="$caption" typography="h5">
             {buildSize}

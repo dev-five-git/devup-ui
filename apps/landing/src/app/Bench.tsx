@@ -1,4 +1,6 @@
 import { css, Flex, Text, VStack } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
 import { BenchBox } from './BenchBox'
 import { BENCHMARK_SOURCE, benchmarkResults as results } from './benchmark-data'
@@ -55,7 +57,8 @@ const DEVUP_CARD = {
 
 const link = css({ color: 'inherit' })
 
-export function Bench() {
+export async function Bench({ locale = 'en' }: { locale?: Locale }) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <VStack
       alignItems="center"
@@ -77,27 +80,33 @@ export function Bench() {
           wordBreak="keep-all"
         >
           <Text as="h2" color="$title" m="0" typography="h4">
-            Comparison Benchmarks
+            {t('benchmarksTitle')}
           </Text>
           <Text color="$text" typography="textL">
-            Next.js {results.run.next} cold build, median of {results.samples}{' '}
-            (GitHub Actions{' '}
-            <a className={link} href={results.run.url}>
-              run {results.run.id}
-            </a>
-            , commit{' '}
-            <a
-              className={link}
-              href={`https://github.com/dev-five-git/devup-ui/commit/${results.run.sha}`}
-            >
-              {results.run.commit}
-            </a>
-            )
+            {t.rich('benchmarksCaption', {
+              commit: results.run.commit,
+              id: results.run.id,
+              next: results.run.next,
+              samples: results.samples,
+              commitLink: (chunks) => (
+                <a
+                  className={link}
+                  href={`https://github.com/dev-five-git/devup-ui/commit/${results.run.sha}`}
+                >
+                  {chunks}
+                </a>
+              ),
+              runLink: (chunks) => (
+                <a className={link} href={results.run.url}>
+                  {chunks}
+                </a>
+              ),
+            })}
           </Text>
         </VStack>
 
         <Flex display={[null, null, null, null, 'none']}>
-          <DevupUICard {...DEVUP_CARD} />
+          <DevupUICard {...DEVUP_CARD} locale={locale} />
         </Flex>
         <BenchBox>
           <Flex
@@ -109,10 +118,10 @@ export function Bench() {
             w="fit-content"
           >
             <Flex display={['none', null, null, null, 'flex']}>
-              <DevupUICard {...DEVUP_CARD} />
+              <DevupUICard {...DEVUP_CARD} locale={locale} />
             </Flex>
             {OTHER_CARDS.map((item) => (
-              <OtherCard key={item.title} {...item} />
+              <OtherCard key={item.title} {...item} locale={locale} />
             ))}
           </Flex>
         </BenchBox>

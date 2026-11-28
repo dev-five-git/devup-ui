@@ -1,4 +1,6 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
 interface DevupUICardProps {
   version: string
@@ -8,6 +10,7 @@ interface DevupUICardProps {
   fastest: boolean
   /** Whether Devup UI builds smaller than every other card */
   smallest: boolean
+  locale?: Locale
 }
 
 function Crown({ shown }: { shown: boolean }) {
@@ -26,13 +29,15 @@ function Crown({ shown }: { shown: boolean }) {
   )
 }
 
-export function DevupUICard({
+export async function DevupUICard({
   version,
   buildTime,
   buildSize,
   fastest,
   smallest,
+  locale = 'en',
 }: DevupUICardProps) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <Flex
       bg="$containerBackground"
@@ -68,7 +73,7 @@ export function DevupUICard({
       <VStack alignItems="flex-end" gap="20px">
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$text" typography="textSbold">
-            Next.js Build Time (single CSS)
+            {t('devupBuildTime')}
           </Text>
           <Flex gap="10px">
             <Crown shown={fastest} />
@@ -84,7 +89,7 @@ export function DevupUICard({
         </VStack>
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$text" typography="textSbold">
-            Build Size
+            {t('buildSize')}
           </Text>
           <Flex gap="10px">
             <Crown shown={smallest} />

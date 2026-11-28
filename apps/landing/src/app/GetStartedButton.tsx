@@ -1,8 +1,11 @@
 import { Box, css, Flex, Image, Text } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
 import { Link } from '@/i18n/navigation'
 
-export function GetStartedButton() {
+export async function GetStartedButton({ locale = 'en' }: { locale?: Locale }) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <Link
       className={css({
@@ -38,7 +41,7 @@ export function GetStartedButton() {
         />
         <Flex alignItems="center" gap="10px">
           <Text color="$base" typography="buttonL">
-            Get started
+            {t('getStarted')}
           </Text>
           <Image bg="$base" boxSize="24px" maskImage="url(/arrow.svg)" />
         </Flex>

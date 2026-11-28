@@ -1,4 +1,6 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
+import type { Locale } from 'next-intl'
+import { getTranslations } from 'next-intl/server'
 
 import { LandingTitle } from '@/LandingTitle'
 
@@ -6,7 +8,8 @@ import { GetStartedButton } from './GetStartedButton'
 import SponsorButton from './SponsorButton'
 import StarButton from './StarButton'
 
-export function TopBanner() {
+export async function TopBanner({ locale = 'en' }: { locale?: Locale }) {
+  const t = await getTranslations({ locale, namespace: 'Home' })
   return (
     <VStack
       _themeDark={{
@@ -63,20 +66,17 @@ export function TopBanner() {
               Zero
             </Text>{' '}
             Runtime <Box as="br" display={['none', null, 'initial']} />
-            CSS in JS Preprocessor
+            {t('preprocessor')}
           </LandingTitle>
           <Text
             color="$text"
             textShadow="0 -2px 4px var(--base, #FFF), 0 2px 4px var(--base, #FFF)"
             typography="h6Reg"
           >
-            Building the Future of CSS-in-JS
-            <br />
-            Analyze all possible scenarios at the fastest speed and style with
-            optimal performance.
+            {t.rich('tagline', { br: () => <br /> })}
           </Text>
         </VStack>
-        <GetStartedButton />
+        <GetStartedButton locale={locale} />
         <Flex gap="12px">
           <StarButton />
           <SponsorButton />

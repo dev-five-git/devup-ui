@@ -46,6 +46,41 @@
     "team": "Team",
     "toggleTheme": "Toggle color theme"
   },
+  "Home": {
+    "benchmarksCaption": "Next.js {next} cold build, median of {samples} (GitHub Actions <runLink>run {id}</runLink>, commit <commitLink>{commit}</commitLink>)",
+    "benchmarksTitle": "Comparison Benchmarks",
+    "buildSize": "Build Size",
+    "buildTime": "Build Time",
+    "communityDescription": "Join our Discord and help build the future of frontend with CSS-in-JS!",
+    "communityTitle": "Join our community",
+    "devupBuildTime": "Next.js Build Time (single CSS)",
+    "features": {
+      "figmaPlugin": {
+        "description": "A Figma plugin enabling safer and faster development.",
+        "title": "Figma Plugin"
+      },
+      "topPerformance": {
+        "description": "The fastest build speed and the smallest bundle size among CSS-in-JS solutions.",
+        "title": "Top Performance"
+      },
+      "typeSafety": {
+        "description": "Enhanced DX with typing-based support.",
+        "title": "Type Safety"
+      },
+      "zeroRuntime": {
+        "description": "A futuristic design that eliminates the root causes of performance degradation.",
+        "title": "Zero Runtime"
+      }
+    },
+    "featuresDescription": "Devup UI offers a performance-optimized CSS-in-JS system, theme typing, <br></br>and amazing features for faster and safer development.",
+    "featuresTitle": "Features",
+    "getStarted": "Get started",
+    "goFigmaCommunity": "Go Figma Community",
+    "joinDiscord": "Join our Discord",
+    "openKakaoTalk": "Open KakaoTalk",
+    "preprocessor": "CSS in JS Preprocessor",
+    "tagline": "Building the Future of CSS-in-JS<br></br>Analyze all possible scenarios at the fastest speed and style with optimal performance."
+  },
   "RightIndex": {
     "contents": "Contents",
     "editThisPage": "Edit this page"
@@ -53,5 +88,13 @@
   "Search": {
     "loading": "Loading...",
     "noResults": "No recent searches"
+  },
+  "Showcase": {
+    "segments": {
+      "All": "All",
+      "Mobile": "Mobile",
+      "Website": "Website"
+    },
+    "visitSite": "Visit Site"
   }
 }

@@ -2,6 +2,7 @@
 
 import { css, Flex, Grid, Text } from '@devup-ui/react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { useMemo, useState } from 'react'
 
 import { ShowcaseCard } from '@/components/showcase/ShowcaseCard'
@@ -22,6 +23,7 @@ interface ShowcaseContentProps {
 }
 
 export function ShowcaseContent({ list }: ShowcaseContentProps) {
+  const t = useTranslations('Showcase')
   const [segment, setSegment] = useState<SegmentType>('All')
 
   const filteredList = useMemo(
@@ -61,7 +63,7 @@ export function ShowcaseContent({ list }: ShowcaseContentProps) {
               color={segment === item ? '$primary' : '$caption'}
               typography="buttonM"
             >
-              {item}
+              {t(`segments.${item}`)}
             </Text>
           </Flex>
         ))}
