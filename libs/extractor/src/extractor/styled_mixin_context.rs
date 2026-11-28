@@ -106,7 +106,8 @@ fn place<'a>(
                 style.identifier().to_string()
             };
             let mut nested =
-                ExtractDynamicStyle::new(style.property(), style.level(), &identifier, selector);
+                ExtractDynamicStyle::new(style.property(), style.level(), &identifier, selector)
+                    .with_runtime_units(style.runtime_units());
             nested.layer = style.layer().map(str::to_string);
             if let Some(layer) = parent.layer() {
                 crate::css_utils::nest_layer(layer, &mut nested.layer);

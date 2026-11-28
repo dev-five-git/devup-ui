@@ -15,11 +15,7 @@ const __s = StyleSheet.create({
 	b: { backgroundColor: "#5a44ff" },
 	c: { backgroundColor: "#8c7bff" }
 });
-const __u = (v, s) => {
-	if (typeof v === "number") return v * s;
-	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
-	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
-};
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
 export function A({ size }) {
 	const __t = __useThemeIndex();
 	const s = [

@@ -217,9 +217,11 @@ fn require_exploration_keeps_real_site_and_shadowed_value(
         assert!(error.starts_with("helper.ts:1:25: module resolver failed for `./missing` from `helper.ts`: missing resolver failure"), "{error}");
         assert_eq!(export_sheet_internal()?, before);
     } else {
+        // A number `color` holds takes the spacing scale `bg={2}` takes
+        let code = result?.code();
         assert_eq!(
-            result?.code(),
-            "import \"df/devup-ui.css\";\nimport { color } from \"./helper\";\nconst x = <div className=\"a\" style={{ \"--b\": color }} />;\n"
+            code,
+            "import \"df/devup-ui.css\";\nimport { color } from \"./helper\";\nimport { __devupScale } from \"@devup-ui/react/scale\";\nconst x = <div className=\"a\" style={{ \"--b\": __devupScale(color) }} />;\n"
         );
     }
     Ok(())

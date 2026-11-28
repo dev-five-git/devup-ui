@@ -1,7 +1,6 @@
 use insta::assert_snapshot;
 use rstest::rstest;
 
-use super::element::units_declaration;
 use super::errors::Problem;
 use super::props::Declaration;
 use super::sheet::{Sheet, key_name};
@@ -497,8 +496,11 @@ fn problems_format_for_props_and_imports() {
 #[case("null, 4", "null")]
 #[case("undefined, 4", "undefined")]
 fn runtime_values_convert_as_literals_do(#[case] arguments: &str, #[case] expected: &str) {
-    // Given: the function the build declares for values read at runtime
-    let code = format!("{}String(u({arguments}))", units_declaration("u"));
+    // Given: the conversion the build imports for values read at runtime
+    let code = format!(
+        "{}String(__devupNativeScale({arguments}))",
+        crate::runtime_units::module_script()
+    );
     // When
     let mut context = boa_engine::Context::default();
     let value = context

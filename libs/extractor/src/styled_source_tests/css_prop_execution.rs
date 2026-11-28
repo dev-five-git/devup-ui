@@ -310,6 +310,7 @@ pub(super) fn execute_extracted(
                     let value = match imported.as_str() {
                         "jsx" | "jsxs" | "jsxDEV" => "jsx",
                         "forwardRef" => "forwardRef",
+                        "__devupScale" => "__devupScale",
                         _ => panic!("unexpected runtime import: {imported}"),
                     };
                     if local != value {
@@ -348,8 +349,10 @@ const layerOrders={orders};
 function atoms(element){{return (element.props.className||'').split(/\s+/).flatMap(name=>rules[name]?[rules[name]]:[]);}}
 function values(element,property,level=0,selector=''){{return atoms(element).filter(rule=>rule[0]===property&&rule[2]===level&&rule[3]===selector).map(rule=>{{const value=rule[1];return value.startsWith('var(')?element.props.style[value.slice(4,-1)]:value;}}).sort();}}
 function slots(element){{return Object.keys(element.props).filter(key=>key.startsWith('__devupCss'));}}
+{scale}
 {aliases}{code}
-{observation}"
+{observation}",
+        scale = crate::runtime_units::module_script()
     );
     let result = Context::default()
         .eval(Source::from_bytes(&script))

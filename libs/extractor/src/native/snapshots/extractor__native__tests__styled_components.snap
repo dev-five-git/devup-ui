@@ -24,11 +24,7 @@ const __s = StyleSheet.create({
 	j: { opacity: .6 },
 	k: { backgroundColor: "black" }
 });
-const __u = (v, s) => {
-	if (typeof v === "number") return v * s;
-	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
-	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
-};
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
 export const Card = (__props) => {
 	const __t = __useThemeIndex();
 	const __b = __useBreakpoint();

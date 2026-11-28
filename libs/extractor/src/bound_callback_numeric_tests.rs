@@ -209,11 +209,15 @@ fn runtime_values_and_call_inputs_stay_ordinary_when_callback_is_bound(
         &output,
         "const element=render({target:Choice,props:{lineHeight:2,raw:7}});JSON.stringify([observe(),Object.values(element.props.style)]);",
     );
-    let padding = match input {
-        "3" => serde_json::json!("3px"),
-        "0" => serde_json::json!(0),
-        "'3'" => serde_json::json!("3"),
-        "'auto'" => serde_json::json!("auto"),
+    // Emotion reads a number as pixels; Devup UI's own styled reads a number,
+    // or a string holding one, on its spacing scale, as a written one is
+    let padding = match (import.contains("@emotion"), input) {
+        (true, "3") => serde_json::json!("3px"),
+        (true, "0") => serde_json::json!(0),
+        (true, "'3'") => serde_json::json!("3"),
+        (false, "3" | "'3'") => serde_json::json!("12px"),
+        (false, "0") => serde_json::json!("0px"),
+        (_, "'auto'") => serde_json::json!("auto"),
         _ => unreachable!(),
     };
     assert_eq!(
