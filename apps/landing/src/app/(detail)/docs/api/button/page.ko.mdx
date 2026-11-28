@@ -1,0 +1,74 @@
+export const metadata = {
+  title: 'Button',
+  alternates: {
+    canonical: '/ko/docs/api/button',
+    languages: {
+      en: '/docs/api/button',
+      ko: '/ko/docs/api/button',
+      'x-default': '/docs/api/button',
+    },
+  },
+}
+
+# Button
+
+`Button` 컴포넌트는 동작을 실행하는 데 사용할 수 있는 간단한 버튼 컴포넌트입니다.
+
+## 사용 방법
+
+```tsx
+import { Button } from '@devup-ui/react'
+
+function App() {
+  return (
+    <Button bg="red" h={25} onClick={() => alert('clicked!!')} w={25}>
+      click me
+    </Button>
+  )
+}
+```
+
+빌드 플러그인을 설정하면 Button 컴포넌트는 네이티브
+`button`으로 변환됩니다. React 이벤트 핸들러는 문자열 속성이 아니라 함수 표현식으로
+유지됩니다. 아래는 빈 테마와 기본 접두사로 독립 실행했을 때 추출된 코드와 CSS입니다.
+생성되는 이름은 추출 상태와 접두사에 따라 달라집니다.
+
+```text
+import "@devup-ui/react/devup-ui.css";
+function App() {
+	return <button onClick={() => alert("clicked!!")} className="a b c">
+      click me
+    </button>;
+}
+```
+
+```text
+/*! devup-ui v1.0.82 | Apache License 2.0 | https://devup-ui.com */.a{background:red}.b{height:100px}.c{width:100px}
+```
+
+스타일 속성에 단위 없이 숫자를 전달하면 자동으로 4배로 변환됩니다.
+즉, 1은 4px, 2는 8px와 같은 식입니다.
+
+단, 다음 속성은 예외이며 **4를 곱하지 않습니다**.
+
+- `opacity`
+- `flex`
+- `z-index`
+- `line-clamp`
+- `font-weight`
+- `line-height`
+- `scale`
+- `aspect-ratio`
+- `flex-grow`
+- `flex-shrink`
+- `order`
+- `grid-column`, `grid-column-start`, `grid-column-end`
+- `grid-row`, `grid-row-start`, `grid-row-end`
+- `animation-iteration-count`
+- `tab-size`, `-moz-tab-size`, `-webkit-line-clamp`
+- `grid-area`
+- `column-count`, `columns`, `orphans`, `widows`, `zoom`
+- `border-image`, `border-image-outset`, `border-image-slice`, `border-image-width`
+- `mask-border`, `mask-border-outset`, `mask-border-slice`, `mask-border-width`
+- `initial-letter`, `max-lines`, `shape-image-threshold`
+- `fill-opacity`, `flood-opacity`, `stop-opacity`, `stroke-opacity`, `stroke-width`, `stroke-dashoffset`, `stroke-miterlimit`

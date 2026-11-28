@@ -1,0 +1,57 @@
+{
+  "ComponentsMenu": {
+    "form": "폼",
+    "layout": "레이아웃",
+    "overview": "개요",
+    "theme": "테마"
+  },
+  "DocsMenu": {
+    "breakpoints": "브레이크포인트",
+    "buildErrors": "빌드 오류",
+    "colors": "색상",
+    "coreConcepts": "핵심 개념",
+    "customShorthands": "사용자 정의 축약 속성",
+    "devupFigmaPlugin": "Devup Figma 플러그인",
+    "devupJsonConfiguration": "devup.json 설정",
+    "features": "기능",
+    "figmaAndThemeIntegration": "Figma 및 테마 연동",
+    "figmaPlugin": "Figma 플러그인",
+    "groupSelector": "그룹 선택자",
+    "installation": "설치",
+    "length": "길이",
+    "limitations": "지원 문법과 제한 사항",
+    "migration": "마이그레이션",
+    "migrationOverview": "개요",
+    "nmBase": "N/M 진법",
+    "noDependencies": "의존성 없음",
+    "optimizeCss": "CSS 최적화",
+    "overview": "개요",
+    "quickStart": "빠른 시작",
+    "selector": "선택자",
+    "shadow": "그림자",
+    "styleProps": "스타일 속성",
+    "styleStorage": "스타일 저장소",
+    "typeInferenceSystem": "타입 추론 시스템",
+    "typography": "타이포그래피",
+    "whatIsDevup": "devup이란?",
+    "zeroRuntime": "제로 런타임"
+  },
+  "Header": {
+    "components": "컴포넌트",
+    "docs": "문서",
+    "menuButton": "메뉴 버튼",
+    "primaryNavigation": "주요 메뉴",
+    "searchPlaceholder": "문서 검색...",
+    "showcase": "쇼케이스",
+    "team": "팀",
+    "toggleTheme": "색상 테마 전환"
+  },
+  "RightIndex": {
+    "contents": "목차",
+    "editThisPage": "이 페이지 편집"
+  },
+  "Search": {
+    "loading": "불러오는 중...",
+    "noResults": "검색 결과가 없습니다"
+  }
+}

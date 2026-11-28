@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { render } from 'bun-test-env-dom'
 
+import { setTheme } from '../../utils/set-theme'
 import { ThemeScript } from '../ThemeScript'
 
 const KEY = '__DF_THEME_SELECTED__'
@@ -171,5 +172,28 @@ describe('ThemeScript sets a theme whatever the browser allows', () => {
     new Function(container.querySelector('script')!.textContent!)()
 
     expect(document.documentElement.dataset.theme).toBe('brand')
+  })
+
+  it('goes back to the system when setTheme(null) forgets the choice', () => {
+    const change = fakeSystem(true)
+    run()
+    setTheme('light' as never)
+    expect(document.documentElement.dataset.theme).toBe('light')
+
+    setTheme(null)
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    change(false)
+    expect(document.documentElement.dataset.theme).toBe('default')
+  })
+
+  it('goes back to the default theme on setTheme(null) when it is not auto', () => {
+    fakeSystem(true)
+    const { container } = render(<ThemeScript auto={false} />)
+    new Function(container.querySelector('script')!.textContent!)()
+    setTheme('light' as never)
+
+    setTheme(null)
+    expect(document.documentElement.dataset.theme).toBe('default')
   })
 })

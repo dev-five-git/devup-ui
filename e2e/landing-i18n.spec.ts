@@ -20,31 +20,41 @@ test('English remains the default and Korean overview is translated', async ({
     page.getByRole('heading', { name: 'Devup UI란?', exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByRole('link', { name: 'Edit this page' }),
+    page.getByRole('link', { name: '이 페이지 편집' }),
   ).toHaveAttribute(
     'href',
     /src\/app\/\(detail\)\/docs\/overview\/page\.ko\.mdx$/u,
   )
+  await expect(
+    page.getByRole('navigation', { name: '주요 메뉴' }).getByText('문서'),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: '색상 테마 전환' }),
+  ).toBeVisible()
+  await expect(page.getByPlaceholder('문서 검색...')).toBeVisible()
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
     'https://devup-ui.com/ko/docs/overview',
   )
 
   await page
-    .getByRole('link', { name: 'Build Errors', exact: true })
+    .getByRole('link', { name: '빌드 오류', exact: true })
     .first()
     .click()
-  await expect(page).toHaveURL(/(?<!ko)\/docs\/build-errors$/u)
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page).toHaveURL(/\/ko\/docs\/build-errors$/u)
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
+  await expect(
+    page.getByRole('heading', { name: '빌드 오류', exact: true }),
+  ).toBeVisible()
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
-    'https://devup-ui.com/docs/build-errors',
+    'https://devup-ui.com/ko/docs/build-errors',
   )
   await expect(
     page.getByRole('link', { name: 'Edit this page' }),
   ).toHaveAttribute(
     'href',
-    /src\/app\/\(detail\)\/docs\/build-errors\/page.mdx$/u,
+    /src\/app\/\(detail\)\/docs\/build-errors\/page\.ko\.mdx$/u,
   )
 })
 
@@ -64,13 +74,15 @@ test('Korean search finds translated content and English fallback pages', async 
       .locator('a[href="/ko/docs/overview"]')
       .filter({ hasText: 'Devup UI란?' }),
   ).toBeVisible()
-  await page.goto('/ko/docs/overview?search=1&query=Build%20Errors')
+  await page.goto('/ko/docs/overview?search=1&query=Button')
   await expect(
     page
-      .locator('a[href="/ko/docs/build-errors"]')
-      .filter({ hasText: 'Build Errors' })
+      .locator('a[href="/ko/components/button"]')
+      .filter({ hasText: 'Button' })
       .last(),
   ).toBeVisible()
+  await page.goto('/ko/docs/overview?search=1&query=zzzz-no-match')
+  await expect(page.getByText('검색 결과가 없습니다')).toBeVisible()
 })
 
 test('Korean routes render translated or English content without JavaScript', async ({
@@ -83,8 +95,10 @@ test('Korean routes render translated or English content without JavaScript', as
     page.getByRole('heading', { name: 'Devup UI란?', exact: true }),
   ).toBeVisible()
   await page.goto('/ko/docs/build-errors')
-  await expect(page).toHaveURL(/(?<!ko)\/docs\/build-errors$/u)
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page).toHaveURL(/\/ko\/docs\/build-errors$/u)
+  await expect(
+    page.getByRole('heading', { name: '빌드 오류', exact: true }),
+  ).toBeVisible()
   await page.goto('/ko')
   await expect(page).toHaveURL('http://localhost:3099/')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')

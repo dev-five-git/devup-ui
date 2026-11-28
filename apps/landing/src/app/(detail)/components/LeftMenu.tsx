@@ -1,11 +1,14 @@
+'use client'
 import { VStack } from '@devup-ui/react'
+import { useTranslations } from 'next-intl'
 
 import { MenuItem } from '../docs/MenuItem'
 
 export function LeftMenu() {
+  const t = useTranslations('ComponentsMenu')
   return (
     <VStack gap="6px">
-      <MenuItem to="/components/overview">Overview</MenuItem>
+      <MenuItem to="/components/overview">{t('overview')}</MenuItem>
       <MenuItem
         subMenu={[
           { to: '/components/button', children: 'Button' },
@@ -27,7 +30,7 @@ export function LeftMenu() {
           { to: '/components/label', children: 'Label' },
         ]}
       >
-        Form
+        {t('form')}
       </MenuItem>
       <MenuItem
         subMenu={[
@@ -41,12 +44,12 @@ export function LeftMenu() {
           { to: '/components/bottom-sheet', children: 'Bottom Sheet' },
         ]}
       >
-        Layout
+        {t('layout')}
       </MenuItem>
       <MenuItem
         subMenu={[{ to: '/components/theme-button', children: 'Theme Button' }]}
       >
-        Theme
+        {t('theme')}
       </MenuItem>
     </VStack>
   )
