@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Resolve compiled styling APIs and components by lexical binding so shadowed local names remain ordinary JavaScript and JSX, and preserve StyleX conditions exactly once in argument order. Conditions needing capture storage now report located build errors in parameter defaults, class field initializers, and statement frames visible to direct eval when safe local storage is unavailable; move the value into a variable in a safe statement body.",
-  "date": "2026-10-01T00:00:00.000Z"
-}

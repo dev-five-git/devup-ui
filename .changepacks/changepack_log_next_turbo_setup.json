@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Turbopack honors the `debug` option (readable class names) like the webpack path, and keeps it apart in the production setup cache. A dev restart restores the previous session's sheet, class map and file map all together or not at all, so a missing or corrupt file no longer leaves a mix that gives new styles clashing names. When the import graph or file numbering cannot be built, Turbopack now prints a warning naming the cause and what the build loses instead of continuing silently. No new build errors",
-  "date": "2026-11-15T00:00:00.000Z"
-}

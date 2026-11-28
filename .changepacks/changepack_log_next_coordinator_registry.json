@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Turbopack apps in one process no longer share one coordinator: coordinators are kept per resolved `distDir`, each with its own engine session, extraction tracking and listener. Starting a second app no longer closes the first app's coordinator, and a config re-evaluation replaces only its own app's coordinator; the app's session is dropped when its last coordinator closes",
-  "date": "2026-11-15T00:00:00.000Z"
-}

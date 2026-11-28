@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Pass the Turbopack loaders only what coordinator mode reads (the port file, the theme files and, for the CSS loader, watch), plus a short key of the setup state that re-runs them when it changes. Next serializes the resolved config into .next/required-server-files.{js,json}, which ships with the app; it no longer carries the default sheet, class map, file map, theme or file paths. CSS and JavaScript output is unchanged.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

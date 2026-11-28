@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "A shorthand set across a boundary after a longhand it covers now wins, as the later style: `css({ borderTopWidth: 2 }, { borderWidth: 1 })` keeps only `border-width`. The boundaries are css() arguments, a spread among Box props or style object keys (a prop after a spread, a later spread), and css()/styled composition. Within one level, the keys of one object literal (css(), styled objects, each nested selector or breakpoint object) or the Box props between two spreads, key order is no \"later wins\" signal: both are kept and the sheet, which writes a longhand after its shorthands, lets the longhand win, so `css({ borderTopWidth: 2, borderWidth: 1 })` keeps border-top-width and `<Text backgroundClip='text' bg='linear-gradient(...)' />` keeps its gradient text. The earlier longhand's atom is dropped only when both are static and unconditional at the same selector, breakpoint, layer and style order; a conditional or dynamic value keeps both and the sheet order decides. globalCss keeps every declaration in the order written. No new build errors",
-  "date": "2026-11-16T00:00:00.000Z"
-}

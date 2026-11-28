@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "packages/plugin-utils/package.json": "Patch",
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Add the types-only `@devup-ui/plugin-utils/types` entry (resolved through `exports`, and `typesVersions` for `node10` resolution) holding the types the plugins' published declarations name. The Next plugin's declarations now import it instead of the whole package, so a `next.config.ts` type check loads 7 of plugin-utils' declaration files instead of 22 (`.next/cache/.tsbuildinfo` about 3.5 KB smaller on the benchmark apps).",
-  "date": "2026-11-19T00:00:00.000Z"
-}

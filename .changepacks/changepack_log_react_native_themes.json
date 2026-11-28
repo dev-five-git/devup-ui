@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-binding/package.json": "Patch",
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "`codeExtractNative` resolves the theme registered with `registerTheme` (part of #411): `$` color, length and shadow tokens and `typography` become the values React Native takes, a relative line height or letter spacing in pixels of the typography's font size. With one theme every value is a literal and the file imports no runtime. With more themes, the styles of each theme are precomputed into the file's `StyleSheet` and the element picks one by the index `useThemeIndex()` of `@devup-ui/react/native` gives, called at the top of the enclosing component or hook (an element outside one renders through the runtime's `Themed`); what does not differ by theme stays shared. `_theme*` applies its styles in that theme only, and `useTheme`, `getTheme` and `setTheme` import from the runtime. With `runtime: false` all of these that need the runtime are build errors, while a value of a single theme still compiles. A token or typography with a value at each breakpoint, and a `$` token devup.json does not define, are build errors. Web output is unchanged.",
-  "date": "2026-11-20T00:00:00.000Z"
-}

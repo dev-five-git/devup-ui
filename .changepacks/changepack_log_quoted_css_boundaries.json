@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Preserve quoted CSS text during selector substitution, media-query folding and template interpolation placement, and resume optimization after bad-string newlines without changing EOF string contents. No new styling runtime or build-error kind is added.",
-  "date": "2026-10-20T00:00:00.000Z"
-}

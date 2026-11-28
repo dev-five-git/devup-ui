@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/eslint-plugin/package.json": "Patch"
-  },
-  "note": "Report a function given as a value to css, globalCss, keyframes and createGlobalStyle (also through Emotion, styled-components and vanilla-extract), such as createGlobalStyle`color: ${(p) => p.color};` or css({ color: () => 'red' }), in css-utils-literal-only. The build already refuses these; lint now reports them first with the new functionValue message. Functions called in a value and StyleX dynamic styles are not reported. No new build errors.",
-  "date": "2026-11-18T00:00:00.000Z"
-}

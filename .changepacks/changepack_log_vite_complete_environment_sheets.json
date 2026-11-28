@@ -1,5 +1,0 @@
-{
-  "changes": { "packages/vite-plugin/package.json": "Patch" },
-  "note": "Build again, once every environment is built, each Vite environment whose devup-ui sheets changed since, so client CSS also holds styles only a later environment (such as ssr) extracted, whatever the build order",
-  "date": "2026-11-15T00:00:00.000Z"
-}

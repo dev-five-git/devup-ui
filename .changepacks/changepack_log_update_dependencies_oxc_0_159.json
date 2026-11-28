@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch",
-    "packages/eslint-plugin/package.json": "Patch"
-  },
-  "note": "Update dependencies to their latest releases: Oxc 0.159 (with `oxc_sourcemap` 10, which `oxc_codegen` 0.159 now uses), napi 3.16 and typescript-eslint 8.73. Extracted CSS and class names are unchanged.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

@@ -1,1 +1,0 @@
-{"changes":{"packages/next-plugin/package.json":"Patch"},"note":"Reload the theme under Turbopack next dev when devup.json, a config it extends or the project's Tailwind CSS changes, and re-run the loaders that depend on it","date":"2026-11-15T00:00:00.000Z"}

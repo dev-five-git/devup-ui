@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/bun-plugin/package.json": "Patch"
-  },
-  "note": "The Bun plugin takes an `include` option, as the other plugins do, and compiles the published `.js` files of the listed packages. Before, only `.js` under `@devup-ui/` was loaded, so an uncompiled library's components threw `Cannot run on the runtime`. Each name matches that whole package, also in pnpm and Bun stores, and not the dependencies in its own `node_modules`",
-  "date": "2026-11-15T00:00:00.000Z"
-}

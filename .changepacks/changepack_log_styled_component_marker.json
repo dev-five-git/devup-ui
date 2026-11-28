@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch",
-    "packages/react/package.json": "Patch"
-  },
-  "note": "Every component compiled from `styled` carries a `styledComponentId` property, set once per file by a small helper, and the compat `isStyledComponent` returns true for it as styled-components does instead of always returning false",
-  "date": "2026-11-15T00:00:00.000Z"
-}

@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/metro-plugin/package.json": "Minor"
-  },
-  "note": "Add `@devup-ui/metro-plugin` (experimental, part of #411): `withDevupUI(metroConfig, options)` points Metro's `babelTransformerPath` at a transformer that compiles each file importing Devup UI for the platform Metro builds with `codeExtractNative`, then hands the code to the upstream transformer (the config's, else Expo's, else React Native's). Build errors show in Metro at the file, line and column with a code frame, and the source map of a compiled file points at the file as written. The cache key covers the upstream key, devup.json and its `extends` chain, the engine version and the options. The package is private and is not published yet.",
-  "date": "2026-11-20T00:00:00.000Z"
-}

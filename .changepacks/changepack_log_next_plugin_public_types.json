@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "Keep webpack out of the declarations `@devup-ui/next-plugin` publishes. `restoreSessionState` was typed through the internal engine loader, which pulled `@devup-ui/webpack-plugin` and webpack's own types (ajv, enhanced-resolve, schema-utils and more, 72 files) into the type check of every app whose `next.config.ts` imports the plugin. Next's type check now reads 72 fewer files and its `.next/cache/.tsbuildinfo` is about 26 KB smaller. The public API is unchanged.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

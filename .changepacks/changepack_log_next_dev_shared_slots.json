@@ -1,1 +1,0 @@
-{"changes":{"packages/next-plugin/package.json":"Patch"},"note":"Reserve shared class slots in path order before next dev extracts, so Turbopack class names no longer depend on request order","date":"2026-11-15T00:00:00.000Z"}
