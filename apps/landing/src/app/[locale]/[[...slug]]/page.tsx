@@ -1,8 +1,6 @@
 import { globSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { Fragment } from 'react'
-
 import { COMPONENT_GROUPS } from '@/constants'
 import { translatedPages } from '@/i18n/pages'
 
@@ -47,10 +45,8 @@ export default async function LocalizedPage({ params }: LocalizedPageProps) {
     )
   }
   const { default: Content } = await translation.load()
-  const Layout = translation.Layout ?? Fragment
-  return (
-    <Layout>
-      <Content />
-    </Layout>
+  return translation.layouts.reduceRight(
+    (children, Layout) => <Layout>{children}</Layout>,
+    <Content />,
   )
 }

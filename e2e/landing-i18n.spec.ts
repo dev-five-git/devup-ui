@@ -51,7 +51,7 @@ test('English remains the default and Korean overview is translated', async ({
     'https://devup-ui.com/ko/docs/build-errors',
   )
   await expect(
-    page.getByRole('link', { name: 'Edit this page' }),
+    page.getByRole('link', { name: '이 페이지 편집' }),
   ).toHaveAttribute(
     'href',
     /src\/app\/\(detail\)\/docs\/build-errors\/page\.ko\.mdx$/u,

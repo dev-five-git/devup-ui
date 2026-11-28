@@ -6,10 +6,13 @@ URL, including without JavaScript. Unknown URLs still return 404.
 
 The site uses next-intl for locale context and navigation. Because deployment is
 a static export, it uses explicit App Router paths instead of middleware rewrites.
-The shared [locale] catch-all renders registered translations and exports HTML
-redirects for untranslated public routes. Translations sit beside their English
-source, such as page.mdx and page.ko.mdx. A small map in src/i18n/pages.ts connects
-each translated module to its public URL and shared layout.
+The shared [locale] catch-all renders translations and exports HTML redirects
+for untranslated public routes. Translations sit beside their English source,
+such as page.mdx and page.ko.mdx, and nothing else registers them: script.js
+(run by dev, build and build:next) finds every page.ko.mdx and page.ko.tsx under
+src/app/(detail) and writes the git-ignored src/i18n/pages.generated.ts. A
+page's URL is its directory without route groups or [dynamic] segments, and it
+renders inside the same layout.tsx files below (detail) as its English page.
 
 ## Contributing a Korean translation
 
@@ -29,19 +32,12 @@ to merge before opening a translation PR.
    next-intl Link adds the locale; untranslated targets redirect to English.
 4. Set the canonical URL to /ko/docs/<path> and language alternatives to the
    English and Korean URLs. Keep the corresponding English metadata in sync.
-5. Register the English pathname in src/i18n/pages.ts, following Overview:
+5. Run node script.js (or restart bun dev) to pick up the new page and refresh
+   search data. There is nothing to register.
 
-```ts
-'/docs/installation': {
-  load: () => import('@/app/(detail)/docs/installation/page.ko.mdx'),
-  Layout: DocsLayout,
-},
-```
-
-For the team page, add src/app/(detail)/team/page.ko.mdx and register /team with
-the existing team layout. Reuse layouts directly; no Korean directory or layout
-wrapper is needed. Unregistered pages retain the English redirect. Run node
-script.js to refresh search data; there is no generated translation registry.
+For the team page, add src/app/(detail)/team/page.ko.mdx; it reuses the team
+layout automatically. No Korean directory or layout wrapper is needed. Pages
+without a Korean file keep the English redirect.
 
 ### Component references and TSX pages
 
@@ -50,11 +46,10 @@ files in src/app/(detail)/components/[component]/<name>. Use the English rendere
 src/app/(detail)/components/[component]/page.tsx as the composition reference;
 replace its computed MDX imports with imports from the translated files. Reuse
 getDemos and MdxCard, and import shared code through @/ paths. Do not copy demos.
-Register /components/<name> in src/i18n/pages.ts with its page.ko.tsx loader and
-the existing components layout.
+The page is served at /ko/components/<name> inside the components layout.
 
-For home, showcase and components overview, add page.ko.tsx beside page.tsx and
-register its pathname in src/i18n/pages.ts (home uses /). Translate the component
+For home, showcase and components overview, add page.ko.tsx beside page.tsx
+(home is src/app/(detail)/page.ko.tsx at /ko). Translate the component
 overview's Description.mdx as Description.ko.mdx beside it. Reuse the interactive
 components. Shared UI copy lives in src/i18n/messages/en.json and ko.json, one
 namespace per component; add matching keys to both. src/i18n/request.ts merges
@@ -78,6 +73,7 @@ Korean URLs on desktop/mobile, including links, tables, code and search.
 From the repository root:
 
 ```sh
+node apps/landing/script.js # writes src/i18n/pages.generated.ts for tsc
 bun ./node_modules/@typescript/native/bin/tsc --noEmit -p apps/landing/tsconfig.json
 bun run lint
 bunx playwright test e2e/landing-i18n.spec.ts
