@@ -12,11 +12,7 @@ const __s = StyleSheet.create({
 	e: { color: "red" },
 	f: { height: 8 }
 });
-const __u = (v, s) => {
-	if (typeof v === "number") return v * s;
-	const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v);
-	return m ? Number(m[1]) * (m[2] ? m[2] === "px" ? 1 : 16 : s) : v;
-};
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
 <Box style={[
 	on ? __s.a : __s.b,
 	big && __s.c,

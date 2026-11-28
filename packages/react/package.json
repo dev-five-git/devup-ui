@@ -65,6 +65,11 @@
     "./compat/vanilla-extract-css-utils": {
       "types": "./dist/compat/vanilla-extract-css-utils.d.ts"
     },
+    "./scale": {
+      "types": "./dist/scale.d.ts",
+      "import": "./dist/scale.js",
+      "require": "./dist/scale.cjs"
+    },
     "./stylex": {
       "types": "./dist/utils/stylex.d.ts",
       "import": "./dist/utils/stylex.js",

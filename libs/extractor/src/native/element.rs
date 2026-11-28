@@ -25,7 +25,7 @@ use super::props::{Declaration, Tokens, declarations, dynamic_keys, literal_leve
 use super::sheet::Sheet;
 use super::style::{Choice, Reads, State, Vars, cascade, in_theme, style_code, varied, when};
 use super::theme::{DEFAULT_BREAKPOINTS, selector_theme};
-use super::values::{Literal, NativeValue, ROOT_FONT_SIZE};
+use super::values::{Literal, NativeValue};
 use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
@@ -198,7 +198,7 @@ pub(super) fn compile(
         prelude.push_str(&sheet_prelude(&sheet, code));
     }
     if units_used.get() {
-        prelude.push_str(&units_declaration(&units));
+        prelude.push_str(&units_import(package, &units));
     }
     if !prelude.is_empty() {
         let at = imports.sheet_at.unwrap_or(code.len());
@@ -1324,14 +1324,12 @@ fn sheet_prelude(sheet: &Sheet, code: &str) -> String {
     )
 }
 
-/// The declaration of the function converting a value read at runtime as the
-/// build converts a literal: a number or a number in a string is multiplied by
-/// the scale `s`, a pixel length is its number, a `rem` or `em` length is
-/// in pixels, and any other value stays as it is
-pub(super) fn units_declaration(name: &str) -> String {
-    format!(
-        r#"const {name} = (v, s) => {{ if (typeof v === "number") return v * s; const m = typeof v === "string" && /^\s*(-?(?:\d+\.?\d*|\.\d+))(px|r?em)?\s*$/.exec(v); return m ? Number(m[1]) * (m[2] ? (m[2] === "px" ? 1 : {ROOT_FONT_SIZE}) : s) : v; }};"#
-    ) + "\n"
+/// The import of the conversion of values read at runtime as `name`: the
+/// package's `__devupNativeScale` multiplies a number or a number in a string
+/// by the scale, reads a pixel length as its number and a `rem` or `em`
+/// length in pixels, and keeps any other value
+fn units_import(package: &str, name: &str) -> String {
+    crate::runtime_units::import_code(package, crate::runtime_units::NATIVE_EXPORT, name, false)
 }
 
 /// The span of a child writing text, if it writes any

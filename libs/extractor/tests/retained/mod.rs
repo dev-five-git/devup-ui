@@ -25,6 +25,27 @@ use serde_json::Value;
 
 pub const BASE: &str = "import {styled} from '@devup-ui/react';const trace=[];const selected=true;const Base=styled.article({...((trace.push('controller'),selected)?{color:(trace.push('leaf'),'red')}:{}),color:'green'});export {Base,trace};";
 
+/// The runtime unit conversions the compiled output imports, as the package
+/// publishes them, declared as plain functions
+fn scale_module() -> String {
+    let arena = Allocator::default();
+    let source = include_str!("../../../../packages/react/src/scale.ts");
+    let mut program = Parser::new(&arena, source, SourceType::ts())
+        .parse()
+        .program;
+    let scoping = SemanticBuilder::new()
+        .build(&program)
+        .semantic
+        .into_scoping();
+    let _ = Transformer::new(
+        &arena,
+        std::path::Path::new("scale.ts"),
+        &TransformOptions::default(),
+    )
+    .build_with_scoping(scoping, &mut program);
+    Codegen::new().build(&program).code.replace("export ", "")
+}
+
 pub fn run(files: &[(&str, &str)], observation: &str) -> Value {
     run_with_reading(files, observation, true)
 }
@@ -66,7 +87,8 @@ pub fn run_with_options(files: &[(&str, &str)], observation: &str, options: RunO
                 code: code.clone(),
             })
     };
-    let mut script = String::from(
+    let mut script = scale_module();
+    script.push_str(
         r"const modules={};const frames=[];const order=[];
 function forwardRef(render){return {render};}
 function jsx(target,props){return {target,props};}
@@ -173,6 +195,7 @@ function slots(e){return Object.keys(e.props).filter(k=>k.startsWith('__devupCss
                                     "jsx" | "jsxs" | "jsxDEV" => Some("jsx"),
                                     "forwardRef" => Some("forwardRef"),
                                     "createElement" => Some("createElement"),
+                                    "__devupScale" => Some("__devupScale"),
                                     _ => None,
                                 };
                                 if let Some(helper) = helper {

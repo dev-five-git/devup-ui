@@ -125,7 +125,7 @@ fn explicit_runtime_values_when_spread_values_differ_remain_authored(#[case] res
     let source = format!("{BOX}export const a=(rest,x)=><Box p={{x}} {{...rest}}/>;");
     assert_eq!(
         whole::evaluate(&source, &format!("Object.values(a({rest},5).props.style)")).element,
-        serde_json::json!([5])
+        serde_json::json!(["20px"])
     );
 }
 

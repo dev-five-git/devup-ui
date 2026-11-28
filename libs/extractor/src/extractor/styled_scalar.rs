@@ -48,7 +48,11 @@ pub(in crate::extractor) fn captured<'a>(
         ),
         builder,
     );
-    let value = if pixels {
+    // A file with Devup UI's units converts the value where it is set, as a
+    // literal of its property is
+    let value = if crate::runtime_units::active() {
+        read()
+    } else if pixels {
         crate::imported_constants::local_rule_shapes::number_length_value(builder, read())
     } else if !crate::utils::keeps_bare_number(key)
         || css::disassemble_property(key).all(|property| crate::utils::is_unitless_key(&property))

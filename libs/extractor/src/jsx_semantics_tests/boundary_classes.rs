@@ -112,7 +112,7 @@ fn class_boundary_when_only_a_css_value_calls_keeps_its_single_read_inline() {
         actual.element["props"]["style"]
             .as_object()
             .and_then(|style| style.values().next()),
-        Some(&serde_json::json!(2))
+        Some(&serde_json::json!("8px"))
     );
     assert!(!code(&source).contains("__devupValue"));
 }

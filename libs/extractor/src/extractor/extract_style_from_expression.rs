@@ -1204,7 +1204,8 @@ pub(super) fn extract_projected<'a>(
                                 level,
                                 &format!("({})", code.trim_end().trim_end_matches(';')),
                                 selector.clone(),
-                            ),
+                            )
+                            .with_runtime_units(true),
                         ))],
                         ..ExtractResult::default()
                     }
@@ -1649,12 +1650,15 @@ pub fn dynamic_style<'a>(
         }
     } else {
         prepare(expression);
-        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
-            name,
-            level,
-            &expression_to_code(expression),
-            selector.clone(),
-        )))
+        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+            ExtractDynamicStyle::new(
+                name,
+                level,
+                &expression_to_code(expression),
+                selector.clone(),
+            )
+            .with_runtime_units(true),
+        ))
     }
 }
 
