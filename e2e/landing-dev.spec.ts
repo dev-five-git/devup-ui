@@ -37,8 +37,8 @@ test.beforeEach(async ({ page }) => {
 
 const routes = [
   ['/', '/'],
-  ['/docs/overview', '/docs/overview'],
   ['/ko', '/ko'],
+  ['/docs/overview', '/docs/overview'],
   ['/ko/docs/overview', '/ko/docs/overview'],
   ['/team', '/team'],
   ['/components/button', '/components/button'],
