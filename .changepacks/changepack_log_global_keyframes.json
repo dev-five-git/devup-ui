@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "packages/react/package.json": "Patch"
-  },
-  "note": "vanilla-extract's globalKeyframes(name, frames) now compiles in .css.ts/.css.js stylesheets, declaring @keyframes under the name as written, instead of being a build error. globalCss() takes a '@keyframes name' key the same way ('@keyframes fade': { from: {...}, to: {...} }), which before wrote invalid CSS such as '@keyframes fade from{...}'; keyframes declared by name go to the shared stylesheet. @devup-ui/react/compat declares globalKeyframes for @vanilla-extract/css. New build error at file:line:col: a '@keyframes' key in globalCss() whose name is not letters, digits, '-' and '_' (or starts with a digit), or that sits inside an at-rule.",
-  "date": "2026-11-18T00:00:00.000Z"
-}

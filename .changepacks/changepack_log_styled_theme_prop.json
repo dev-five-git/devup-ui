@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "A `theme` prop given to one element of a styled component whose styles read the theme (`<Card theme={{ brand: 'teal' }} />`) was kept on the element but never reached its CSS, which reads the theme as CSS variables. New build error: a `theme` attribute on an element of a styled component whose styles read the theme; wrap the element in a `ThemeProvider` with that theme instead",
-  "date": "2026-11-15T00:00:00.000Z"
-}

@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "With the debug option, vanilla-extract `style(rule, debugId)` and `styleVariants(..., debugId)` add a class named after the debug ID (`root-0-0`, `tone_primary-0-1`) that styles nothing, so the readable class list shows which style it came from; builds without debug are unchanged, and `keyframes` still ignores its debug ID",
-  "date": "2026-11-15T00:00:00.000Z"
-}

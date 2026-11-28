@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "packages/rsbuild-plugin/package.json": "Patch",
-    "packages/vite-plugin/package.json": "Patch",
-    "packages/webpack-plugin/package.json": "Patch"
-  },
-  "note": "Document library mode in the Vite, Webpack and Rsbuild plugin READMEs: a library built with `extractCss: false` is published uncompiled, and every application that uses it must list the package in `include`.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

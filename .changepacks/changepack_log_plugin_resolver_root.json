@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "packages/bun-plugin/package.json": "Patch",
-    "packages/rsbuild-plugin/package.json": "Patch",
-    "packages/webpack-plugin/package.json": "Patch"
-  },
-  "note": "Resolve the imports the extractor follows against the bundler's project root (webpack's context, the Rsbuild root, the root of Bun.build) instead of the working directory, so a build started from a parent directory, as monorepo tools do, reads that project's tsconfig.json paths and resolves the relative imports of its root-relative webpack ids under the project.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

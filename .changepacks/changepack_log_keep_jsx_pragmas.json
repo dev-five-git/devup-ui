@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "packages/bun-plugin/package.json": "Patch"
-  },
-  "note": "Keep leading JSX compiler pragmas through extraction, styled lowering, namespace rewrites and generated stylesheets with correct source maps. Enabled Emotion aliases keep the React JSX import-source compatibility bridge; other sources and opted-out Emotion are preserved. No new build errors.",
-  "date": "2026-10-17T00:00:00.000Z"
-}

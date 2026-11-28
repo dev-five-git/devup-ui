@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch",
-    "bindings/devup-ui-binding/package.json": "Patch"
-  },
-  "note": "styled-components v6 passes `shouldForwardProp` the element it renders as its second argument, not v5's validator, so a predicate calling that argument (`(prop, valid) => valid(prop)`) is now a located build error instead of output that throws at runtime; `typeof element === 'string'` is read from the target the component is declared with. Conditions an extended component repeats from its base, such as styled-components' `theme`, are merged once. The build still evaluates `shouldForwardProp` only for props it can name (those the styles read and those the predicate names) and adds no code that runs it, so a prop a spread or caller passes reaches the element even when the predicate rejects it; the styled-components migration and limitations docs list this as a known difference.",
-  "date": "2026-11-19T00:00:00.000Z"
-}

@@ -1,9 +1,0 @@
-{
-  "changes": {
-    "packages/webpack-plugin/package.json": "Patch",
-    "packages/rsbuild-plugin/package.json": "Patch",
-    "packages/next-plugin/package.json": "Patch"
-  },
-  "note": "webpack (and Next.js on webpack) and Rsbuild watch every config `devup.json` extends, as Vite does, and reload the theme when one is edited, added or deleted. Rsbuild did not reload `devup.json` itself in dev before; webpack only watched a `devup.json` that existed when the build started",
-  "date": "2026-11-15T00:00:00.000Z"
-}

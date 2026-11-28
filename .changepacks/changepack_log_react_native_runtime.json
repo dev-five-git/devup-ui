@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/react/package.json": "Patch"
-  },
-  "note": "Add `@devup-ui/react/native`, the React Native runtime the Metro build imports when a style differs by theme (part of #411). It only tells which theme shows (about 400 bytes minified and gzipped): the theme `setTheme` chose, else the dark theme while React Native's `Appearance` is dark, else the default theme. `useTheme`, `getTheme` and `setTheme` keep their web names, and `useTheme` reads a store with `useSyncExternalStore`. It reads no CSS and computes no style, and web builds never import it. `react-native` is an optional peer dependency.",
-  "date": "2026-11-20T00:00:00.000Z"
-}

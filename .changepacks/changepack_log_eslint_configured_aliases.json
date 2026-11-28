@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/eslint-plugin/package.json": "Patch"
-  },
-  "note": "Read the build plugin's `package` and `importAliases` options from the shared ESLint settings `settings['@devup-ui']`, merged with the default aliases as the build merges them, so the rules check the same imports the build compiles: a custom package name, added aliases, and default aliases turned off with `false`. A setting the build plugin would not take stops the lint run with its path. No new build errors.",
-  "date": "2026-11-15T00:00:00.000Z"
-}

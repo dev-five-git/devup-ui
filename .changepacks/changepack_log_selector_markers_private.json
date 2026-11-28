@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "bindings/devup-ui-wasm/package.json": "Patch"
-  },
-  "note": "Pin the component-selector marker rule with tests: a styled component a file keeps to itself (not exported) and no selector in that file names renders without a marker class, also when it is only extended or given withComponent there; selected or exported components keep it. The limitations page explains why exported components keep it until the build can know that no module selects them. No runtime changes or new build errors.",
-  "date": "2026-11-18T00:00:00.000Z"
-}
