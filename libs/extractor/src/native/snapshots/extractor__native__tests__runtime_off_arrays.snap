@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(one_theme(), false, code)"
+---
+error: test.tsx:2:6: `<Box>` cannot use `p` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that `runtime: false` turns off. Fix: give one value, or turn the runtime on
+test.tsx:3:6: `<Box>` cannot use `p` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that `runtime: false` turns off. Fix: give one value, or turn the runtime on
+test.tsx:4:25: `<Box>` cannot use `w` on React Native: a responsive value is chosen by the window width, which needs the React Native runtime that `runtime: false` turns off. Fix: give one value, or turn the runtime on

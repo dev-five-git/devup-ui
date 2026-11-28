@@ -8,6 +8,7 @@ on:
     branches:
       - main
       - feat/napi-binding
+      - feat/react-native-themes
 
 # Pull requests and every job below run read-only. Only the `release` and
 # `deploy-pages` jobs get write permissions, and they run on pushes to main
@@ -921,7 +922,7 @@ jobs:
           fi
           files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD)"
           echo "$files"
-          if grep -qE '^(libs/extractor/src/native/|libs/binding/|bindings/devup-ui-(binding|wasm)/|packages/(metro-plugin|plugin-utils)/|apps/expo/|\.github/workflows/publish\.yml$)' <<< "$files"; then
+          if grep -qE '^(libs/extractor/src/native/|libs/binding/|bindings/devup-ui-(binding|wasm)/|packages/(metro-plugin|plugin-utils)/|packages/react/src/native/|apps/expo/|\.github/workflows/publish\.yml$)' <<< "$files"; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -929,8 +930,9 @@ jobs:
 
   # The Expo example app (apps/expo) bundled for iOS and Android through
   # @devup-ui/metro-plugin, as a release build does. Devup UI compiles away,
-  # so no bundle may keep a module of @devup-ui/react or its runtime
-  # placeholder.
+  # so no bundle may keep a module of @devup-ui/react but its React Native
+  # runtime (`@devup-ui/react/native`), nor its runtime placeholder, and a
+  # file styled the same in every theme must not use that runtime.
   expo:
     needs: [build, native-changes]
     if: needs.native-changes.outputs.changed == 'true'

@@ -39,6 +39,7 @@ impl Problem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RuntimeFeature {
     Responsive,
+    Orientation,
     Theme,
     Pressed,
 }
@@ -47,6 +48,7 @@ impl RuntimeFeature {
     const fn what(self) -> &'static str {
         match self {
             Self::Responsive => "a responsive value is chosen by the window width",
+            Self::Orientation => "an orientation style is chosen by the orientation of the window",
             Self::Theme => "a theme variant is chosen by the theme the app shows",
             Self::Pressed => "a press style is chosen while the element is pressed",
         }
@@ -54,8 +56,9 @@ impl RuntimeFeature {
 
     const fn fix(self) -> &'static str {
         match self {
-            Self::Responsive => "give one value",
-            Self::Theme => "give the value for one theme",
+            Self::Responsive => "give one value, or turn the runtime on",
+            Self::Orientation => "remove it, or turn the runtime on",
+            Self::Theme => "give the value for one theme, or turn the runtime on",
             Self::Pressed => {
                 "pass a function to the `style` of a React Native `Pressable`, reading `pressed`"
             }
@@ -63,7 +66,7 @@ impl RuntimeFeature {
     }
 
     /// Why the feature cannot compile for `target`
-    pub(super) fn problem(self, target: NativeTarget) -> Problem {
+    pub(super) fn problem(self, target: &NativeTarget) -> Problem {
         let runtime = if target.runtime {
             "which needs the React Native runtime that this version does not include yet"
         } else {
@@ -73,10 +76,12 @@ impl RuntimeFeature {
     }
 }
 
-/// A theme token, read from the theme in a later version
-pub(super) fn theme_token(value: &str) -> Problem {
+/// Why the theme API `name` cannot be imported with `runtime: false`
+pub(super) fn theme_api(name: &str) -> Problem {
     Problem::new(
-        format!("the theme token in `{value}` is not read on React Native yet"),
-        "write the value itself",
+        format!(
+            "`{name}` reads or changes the theme the app shows, which needs the React Native runtime that `runtime: false` turns off"
+        ),
+        "remove it, or turn the runtime on",
     )
 }

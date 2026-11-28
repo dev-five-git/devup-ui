@@ -54,8 +54,9 @@ function fakeCompiler(
     map,
     free,
   }))
-  const compiler: NativeCompiler = { codeExtractNative: extract }
-  return { compiler, extract, free }
+  const registerTheme = mock()
+  const compiler: NativeCompiler = { codeExtractNative: extract, registerTheme }
+  return { compiler, extract, free, registerTheme }
 }
 
 function setup(
@@ -110,6 +111,28 @@ describe('transform', () => {
     expect(free).toHaveBeenCalledTimes(1)
     expect(host.requireModule.mock.calls).toEqual([['/upstream.js']])
     expect(host.loadCompiler.mock.calls).toEqual([['wasm']])
+  })
+
+  it('registers the theme of devup.json once, before compiling', () => {
+    const theme = {
+      colors: { light: { text: '#000' }, dark: { text: '#fff' } },
+    }
+    write('devup.json', JSON.stringify({ theme }))
+    const { compiler, extract, registerTheme } = fakeCompiler()
+    const { transformer } = setup({}, undefined, compiler)
+    transformer.transform(args('a.tsx'))
+    transformer.transform(args('b.tsx'))
+    expect(registerTheme.mock.calls).toEqual([[theme]])
+    expect(registerTheme.mock.invocationCallOrder[0]).toBeLessThan(
+      extract.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('registers an empty theme without devup.json', () => {
+    const { compiler, registerTheme } = fakeCompiler()
+    const { transformer } = setup({}, undefined, compiler)
+    transformer.transform(args('a.tsx'))
+    expect(registerTheme.mock.calls).toEqual([[{}]])
   })
 
   it('loads the settings, the upstream and the engine once', () => {

@@ -1,0 +1,94 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useBreakpoint as __useBreakpoint } from "@devup-ui/react/native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { margin: 8 },
+	b: { padding: 4 },
+	c: { padding: 12 },
+	d: { padding: 8 },
+	e: { padding: 16 },
+	f: { padding: 20 },
+	g: { padding: 32 },
+	h: {
+		padding: 8,
+		width: "50%"
+	},
+	i: { backgroundColor: "red" },
+	j: {
+		marginVertical: 1,
+		marginHorizontal: 2,
+		paddingVertical: 1,
+		paddingHorizontal: 2
+	},
+	k: {
+		margin: 3,
+		paddingVertical: 1,
+		paddingHorizontal: 2
+	},
+	l: {
+		margin: 3,
+		paddingVertical: 3,
+		paddingHorizontal: 4
+	},
+	m: { margin: 4 },
+	n: {
+		padding: 16,
+		margin: 8
+	},
+	o: {
+		padding: 4,
+		margin: 12,
+		gap: 4
+	},
+	p: {
+		padding: 8,
+		margin: 12,
+		gap: 8
+	},
+	q: {
+		padding: 8,
+		margin: 16,
+		gap: 8
+	},
+	r: {
+		paddingTop: 12,
+		paddingBottom: 12
+	},
+	s: {
+		paddingLeft: 4,
+		paddingRight: 4
+	},
+	t: {
+		paddingLeft: 8,
+		paddingRight: 8
+	}
+});
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
+export function Layout({ on, x }) {
+	const __b = __useBreakpoint();
+	return <VStack style={[__s.a, __b < 2 ? __s.b : __s.c]}>
+      <Box style={__b < 1 ? __s.b : __b < 2 ? __s.d : __b < 3 ? __s.c : __b < 4 ? __s.e : __b < 5 ? __s.f : __s.g} />
+      <Box style={__b < 1 ? null : __b < 3 ? __s.d : __s.h} />
+      <Box style={[__s.i, __b < 2 ? __s.b : __s.d]} />
+      <Box style={__b < 1 ? __s.j : __b < 2 ? __s.k : __s.l} />
+      <Box style={[{ padding: __u(x, 4) }, __b >= 1 && __s.d]} />
+      <Box style={[
+		on ? __s.b : __s.d,
+		__b >= 2 && __s.c,
+		on && __s.m,
+		__b >= 1 && { margin: __u(x, 4) }
+	]} />
+      <Box style={[on ? __b < 1 ? __s.b : __s.d : __s.c, on && (__b < 2 ? __s.m : __s.a)]} />
+      <Box style={__s.n} />
+      <Box style={__b < 1 ? __s.b : __s.d} />
+      <Box style={__b < 1 ? __s.o : __b < 2 ? __s.p : __s.q} />
+      <Box style={[__s.r, __b < 1 ? __s.s : __s.t]} />
+      <Box style={__s.e} />
+      <Box style={[__s.e, __b < 1 ? __s.b : __s.d]} />
+      <Box style={[on ? [{ padding: __u(x, 4) }, __b >= 1 && __s.d] : __s.c, __s.b]} />
+    </VStack>;
+}

@@ -31,11 +31,12 @@ export interface DevupUIMetroPluginOptions {
    */
   include?: string[]
   /**
-   * Whether the React Native runtime may be imported for what needs it
-   * (responsive values, themes, `_pressed`). Defaults to `true`; `false`
-   * keeps every file free of runtime imports and makes those styles build
-   * errors. This version has no runtime yet, so they are build errors either
-   * way.
+   * Whether the React Native runtime (`@devup-ui/react/native`) may be
+   * imported for what needs it: a value that differs by theme, `_theme*` with
+   * more than one theme, and `useTheme`, `getTheme` and `setTheme`. Defaults
+   * to `true`; `false` keeps every file free of runtime imports and makes
+   * those build errors, while a token of a single theme still compiles to its
+   * value.
    */
   runtime?: boolean
   /**

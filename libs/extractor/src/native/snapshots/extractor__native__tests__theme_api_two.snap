@@ -1,0 +1,13 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: output
+---
+import { View as Box, Text } from "react-native";
+import { useTheme, setTheme as set, getTheme } from "@devup-ui/react/native";
+import { type DevupTheme } from "@devup-ui/react";
+import { defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+export function Toggle() {
+	const theme = useTheme();
+	return <Box onPress={() => set(getTheme() === "dark" ? "light" : "dark")}><Text>{theme}</Text></Box>;
+}
