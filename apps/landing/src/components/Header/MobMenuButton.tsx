@@ -2,6 +2,7 @@
 
 import { css } from '@devup-ui/react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 import { replaceQuery, useQueryParam } from '@/utils/use-query-param'
 
@@ -10,12 +11,13 @@ interface MobMenuButtonProps {
 }
 
 export function MobMenuButton({ children }: MobMenuButtonProps) {
+  const t = useTranslations('Header')
   const { replace } = useRouter()
   const menu = useQueryParam('menu') === '1'
   return (
     <>
       <svg
-        aria-label="Menu Button"
+        aria-label={t('menuButton')}
         className={css({
           color: '$text',
         })}

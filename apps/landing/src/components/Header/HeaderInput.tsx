@@ -1,6 +1,9 @@
+'use client'
 import { Flex, Image, Input } from '@devup-ui/react'
+import { useTranslations } from 'next-intl'
 
 export function HeaderInput(props: React.ComponentProps<'input'>) {
+  const t = useTranslations('Header')
   return (
     <Flex
       alignItems="center"
@@ -19,7 +22,7 @@ export function HeaderInput(props: React.ComponentProps<'input'>) {
         border="none"
         color="$text"
         outline="none"
-        placeholder="Search documentation..."
+        placeholder={t('searchPlaceholder')}
         typography="caption"
         w="100%"
         {...props}
