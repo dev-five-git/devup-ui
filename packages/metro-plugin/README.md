@@ -140,21 +140,75 @@ is in that orientation.
 A value read at runtime in an array (`p={[x, 2]}`) applies from its
 breakpoint on as it is.
 
+## Press styles
+
+`_active` (or its React Native name, `_pressed`) applies its styles while the
+element is pressed. React Native tells only a `Pressable` whether it is
+pressed, so the build passes it a function for its `style`:
+
+```tsx
+<Box onPress={open} bg="$primary" _active={{ opacity: 0.6 }} />
+// renders
+<Pressable onPress={open} style={({ pressed }) => [styles.a, pressed && styles.b]} />
+```
+
+A `Button` is already a `Pressable`. A `Box`, `Flex`, `Center` or `VStack`
+with a press style becomes one, so it takes `onPress` and the other props of
+`Pressable`. A press style works with `runtime: false` too, as it needs no
+runtime. It is a build error on a `Text`, an `Image` or an `Input`, and with
+`as`.
+
+## `css()` and `className`
+
+`css()` compiles to the style it describes, the value React Native's `style`
+takes, and `className` on a Devup UI element passes it on:
+
+```tsx
+const button = css({ borderRadius: '8px', px: 5 })
+
+function Save() {
+  const label = css({ color: '$text', fontSize: [14, null, 18] })
+  return (
+    <Button className={button} bg="$primary">
+      <Text className={css(label, saving && { opacity: 0.5 })}>Save</Text>
+    </Button>
+  )
+}
+```
+
+`css()` takes what it does on the web: objects of style props (with
+responsive values, theme tokens and the theme, platform and orientation
+blocks), conditions choosing between them, what another `css()` gives, and
+CSS text (`` css`padding: 8px; background-color: $primary;` ``, each
+interpolation a whole value). The element's style props apply after its
+`className`, and its `style` prop last.
+
+A `css()` whose styles differ by theme, breakpoint or orientation reads the
+runtime, so it must be called in a function component or a hook. One that does
+not can be called anywhere, such as at the top of the file. These are build
+errors:
+
+- a class name (`className="p-4"`, `css('p-4')`)
+- a press style in `css()`: give `_active` to the element itself
+- selectors, nesting and at-rules in CSS text
+
+`css()` gives a style rather than a class on React Native, so pass it to
+`className`, not to the `style` of a React Native component, which TypeScript
+types as a string.
+
 ## Limits of this version
 
 Only styles the build can decide are supported: literals, values read at
 runtime, theme tokens, responsive values, conditions between them and the
-platform, theme and orientation blocks. These are build errors, reported by
-Metro at the file, line and column:
+platform, theme, orientation and press blocks, and `css()`. These are build
+errors, reported by Metro at the file, line and column:
 
-- interaction states (`_hover`, `_active`, `_pressed`, `_focus`, ...)
-- `css()`, `styled()`, `globalCss()`, `keyframes()` and `Grid`
+- interaction states other than `_active`/`_pressed` (`_hover`, `_focus`, ...)
+- `styled()`, `globalCss()`, `keyframes()` and `Grid`
 - any prop React Native has no style for
 - with `runtime: false`, a value that differs by theme or breakpoint,
   `_theme*` with more than one theme, `_portrait`, `_landscape`, and
   `useTheme`, `getTheme` and `setTheme`
-
-The runtime that brings `_pressed` comes in a later version.
 
 Metro reads devup.json when it starts, so restart Metro after changing it
 (`--reset-cache` is not needed).

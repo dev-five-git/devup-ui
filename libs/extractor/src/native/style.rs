@@ -18,6 +18,8 @@ pub(super) enum State {
     AtLeast(usize),
     /// The window is in landscape (`true`) or portrait (`false`) orientation
     Landscape(bool),
+    /// The element is pressed
+    Pressed,
 }
 
 /// The styles one prop declares
@@ -43,6 +45,8 @@ pub(super) enum Choice {
     When { state: State, choice: Box<Self> },
     /// Choices applied one after the other
     All(Vec<Self>),
+    /// A style passed on whole, by its code, which may declare any style
+    Given(String),
 }
 
 /// What the runtime tells a style: which theme shows, which breakpoint the
@@ -55,6 +59,7 @@ pub(super) struct Reads {
 }
 
 impl Reads {
+    /// Whether it reads what a hook of the runtime gives
     pub(super) const fn any(self) -> bool {
         self.theme || self.breakpoint || self.landscape
     }
@@ -78,6 +83,7 @@ pub(super) struct Vars<'v> {
     pub theme: &'v str,
     pub breakpoint: &'v str,
     pub landscape: &'v str,
+    pub pressed: &'v str,
 }
 
 /// The choice of `grid`, as small as it can be: the last breakpoints that
@@ -172,6 +178,7 @@ impl Choice {
             Self::Empty => false,
             Self::Static(declarations) => declares(declarations, key),
             Self::Dynamic(values) => values.iter().any(|(name, _)| name == key),
+            Self::Given(_) => true,
             Self::Condition {
                 consequent,
                 alternate,
@@ -189,7 +196,7 @@ impl Choice {
     /// What the choice reads from the runtime
     pub(super) fn reads(&self) -> Reads {
         match self {
-            Self::Empty | Self::Static(_) | Self::Dynamic(_) => Reads::default(),
+            Self::Empty | Self::Static(_) | Self::Dynamic(_) | Self::Given(_) => Reads::default(),
             Self::Condition {
                 consequent,
                 alternate,
@@ -207,12 +214,27 @@ impl Choice {
         }
     }
 
+    /// Whether the choice applies styles only while the element is pressed
+    pub(super) fn pressed(&self) -> bool {
+        match self {
+            Self::Condition {
+                consequent,
+                alternate,
+                ..
+            } => consequent.pressed() || alternate.pressed(),
+            Self::When { state, choice } => *state == State::Pressed || choice.pressed(),
+            Self::All(choices) => choices.iter().any(Self::pressed),
+            _ => false,
+        }
+    }
+
     /// The code of the choice, its static styles named in `sheet`
     fn code(&self, sheet: &mut Sheet, vars: &Vars<'_>) -> String {
         match self {
             Self::Empty => "null".to_string(),
             Self::Static(declarations) => sheet.reference(declarations),
             Self::Dynamic(values) => object_code(values),
+            Self::Given(code) => code.clone(),
             Self::Condition {
                 test,
                 consequent,
@@ -290,6 +312,7 @@ impl State {
             Self::AtLeast(level) => format!("{} >= {level}", vars.breakpoint),
             Self::Landscape(true) => vars.landscape.to_string(),
             Self::Landscape(false) => format!("!{}", vars.landscape),
+            Self::Pressed => vars.pressed.to_string(),
         }
     }
 }
@@ -545,6 +568,16 @@ fn ordered(choices: Vec<Choice>) -> Vec<Choice> {
         .collect()
 }
 
+/// One choice applying `choices` one after the other, as small as it can be
+pub(super) fn combined(choices: Vec<Choice>) -> Choice {
+    let mut choices = ordered(choices);
+    match choices.len() {
+        0 => Choice::Empty,
+        1 => choices.remove(0),
+        _ => Choice::All(choices),
+    }
+}
+
 /// `choices` with the choices of each `All` in its place
 fn flattened(choices: Vec<Choice>) -> Vec<Choice> {
     choices
@@ -562,12 +595,13 @@ pub(super) struct StyleCode {
     pub reads: Reads,
 }
 
-/// The code of the `style` an element takes: its choices, then the code of
-/// the styles it is given whole (a spread's `style`, its own `style` prop);
-/// `None` when its props declare no style, and it keeps what it is given
+/// The code of the `style` an element takes: the code of its classes (what
+/// `className` gives), its choices, then the code of the styles it is given
+/// whole (a spread's `style`, its own `style` prop); `None` when it has no
+/// class and its props declare no style, and it keeps what it is given
 pub(super) fn style_code(
     choices: Vec<Choice>,
-    given: Vec<String>,
+    (classes, given): (Vec<String>, Vec<String>),
     sheet: &mut Sheet,
     vars: &Vars<'_>,
 ) -> Option<StyleCode> {
@@ -575,13 +609,11 @@ pub(super) fn style_code(
     let reads = choices.iter().fold(Reads::default(), |reads, choice| {
         reads.union(choice.reads())
     });
-    let mut entries: Vec<String> = choices
-        .iter()
-        .map(|choice| match choice {
-            Choice::Varied(grid) => grid_code(grid, sheet, vars),
-            choice => choice.code(sheet, vars),
-        })
-        .collect();
+    let mut entries = classes;
+    entries.extend(choices.iter().map(|choice| match choice {
+        Choice::Varied(grid) => grid_code(grid, sheet, vars),
+        choice => choice.code(sheet, vars),
+    }));
     if entries.is_empty() {
         return None;
     }

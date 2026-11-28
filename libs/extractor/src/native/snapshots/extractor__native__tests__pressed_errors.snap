@@ -1,0 +1,9 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+error: test.tsx:2:7: `<Text>` cannot use `_pressed` on React Native: a press style needs React Native's `Pressable`, and the element renders React Native's `Text`. Fix: wrap it in a `Box` or a `Button` with `_pressed`
+test.tsx:3:8: `<Image>` cannot use `_pressed` on React Native: a press style needs React Native's `Pressable`, and the element renders React Native's `Image`. Fix: wrap it in a `Box` or a `Button` with `_pressed`
+test.tsx:4:8: `<Input>` cannot use `_pressed` on React Native: a press style needs React Native's `Pressable`, and the element renders React Native's `TextInput`. Fix: wrap it in a `Box` or a `Button` with `_pressed`
+test.tsx:5:25: `<Box>` cannot use `_pressed` on React Native: a press style makes the element React Native's `Pressable`, which cannot render the component `as` gives. Fix: remove `as`, or pass a function reading `pressed` to the `style` of a `Pressable`
+test.tsx:6:6: `<Box>` cannot use `_pressed` on React Native: `_pressed` takes an object of styles. Fix: write the styles in an object, such as `_pressed={{ p: 2 }}`

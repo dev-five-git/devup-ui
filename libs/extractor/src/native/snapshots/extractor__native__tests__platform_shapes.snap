@@ -7,6 +7,5 @@ test.tsx:2:32: `<Box>` cannot use `...` on React Native: the build reads only th
 test.tsx:2:41: `<Box>` cannot use `[key]` on React Native: the build reads only keys written in a block. Fix: write the key itself
 test.tsx:2:51: `<Box>` cannot use `onPress` on React Native: a block holds only style props. Fix: pass it to the element itself
 test.tsx:2:63: `<Box>` cannot use `_hover` on React Native: React Native has no selectors, pseudo-elements or media queries. Fix: remove it, or write the style the element takes in every state
-test.tsx:2:75: `<Box>` cannot use `_pressed` on React Native: a press style is chosen while the element is pressed, which needs the React Native runtime that this version does not include yet. Fix: pass a function to the `style` of a React Native `Pressable`, reading `pressed`
 test.tsx:2:89: `<Box>` cannot use `_web` on React Native: `_web` takes an object of styles. Fix: write the styles in an object, such as `_web={{ p: 2 }}`
 test.tsx:2:103: `<Box>` cannot use `as` on React Native: a block holds only style props. Fix: pass it to the element itself

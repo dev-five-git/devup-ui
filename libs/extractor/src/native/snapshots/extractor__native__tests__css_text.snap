@@ -1,0 +1,28 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), runtime, code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useThemeIndex as __useThemeIndex, defineThemes as __defineThemes } from "@devup-ui/react/native";
+__defineThemes(["light", "dark"], 1);
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: {
+		paddingVertical: 8,
+		paddingHorizontal: 16,
+		fontWeight: "bold"
+	},
+	b: { backgroundColor: "#5a44ff" },
+	c: { backgroundColor: "#8c7bff" }
+});
+import { __devupNativeScale as __u } from "@devup-ui/react/scale";
+export function A({ size }) {
+	const __t = __useThemeIndex();
+	const s = [
+		__s.a,
+		[__s.b, __s.c][__t],
+		{ borderRadius: __u(size, 4) }
+	];
+	return <Box style={s} />;
+}
+export const t = null;

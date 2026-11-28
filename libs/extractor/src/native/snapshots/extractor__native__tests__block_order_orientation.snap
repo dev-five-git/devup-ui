@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/native/tests.rs
+expression: "compile_themed(two_themes(), true, &code)"
+---
+import { View as Box, Pressable as Button, View as Center, View as Flex, Image, TextInput as Input, Text, View as VStack } from "react-native";
+import { useLandscape as __useLandscape } from "@devup-ui/react/native";
+import { StyleSheet } from "react-native";
+const __s = StyleSheet.create({
+	a: { padding: 8 },
+	b: { padding: 4 }
+});
+export function A() {
+	const __l = __useLandscape();
+	return <Box style={[__s.a, __l && __s.b]} />;
+}

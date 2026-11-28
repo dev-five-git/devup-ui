@@ -2,8 +2,7 @@
 source: libs/extractor/src/native/tests.rs
 expression: "compile_for(NativePlatform::Ios, false, code)"
 ---
-error: test.tsx:1:10: `css` from `@devup-ui/react` cannot be used on React Native: `css` is not compiled for React Native yet. Fix: write the styles as props of a Devup UI component
-test.tsx:1:15: `styled` from `@devup-ui/react` cannot be used on React Native: `styled` is not compiled for React Native yet. Fix: write the styles as props of a Devup UI component
+error: test.tsx:1:15: `styled` from `@devup-ui/react` cannot be used on React Native: `styled` is not compiled for React Native yet. Fix: write the styles as props of a Devup UI component
 test.tsx:1:23: `globalCss` from `@devup-ui/react` cannot be used on React Native: React Native has no document and no global stylesheet. Fix: remove it from the React Native build
 test.tsx:1:34: `ThemeScript` from `@devup-ui/react` cannot be used on React Native: React Native has no document and no global stylesheet. Fix: remove it from the React Native build
 test.tsx:1:47: `initTheme` from `@devup-ui/react` cannot be used on React Native: React Native has no document and no global stylesheet. Fix: remove it from the React Native build

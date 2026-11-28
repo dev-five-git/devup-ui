@@ -3,11 +3,11 @@
 //! component its import is now bound to.
 
 use oxc_ast::ast::{
-    ArrayExpression, ArrayExpressionElement, ArrowFunctionExpression, ExportDefaultDeclaration,
-    Expression, Function, FunctionBody, IdentifierReference, JSXAttribute, JSXAttributeItem,
-    JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement, JSXElementName, JSXExpression,
-    LogicalOperator, ObjectExpression, ObjectPropertyKind, Program, TSType, UnaryOperator,
-    VariableDeclarator,
+    ArrayExpression, ArrayExpressionElement, ArrowFunctionExpression, CallExpression,
+    ExportDefaultDeclaration, Expression, Function, FunctionBody, IdentifierReference,
+    JSXAttribute, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXChild, JSXElement,
+    JSXElementName, JSXExpression, LogicalOperator, ObjectExpression, ObjectPropertyKind, Program,
+    TSType, TaggedTemplateExpression, UnaryOperator, VariableDeclarator,
 };
 use std::cell::Cell;
 use std::fmt::Write;
@@ -30,6 +30,8 @@ use super::{NativePlatform, NativeTarget, REACT_NATIVE, RUNTIME, Replacement};
 use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
 
+mod css_call;
+
 /// The changes compiling a file makes, or why it cannot compile
 pub(super) struct Compiled {
     pub replacements: Vec<Replacement>,
@@ -45,6 +47,9 @@ struct Runtime {
     breakpoint: String,
     /// The variable holding whether the window is in landscape
     landscape: String,
+    /// The variable holding whether the element is pressed, in the function
+    /// `Pressable` calls for its style
+    pressed: String,
     /// The hooks reading each, by what they read
     hooks: [String; 3],
     /// What the hooks the file calls read
@@ -71,6 +76,7 @@ impl Runtime {
             index: fresh_name("__t", code),
             breakpoint: fresh_name("__b", code),
             landscape: fresh_name("__l", code),
+            pressed: fresh_name("__p", code),
             hooks: HOOKS.map(|hook| fresh_name(&format!("__{hook}"), code)),
             hooks_used: Reads::default(),
             wrapper: fresh_name("__Themed", code),
@@ -87,6 +93,7 @@ impl Runtime {
             theme: &self.index,
             breakpoint: &self.breakpoint,
             landscape: &self.landscape,
+            pressed: &self.pressed,
         }
     }
 
@@ -169,9 +176,13 @@ pub(super) fn compile(
         target,
         scoping,
         components: &imports.components,
+        css: &imports.css,
         sheet: Sheet::new(fresh_name("__s", code)),
         units: fresh_name("__u", code),
         units_used: Cell::new(false),
+        pressable: fresh_name("__Pressable", code),
+        pressable_used: false,
+        press: None,
         runtime: Runtime::new(code),
         theme_scope: None,
         frames: Vec::new(),
@@ -179,13 +190,15 @@ pub(super) fn compile(
         replacements: imports.replacements,
         errors: imports.errors,
     };
-    if !visitor.components.is_empty() {
+    if !visitor.components.is_empty() || !visitor.css.is_empty() {
         visitor.visit_program(program);
     }
     let Elements {
         sheet,
         units,
         units_used,
+        pressable,
+        pressable_used,
         runtime,
         mut replacements,
         errors,
@@ -194,6 +207,12 @@ pub(super) fn compile(
     let mut prelude = runtime
         .prelude(target, imports.theme_api)
         .unwrap_or_default();
+    if pressable_used {
+        let _ = writeln!(
+            prelude,
+            "import {{ Pressable as {pressable} }} from \"{REACT_NATIVE}\";"
+        );
+    }
     if !sheet.is_empty() {
         prelude.push_str(&sheet_prelude(&sheet, code));
     }
@@ -217,17 +236,17 @@ enum Prop {
     As,
     /// `style`, given whole
     Style,
+    /// `className`, the styles `css()` gives
+    ClassName,
     /// A style prop
     Declares,
     /// `_ios`, `_android` or `_web`: styles for one platform
     Platform(NativePlatform),
     /// `_themeDark` and the like: styles for the theme named
     Theme(String),
-    /// `_landscape` (`true`) or `_portrait` (`false`): styles for the
-    /// orientation of the window
-    Orientation(bool),
-    /// What needs the React Native runtime
-    Runtime(RuntimeFeature),
+    /// `_landscape`, `_portrait` and `_pressed`: styles applied while the
+    /// window is in that orientation or the element is pressed
+    When(State),
     /// What React Native has no equivalent of
     Unsupported(Problem),
     /// A prop the element passes on to the React Native component
@@ -242,13 +261,10 @@ fn classify(name: &str) -> Prop {
         "_ios" => Prop::Platform(NativePlatform::Ios),
         "_android" => Prop::Platform(NativePlatform::Android),
         "_web" => Prop::Platform(NativePlatform::Web),
-        "_pressed" | "_active" => Prop::Runtime(RuntimeFeature::Pressed),
-        "_portrait" => Prop::Orientation(false),
-        "_landscape" => Prop::Orientation(true),
-        "className" => Prop::Unsupported(Problem::new(
-            "React Native has no class names",
-            "write the styles as props, or pass them in `style`",
-        )),
+        "_portrait" => Prop::When(State::Landscape(false)),
+        "_landscape" => Prop::When(State::Landscape(true)),
+        "_pressed" | "_active" => Prop::When(State::Pressed),
+        "className" => Prop::ClassName,
         "typography" => Prop::Declares,
         "styleOrder" | "styleVars" => Prop::Unsupported(Problem::new(
             "React Native has no stylesheet order and no CSS variables",
@@ -296,11 +312,19 @@ struct Elements<'s> {
     target: &'s NativeTarget,
     scoping: &'s Scoping,
     components: &'s FxHashMap<SymbolId, (ExportVariableKind, String)>,
+    /// The bindings of `css`
+    css: &'s FxHashSet<SymbolId>,
     sheet: Sheet,
     /// The name of the function converting values read at runtime
     units: String,
     /// Whether a value read at runtime is converted
     units_used: Cell<bool>,
+    /// The name React Native's `Pressable` is imported under, for an element
+    /// that is a `View` but takes a press style
+    pressable: String,
+    pressable_used: bool,
+    /// The offset and the name of the first press style of the element read
+    press: Option<(u32, String)>,
     runtime: Runtime,
     /// The theme of the `_theme*` block being read, whose tokens resolve in
     /// that theme alone
@@ -316,13 +340,22 @@ struct Elements<'s> {
 /// What the props of one element give its `style`
 #[derive(Default)]
 struct Styles {
+    /// The code of what `className` gives, before the style props
+    classes: Vec<String>,
     choices: Vec<Choice>,
+    /// The styles of the theme, orientation and press blocks, which apply
+    /// after the other styles whatever the order of the props, as their
+    /// selectors and media queries do on the web
+    blocks: Vec<Choice>,
     /// The code of each style given whole, in prop order
     given: Vec<String>,
     /// The span of each prop leaving the element once it takes `style`
     removed: Vec<Span>,
     /// The `style` prop, which leaves the element with the style props
     style: Option<Span>,
+    /// The `style` prop's value compiled, which it keeps when the element
+    /// takes no other style
+    kept: Option<Replacement>,
     /// A spread whose `style` cannot be read twice
     opaque_spread: Option<Span>,
 }
@@ -343,10 +376,34 @@ impl<'a> Visit<'a> for Elements<'_> {
                     "`{local}` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<{local} />`, or use a React Native component here"
                 ),
             ));
+        } else if self.is_css_reference(identifier) {
+            self.errors.push((
+                identifier.span.start,
+                format!(
+                    "`{}` can only be called on React Native: the build compiles each call into styles. Fix: call it where the styles are used",
+                    identifier.name
+                ),
+            ));
         }
     }
 
     fn visit_ts_type(&mut self, _: &TSType<'a>) {}
+
+    fn visit_tagged_template_expression(&mut self, template: &TaggedTemplateExpression<'a>) {
+        if self.is_css(&template.tag) {
+            self.css_template(template);
+        } else {
+            walk::walk_tagged_template_expression(self, template);
+        }
+    }
+
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if self.is_css(&call.callee) {
+            self.css_call(call);
+        } else {
+            walk::walk_call_expression(self, call);
+        }
+    }
 
     fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
         if let (Some(name), Some(init)) = (declarator.id.get_identifier_name(), &declarator.init)
@@ -571,7 +628,7 @@ impl<'a> Elements<'_> {
         } else {
             None
         };
-        feature.map_or(Ok(()), |feature| Err(feature.problem(self.target)))
+        feature.map_or(Ok(()), |feature| Err(feature.problem()))
     }
 
     /// Compile one Devup UI element
@@ -605,6 +662,10 @@ impl<'a> Elements<'_> {
             }
         }
         let retagged = tag.is_some();
+        let press = self.press.take();
+        if let Some(press) = press.filter(|_| styles.blocks.iter().any(Choice::pressed)) {
+            tag = self.pressable(press, kind, local, tag);
+        }
         self.finish(element, styles, (tag, local), previous_end);
         self.children(element, kind, local, retagged);
     }
@@ -634,6 +695,7 @@ impl<'a> Elements<'_> {
                 return self.tag(attribute, local);
             }
             Prop::Style => self.given_style(attribute, span, local, styles),
+            Prop::ClassName => self.class_name(attribute, span, local, styles),
             Prop::Declares => {
                 styles.removed.push(span);
                 match self.value_choice(name, attribute.value.as_ref()) {
@@ -661,22 +723,18 @@ impl<'a> Elements<'_> {
                     attribute.span.start,
                     local,
                 );
-                styles.choices.extend(choices);
+                styles.blocks.extend(choices);
             }
-            Prop::Orientation(landscape) => {
+            Prop::When(state) => {
                 styles.removed.push(span);
-                let choices = self.orientation_block(
+                let choices = self.state_block(
                     attribute_expression(attribute),
-                    (name, landscape),
+                    (name, state),
                     attribute.span.start,
                     local,
                 );
-                styles.choices.extend(choices);
+                styles.blocks.extend(choices);
             }
-            Prop::Runtime(feature) => self.error(
-                attribute.span.start,
-                feature.problem(self.target).on(local, name),
-            ),
             Prop::Unsupported(problem) => self.error(attribute.span.start, problem.on(local, name)),
             Prop::Pass => self.pass(attribute),
         }
@@ -700,11 +758,11 @@ impl<'a> Elements<'_> {
     ) {
         match attribute_expression(attribute) {
             Some(expression) => {
-                styles
-                    .given
-                    .push(expression.span().source_text(self.code).to_string());
+                let code = self.rewritten(expression);
+                let at = expression.span();
+                styles.kept = Some((at.start as usize, at.end as usize, code.clone()));
+                styles.given.push(code);
                 styles.style = Some(span);
-                self.visit_expression(expression);
             }
             None => self.error(
                 attribute.span.start,
@@ -808,10 +866,7 @@ impl<'a> Elements<'_> {
         };
         let count = self.target.theme.count();
         if count > 1 && !self.target.runtime {
-            self.error(
-                offset,
-                RuntimeFeature::Theme.problem(self.target).on(local, name),
-            );
+            self.error(offset, RuntimeFeature::Theme.problem().on(local, name));
             return Vec::new();
         }
         if self.theme_scope.is_some_and(|scope| scope != index) {
@@ -826,33 +881,36 @@ impl<'a> Elements<'_> {
             .collect()
     }
 
-    /// The styles of `_landscape` or `_portrait`, `name` being the prop: they
-    /// apply only while the window is in that orientation
-    fn orientation_block(
+    /// The styles of `_landscape`, `_portrait` or `_pressed`, `name` being
+    /// the prop: they apply only while `state` holds
+    fn state_block(
         &mut self,
         value: Option<&Expression<'a>>,
-        (name, landscape): (&str, bool),
+        (name, state): (&str, State),
         offset: u32,
         local: &str,
     ) -> Vec<Choice> {
-        if !self.target.runtime {
+        // `Pressable` tells whether it is pressed; only the orientation needs
+        // the runtime
+        if state == State::Pressed {
+            self.press.get_or_insert_with(|| (offset, name.to_string()));
+        } else if !self.target.runtime {
             self.error(
                 offset,
-                RuntimeFeature::Orientation
-                    .problem(self.target)
-                    .on(local, name),
+                RuntimeFeature::Orientation.problem().on(local, name),
             );
             return Vec::new();
         }
         self.block(value, name, offset, local)
             .into_iter()
-            .map(|choice| when(State::Landscape(landscape), choice))
+            .map(|choice| when(state, choice))
             .collect()
     }
 
     /// The styles of an object of style props
     fn object_choices(&mut self, object: &ObjectExpression<'a>, local: &str) -> Vec<Choice> {
         let mut choices = Vec::new();
+        let mut blocks = Vec::new();
         for property in &object.properties {
             let ObjectPropertyKind::ObjectProperty(property) = property else {
                 self.error(
@@ -882,8 +940,12 @@ impl<'a> Elements<'_> {
                 );
                 continue;
             };
-            choices.extend(self.object_property(&key, &property.value, property.span.start, local));
+            let block = matches!(classify(&key), Prop::Theme(_) | Prop::When(_));
+            let property_choices =
+                self.object_property(&key, &property.value, property.span.start, local);
+            if block { &mut blocks } else { &mut choices }.extend(property_choices);
         }
+        choices.extend(blocks);
         choices
     }
 
@@ -909,14 +971,11 @@ impl<'a> Elements<'_> {
             Prop::Theme(theme) => {
                 return self.theme_block(Some(value), (key, &theme), offset, local);
             }
-            Prop::Orientation(landscape) => {
-                return self.orientation_block(Some(value), (key, landscape), offset, local);
-            }
-            Prop::Runtime(feature) => {
-                self.error(offset, feature.problem(self.target).on(local, key));
+            Prop::When(state) => {
+                return self.state_block(Some(value), (key, state), offset, local);
             }
             Prop::Unsupported(problem) => self.error(offset, problem.on(local, key)),
-            Prop::As | Prop::Style | Prop::Pass => self.error(
+            Prop::As | Prop::Style | Prop::ClassName | Prop::Pass => self.error(
                 offset,
                 Problem::new(
                     "a block holds only style props",
@@ -1020,7 +1079,7 @@ impl<'a> Elements<'_> {
             return self.static_choice(name, &literals);
         }
         if !self.target.runtime {
-            return Err(RuntimeFeature::Responsive.problem(self.target));
+            return Err(RuntimeFeature::Responsive.problem());
         }
         let mut choices = Vec::with_capacity(items.len());
         for (level, expression) in items {
@@ -1112,16 +1171,33 @@ impl<'a> Elements<'_> {
         attributes_end: u32,
     ) {
         let Styles {
-            choices,
+            classes,
+            mut choices,
+            blocks,
             given,
             mut removed,
             style,
+            kept,
             opaque_spread,
         } = styles;
-        let style_code = style_code(choices, given, &mut self.sheet, &self.runtime.vars());
+        choices.extend(blocks);
+        let pressed = choices.iter().any(Choice::pressed);
+        let mut style_code = style_code(
+            choices,
+            (classes, given),
+            &mut self.sheet,
+            &self.runtime.vars(),
+        );
         let reads = style_code
             .as_ref()
             .map_or_else(Reads::default, |style| style.reads);
+        if let Some(style) = style_code.as_mut().filter(|_| pressed) {
+            // `Pressable` calls a function for its style with its state
+            style.code = format!(
+                "({{ pressed: {} }}) => {}",
+                self.runtime.pressed, style.code
+            );
+        }
         let wrapped = reads.any() && !self.read_in_component(reads);
         if wrapped {
             self.runtime.wrapper_used = true;
@@ -1133,6 +1209,7 @@ impl<'a> Elements<'_> {
         }
         let Some(style_code) = style_code else {
             self.remove(&removed);
+            self.replacements.extend(kept);
             return;
         };
         let code = if wrapped {
@@ -1166,6 +1243,37 @@ impl<'a> Elements<'_> {
         self.remove(&removed);
         self.replacements
             .push((attributes_end as usize, attributes_end as usize, code));
+    }
+
+    /// The component an element taking a press style renders: React Native's
+    /// `Pressable` for a `View`, which only it can call the style of with
+    /// whether it is pressed, or the `Pressable` it already renders
+    fn pressable(
+        &mut self,
+        (offset, name): (u32, String),
+        kind: &ExportVariableKind,
+        local: &str,
+        tag: Option<String>,
+    ) -> Option<String> {
+        let problem = match (native_component(kind), &tag) {
+            ("Pressable", None) => return None,
+            ("View", None) => {
+                self.pressable_used = true;
+                return Some(self.pressable.clone());
+            }
+            (_, Some(_)) => Problem::new(
+                "a press style makes the element React Native's `Pressable`, which cannot render the component `as` gives",
+                "remove `as`, or pass a function reading `pressed` to the `style` of a `Pressable`",
+            ),
+            (native, None) => Problem::new(
+                format!(
+                    "a press style needs React Native's `Pressable`, and the element renders React Native's `{native}`"
+                ),
+                "wrap it in a `Box` or a `Button` with `_pressed`",
+            ),
+        };
+        self.error(offset, problem.on(local, &name));
+        tag
     }
 
     /// Render the component `as` gives

@@ -2,6 +2,6 @@
 source: libs/extractor/src/native/tests.rs
 expression: compile(code)
 ---
-error: test.tsx:2:6: `<Box>` cannot use `className` on React Native: React Native has no class names. Fix: write the styles as props, or pass them in `style`
+error: test.tsx:2:6: `<Box>` cannot use `className` on React Native: React Native has no class names. Fix: pass what `css()` gives, or write the styles as props
 test.tsx:2:20: `<Box>` cannot use `styleOrder` on React Native: React Native has no stylesheet order and no CSS variables. Fix: remove it; on React Native the later style in `style` wins
 test.tsx:2:35: `<Box>` cannot use `styleVars` on React Native: React Native has no stylesheet order and no CSS variables. Fix: remove it; on React Native the later style in `style` wins
