@@ -31,6 +31,9 @@ use crate::component::ExportVariableKind;
 use crate::fresh_name::fresh_name;
 
 mod css_call;
+mod styled;
+
+use styled::is_function;
 
 /// The changes compiling a file makes, or why it cannot compile
 pub(super) struct Compiled {
@@ -177,6 +180,9 @@ pub(super) fn compile(
         scoping,
         components: &imports.components,
         css: &imports.css,
+        styled: &imports.styled,
+        props: fresh_name("__props", code),
+        in_styled: false,
         sheet: Sheet::new(fresh_name("__s", code)),
         units: fresh_name("__u", code),
         units_used: Cell::new(false),
@@ -190,7 +196,7 @@ pub(super) fn compile(
         replacements: imports.replacements,
         errors: imports.errors,
     };
-    if !visitor.components.is_empty() || !visitor.css.is_empty() {
+    if !visitor.components.is_empty() || !visitor.css.is_empty() || !visitor.styled.is_empty() {
         visitor.visit_program(program);
     }
     let Elements {
@@ -314,6 +320,13 @@ struct Elements<'s> {
     components: &'s FxHashMap<SymbolId, (ExportVariableKind, String)>,
     /// The bindings of `css`
     css: &'s FxHashSet<SymbolId>,
+    /// The bindings of `styled`
+    styled: &'s FxHashSet<SymbolId>,
+    /// The parameter holding the props of a component `styled()` gives
+    props: String,
+    /// Whether the styles of a `styled()` component are being read, where a
+    /// function is called with its props
+    in_styled: bool,
     sheet: Sheet,
     /// The name of the function converting values read at runtime
     units: String,
@@ -376,7 +389,7 @@ impl<'a> Visit<'a> for Elements<'_> {
                     "`{local}` can only be rendered as a JSX element on React Native: the build compiles its props into styles only there. Fix: render `<{local} />`, or use a React Native component here"
                 ),
             ));
-        } else if self.is_css_reference(identifier) {
+        } else if self.is_css_reference(identifier) || self.is_styled_reference(identifier) {
             self.errors.push((
                 identifier.span.start,
                 format!(
@@ -392,6 +405,8 @@ impl<'a> Visit<'a> for Elements<'_> {
     fn visit_tagged_template_expression(&mut self, template: &TaggedTemplateExpression<'a>) {
         if self.is_css(&template.tag) {
             self.css_template(template);
+        } else if let Some(target) = self.styled_target(&template.tag) {
+            self.styled_template(template, target);
         } else {
             walk::walk_tagged_template_expression(self, template);
         }
@@ -400,6 +415,10 @@ impl<'a> Visit<'a> for Elements<'_> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         if self.is_css(&call.callee) {
             self.css_call(call);
+        } else if let Some(target) = self.styled_target(&call.callee) {
+            self.styled_call(call, target);
+        } else if self.is_styled(&call.callee) {
+            self.styled_direct(call);
         } else {
             walk::walk_call_expression(self, call);
         }
@@ -549,13 +568,7 @@ impl<'a> Elements<'_> {
 
     /// Call the hooks reading what `reads` names at `at`
     fn call_hooks(&mut self, at: HookAt, reads: Reads) {
-        self.runtime.hooks_used = self.runtime.hooks_used.union(reads);
-        let calls: Vec<String> = self
-            .runtime
-            .variables(reads)
-            .map(|(hook, variable)| format!("const {variable} = {}();", self.runtime.hooks[hook]))
-            .collect();
-        let call = calls.join(" ");
+        let call = self.hook_calls(reads);
         match at {
             HookAt::Body(at) => self.replacements.push((at, at, format!("\n{call}"))),
             HookAt::Expression(start, end) => {
@@ -564,6 +577,17 @@ impl<'a> Elements<'_> {
                 self.replacements.push((end, end, "; }".to_string()));
             }
         }
+    }
+
+    /// The statements calling the hooks reading what `reads` names
+    fn hook_calls(&mut self, reads: Reads) -> String {
+        self.runtime.hooks_used = self.runtime.hooks_used.union(reads);
+        let calls: Vec<String> = self
+            .runtime
+            .variables(reads)
+            .map(|(hook, variable)| format!("const {variable} = {}();", self.runtime.hooks[hook]))
+            .collect();
+        calls.join(" ")
     }
 
     /// Whether the element being compiled is in a function component or a
@@ -1128,6 +1152,10 @@ impl<'a> Elements<'_> {
     /// The code of `expression`
     fn source(&self, expression: &Expression<'_>) -> String {
         let code = expression.span().source_text(self.code);
+        if self.in_styled && is_function(expression) {
+            // A function in the styles of a `styled()` component takes its props
+            return format!("({code})({})", self.props);
+        }
         if matches!(
             expression.without_parentheses(),
             Expression::SequenceExpression(_)

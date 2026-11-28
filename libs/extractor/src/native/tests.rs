@@ -1288,3 +1288,37 @@ fn a_static_style_after_one_kept_in_order_checks_it() {
         Some("[s.a, { margin: m }, s.b, { width: w }, p && s.c]")
     );
 }
+
+const STYLED_ELEMENTS: &str = r"import { styled, css } from '@devup-ui/react'
+import { View, Animated } from 'react-native'
+export const Card = styled(Box)({ bg: '$surface', p: [2, null, 4], borderRadius: '8px' })
+export const Row = styled(Flex, { gap: 2 })
+export const Title = styled(Text)`
+  color: ${(props) => props.color};
+  font-size: 18px;
+`
+export const Item = styled(View)({ m: 1 }, (props) => props.active && css({ opacity: 0.5 }), { w: (p) => p.width })
+export const Tap = styled(Box)({ _active: { opacity: 0.6 }, _themeDark: { bg: 'black' } })
+export const Plain = styled(Button)({ _pressed: { m: 1 } })
+export const Empty = styled(Animated.View)()
+export function App() {
+  return <Card p={1}><Row /><Title color='red'>Hi</Title></Card>
+}";
+
+#[rstest]
+#[case::styled("styled_components", STYLED_ELEMENTS)]
+#[case::errors(
+    "styled_errors",
+    r"import { styled } from '@devup-ui/react'
+export const A = styled('div')({ p: 1 })
+export const B = styled(View)
+export const C = styled(View)(...parts)
+export const D = styled(View)({ _active: { p: 1 } })
+export const E = styled(Text)({ _active: { p: 1 } })
+export const F = styled(View)((p) => ({ bg: p.color }), (p) => (p.on ? null : { m: 1 }), function (p) { return p.style })
+export const G = styled(Box, { p: 1 }, extra)
+export const H = styled"
+)]
+fn compiles_styled(#[case] name: &str, #[case] code: &str) {
+    assert_snapshot!(name, compile_themed(two_themes(), true, code));
+}

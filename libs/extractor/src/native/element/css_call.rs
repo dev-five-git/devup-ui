@@ -9,6 +9,7 @@ use oxc_ast_visit::Visit;
 use oxc_span::{GetSpan, Span};
 use std::fmt::Write;
 
+use super::styled::{gives_style_props, is_function};
 use super::{Elements, Prop, Styles, attribute_expression, classify};
 use crate::native::errors::Problem;
 use crate::native::style::{Choice, combined, style_code};
@@ -154,7 +155,7 @@ impl<'a> Elements<'_> {
     /// One argument of `css()`: an object of styles, a condition choosing
     /// objects, or a style it passes on whole, such as what another `css()`
     /// gives
-    fn css_part(&mut self, expression: &Expression<'a>, choices: &mut Vec<Choice>) {
+    pub(super) fn css_part(&mut self, expression: &Expression<'a>, choices: &mut Vec<Choice>) {
         match expression.without_parentheses() {
             Expression::ObjectExpression(object) => {
                 let object_choices = self.object_choices(object, CSS);
@@ -185,6 +186,21 @@ impl<'a> Elements<'_> {
                 self.error(expression.span().start, class_problem(CSS, "a part"));
             }
             expression if is_nothing(expression) => {}
+            expression if self.in_styled && is_function(expression) => {
+                if gives_style_props(expression) {
+                    self.error(
+                        expression.span().start,
+                        Problem::new(
+                            "a function of the props gives style props, which React Native cannot read at runtime",
+                            "return what `css()` gives, or write each value as a function of the props",
+                        )
+                        .call("styled()"),
+                    );
+                    return;
+                }
+                let code = format!("({})({})", self.rewritten(expression), self.props);
+                choices.push(Choice::Given(code));
+            }
             expression => {
                 let code = self.rewritten(expression);
                 choices.push(Choice::Given(code));
