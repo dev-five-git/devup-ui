@@ -1,0 +1,121 @@
+export const metadata = {
+  title: 'Box',
+  alternates: {
+    canonical: '/ko/docs/api/box',
+    languages: {
+      en: '/docs/api/box',
+      ko: '/ko/docs/api/box',
+      'x-default': '/docs/api/box',
+    },
+  },
+}
+
+# Box
+
+`Box` 컴포넌트는 어떤 종류의 레이아웃이든 만들 수 있는 레이아웃 기본 요소입니다.
+
+스타일이 적용된 `div`일 뿐입니다.
+
+## 사용 방법
+
+{/* conformance */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+
+function App() {
+  return <Box bg="red" flex={1} height="100px" width={100} />
+}
+```
+
+위에서 정의한 Box 컴포넌트는 다음과 같이 렌더링됩니다.
+
+```tsx
+function App() {
+  return <div className="a b c d" />
+}
+```
+
+```css
+.a {
+  background: red;
+}
+.b {
+  flex: 1;
+}
+.c {
+  height: 100px;
+}
+.d {
+  width: 400px;
+}
+```
+
+스타일 속성에 단위 없이 숫자를 전달하면 자동으로 4배로 변환됩니다.
+즉, 1은 4px, 2는 8px와 같은 식입니다.
+
+단, 다음 속성은 예외이며 **4를 곱하지 않습니다**.
+
+- `opacity`
+- `flex`
+- `z-index`
+- `line-clamp`
+- `font-weight`
+- `line-height`
+- `scale`
+- `aspect-ratio`
+- `flex-grow`
+- `flex-shrink`
+- `order`
+- `grid-column`, `grid-column-start`, `grid-column-end`
+- `grid-row`, `grid-row-start`, `grid-row-end`
+- `animation-iteration-count`
+- `tab-size`, `-moz-tab-size`, `-webkit-line-clamp`
+- `grid-area`
+- `column-count`, `columns`, `orphans`, `widows`, `zoom`
+- `border-image`, `border-image-outset`, `border-image-slice`, `border-image-width`
+- `mask-border`, `mask-border-outset`, `mask-border-slice`, `mask-border-width`
+- `initial-letter`, `max-lines`, `shape-image-threshold`
+- `fill-opacity`, `flood-opacity`, `stop-opacity`, `stroke-opacity`, `stroke-width`, `stroke-dashoffset`, `stroke-miterlimit`
+
+### 다른 요소로 렌더링하기
+
+`as` prop을 사용하면 요소의 타입을 바꿀 수 있습니다.
+
+{/* conformance */}
+
+```tsx
+import { Box } from '@devup-ui/react'
+
+function App() {
+  return <Box as="span" bg="red" />
+}
+```
+
+as prop을 사용하면 아래와 같이 다른 요소로 렌더링할 수 있습니다.
+
+```tsx
+function App() {
+  return <span className="a" />
+}
+```
+
+```css
+.a {
+  background: red;
+}
+```
+
+`as`에는 컴포넌트(`as={Link}`, `as={motion.div}`)나 이름 사이의 조건식(`as={href ? 'a' : 'button'}`)도 전달할 수 있으며, 조건식은 각 이름마다 해당 요소가 됩니다. `undefined`, `null`, `false`는 기본 요소(`Box`의 경우 `div`)가 됩니다. prop이나 `` `h${level}` ``처럼 그 밖의 값은 런타임에 한 번 읽으며, 값이 비어 있으면 기본 요소가 됩니다.
+
+```tsx
+function Card({ as }) {
+  return <Box as={as} bg="red" />
+}
+```
+
+```tsx
+function Card({ as }) {
+  return ((DevupAs0) => <DevupAs0 className="a" />)(as || 'div')
+}
+```
