@@ -1,0 +1,47 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Textarea` props는 textarea HTML 속성을 확장합니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'typography',
+      description: 'textarea에 적용할 타이포그래피 토큰',
+      type: '`keyof DevupThemeTypography`',
+      default: '`undefined`',
+    },
+    {
+      property: 'error',
+      description: 'textarea의 유효하지 않은 상태 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'errorMessage',
+      description:
+        '`error`가 true일 때 textarea 아래에 표시할 유효성 검사 메시지',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'rows',
+      description: '표시할 텍스트 행 수',
+      type: '`number`',
+      default: '`3`',
+    },
+    {
+      property: 'classNames',
+      description: '내부 요소에 적용할 사용자 정의 클래스 이름',
+      type: '```{<br>  container?: string<br>  textarea?: string<br>  errorMessage?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'textarea의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  error?: string<br>  text?: string<br>  border?: string<br>  background?: string<br>  placeholder?: string<br>  focusRing?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

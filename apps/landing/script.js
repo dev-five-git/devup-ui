@@ -48,7 +48,9 @@ for (const entry of res) {
 }
 
 await writeFile('public/search.json', JSON.stringify([...search.values()]))
-const koreanSearch = new Map(search)
+// Korean files replace their English entry. A component page has two
+// (index.ko.mdx and Api.ko.mdx), merged into one entry like the English ones.
+const koreanEntries = new Map()
 for await (const file of glob('src/app/(detail)/**/*.ko.mdx')) {
   const content = await readFile(file, 'utf8')
   const heading = /^#{1,6} (.+)$/mu.exec(content)
@@ -58,12 +60,14 @@ for await (const file of glob('src/app/(detail)/**/*.ko.mdx')) {
     .replace('src/app/(detail)', '')
     .replace('/[component]', '')
     .replace(/\/(?:page|index|Api|Description)\.ko\.mdx$/u, '')
-  koreanSearch.set(url, {
-    title: heading[1],
-    text: content.slice(heading.index),
+  const entry = { title: heading[1], text: content.slice(heading.index), url }
+  const previous = koreanEntries.get(url)
+  koreanEntries.set(
     url,
-  })
+    previous ? { ...previous, text: `${previous.text}\n${entry.text}` } : entry,
+  )
 }
+const koreanSearch = new Map([...search, ...koreanEntries])
 await writeFile(
   'public/search.ko.json',
   JSON.stringify([...koreanSearch.values()]),

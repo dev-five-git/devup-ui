@@ -1,9 +1,23 @@
 {
+  "ComingSoon": {
+    "description": "This section is currently under construction.",
+    "title": "Coming Soon"
+  },
+  "ComponentPage": {
+    "copy": "Copy",
+    "description": "{name} component",
+    "examples": "Examples",
+    "showCode": "Show Code"
+  },
   "ComponentsMenu": {
     "form": "Form",
     "layout": "Layout",
     "overview": "Overview",
     "theme": "Theme"
+  },
+  "ComponentsOverview": {
+    "examples": "Examples",
+    "title": "Devup UI Components"
   },
   "DocsMenu": {
     "breakpoints": "Breakpoints",
@@ -80,6 +94,13 @@
     "openKakaoTalk": "Open KakaoTalk",
     "preprocessor": "CSS in JS Preprocessor",
     "tagline": "Building the Future of CSS-in-JS<br></br>Analyze all possible scenarios at the fastest speed and style with optimal performance."
+  },
+  "PropsTable": {
+    "default": "Default",
+    "description": "description",
+    "empty": "No props to display",
+    "prop": "Prop",
+    "type": "Type"
   },
   "RightIndex": {
     "contents": "Contents",

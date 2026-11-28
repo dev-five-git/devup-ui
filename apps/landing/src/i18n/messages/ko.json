@@ -1,9 +1,23 @@
 {
+  "ComingSoon": {
+    "description": "이 섹션은 현재 준비 중입니다.",
+    "title": "준비 중"
+  },
+  "ComponentPage": {
+    "copy": "복사",
+    "description": "{name} 컴포넌트",
+    "examples": "예제",
+    "showCode": "코드 보기"
+  },
   "ComponentsMenu": {
     "form": "폼",
     "layout": "레이아웃",
     "overview": "개요",
     "theme": "테마"
+  },
+  "ComponentsOverview": {
+    "examples": "예제",
+    "title": "Devup UI 컴포넌트"
   },
   "DocsMenu": {
     "breakpoints": "브레이크포인트",
@@ -80,6 +94,13 @@
     "openKakaoTalk": "카카오톡 오픈채팅 열기",
     "preprocessor": "CSS-in-JS 전처리기",
     "tagline": "CSS-in-JS의 미래를 만듭니다<br></br>가능한 모든 시나리오를 가장 빠르게 분석하고, 최적의 성능으로 스타일을 적용합니다."
+  },
+  "PropsTable": {
+    "default": "기본값",
+    "description": "설명",
+    "empty": "표시할 props가 없습니다",
+    "prop": "속성",
+    "type": "타입"
   },
   "RightIndex": {
     "contents": "목차",

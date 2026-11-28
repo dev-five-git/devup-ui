@@ -1,0 +1,46 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Checkbox` props는 input HTML 속성(`type`, `onChange` 제외)을 확장합니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: '체크박스의 레이블 내용',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'checked',
+      description: '체크박스의 선택 여부(제어)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultChecked',
+      description: '체크박스의 기본 선택 여부(비제어)',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'disabled',
+      description: '체크박스의 비활성화 여부',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'onChange',
+      description: '선택 상태가 바뀔 때 호출되는 콜백',
+      type: '`(checked: boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: '체크박스의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  border?: string<br>  text?: string<br>  inputBg?: string<br>  checkIcon?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

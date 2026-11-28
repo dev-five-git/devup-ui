@@ -1,6 +1,9 @@
+'use client'
 import { Box, Text, VStack } from '@devup-ui/react'
+import { useTranslations } from 'next-intl'
 
 export function ComingSoon() {
+  const t = useTranslations('ComingSoon')
   return (
     <Box
       bg="$cardBg"
@@ -14,10 +17,10 @@ export function ComingSoon() {
           🚧
         </Text>
         <Text color="$title" typography="h6">
-          Coming Soon
+          {t('title')}
         </Text>
         <Text color="$textSecondary" typography="body">
-          This section is currently under construction.
+          {t('description')}
         </Text>
       </VStack>
     </Box>

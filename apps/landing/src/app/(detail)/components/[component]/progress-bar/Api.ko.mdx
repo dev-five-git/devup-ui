@@ -1,0 +1,46 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`ProgressBar` props는 div HTML 속성(`children`, `role` 제외)을 확장합니다. `aria-valuemin`, `aria-valuemax`, `aria-valuenow`를 갖춘 `progressbar`를 렌더링합니다.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'value',
+      description: '완료된 정도. 0과 `max` 사이 값으로 제한됩니다',
+      type: '`number`',
+      default: '-',
+    },
+    {
+      property: 'max',
+      description: '완료를 의미하는 값. `step` variant에서는 단계 수입니다',
+      type: '`number`',
+      default: '`100`',
+    },
+    {
+      property: 'variant',
+      description: '하나로 이어진 막대 또는 단계별 세그먼트',
+      type: "`'bar' | 'step'`",
+      default: "`'bar'`",
+    },
+    {
+      property: 'showValue',
+      description: '막대 위에 진행 상황을 표시할지 여부(`50%`, 단계형은 `3/6`)',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'classNames',
+      description: '내부 요소에 적용할 사용자 정의 클래스 이름',
+      type: '```{<br>  track?: string<br>  indicator?: string<br>  value?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: '프로그레스 바의 사용자 정의 색상 변수',
+      type: '```{<br>  primary?: string<br>  track?: string<br>  text?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

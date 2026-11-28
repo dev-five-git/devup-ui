@@ -42,6 +42,7 @@ const routes = [
   ['/ko/docs/overview', '/ko/docs/overview'],
   ['/team', '/team'],
   ['/components/button', '/components/button'],
+  ['/ko/components/button', '/ko/components/button'],
   // Any page still untranslated covers the English fallback; none once every
   // page has a Korean translation.
   ...getUntranslatedRoutes()
